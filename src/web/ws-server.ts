@@ -2,13 +2,14 @@ import { WebSocketServer, WebSocket } from 'ws';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { Server, IncomingMessage, ServerResponse } from 'node:http';
+import type { Server, IncomingMessage as HttpIncomingMessage, ServerResponse } from 'node:http';
 import type { BotRegistry, BotInfo } from '../api/bot-registry.js';
 import type { Logger } from '../utils/logger.js';
-import type { CardState, PendingQuestion } from '../types.js';
+import type { CardState, PendingQuestion, IncomingMessage } from '../types.js';
 import type { PeerManager } from '../api/peer-manager.js';
 import { ChatSubscriptionManager } from './chat-subscriptions.js';
 import { GroupManager, type ChatGroup } from './group-manager.js';
+import { ProxySender } from './proxy-sender.js';
 import { StreamingASRSession, createStreamingASRSession, isStreamingASRAvailable } from '../api/streaming-asr.js';
 import type { SessionRegistry, SessionRecord, SessionMessage } from '../session/session-registry.js';
 
@@ -16,6 +17,7 @@ import type { SessionRegistry, SessionRecord, SessionMessage } from '../session/
 
 type ClientMessage =
   | { type: 'chat'; botName: string; chatId: string; text: string; messageId?: string }
+  | { type: 'proxy_message'; botName: string; chatId: string; chatType: string; userId: string; text: string }
   | { type: 'group_chat'; groupId: string; chatId: string; text: string; messageId?: string }
   | { type: 'stop'; chatId: string; botName?: string }
   | { type: 'answer'; chatId: string; toolUseId: string; answer: string }
@@ -82,7 +84,10 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
 // Cache last known state per chatId+messageId for reconnection recovery.
 // Entries expire after 10 minutes.
 const STATE_CACHE_TTL_MS = 10 * 60 * 1000;
-const lastStateCache = new Map<string, { chatId: string; messageId: string; state: CardState; type: 'state' | 'complete'; ts: number }>();
+const lastStateCache = new Map<
+  string,
+  { chatId: string; messageId: string; state: CardState; type: 'state' | 'complete'; ts: number }
+>();
 
 function cacheState(chatId: string, messageId: string, state: CardState, type: 'state' | 'complete') {
   lastStateCache.set(chatId, { chatId, messageId, state, type, ts: Date.now() });
@@ -158,15 +163,18 @@ export function setupWebSocketServer(
   });
 
   // Handle new WebSocket connections
-  wss.on('connection', (ws: WebSocket, _req: IncomingMessage) => {
+  wss.on('connection', (ws: WebSocket, _req: HttpIncomingMessage) => {
     wsLogger.info('WebSocket client connected');
     connectedClients.add(ws);
 
     // Per-connection state
-    const pendingAnswers = new Map<string, {
-      resolve: (answer: string) => void;
-      reject: (err: Error) => void;
-    }>();
+    const pendingAnswers = new Map<
+      string,
+      {
+        resolve: (answer: string) => void;
+        reject: (err: Error) => void;
+      }
+    >();
     // Track chatId → botName for stop commands
     const chatBotMap = new Map<string, string>();
 
@@ -177,7 +185,9 @@ export function setupWebSocketServer(
 
     // Heartbeat: ping every 30s, close if no pong
     let isAlive = true;
-    ws.on('pong', () => { isAlive = true; });
+    ws.on('pong', () => {
+      isAlive = true;
+    });
 
     const heartbeat = setInterval(() => {
       if (!isAlive) {
@@ -219,7 +229,19 @@ export function setupWebSocketServer(
           subscriptions.subscribe(msg.chatId, ws);
           handleChat(ws, msg, registry, peerManager, pendingAnswers, wsLogger, subscriptions).catch((err) => {
             wsLogger.error({ err, chatId: msg.chatId }, 'WS chat handler error');
-            sendMessage(ws, { type: 'error', chatId: msg.chatId, messageId: msg.messageId, error: err.message || 'Internal error' });
+            sendMessage(ws, {
+              type: 'error',
+              chatId: msg.chatId,
+              messageId: msg.messageId,
+              error: err.message || 'Internal error',
+            });
+          });
+          break;
+
+        case 'proxy_message':
+          handleProxyMessage(ws, msg, registry, wsLogger).catch((err) => {
+            wsLogger.error({ err, chatId: msg.chatId }, 'WS proxy_message handler error');
+            sendMessage(ws, { type: 'error', chatId: msg.chatId, error: err.message || 'Internal error' });
           });
           break;
 
@@ -234,7 +256,12 @@ export function setupWebSocketServer(
         case 'group_chat':
           handleGroupChat(ws, msg, groupManager, registry, subscriptions, pendingAnswers, wsLogger).catch((err) => {
             wsLogger.error({ err, chatId: msg.chatId }, 'WS group chat handler error');
-            sendMessage(ws, { type: 'error', chatId: msg.chatId, messageId: msg.messageId, error: err.message || 'Internal error' });
+            sendMessage(ws, {
+              type: 'error',
+              chatId: msg.chatId,
+              messageId: msg.messageId,
+              error: err.message || 'Internal error',
+            });
           });
           break;
 
@@ -293,7 +320,12 @@ export function setupWebSocketServer(
             subscriptions.subscribe(cid, ws);
             const cached = lastStateCache.get(cid);
             if (cached) {
-              sendMessage(ws, { type: cached.type, chatId: cached.chatId, messageId: cached.messageId, state: cached.state });
+              sendMessage(ws, {
+                type: cached.type,
+                chatId: cached.chatId,
+                messageId: cached.messageId,
+                state: cached.state,
+              });
               wsLogger.debug({ chatId: cid, type: cached.type }, 'Sent cached state on resume');
             }
           }
@@ -327,7 +359,13 @@ export function setupWebSocketServer(
             }
           }
           const history = sessionRegistry.getMessages(msg.sessionId);
-          sendMessage(ws, { type: 'session_adopted', chatId: msg.chatId, sessionId: msg.sessionId, claudeSessionId, history });
+          sendMessage(ws, {
+            type: 'session_adopted',
+            chatId: msg.chatId,
+            sessionId: msg.sessionId,
+            claudeSessionId,
+            history,
+          });
           break;
         }
 
@@ -369,7 +407,10 @@ export function setupWebSocketServer(
 
         case 'start_asr': {
           // Destroy previous session if any
-          if (asrSession) { asrSession.destroy(); asrSession = null; }
+          if (asrSession) {
+            asrSession.destroy();
+            asrSession = null;
+          }
 
           if (!isStreamingASRAvailable()) {
             sendMessage(ws, { type: 'asr_error', error: 'Streaming ASR not configured' });
@@ -380,8 +421,14 @@ export function setupWebSocketServer(
             const session = createStreamingASRSession(
               wsLogger,
               (event) => sendMessage(ws, { type: 'asr_transcript', text: event.text, isFinal: event.isFinal }),
-              (error) => { sendMessage(ws, { type: 'asr_error', error }); asrSession = null; },
-              () => { sendMessage(ws, { type: 'asr_stopped' }); asrSession = null; },
+              (error) => {
+                sendMessage(ws, { type: 'asr_error', error });
+                asrSession = null;
+              },
+              () => {
+                sendMessage(ws, { type: 'asr_stopped' });
+                asrSession = null;
+              },
             );
             asrSession = session;
             session.start().then(
@@ -397,7 +444,9 @@ export function setupWebSocketServer(
         }
 
         case 'stop_asr':
-          if (asrSession) { asrSession.stop(); }
+          if (asrSession) {
+            asrSession.stop();
+          }
           break;
 
         case 'ping':
@@ -415,7 +464,10 @@ export function setupWebSocketServer(
       subscriptions.unsubscribeAll(ws);
       clearInterval(heartbeat);
       // Clean up ASR session
-      if (asrSession) { asrSession.destroy(); asrSession = null; }
+      if (asrSession) {
+        asrSession.destroy();
+        asrSession = null;
+      }
       // Reject all pending answers
       for (const [, { reject }] of pendingAnswers) {
         reject(new Error('WebSocket connection closed'));
@@ -458,6 +510,46 @@ export function setupWebSocketServer(
 }
 
 // ─── Message handlers ──────────────────────────────────────────────────────
+
+async function handleProxyMessage(
+  ws: WebSocket,
+  msg: Extract<ClientMessage, { type: 'proxy_message' }>,
+  registry: BotRegistry,
+  logger: Logger,
+): Promise<void> {
+  const { botName, chatId, chatType, userId, text } = msg;
+
+  if (!botName || !chatId || !text) {
+    sendMessage(ws, { type: 'error', chatId: chatId || '', error: 'Missing required fields: botName, chatId, text' });
+    return;
+  }
+
+  const bot = registry.get(botName);
+  if (!bot) {
+    sendMessage(ws, { type: 'error', chatId, error: `Bot not found: ${botName}` });
+    return;
+  }
+
+  logger.info({ botName, chatId, textLength: text.length }, 'WS proxy_message request');
+
+  const proxySender = new ProxySender(ws, chatId, bot.bridge.getDefaultSender());
+  bot.bridge.setSenderOverride(chatId, proxySender);
+
+  const incomingMsg: IncomingMessage = {
+    messageId: `proxy-${Date.now()}`,
+    chatId,
+    chatType: chatType || 'p2p',
+    userId: userId || 'proxy',
+    text,
+  };
+
+  try {
+    await bot.bridge.handleMessage(incomingMsg);
+  } catch (err: any) {
+    logger.error({ err, chatId, botName }, 'WS proxy_message handleMessage error');
+    sendMessage(ws, { type: 'error', chatId, error: err.message || 'Task execution failed' });
+  }
+}
 
 async function handleChat(
   ws: WebSocket,
@@ -530,12 +622,26 @@ async function handleChat(
             fs.copyFileSync(file.filePath, destPath);
             const ext = file.extension.replace('.', '');
             const mimeMap: Record<string, string> = {
-              png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
-              mp4: 'video/mp4', webm: 'video/webm', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg',
-              pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+              png: 'image/png',
+              jpg: 'image/jpeg',
+              jpeg: 'image/jpeg',
+              gif: 'image/gif',
+              webp: 'image/webp',
+              svg: 'image/svg+xml',
+              mp4: 'video/mp4',
+              webm: 'video/webm',
+              mp3: 'audio/mpeg',
+              wav: 'audio/wav',
+              ogg: 'audio/ogg',
+              pdf: 'application/pdf',
+              docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
               xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
               pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-              zip: 'application/zip', txt: 'text/plain', json: 'application/json', csv: 'text/csv', md: 'text/markdown',
+              zip: 'application/zip',
+              txt: 'text/plain',
+              json: 'application/json',
+              csv: 'text/csv',
+              md: 'text/markdown',
               html: 'text/html',
             };
             const mimeType = mimeMap[ext] || 'application/octet-stream';
@@ -557,12 +663,17 @@ async function handleChat(
           pendingAnswers.set(question.toolUseId, { resolve, reject });
 
           // Set a timeout so we don't wait forever
-          const timeout = setTimeout(() => {
-            pendingAnswers.delete(question.toolUseId);
-            // Auto-answer after timeout
-            const autoAnswer = JSON.stringify({ answers: { _timeout: 'User did not respond in time, please decide on your own.' } });
-            resolve(autoAnswer);
-          }, 5 * 60 * 1000); // 5 minutes
+          const timeout = setTimeout(
+            () => {
+              pendingAnswers.delete(question.toolUseId);
+              // Auto-answer after timeout
+              const autoAnswer = JSON.stringify({
+                answers: { _timeout: 'User did not respond in time, please decide on your own.' },
+              });
+              resolve(autoAnswer);
+            },
+            5 * 60 * 1000,
+          ); // 5 minutes
 
           // Clean up timeout when resolved
           const originalResolve = resolve;
@@ -581,7 +692,12 @@ async function handleChat(
     });
   } catch (err: any) {
     logger.error({ err, chatId, botName }, 'WS executeApiTask error');
-    sendMessage(ws, { type: 'error', chatId, messageId: clientMessageId, error: err.message || 'Task execution failed' });
+    sendMessage(ws, {
+      type: 'error',
+      chatId,
+      messageId: clientMessageId,
+      error: err.message || 'Task execution failed',
+    });
   }
 }
 
@@ -712,19 +828,35 @@ async function handleGroupChat(
       onQuestion: (question: PendingQuestion): Promise<string> => {
         return new Promise<string>((resolve, reject) => {
           pendingAnswers.set(question.toolUseId, { resolve, reject });
-          const timeout = setTimeout(() => {
-            pendingAnswers.delete(question.toolUseId);
-            resolve(JSON.stringify({ answers: { _timeout: 'User did not respond in time, please decide on your own.' } }));
-          }, 5 * 60 * 1000);
-          const wrappedResolve = (answer: string) => { clearTimeout(timeout); resolve(answer); };
-          const wrappedReject = (err: Error) => { clearTimeout(timeout); reject(err); };
+          const timeout = setTimeout(
+            () => {
+              pendingAnswers.delete(question.toolUseId);
+              resolve(
+                JSON.stringify({ answers: { _timeout: 'User did not respond in time, please decide on your own.' } }),
+              );
+            },
+            5 * 60 * 1000,
+          );
+          const wrappedResolve = (answer: string) => {
+            clearTimeout(timeout);
+            resolve(answer);
+          };
+          const wrappedReject = (err: Error) => {
+            clearTimeout(timeout);
+            reject(err);
+          };
           pendingAnswers.set(question.toolUseId, { resolve: wrappedResolve, reject: wrappedReject });
         });
       },
     });
   } catch (err: any) {
     logger.error({ err, chatId, targetBot }, 'WS group chat error');
-    sendMessage(ws, { type: 'error', chatId, messageId: clientMessageId, error: err.message || 'Task execution failed' });
+    sendMessage(ws, {
+      type: 'error',
+      chatId,
+      messageId: clientMessageId,
+      error: err.message || 'Task execution failed',
+    });
   }
 }
 
@@ -742,11 +874,7 @@ function sendMessage(ws: WebSocket, msg: ServerMessage): void {
  * Serve static files from the `dist/web/` directory for `/web/*` requests.
  * Returns true if the request was handled, false otherwise.
  */
-export function serveStaticFiles(
-  req: IncomingMessage,
-  res: ServerResponse,
-  url: string,
-): boolean {
+export function serveStaticFiles(req: HttpIncomingMessage, res: ServerResponse, url: string): boolean {
   // Only handle GET /web/*
   if (req.method !== 'GET') return false;
 

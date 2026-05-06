@@ -42,7 +42,10 @@ export class StreamProcessor {
   // Live background tasks (Monitor, etc.) — task_id → latest rollup.
   private _backgroundEvents: Map<string, BackgroundEvent> = new Map();
 
-  constructor(private userPrompt: string) {}
+  constructor(
+    private userPrompt: string,
+    private _overrideContextWindow?: number,
+  ) {}
 
   processMessage(message: SDKMessage): CardState {
     // Capture session_id from any message
@@ -80,9 +83,14 @@ export class StreamProcessor {
 
     // Determine running status
     const hasActiveTools = this.toolCalls.some((t) => t.status === 'running');
-    const status = this._pendingQuestions.length > 0
-      ? 'waiting_for_input'
-      : hasActiveTools ? 'running' : this.responseText ? 'running' : 'thinking';
+    const status =
+      this._pendingQuestions.length > 0
+        ? 'waiting_for_input'
+        : hasActiveTools
+          ? 'running'
+          : this.responseText
+            ? 'running'
+            : 'thinking';
 
     return {
       status,
@@ -92,9 +100,7 @@ export class StreamProcessor {
       costUsd: this.costUsd,
       durationMs: this.durationMs,
       pendingQuestion: this._pendingQuestions[0] || undefined,
-      backgroundEvents: this._backgroundEvents.size > 0
-        ? [...this._backgroundEvents.values()]
-        : undefined,
+      backgroundEvents: this._backgroundEvents.size > 0 ? [...this._backgroundEvents.values()] : undefined,
     };
   }
 
@@ -123,16 +129,19 @@ export class StreamProcessor {
 
     const prior = this._backgroundEvents.get(taskId);
     const patch = (m.patch as Record<string, unknown> | undefined) ?? undefined;
-    const description = typeof m.description === 'string'
-      ? m.description
-      : (typeof patch?.description === 'string' ? patch.description as string : prior?.description);
+    const description =
+      typeof m.description === 'string'
+        ? m.description
+        : typeof patch?.description === 'string'
+          ? (patch.description as string)
+          : prior?.description;
 
     let status: BackgroundTaskStatus = prior?.status ?? 'running';
     if (subtype === 'task_notification') {
       const s = typeof m.status === 'string' ? m.status : undefined;
       if (s === 'completed' || s === 'failed' || s === 'stopped') status = s;
     } else if (subtype === 'task_updated') {
-      const s = typeof patch?.status === 'string' ? patch.status as string : undefined;
+      const s = typeof patch?.status === 'string' ? (patch.status as string) : undefined;
       if (s === 'completed') status = 'completed';
       else if (s === 'failed' || s === 'killed') status = 'failed';
       else if (s === 'running') status = 'running';
@@ -200,9 +209,8 @@ export class StreamProcessor {
     if (event.type === 'message_start') {
       const usage = (event as any).message?.usage;
       if (usage) {
-        this._lastInputTokens = (usage.input_tokens ?? 0)
-          + (usage.cache_read_input_tokens ?? 0)
-          + (usage.cache_creation_input_tokens ?? 0);
+        this._lastInputTokens =
+          (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
       }
     } else if (event.type === 'message_delta') {
       const usage = (event as any).usage;
@@ -245,7 +253,7 @@ export class StreamProcessor {
       if (models.length > 0) {
         // Primary model is the one with highest cost
         const primaryModel = models.reduce((a, b) =>
-          (message.modelUsage![a].costUSD ?? 0) >= (message.modelUsage![b].costUSD ?? 0) ? a : b
+          (message.modelUsage![a].costUSD ?? 0) >= (message.modelUsage![b].costUSD ?? 0) ? a : b,
         );
         const mu = message.modelUsage[primaryModel];
         this._model = primaryModel;
@@ -257,8 +265,8 @@ export class StreamProcessor {
         } else {
           let totalTokens = 0;
           for (const m of models) {
-            totalTokens += (message.modelUsage![m].inputTokens ?? 0);
-            totalTokens += (message.modelUsage![m].outputTokens ?? 0);
+            totalTokens += message.modelUsage![m].inputTokens ?? 0;
+            totalTokens += message.modelUsage![m].outputTokens ?? 0;
           }
           this._totalTokens = totalTokens;
         }
@@ -276,21 +284,21 @@ export class StreamProcessor {
     const isApiError = !isError && isApiErrorResult(resultText);
 
     return {
-      status: (isError || isApiError) ? 'error' : 'complete',
+      status: isError || isApiError ? 'error' : 'complete',
       userPrompt: this.userPrompt,
       responseText: isApiError ? '' : resultText,
       toolCalls: [...this.toolCalls],
       costUsd: this.costUsd,
       durationMs: this.durationMs,
       errorMessage: isError
-        ? (message.errors?.join('; ') || `Ended with: ${message.subtype}`)
-        : isApiError ? resultText : undefined,
+        ? message.errors?.join('; ') || `Ended with: ${message.subtype}`
+        : isApiError
+          ? resultText
+          : undefined,
       model: this._model,
       totalTokens: this._totalTokens,
-      contextWindow: this._contextWindow,
-      backgroundEvents: this._backgroundEvents.size > 0
-        ? [...this._backgroundEvents.values()]
-        : undefined,
+      contextWindow: this._overrideContextWindow ?? this._contextWindow,
+      backgroundEvents: this._backgroundEvents.size > 0 ? [...this._backgroundEvents.values()] : undefined,
     };
   }
 
@@ -316,9 +324,7 @@ export class StreamProcessor {
 
   private completeCurrentTool(): void {
     if (this.currentToolName) {
-      const tool = this.toolCalls.find(
-        (t) => t.name === this.currentToolName && t.status === 'running',
-      );
+      const tool = this.toolCalls.find((t) => t.name === this.currentToolName && t.status === 'running');
       if (tool) {
         tool.status = 'done';
       }
@@ -374,9 +380,14 @@ export class StreamProcessor {
   /** Return the current card state without processing a new message. */
   getCurrentState(): CardState {
     const hasActiveTools = this.toolCalls.some((t) => t.status === 'running');
-    const status = this._pendingQuestions.length > 0
-      ? 'waiting_for_input'
-      : hasActiveTools ? 'running' : this.responseText ? 'running' : 'thinking';
+    const status =
+      this._pendingQuestions.length > 0
+        ? 'waiting_for_input'
+        : hasActiveTools
+          ? 'running'
+          : this.responseText
+            ? 'running'
+            : 'thinking';
     return {
       status,
       userPrompt: this.userPrompt,
@@ -385,9 +396,7 @@ export class StreamProcessor {
       costUsd: this.costUsd,
       durationMs: this.durationMs,
       pendingQuestion: this._pendingQuestions[0] || undefined,
-      backgroundEvents: this._backgroundEvents.size > 0
-        ? [...this._backgroundEvents.values()]
-        : undefined,
+      backgroundEvents: this._backgroundEvents.size > 0 ? [...this._backgroundEvents.values()] : undefined,
     };
   }
 

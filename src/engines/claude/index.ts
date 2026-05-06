@@ -17,7 +17,7 @@ export class ClaudeEngine implements Engine {
   }
 
   createStreamProcessor(userPrompt: string): StreamProcessor {
-    return new StreamProcessor(userPrompt);
+    return new StreamProcessor(userPrompt, this.config.contextWindow);
   }
 }
 
@@ -25,10 +25,5 @@ export { ClaudeExecutor } from './executor.js';
 export { StreamProcessor, extractImagePaths } from './stream-processor.js';
 export { SessionManager } from './session-manager.js';
 export type { UserSession } from './session-manager.js';
-export type {
-  SDKMessage,
-  ExecutionHandle,
-  ExecutorOptions,
-  ApiContext,
-} from './executor.js';
+export type { SDKMessage, ExecutionHandle, ExecutorOptions, ApiContext } from './executor.js';
 export type { DetectedTool } from './stream-processor.js';

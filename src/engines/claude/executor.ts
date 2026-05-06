@@ -255,7 +255,8 @@ export class ClaudeExecutor {
 
     // Beta flags are ignored by the SDK on OAuth/Pro-Max auth. For 1M context,
     // use the model-name suffix `[1m]` (e.g. `claude-opus-4-7[1m]`) instead.
-    queryOptions.betas = ['context-1m-2025-08-07'];
+    // Removed: 1M beta causes false context window estimate on non-Anthropic proxies
+    // queryOptions.betas = ['context-1m-2025-08-07'];
 
     return queryOptions;
   }
@@ -336,10 +337,25 @@ export class ClaudeExecutor {
       };
     };
 
+    const allowPlanModeHook = async () => {
+      return {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'allow',
+        },
+      };
+    };
+
     queryOptions.hooks = {
       PreToolUse: [{
         matcher: 'AskUserQuestion',
         hooks: [askUserQuestionHook as any],
+      }, {
+        matcher: 'EnterPlanMode',
+        hooks: [allowPlanModeHook as any],
+      }, {
+        matcher: 'ExitPlanMode',
+        hooks: [allowPlanModeHook as any],
       }],
     };
 

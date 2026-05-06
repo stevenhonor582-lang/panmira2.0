@@ -57,7 +57,19 @@ const startTime = Date.now();
 (globalThis as any).__metabot_start_time = startTime;
 
 export function startApiServer(options: ApiServerOptions): http.Server {
-  const { port, secret, registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient, peerManager, memoryServerUrl, memoryAuthToken } = options;
+  const {
+    port,
+    secret,
+    registry,
+    scheduler,
+    logger,
+    botsConfigPath,
+    docSync,
+    feishuServiceClient,
+    peerManager,
+    memoryServerUrl,
+    memoryAuthToken,
+  } = options;
   const host = secret ? '0.0.0.0' : '127.0.0.1';
 
   // Initialize shared services
@@ -66,6 +78,15 @@ export function startApiServer(options: ApiServerOptions): http.Server {
   const circuitBreaker = options.circuitBreaker ?? new CircuitBreaker(logger);
   const budgetManager = options.budgetManager ?? new BudgetManager(logger);
   const teamManager = options.teamManager ?? new TeamManager(logger);
+
+  function readBody(incoming: http.IncomingMessage): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      incoming.on('data', (c: Buffer) => chunks.push(c));
+      incoming.on('end', () => resolve(Buffer.concat(chunks).toString()));
+      incoming.on('error', reject);
+    });
+  }
   const meetingService = new VoiceMeetingService(registry, logger);
   const voiceIdentityStore = new VoiceIdentityStore(logger);
   const activityStore = new ActivityStore(logger);
@@ -79,10 +100,22 @@ export function startApiServer(options: ApiServerOptions): http.Server {
 
   // Build route context (shared across all route handlers)
   const ctx: RouteContext = {
-    registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient,
-    peerManager, memoryServerUrl, memoryAuthToken,
-    asyncTaskStore, intentRouter, circuitBreaker, budgetManager,
-    teamManager, meetingService, voiceIdentityStore,
+    registry,
+    scheduler,
+    logger,
+    botsConfigPath,
+    docSync,
+    feishuServiceClient,
+    peerManager,
+    memoryServerUrl,
+    memoryAuthToken,
+    asyncTaskStore,
+    intentRouter,
+    circuitBreaker,
+    budgetManager,
+    teamManager,
+    meetingService,
+    voiceIdentityStore,
     rtcService: rtcService.isConfigured() ? rtcService : undefined,
     ws,
     sessionRegistry: options.sessionRegistry,
@@ -107,10 +140,19 @@ export function startApiServer(options: ApiServerOptions): http.Server {
     const method = req.method || 'GET';
     const url = req.url || '/';
 
-    // Auth check (exempt /web/, /memory/, /api/files/)
-    if (secret && !url.startsWith('/web') && !url.startsWith('/memory') && !url.startsWith('/api/files/')) {
+    // Auth check (exempt /web/, /memory/, /api/files/, /admin/, /api/admin)
+    if (
+      secret &&
+      !url.startsWith('/web') &&
+      !url.startsWith('/memory') &&
+      !url.startsWith('/api/files/') &&
+      !url.startsWith('/admin') &&
+      !url.startsWith('/api/admin')
+    ) {
       const auth = req.headers.authorization;
-      const urlToken = url.includes('token=') ? new URL(url, `http://${req.headers.host || 'localhost'}`).searchParams.get('token') : null;
+      const urlToken = url.includes('token=')
+        ? new URL(url, `http://${req.headers.host || 'localhost'}`).searchParams.get('token')
+        : null;
       if (auth !== `Bearer ${secret}` && urlToken !== secret) {
         jsonResponse(res, 401, { error: 'Unauthorized' });
         return;
@@ -131,6 +173,28 @@ export function startApiServer(options: ApiServerOptions): http.Server {
           scheduledTasks: scheduler.taskCount(),
           recurringTasks: scheduler.recurringTaskCount(),
         });
+        return;
+      }
+
+      // Reverse proxy /admin and /api/admin to the Gateway
+      if (url.startsWith('/admin') || url.startsWith('/api/admin')) {
+        const GATEWAY = 'http://127.0.0.1:3099';
+        console.log(`[AdminProxy] ${method} ${url} -> ${GATEWAY}${url}`);
+        const headers: Record<string, string> = {};
+        if (req.headers['content-type']) headers['content-type'] = req.headers['content-type'] as string;
+        if (req.headers['authorization']) headers['authorization'] = req.headers['authorization'] as string;
+        try {
+          const body = ['GET', 'HEAD'].includes(method) ? undefined : await readBody(req);
+          const upstream = await fetch(`${GATEWAY}${url}`, { method, headers, body });
+          const ct = upstream.headers.get('content-type') ?? 'application/json';
+          const upstreamBody = await upstream.text();
+          console.log(`[AdminProxy] <- ${upstream.status} ${ct} ${upstreamBody.substring(0, 100)}`);
+          res.writeHead(upstream.status, { 'content-type': ct });
+          res.end(upstreamBody);
+        } catch (err) {
+          console.log(`[AdminProxy] ERROR: ${err}`);
+          jsonResponse(res, 502, { error: 'Gateway unavailable' });
+        }
         return;
       }
 
