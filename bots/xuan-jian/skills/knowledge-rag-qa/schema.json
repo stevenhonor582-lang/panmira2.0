@@ -1,0 +1,103 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://metabot.local/schemas/knowledge-rag-qa.v1.json",
+  "title": "KnowledgeRagQA",
+  "input": {
+    "type": "object",
+    "required": ["query"],
+    "properties": {
+      "query": {
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 500,
+        "description": "用户问题（必填）"
+      },
+      "top_k": {
+        "type": "integer",
+        "default": 5,
+        "minimum": 1,
+        "maximum": 20,
+        "description": "返回的 chunk 数量上限"
+      },
+      "filters": {
+        "type": "object",
+        "description": "检索过滤条件",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "enum": ["tech-docs", "meeting-notes", "project-history"],
+            "description": "限定知识库领域"
+          },
+          "date_from": {
+            "type": "string",
+            "format": "date",
+            "description": "起始日期（ISO 8601）"
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date",
+            "description": "截止日期（ISO 8601）"
+          },
+          "tag": {
+            "type": "string",
+            "description": "按 tag 过滤"
+          }
+        }
+      },
+      "mode": {
+        "type": "string",
+        "enum": ["keyword", "vector", "hybrid"],
+        "default": "hybrid",
+        "description": "检索模式"
+      },
+      "include_citations": {
+        "type": "boolean",
+        "default": true,
+        "description": "是否在输出中包含引用"
+      }
+    }
+  },
+  "output": {
+    "type": "object",
+    "required": ["answer", "citations", "confidence", "metadata"],
+    "properties": {
+      "answer": {
+        "type": "string",
+        "description": "LLM 合成答案（Markdown 格式）"
+      },
+      "citations": {
+        "type": "array",
+        "description": "引用来源列表",
+        "items": {
+          "type": "object",
+          "required": ["source_id", "source_title", "chunk_text", "score"],
+          "properties": {
+            "source_id": { "type": "string", "description": "文档/源 ID" },
+            "source_title": { "type": "string", "description": "文档标题" },
+            "chunk_text": { "type": "string", "description": "命中的 chunk 文本" },
+            "score": { "type": "number", "minimum": 0, "maximum": 1, "description": "相关度分数" },
+            "chunk_index": { "type": "integer", "description": "chunk 在文档中的序号" },
+            "url": { "type": "string", "description": "源链接（可选）" }
+          }
+        }
+      },
+      "confidence": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1,
+        "description": "整体置信度（< 0.5 → 知识库无相关信息）"
+      },
+      "metadata": {
+        "type": "object",
+        "required": ["query_id", "retrieval_mode", "chunks_retrieved", "duration_ms", "model_used"],
+        "properties": {
+          "query_id": { "type": "string", "description": "本次查询唯一 ID" },
+          "retrieval_mode": { "type": "string", "enum": ["keyword", "vector", "hybrid"] },
+          "chunks_retrieved": { "type": "integer", "description": "实际检索的 chunk 数" },
+          "duration_ms": { "type": "integer", "description": "端到端耗时（ms）" },
+          "model_used": { "type": "string", "description": "LLM 模型标识" }
+        }
+      }
+    }
+  }
+}

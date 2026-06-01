@@ -1,0 +1,19 @@
+{
+  "queries": [
+    {
+      "query": "knowledge-rag-qa 是什么",
+      "expected_top_source": "doc-001",
+      "mode": "hybrid"
+    },
+    {
+      "query": "hybrid 检索的权重是多少",
+      "expected_top_source": "doc-002",
+      "mode": "hybrid"
+    },
+    {
+      "query": "玄鉴 v1.0.0 发布日期",
+      "expected_top_source": "doc-003",
+      "mode": "hybrid"
+    }
+  ]
+}

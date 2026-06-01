@@ -1,0 +1,77 @@
+{
+  "domain": "tech-docs",
+  "chunks": [
+    {
+      "chunk_id": "doc-001#chunk-000",
+      "source_id": "doc-001",
+      "source_title": "skill 框架设计文档",
+      "chunk_index": 0,
+      "domain": "tech-docs",
+      "tags": ["skill", "framework", "rag"],
+      "text": "knowledge-rag-qa 是玄鉴的检索增强问答 skill，通过混合检索（关键词 + 向量）从知识库中找出 Top-K 片段，再由 LLM 合成答案并附引用。"
+    },
+    {
+      "chunk_id": "doc-001#chunk-001",
+      "source_id": "doc-001",
+      "source_title": "skill 框架设计文档",
+      "chunk_index": 1,
+      "domain": "tech-docs",
+      "tags": ["skill", "framework"],
+      "text": "code-review 是 bu-ying 的代码评审 skill，通过静态分析 + LLM 评估生成评审报告。它不修改代码，只输出评审意见。"
+    },
+    {
+      "chunk_id": "doc-002#chunk-000",
+      "source_id": "doc-002",
+      "source_title": "RAG 检索策略",
+      "chunk_index": 0,
+      "domain": "tech-docs",
+      "tags": ["rag", "retrieval"],
+      "text": "RAG（Retrieval-Augmented Generation）通过检索外部知识库增强 LLM 回答。混合检索采用 0.7 * vector + 0.3 * keyword 的加权融合，并使用 RRF (k=60) 重排。"
+    },
+    {
+      "chunk_id": "doc-002#chunk-001",
+      "source_id": "doc-002",
+      "source_title": "RAG 检索策略",
+      "chunk_index": 1,
+      "domain": "tech-docs",
+      "tags": ["rag", "hybrid"],
+      "text": "向量检索使用 sentence-transformers 或 OpenAI embedding。关键词检索使用 BM25 或 TF-IDF。在玄鉴当前实现中，embed-search 用 hash feature hashing 作为 mock embedding。"
+    },
+    {
+      "chunk_id": "doc-003#chunk-000",
+      "source_id": "doc-003",
+      "source_title": "会议纪要 - 2026-05-15",
+      "chunk_index": 0,
+      "domain": "meeting-notes",
+      "tags": ["meeting", "decision"],
+      "text": "会议决定：玄鉴 knowledge-rag-qa skill 将在 6 月 1 日发布 v1.0.0，使用 hybrid 检索模式，top_k 默认 5。"
+    },
+    {
+      "chunk_id": "doc-003#chunk-001",
+      "source_id": "doc-003",
+      "source_title": "会议纪要 - 2026-05-15",
+      "chunk_index": 1,
+      "domain": "meeting-notes",
+      "tags": ["meeting", "action"],
+      "text": "Action items: @张三 负责写 hybrid-merge.py，@李四 负责 keyword-search.py，@王五 负责单元测试。"
+    },
+    {
+      "chunk_id": "doc-004#chunk-000",
+      "source_id": "doc-004",
+      "source_title": "项目历史 - 玄鉴立项",
+      "chunk_index": 0,
+      "domain": "project-history",
+      "tags": ["history", "kickoff"],
+      "text": "2025-09-15 玄鉴立项。目标：基于 LLM + RAG 构建企业知识库问答系统，支持中英文混合检索。"
+    },
+    {
+      "chunk_id": "doc-005#chunk-000",
+      "source_id": "doc-005",
+      "source_title": "VMT 数据中台方案",
+      "chunk_index": 0,
+      "domain": "tech-docs",
+      "tags": ["vmt", "architecture"],
+      "text": "VMT 数据中台采用分层架构：采集层（CDC）→ 存储层（Lakehouse）→ 计算层（Spark/Flink）→ 服务层（API/GraphQL）。"
+    }
+  ]
+}
