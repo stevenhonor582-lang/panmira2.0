@@ -1,0 +1,13 @@
+{
+  "service": "metabot-core",
+  "version": "v1.5.2",
+  "environment": "prod",
+  "strategy": "canary",
+  "canary_percentage": 10,
+  "approver": "cio_feishu_id",
+  "dry_run": false,
+  "change_window": {
+    "start": "2026-06-01T22:00:00Z",
+    "end": "2026-06-02T09:00:00Z"
+  }
+}

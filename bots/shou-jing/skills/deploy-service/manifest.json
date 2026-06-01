@@ -1,0 +1,52 @@
+{
+  "name": "deploy-service",
+  "version": "1.0.0",
+  "bot_id": "shou-jing",
+  "layer": 3,
+  "status": "stable",
+  "entry": {
+    "skill_md": "SKILL.md",
+    "main_script": "scripts/preflight-check.sh"
+  },
+  "permissions": {
+    "network": [
+      "registry.internal",
+      "k8s-api.internal",
+      "prometheus.internal",
+      "github.com"
+    ],
+    "filesystem": {
+      "read": [
+        "references/",
+        "state/",
+        "runs/"
+      ],
+      "write": [
+        "state/",
+        "runs/"
+      ]
+    },
+    "mcp_servers": [
+      "k8s",
+      "docker-registry",
+      "monitoring"
+    ]
+  },
+  "io": {
+    "input_schema": "schema.json",
+    "output_schema": "schema.json"
+  },
+  "metrics": {
+    "success_rate": 0.96,
+    "p50_latency_ms": 300000,
+    "p99_latency_ms": 900000
+  },
+  "dependencies": {
+    "requires": [],
+    "suggests": ["incident-response", "monitor-setup"]
+  },
+  "lifecycle": {
+    "created_at": "2026-06-01T10:00:00Z",
+    "updated_at": "2026-06-01T10:00:00Z"
+  }
+}

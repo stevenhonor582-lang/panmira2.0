@@ -1,0 +1,144 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://metabot.local/schemas/deploy-service.v1.json",
+  "title": "DeployServiceIO",
+  "input": {
+    "type": "object",
+    "required": ["service", "version", "environment"],
+    "properties": {
+      "service": {
+        "type": "string",
+        "enum": ["metabot-core", "metabot-portal", "metabot-mcp", "custom"],
+        "description": "目标服务名（必填）"
+      },
+      "version": {
+        "type": "string",
+        "pattern": "^v?\\d+\\.\\d+\\.\\d+(-[a-zA-Z0-9.]+)?$",
+        "description": "版本号（semver，含或不含 v 前缀；或 git tag）"
+      },
+      "environment": {
+        "type": "string",
+        "enum": ["dev", "staging", "prod"],
+        "description": "目标环境（prod 需审批）"
+      },
+      "strategy": {
+        "type": "string",
+        "enum": ["blue-green", "rolling", "canary"],
+        "default": "rolling",
+        "description": "部署策略"
+      },
+      "canary_percentage": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 50,
+        "default": 10,
+        "description": "金丝雀初始流量百分比（canary 策略时使用）"
+      },
+      "approver": {
+        "type": "string",
+        "description": "审批人飞书 user_id（prod 必填）"
+      },
+      "dry_run": {
+        "type": "boolean",
+        "default": false,
+        "description": "预演模式（不实际部署）"
+      },
+      "change_window": {
+        "type": "object",
+        "properties": {
+          "start": { "type": "string", "format": "date-time" },
+          "end": { "type": "string", "format": "date-time" }
+        },
+        "description": "变更窗口（可选）"
+      }
+    }
+  },
+  "output": {
+    "type": "object",
+    "required": ["deploy_id", "status", "stages", "metadata"],
+    "properties": {
+      "deploy_id": {
+        "type": "string",
+        "description": "部署唯一 ID（UUID）"
+      },
+      "status": {
+        "type": "string",
+        "enum": ["pending", "running", "succeeded", "failed", "rolled_back"],
+        "description": "部署最终状态"
+      },
+      "stages": {
+        "type": "object",
+        "required": ["preflight", "build", "deploy", "verify", "post"],
+        "properties": {
+          "preflight": {
+            "type": "object",
+            "properties": {
+              "status": { "type": "string", "enum": ["succeeded", "failed", "skipped"] },
+              "duration_ms": { "type": "integer" },
+              "checks": { "type": "array" },
+              "artifacts": { "type": "object" }
+            }
+          },
+          "build": {
+            "type": "object",
+            "properties": {
+              "status": { "type": "string", "enum": ["succeeded", "failed", "skipped"] },
+              "duration_ms": { "type": "integer" },
+              "build_id": { "type": "string" },
+              "image_digest": { "type": "string" },
+              "artifacts": { "type": "object" }
+            }
+          },
+          "deploy": {
+            "type": "object",
+            "properties": {
+              "status": { "type": "string", "enum": ["succeeded", "failed", "skipped"] },
+              "duration_ms": { "type": "integer" },
+              "strategy_used": { "type": "string" },
+              "artifacts": { "type": "object" }
+            }
+          },
+          "verify": {
+            "type": "object",
+            "properties": {
+              "status": { "type": "string", "enum": ["succeeded", "failed", "skipped"] },
+              "duration_ms": { "type": "integer" },
+              "health_report": { "type": "object" },
+              "smoke_report": { "type": "object" },
+              "artifacts": { "type": "object" }
+            }
+          },
+          "post": {
+            "type": "object",
+            "properties": {
+              "status": { "type": "string", "enum": ["succeeded", "failed", "skipped"] },
+              "duration_ms": { "type": "integer" },
+              "artifacts": { "type": "object" }
+            }
+          }
+        }
+      },
+      "deployed_url": {
+        "type": "string",
+        "description": "部署后的服务 URL（可选）"
+      },
+      "rollback_available_until": {
+        "type": "string",
+        "format": "date-time",
+        "description": "可回滚截止时间（+7 天）"
+      },
+      "metadata": {
+        "type": "object",
+        "required": ["started_at", "completed_at", "total_duration_ms", "deployer"],
+        "properties": {
+          "started_at": { "type": "string", "format": "date-time" },
+          "completed_at": { "type": "string", "format": "date-time" },
+          "total_duration_ms": { "type": "integer" },
+          "deployer": { "type": "string", "description": "触发者飞书 user_id" },
+          "approver": { "type": "string", "description": "审批人飞书 user_id" },
+          "strategy_used": { "type": "string" }
+        }
+      }
+    }
+  }
+}

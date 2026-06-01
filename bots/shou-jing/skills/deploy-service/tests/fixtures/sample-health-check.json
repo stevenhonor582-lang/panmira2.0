@@ -1,0 +1,18 @@
+{
+  "url": "http://metabot-core.prod.svc",
+  "status": "healthy",
+  "liveness": "passed",
+  "readiness": "passed",
+  "checks": [
+    {"name": "liveness", "endpoint": "/healthz", "retries": 3, "status": "passed", "latency_ms": 12},
+    {"name": "readiness", "endpoint": "/readyz", "retries": 3, "status": "passed", "latency_ms": 25}
+  ],
+  "metrics": {
+    "error_rate": 0.0005,
+    "p99_latency_ms": 180,
+    "cpu_usage": 0.42,
+    "memory_usage": 0.61,
+    "qps": 1250
+  },
+  "duration_ms": 156
+}

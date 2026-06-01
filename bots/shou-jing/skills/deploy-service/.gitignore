@@ -1,0 +1,10 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Runtime artifacts
+state/*.json
+state/*.lock
+runs/

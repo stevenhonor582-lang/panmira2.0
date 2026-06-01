@@ -1,0 +1,22 @@
+{
+  "deploy_id": "deploy-1717248000000-a1b2c3d4",
+  "service": "metabot-core",
+  "environment": "prod",
+  "passed": true,
+  "fatal_count": 0,
+  "warning_count": 1,
+  "checks": [
+    {"id": "k8s.api", "category": "environment", "level": "fatal", "name": "K8s API 可达", "status": "passed", "message": "k8s-api.internal:6443 OK", "duration_ms": 120},
+    {"id": "namespace.exists", "category": "environment", "level": "fatal", "name": "namespace 存在", "status": "passed", "message": "ns=prod exists", "duration_ms": 80},
+    {"id": "rbac.deploy", "category": "permission", "level": "fatal", "name": "deploy RBAC", "status": "passed", "message": "deployer has deployments write", "duration_ms": 95},
+    {"id": "rbac.pods", "category": "permission", "level": "fatal", "name": "pods RBAC", "status": "passed", "message": "deployer has pods read", "duration_ms": 75},
+    {"id": "cpu.quota", "category": "resources", "level": "warning", "name": "CPU 配额", "status": "passed", "message": "65% used", "duration_ms": 110},
+    {"id": "disk.space", "category": "resources", "level": "fatal", "name": "磁盘空间", "status": "passed", "message": "12GB free", "duration_ms": 60},
+    {"id": "db.reachable", "category": "dependency", "level": "fatal", "name": "数据库可达", "status": "passed", "message": "postgres OK", "duration_ms": 200},
+    {"id": "cache.reachable", "category": "dependency", "level": "fatal", "name": "缓存可达", "status": "passed", "message": "redis OK", "duration_ms": 50},
+    {"id": "image.exists", "category": "artifact", "level": "fatal", "name": "镜像存在", "status": "passed", "message": "metabot-core v1.5.2 digest found", "duration_ms": 300},
+    {"id": "secrets.complete", "category": "artifact", "level": "fatal", "name": "secrets 完整", "status": "passed", "message": "db/api-key/tls all present", "duration_ms": 100},
+    {"id": "approval", "category": "compliance", "level": "fatal", "name": "审批状态", "status": "passed", "message": "approver cio_feishu_id approved", "duration_ms": 5},
+    {"id": "backup", "category": "compliance", "level": "fatal", "name": "备份可用", "status": "passed", "message": "last backup 1h ago", "duration_ms": 80}
+  ]
+}
