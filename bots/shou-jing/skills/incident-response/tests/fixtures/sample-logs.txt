@@ -1,0 +1,8 @@
+2026-06-01T10:23:01Z ERROR [mahubot-core] Connection pool exhausted (active=200, max=200)
+2026-06-01T10:23:05Z ERROR [mahubot-core] Database query timeout after 5s: SELECT * FROM orders WHERE user_id=123
+2026-06-01T10:23:08Z WARN  [mahubot-core] Slow request: /api/v1/users took 3.2s (p99=800ms)
+2026-06-01T10:23:12Z ERROR [mahubot-core] 5xx response from upstream mahubot-portal: 502 Bad Gateway
+2026-06-01T10:23:18Z ERROR [mahubot-core] Uncaught exception: TypeError: Cannot read property 'id' of null
+2026-06-01T10:23:22Z ERROR [mahubot-core] Database connection refused: ECONNREFUSED 10.0.1.5:5432
+2026-06-01T10:23:28Z WARN  [mahubot-core] Cache miss rate elevated: 45% (baseline 85%)
+2026-06-01T10:23:33Z ERROR [mahubot-core] Health check failed: /health returned 503

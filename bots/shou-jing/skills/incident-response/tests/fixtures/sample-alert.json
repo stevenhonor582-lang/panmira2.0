@@ -1,0 +1,13 @@
+{
+  "summary": "5xx 错误率飙升到 78%，影响核心 API",
+  "affected_service": "mahubot-core",
+  "error_rate": 78,
+  "p99_ms": 0,
+  "source": "prometheus",
+  "labels": {
+    "severity": "critical",
+    "env": "production",
+    "service": "mahubot-core"
+  },
+  "starts_at": "2026-06-01T10:23:00Z"
+}

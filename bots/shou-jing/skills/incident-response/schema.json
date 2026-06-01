@@ -1,0 +1,124 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://metabot.local/schemas/incident-response.v1.json",
+  "title": "IncidentResponseIO",
+  "input": {
+    "type": "object",
+    "required": ["summary", "affected_service"],
+    "properties": {
+      "alert": {
+        "type": "object",
+        "description": "告警信息（来自监控 webhook）",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": ["prometheus", "grafana", "sentry", "feishu_webhook", "user_report"],
+            "description": "告警来源"
+          },
+          "severity_hint": {
+            "type": "string",
+            "enum": ["critical", "warning", "info"],
+            "description": "原始告警严重度（用于辅助分级）"
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 500,
+            "description": "告警摘要"
+          },
+          "labels": {
+            "type": "object",
+            "additionalProperties": { "type": "string" },
+            "description": "告警 labels（service, env, ...）"
+          },
+          "starts_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "告警开始时间"
+          }
+        }
+      },
+      "manual_report": {
+        "type": "string",
+        "description": "用户人工报告文本（可选）"
+      },
+      "context": {
+        "type": "object",
+        "description": "已知上下文（可选）",
+        "properties": {
+          "recent_deploy": {
+            "type": "string",
+            "description": "最近一次部署 ID"
+          },
+          "user_impact_estimate": {
+            "type": "integer",
+            "description": "预估受影响用户数"
+          }
+        }
+      }
+    }
+  },
+  "output": {
+    "type": "object",
+    "required": ["incident_id", "severity", "classification", "recommended_actions", "metadata"],
+    "properties": {
+      "incident_id": {
+        "type": "string",
+        "description": "事故 UUID"
+      },
+      "severity": {
+        "type": "string",
+        "enum": ["P0", "P1", "P2", "P3"],
+        "description": "故障严重等级"
+      },
+      "classification": {
+        "type": "object",
+        "required": ["category", "affected_scope", "suspected_root_cause"],
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": ["service-down", "high-error-rate", "database-failure", "network-issue", "security-incident", "performance-degradation", "unknown"],
+            "description": "故障类型"
+          },
+          "affected_scope": {
+            "type": "string",
+            "description": "影响面描述"
+          },
+          "suspected_root_cause": {
+            "type": "string",
+            "description": "推测根因（基于症状+指标的初步判断）"
+          }
+        }
+      },
+      "matched_runbook": {
+        "type": "string",
+        "description": "匹配的 runbook 路径（references/runbooks/xxx.md）"
+      },
+      "recommended_actions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["action", "urgency", "owner"],
+          "properties": {
+            "action": { "type": "string", "description": "建议动作" },
+            "urgency": { "type": "string", "enum": ["immediate", "5min", "15min", "1h", "24h"] },
+            "owner": { "type": "string", "description": "负责 bot/人（shou-jing/bu-ying/xin-yan/...）" }
+          }
+        }
+      },
+      "war_room_channel": {
+        "type": "string",
+        "description": "战时飞书群链接（P0/P1 自动创建）"
+      },
+      "metadata": {
+        "type": "object",
+        "required": ["classified_at", "classifier_version", "confidence"],
+        "properties": {
+          "classified_at": { "type": "string", "format": "date-time" },
+          "classifier_version": { "type": "string", "description": "分级器版本（对应 skill version）" },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1, "description": "分级置信度，< 0.7 标记待人工复核" }
+        }
+      }
+    }
+  }
+}
