@@ -1,0 +1,8 @@
+{
+  "title": "Add user authentication middleware",
+  "author": "alice",
+  "base_sha": "abc1234",
+  "head_sha": "def5678",
+  "files_changed": ["src/auth.py", "tests/test_auth.py"],
+  "diff": "diff --git a/src/auth.py b/src/auth.py\nindex 1111111..2222222 100644\n--- a/src/auth.py\n+++ b/src/auth.py\n@@ -1,5 +1,15 @@\n import hashlib\n \n+def authenticate(username, password):\n+    user = db.query(f\"SELECT * FROM users WHERE name='{username}'\")\n+    if user and check_password(password, user.password_hash):\n+        return True\n+    return False\n+\n+def check_password(plain, hashed):\n+    return hashlib.sha256(plain.encode()).hexdigest() == hashed\n+\n def hash_password(password):\n     return hashlib.sha256(password.encode()).hexdigest()\n"
+}

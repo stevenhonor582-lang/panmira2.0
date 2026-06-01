@@ -1,0 +1,96 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://metabot.local/schemas/code-review.v1.json",
+  "title": "CodeReviewIO",
+  "input": {
+    "type": "object",
+    "required": ["pr_url"],
+    "properties": {
+      "pr_url": {
+        "type": "string",
+        "format": "uri",
+        "pattern": "^https://github\\.com/[\\w.-]+/[\\w.-]+/pull/\\d+",
+        "description": "GitHub PR URL（必填）"
+      },
+      "diff": {
+        "type": "string",
+        "description": "可选：直接传入 unified diff 字符串（不通过 PR URL 拉取时使用）"
+      },
+      "language": {
+        "type": "string",
+        "enum": ["typescript", "python", "go", "auto"],
+        "default": "auto",
+        "description": "目标语言（auto=从 diff 自动检测）"
+      },
+      "focus_areas": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": ["security", "performance", "readability", "testability", "architecture"]
+        },
+        "description": "评审重点（不指定则全维度）"
+      }
+    }
+  },
+  "output": {
+    "type": "object",
+    "required": ["report_markdown", "must_fix", "suggestions", "severity_summary", "metadata"],
+    "properties": {
+      "report_markdown": {
+        "type": "string",
+        "description": "完整评审报告（Markdown 格式）"
+      },
+      "must_fix": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["file", "line", "severity", "message"],
+          "properties": {
+            "file": { "type": "string" },
+            "line": { "type": "integer" },
+            "severity": { "type": "string", "enum": ["P0", "P1", "P2"] },
+            "message": { "type": "string" },
+            "rule": { "type": "string" }
+          }
+        },
+        "description": "必改项（必须处理才能合并）"
+      },
+      "suggestions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["file", "line", "severity", "message"],
+          "properties": {
+            "file": { "type": "string" },
+            "line": { "type": "integer" },
+            "severity": { "type": "string", "enum": ["P3", "INFO"] },
+            "message": { "type": "string" },
+            "rule": { "type": "string" }
+          }
+        },
+        "description": "建议项（锦上添花）"
+      },
+      "severity_summary": {
+        "type": "object",
+        "required": ["P0", "P1", "P2", "P3"],
+        "properties": {
+          "P0": { "type": "integer", "description": "阻断级（必须立即修）" },
+          "P1": { "type": "integer", "description": "严重（合并前必须修）" },
+          "P2": { "type": "integer", "description": "中等（建议修）" },
+          "P3": { "type": "integer", "description": "轻微（可选）" }
+        }
+      },
+      "metadata": {
+        "type": "object",
+        "required": ["pr_url", "files_reviewed", "lines_changed", "review_duration_ms", "confidence"],
+        "properties": {
+          "pr_url": { "type": "string" },
+          "files_reviewed": { "type": "integer" },
+          "lines_changed": { "type": "integer" },
+          "review_duration_ms": { "type": "integer" },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1, "description": "整体置信度，< 0.7 标记待人工复核" }
+        }
+      }
+    }
+  }
+}

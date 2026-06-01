@@ -1,0 +1,8 @@
+{
+  "title": "Refactor payment processing module",
+  "author": "bob",
+  "base_sha": "fff9999",
+  "head_sha": "aaa1111",
+  "files_changed": ["src/payment.py", "src/payment_utils.py", "config/payment.yaml"],
+  "diff": "diff --git a/src/payment.py b/src/payment.py\nindex 3333333..4444444 100644\n--- a/src/payment.py\n+++ b/src/payment.py\n@@ -1,10 +1,25 @@\n-API_KEY = \"sk_live_abcdef1234567890abcdef1234567890\"\n+API_KEY = os.environ.get(\"PAYMENT_API_KEY\")\n \n def process_payment(amount, card_number):\n-    # TODO: add error handling\n-    response = stripe.Charge.create(amount=amount, card=card_number, api_key=API_KEY)\n+    try:\n+        if amount <= 0:\n+            raise ValueError(\"amount must be positive\")\n+        response = stripe.Charge.create(\n+            amount=amount,\n+            source=card_number,\n+            api_key=API_KEY,\n+        )\n+        return response.id\n+    except stripe.error.CardError as e:\n+        logger.error(f\"card error: {e}\")\n+        return None\n+\n+def refund(payment_id):\n+    return stripe.Refund.create(charge=payment_id, api_key=API_KEY)\ndiff --git a/config/payment.yaml b/config/payment.yaml\nnew file mode 100644\nindex 0000000..5555555\n--- /dev/null\n+++ b/config/payment.yaml\n@@ -0,0 +1,3 @@\n+timeout: 30\n+retries: 3\n+currency: USD\n"
+}
