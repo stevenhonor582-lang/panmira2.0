@@ -779,11 +779,47 @@ export class MessageBridge {
     }
     if (agentRuntimeConfig && agentRuntimeConfig.orchestration.intents.length > 0) {
       this.logger.info({ chatId, agentId: this.config.agentId }, 'Using orchestrator flow');
-      // ── RAG: Retrieve relevant knowledge before execution ──
+
+      // ── Step 1: Clarification — ask structured questions if needed ──
+      if (this.clarificationMw) {
+        const intent = agentRuntimeConfig.orchestration.intents[0];
+        const targetSkill = intent.chain[0]?.skill || intent.name;
+        try {
+          let clarified = false;
+          await this.clarificationMw.handle(
+            { userId: msg.userId, botId: this.config.name, targetSkill, rawMessage: text || '', chatId },
+            async () => { clarified = true; },
+          );
+          if (!clarified) {
+            // Clarification card was sent — stop here, wait for user response
+            this.logger.info({ chatId, targetSkill }, 'Clarification in progress, waiting for user');
+            return;
+          }
+        } catch (err: any) {
+          this.logger.warn({ err: err?.message, targetSkill }, 'Clarification skipped due to error');
+        }
+      }
+
+      // ── Step 2: RAG — retrieve relevant knowledge ──
       const ragContext = await this.rag.retrieve(text || '', chatId, this.config.name);
       if (ragContext.sourceCount > 0) {
         this.logger.info({ chatId, sources: ragContext.sourceCount }, 'RAG context retrieved');
       }
+
+      // ── Step 3: Skill selection — match skills to intent ──
+      const selectedSkills = this.skillRouter.selectSkills(text || '');
+      const selectedNames = selectedSkills.map((s) => s.name);
+      if (selectedNames.length > 0) {
+        this.logger.info({ chatId, skills: selectedNames }, 'Skills selected for orchestration');
+        try {
+          const { deploySelectedSkills } = await import('../api/skills-installer.js');
+          deploySelectedSkills(cwd, selectedNames, this.logger);
+        } catch (err) {
+          this.logger.warn({ err }, 'Skill deployment failed, continuing with loaded skills');
+        }
+      }
+
+      // ── Step 4: Execute orchestration ──
       await this.executeWithOrchestrator(
         msg,
         agentRuntimeConfig,
@@ -794,7 +830,7 @@ export class MessageBridge {
       );
       return;
     }
-    }
+    }  // closes try-catch from knowledge context fetching
 
     // Dynamic skill deployment: select relevant skills for this query
     try {
