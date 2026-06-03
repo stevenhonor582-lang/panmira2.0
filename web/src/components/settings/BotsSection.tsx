@@ -184,7 +184,8 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
       const p = aiProviders.find((pr) => pr.id === matchedProviderId);
       if (p) {
         setSelectedProviderId(p.id);
-        setBotModel(p.model);
+        // Use bot's configured model, fall back to provider default
+        setBotModel(cfg.model || bot.model || p.model || '');
         setOaiBaseUrl(p.baseUrl);
         setOaiApiKey(p.apiKey || botApiKey);
       }
@@ -244,8 +245,8 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
     }
     const p = aiProviders.find((pr) => pr.id === providerId);
     if (p) {
-      setBotEngine('claude');
-      setBotModel(p.model);
+      // Preserve existing engine; only set model/baseUrl/apiKey from provider
+      setBotModel(p.model || botModel);
       setOaiBaseUrl(p.baseUrl);
       setOaiApiKey(p.apiKey);
     }
@@ -532,7 +533,7 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
           )}
           {selectedProvider && (
             <div className={styles.formHint} style={{ color: 'var(--accent)' }}>
-              {t('bots.modelInfo', { model: botModel, engine: botEngine })}
+              {t('bots.modelInfo', { model: botModel || '—', engine: botEngine || 'claude' })}
             </div>
           )}
         </div>
@@ -562,7 +563,7 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
                     {t('bots.noTemplate')}
                   </button>
                   {agents
-                    .filter((a) => a.templateType === "custom" || a.templateType === "standard" || (a as any).isTemplate)
+                    .filter((a) => a.templateType === "custom")
                     .filter((a) => !botAgentSearch || a.name.toLowerCase().includes(botAgentSearch.toLowerCase()) || (a.description || '').toLowerCase().includes(botAgentSearch.toLowerCase()))
                     .slice(0, 30)
                     .map((a) => (

@@ -67,27 +67,27 @@ export function getAgentCategoryLabel(key: string, t: (key: string) => string): 
 export const AGENT_CATEGORIES: Record<string, string> = AGENT_CATEGORY_KEYS;
 
 export function getBlankTemplatePrompt(t: (key: string) => string): string {
-  return `# \${t('agents.blankTitle')}
+  return `# ${t('agents.blankTitle')}
 
-## \${t('agents.blankCoreIdentity')}
-- **\${t('agents.blankRole')}:** \${t('agents.blankRoleDesc')}
-- **\${t('agents.blankPersonality')}:** \${t('agents.blankPersonalityDesc')}
-- **\${t('agents.blankCommStyle')}:** \${t('agents.blankCommStyleDesc')}
+## ${t('agents.blankCoreIdentity')}
+- **${t('agents.blankRole')}:** ${t('agents.blankRoleDesc')}
+- **${t('agents.blankPersonality')}:** ${t('agents.blankPersonalityDesc')}
+- **${t('agents.blankCommStyle')}:** ${t('agents.blankCommStyleDesc')}
 
-## \${t('agents.blankResponsibilities')}
-1. **\${t('agents.blankRespName')}**
-   - \${t('agents.blankTaskDesc')}
-   - \${t('agents.blankExpectedOutput')}
+## ${t('agents.blankResponsibilities')}
+1. **${t('agents.blankRespName')}**
+   - ${t('agents.blankTaskDesc')}
+   - ${t('agents.blankExpectedOutput')}
 
-## \${t('agents.blankGuidelines')}
-### \${t('agents.blankShould')}:
-- \${t('agents.blankPositiveBehavior')}
-### \${t('agents.blankShouldNot')}:
-- \${t('agents.blankProhibitedBehavior')}
+## ${t('agents.blankGuidelines')}
+### ${t('agents.blankShould')}:
+- ${t('agents.blankPositiveBehavior')}
+### ${t('agents.blankShouldNot')}:
+- ${t('agents.blankProhibitedBehavior')}
 
-## \${t('agents.blankExampleInteraction')}
-> \${t('agents.blankExampleUser')}
-> \${t('agents.blankExampleAgent')}`;
+## ${t('agents.blankExampleInteraction')}
+> ${t('agents.blankExampleUser')}
+> ${t('agents.blankExampleAgent')}`;
 }
 
 interface AgentsSectionProps {
@@ -111,7 +111,7 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
   const [agentEditView, setAgentEditView] = useState(false);
   const [agentSaving, setAgentSaving] = useState(false);
   const [agentError, setAgentError] = useState('');
-  const [agentTab, setAgentTab] = useState<'standard' | 'custom'>('standard');
+  const [agentTab, setAgentTab] = useState<'standard' | 'custom'>('custom');
   const [agentCategory, setAgentCategory] = useState('all');
   const [agentSearch, setAgentSearch] = useState('');
   const [agentPreviewId, setAgentPreviewId] = useState<string | null>(null);
