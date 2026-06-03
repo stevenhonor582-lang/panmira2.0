@@ -29,6 +29,7 @@ import { Orchestrator } from './orchestrator/index.js';
 import { StepExecutor } from './orchestrator/step-executor.js';
 import type { AgentRuntimeConfig } from './orchestrator/types.js';
 import { OutputArchiver } from './output-archiver.js';
+import { PanmiraRAG } from '../panmira/rag.js';
 import {
   TASK_TIMEOUT_MS,
   QUESTION_TIMEOUT_MS,
@@ -77,6 +78,7 @@ export class MessageBridge {
   private orchestrator: Orchestrator;
   private memoryWriter: MemoryWriter;
   private outputArchiver: OutputArchiver;
+  private rag: PanmiraRAG;
   private workspaceManager?: import('../memory/workspace-manager.js').WorkspaceManager;
 
   constructor(
@@ -100,6 +102,7 @@ export class MessageBridge {
     this.memoryClient = memoryClient;
     this.memoryWriter = new MemoryWriter(memoryClient, logger);
     this.outputArchiver = new OutputArchiver(memoryClient, logger);
+    this.rag = new PanmiraRAG(logger, { maxDocuments: 3, maxMemories: 2 });
 
     this.commandHandler = new CommandHandler(
       config,
@@ -773,6 +776,11 @@ export class MessageBridge {
     }
     if (agentRuntimeConfig && agentRuntimeConfig.orchestration.intents.length > 0) {
       this.logger.info({ chatId, agentId: this.config.agentId }, 'Using orchestrator flow');
+      // ── RAG: Retrieve relevant knowledge before execution ──
+      const ragContext = await this.rag.retrieve(text || '', chatId, this.config.name);
+      if (ragContext.sourceCount > 0) {
+        this.logger.info({ chatId, sources: ragContext.sourceCount }, 'RAG context retrieved');
+      }
       await this.executeWithOrchestrator(
         msg,
         agentRuntimeConfig,

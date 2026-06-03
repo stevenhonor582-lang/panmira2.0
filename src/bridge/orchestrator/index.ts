@@ -47,6 +47,7 @@ export class Orchestrator {
     cardMessageId: string,
     abortController: AbortController,
     getSender: (chatId?: string) => IMessageSender,
+    ragContext?: { formattedContext: string; sourceCount: number },
   ): Promise<OrchestrationResult> {
     const startTime = Date.now();
     const { chatId, text: userMessage } = msg;
