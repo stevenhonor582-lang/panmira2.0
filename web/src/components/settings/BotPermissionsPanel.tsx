@@ -300,7 +300,7 @@ export function BotPermissionsPanel({
           />
           禁止安装软件包 (npm/pip/apt)
         </label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, cursor: 'pointer', fontSize: 13 }}>
           <input
             type="checkbox"
             checked={perms.bashSafety?.blockNetworkOps === true}
@@ -309,6 +309,46 @@ export function BotPermissionsPanel({
             }
           />
           禁止网络操作 (curl/wget/ssh)
+        </label>
+
+        {/* Privileged command whitelist */}
+        <div style={{ marginBottom: 4 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)' }}>特权命令白名单</span>
+          <div className={styles.formHint} style={{ marginTop: 2, marginBottom: 6 }}>
+            勾选后允许执行对应的危险命令。仅授予可信的管理员角色。
+          </div>
+        </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, cursor: 'pointer', fontSize: 13 }}>
+          <input
+            type="checkbox"
+            checked={(perms.bashSafety?.permittedCommands || []).includes('sudo')}
+            onChange={(e) => {
+              updatePerms((p) => {
+                const prev = p.bashSafety?.permittedCommands || [];
+                const next = e.target.checked
+                  ? [...new Set([...prev, 'sudo'])]
+                  : prev.filter((c) => c !== 'sudo');
+                return { ...p, bashSafety: { ...p.bashSafety, permittedCommands: next } };
+              });
+            }}
+          />
+          允许 sudo
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+          <input
+            type="checkbox"
+            checked={(perms.bashSafety?.permittedCommands || []).includes('pm2 process control')}
+            onChange={(e) => {
+              updatePerms((p) => {
+                const prev = p.bashSafety?.permittedCommands || [];
+                const next = e.target.checked
+                  ? [...new Set([...prev, 'pm2 process control'])]
+                  : prev.filter((c) => c !== 'pm2 process control');
+                return { ...p, bashSafety: { ...p.bashSafety, permittedCommands: next } };
+              });
+            }}
+          />
+          允许 pm2 进程管理 (restart/stop/delete/kill)
         </label>
       </div>
 
@@ -336,7 +376,7 @@ export function BotPermissionsPanel({
           保护系统配置 (禁止修改 metabot 源码)
         </label>
         <div className={styles.formHint} style={{ marginTop: 6 }}>
-          此外，始终禁止: sudo、rm -rf /、chmod 777、dd、mkfs 等危险命令，以及写入 /etc/ 和 ~/metabot/src/ 等系统路径。
+          默认禁止: rm -rf /、chmod 777、dd、mkfs 等危险命令，以及写入 /etc/ 和 ~/metabot/src/ 等系统路径。sudo 和 pm2 可通过上方「特权命令白名单」单独开放。
         </div>
       </div>
     </SlideOverPanel>

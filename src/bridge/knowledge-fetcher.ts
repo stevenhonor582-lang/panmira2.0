@@ -48,12 +48,6 @@ export async function fetchKnowledgeContext(
       }
       if (Array.isArray(result.rows[0]?.skills)) {
         agentBoundSkills = result.rows[0].skills;
-      } else if (typeof result.rows[0]?.skills === 'string') {
-        try {
-          agentBoundSkills = JSON.parse(result.rows[0].skills);
-        } catch {
-          /* ignore */
-        }
       }
     } catch (err: any) {
       deps.logger.debug({ err: err?.message }, 'Agent lookup failed, using config systemPrompt');

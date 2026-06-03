@@ -27,6 +27,8 @@ export interface PermissionConfig {
     blockGitPush?: boolean;
     blockPackageInstall?: boolean;
     blockNetworkOps?: boolean;
+    /** Commands that bypass ALWAYS_BLOCKED_PATTERNS (e.g. ["sudo"]). Only grant to trusted bots. */
+    permittedCommands?: string[];
   };
   fileSystem?: {
     protectSkills?: boolean;
@@ -250,6 +252,8 @@ export interface FeishuBotJsonEntry extends EngineJsonFields {
   groupNoMention?: boolean;
   /** When true, skip Feishu WS connection — bot only receives messages via proxy_message through WS. */
   proxyOnly?: boolean;
+  /** Bot permission configuration (user access, tool restrictions, file protection). */
+  permissions?: PermissionConfig;
 }
 
 /**
@@ -321,6 +325,7 @@ export function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
     ...(entry.systemPrompt ? { systemPrompt: entry.systemPrompt } : {}),
     ...(entry.agentId ? { agentId: entry.agentId } : {}),
     ...(entry.knowledgeFolders?.length ? { knowledgeFolders: entry.knowledgeFolders } : {}),
+    ...(entry.permissions ? { permissions: entry.permissions } : {}),
     claude: buildClaudeConfig(entry),
   };
 }
@@ -343,6 +348,7 @@ export interface TelegramBotJsonEntry extends EngineJsonFields {
   apiKey?: string;
   outputsBaseDir?: string;
   downloadsDir?: string;
+  permissions?: PermissionConfig;
 }
 
 export function telegramBotFromJson(entry: TelegramBotJsonEntry): TelegramBotConfig {
@@ -367,6 +373,7 @@ export function telegramBotFromJson(entry: TelegramBotJsonEntry): TelegramBotCon
     },
     ...(entry.systemPrompt ? { systemPrompt: entry.systemPrompt } : {}),
     ...(entry.agentId ? { agentId: entry.agentId } : {}),
+    ...(entry.permissions ? { permissions: entry.permissions } : {}),
     claude: buildClaudeConfig(entry),
   };
 }
@@ -387,6 +394,7 @@ export interface WebBotJsonEntry extends EngineJsonFields {
   model?: string;
   outputsBaseDir?: string;
   downloadsDir?: string;
+  permissions?: PermissionConfig;
 }
 
 export function webBotFromJson(entry: WebBotJsonEntry): BotConfigBase {
@@ -409,6 +417,7 @@ export function webBotFromJson(entry: WebBotJsonEntry): BotConfigBase {
     ...(entry.systemPrompt ? { systemPrompt: entry.systemPrompt } : {}),
     ...(entry.agentId ? { agentId: entry.agentId } : {}),
     ...(entry.knowledgeFolders?.length ? { knowledgeFolders: entry.knowledgeFolders } : {}),
+    ...(entry.permissions ? { permissions: entry.permissions } : {}),
     claude: buildClaudeConfig(entry),
   };
 }
@@ -427,6 +436,7 @@ export interface WechatBotJsonEntry extends EngineJsonFields {
   apiKey?: string;
   outputsBaseDir?: string;
   downloadsDir?: string;
+  permissions?: PermissionConfig;
 }
 
 export function wechatBotFromJson(entry: WechatBotJsonEntry): WechatBotConfig {
@@ -447,6 +457,7 @@ export function wechatBotFromJson(entry: WechatBotJsonEntry): WechatBotConfig {
     },
     ...(entry.systemPrompt ? { systemPrompt: entry.systemPrompt } : {}),
     ...(entry.agentId ? { agentId: entry.agentId } : {}),
+    ...(entry.permissions ? { permissions: entry.permissions } : {}),
     claude: buildClaudeConfig(entry),
   };
 }

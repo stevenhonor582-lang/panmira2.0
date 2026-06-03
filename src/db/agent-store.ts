@@ -13,6 +13,9 @@ export interface AgentTemplate {
   category: string;
   templateType: 'standard' | 'custom';
   sourceTemplateId: string | null;
+  orchestration: any;
+  boundary: any;
+  ironLaws: string[];
   knowledgeFolders: string[];
   skills: string[];
   createdAt: Date;
@@ -172,6 +175,9 @@ export class AgentStore {
       knowledgeFolders:
         typeof row.knowledge_folders === 'string' ? JSON.parse(row.knowledge_folders) : row.knowledge_folders || [],
       skills: typeof row.skills === 'string' ? JSON.parse(row.skills) : row.skills || [],
+      orchestration: typeof row.orchestration === 'string' ? JSON.parse(row.orchestration) : row.orchestration || {},
+      boundary: typeof row.boundary === 'string' ? JSON.parse(row.boundary) : row.boundary || {},
+      ironLaws: typeof row.iron_laws === 'string' ? JSON.parse(row.iron_laws) : row.iron_laws || [],
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };

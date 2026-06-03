@@ -24,6 +24,10 @@ import { SkillRouter } from '../skills/skill-router.js';
 import { deploySelectedSkills } from '../api/skills-installer.js';
 import { CONTEXT_USAGE_THRESHOLD } from './context-manager.js';
 import { MemoryWriter } from './memory-writer.js';
+import { ConfigReader } from './orchestrator/config-reader.js';
+import { Orchestrator } from './orchestrator/index.js';
+import { StepExecutor } from './orchestrator/step-executor.js';
+import type { AgentRuntimeConfig } from './orchestrator/types.js';
 import { OutputArchiver } from './output-archiver.js';
 import {
   TASK_TIMEOUT_MS,
@@ -69,6 +73,8 @@ export class MessageBridge {
   /** Callback for activity lifecycle events (task started/completed/failed). */
   onActivityEvent?: (event: ActivityEventData) => void;
   private skillRouter: SkillRouter;
+  private configReader: ConfigReader;
+  private orchestrator: Orchestrator;
   private memoryWriter: MemoryWriter;
   private outputArchiver: OutputArchiver;
   private workspaceManager?: import('../memory/workspace-manager.js').WorkspaceManager;
@@ -110,6 +116,10 @@ export class MessageBridge {
 
     const isFeishu = !!(config as any).feishu;
     this.skillRouter = new SkillRouter(isFeishu ? 'feishu' : 'all');
+
+    this.configReader = new ConfigReader(logger);
+    const stepExecutor = new StepExecutor(this.engineCache, logger, config);
+    this.orchestrator = new Orchestrator(stepExecutor, this.memoryClient, logger);
   }
 
   /** Emit an activity event if a listener is registered. */
@@ -755,6 +765,24 @@ export class MessageBridge {
         ? `${knowledgeContext}\n\n## 前次会话摘要\n${pendingSummary}`
         : `## 前次会话摘要\n${pendingSummary}`;
       this.logger.info({ chatId, summaryLen: pendingSummary.length }, 'Injected pre-reset summary');
+
+    // Orchestrator branch: if agent has orchestration config, use code-driven flow
+    let agentRuntimeConfig: AgentRuntimeConfig | null = null;
+    if (this.config.agentId) {
+      agentRuntimeConfig = await this.configReader.readFromAgent(this.config.agentId);
+    }
+    if (agentRuntimeConfig && agentRuntimeConfig.orchestration.intents.length > 0) {
+      this.logger.info({ chatId, agentId: this.config.agentId }, 'Using orchestrator flow');
+      await this.executeWithOrchestrator(
+        msg,
+        agentRuntimeConfig,
+        cwd,
+        outputsDir,
+        messageId,
+        abortController,
+      );
+      return;
+    }
     }
 
     // Dynamic skill deployment: select relevant skills for this query
@@ -2175,6 +2203,62 @@ export class MessageBridge {
     const botRoot = await this.memoryClient.ensureFolder(botName, empRoot);
     if (!botRoot) return null;
     return await this.memoryClient.ensureFolder('知识沉淀', botRoot);
+  }
+
+  private async executeWithOrchestrator(
+    msg: IncomingMessage,
+    agentConfig: AgentRuntimeConfig,
+    cwd: string,
+    outputsDir: string,
+    cardMessageId: string,
+    abortController: AbortController,
+  ): Promise<void> {
+    const result = await this.orchestrator.execute(
+      msg,
+      agentConfig,
+      cwd,
+      outputsDir,
+      cardMessageId,
+      abortController,
+      (chatId) => this.getSender(chatId),
+    );
+
+    this.audit.log({
+      event: result.success ? "task_complete" : "task_error",
+      botName: this.config.name,
+      chatId: msg.chatId,
+      userId: msg.userId,
+      meta: {
+        intent: result.progress.intentName,
+        totalSteps: result.progress.totalSteps,
+        totalCostUsd: result.totalCostUsd,
+        totalDurationMs: result.totalDurationMs,
+      },
+    });
+
+    const lastResult = result.progress.steps[result.progress.steps.length - 1]?.result;
+    if (lastResult) {
+      const finalState = {
+        status: result.success ? "complete" as const : "error" as const,
+        userPrompt: msg.text || "",
+        responseText: result.success
+          ? `✅ 编排完成: ${result.progress.intentName} (${result.progress.totalSteps}步, 费用: $${result.totalCostUsd.toFixed(4)})`
+          : `❌ 编排失败: ${result.error || "未知错误"}`,
+        toolCalls: [],
+        costUsd: result.totalCostUsd,
+        durationMs: result.totalDurationMs,
+      };
+      await this.sendFinalCard(cardMessageId, finalState, msg.chatId);
+    }
+
+    this.emitActivity({
+      type: result.success ? "task_completed" : "task_failed",
+      botName: this.config.name,
+      chatId: msg.chatId,
+      userId: msg.userId,
+      prompt: msg.text?.slice(0, 200),
+      timestamp: Date.now(),
+    });
   }
 
 

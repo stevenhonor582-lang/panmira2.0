@@ -195,7 +195,7 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
     }
 
     // 5. Template — from DB templateId, look up agent name
-    const templateId = cfg.templateId || '';
+    const templateId = cfg.agentId || '';
     setSelectedTemplateId(templateId);
     if (templateId) {
       const agent = loadedAgents.find((a: any) => a.id === templateId);
@@ -348,9 +348,9 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
       if (feishuAppSecret.trim()) body.feishuAppSecret = feishuAppSecret.trim();
     }
     if (selectedTemplateId) {
-      body.templateId = selectedTemplateId;
+      body.agentId = selectedTemplateId;
     } else {
-      body.templateId = '';
+      body.agentId = '';
       if (botSystemPrompt.trim()) body.systemPrompt = botSystemPrompt.trim();
     }
     try {

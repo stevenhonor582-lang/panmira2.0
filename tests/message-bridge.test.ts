@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isStaleSessionError } from '../src/bridge/message-bridge.js';
+import { isStaleSessionError } from '../src/bridge/bridge-types.js';
 
 describe('isStaleSessionError', () => {
   it('matches the GitHub issue error text', () => {

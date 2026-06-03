@@ -50,5 +50,5 @@ export enum Intent {
   ADMIN = 'ADMIN',
 }
 
-export const EMBEDDING_DIMENSION = 1536;
+export const EMBEDDING_DIMENSION = 1024;
 export const DEFAULT_SIMILARITY_THRESHOLD = 0.6;

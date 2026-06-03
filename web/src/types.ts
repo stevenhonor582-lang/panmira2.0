@@ -219,6 +219,7 @@ export interface PermissionConfig {
     blockGitPush?: boolean;
     blockPackageInstall?: boolean;
     blockNetworkOps?: boolean;
+    permittedCommands?: string[];
   };
   fileSystem?: {
     protectSkills?: boolean;

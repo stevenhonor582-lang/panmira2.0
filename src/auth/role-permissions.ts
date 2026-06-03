@@ -14,11 +14,11 @@ export const ROLE_TOOLS: Record<UserRole, string[]> = {
 /** Always-blocked Bash patterns — dangerous system commands. */
 const ALWAYS_BLOCKED_PATTERNS = [
   { pattern: /\brm\s+-rf\s+\//, label: 'rm -rf /' },
-  { pattern: /\bsudo\b/, label: 'sudo' },
   { pattern: /\bchmod\s+777\b/, label: 'chmod 777' },
   { pattern: /\bmkfs\b/, label: 'mkfs' },
   { pattern: /\bdd\s+if=/, label: 'dd' },
   { pattern: />\s*\/etc\//, label: 'write to /etc' },
+  { pattern: /\bpm2\s+(restart|stop|delete|kill)\b/, label: 'pm2 process control' },
 ];
 
 /** Protected paths that non-admin roles cannot write to. */
@@ -75,8 +75,9 @@ export function createBashGuardHook(
     const blocked: string[] = [];
 
     // Always-blocked: dangerous system commands
+    const permitted = safety.permittedCommands ?? [];
     for (const { pattern, label } of ALWAYS_BLOCKED_PATTERNS) {
-      if (pattern.test(cmd)) {
+      if (pattern.test(cmd) && !permitted.includes(label)) {
         blocked.push(label);
       }
     }

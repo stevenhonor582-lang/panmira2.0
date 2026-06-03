@@ -31,12 +31,13 @@ describe('OutputsManager', () => {
       expect(dir).toBe(path.join(tmpDir, 'chat-123'));
     });
 
-    it('keeps recent files in existing directory', () => {
+    it('clears existing files from previous tasks', () => {
       const dir = manager.prepareDir('chat-123');
       fs.writeFileSync(path.join(dir, 'recent.txt'), 'recent content');
       const dir2 = manager.prepareDir('chat-123');
-      // Recent files should be preserved (within retention window)
-      expect(fs.readdirSync(dir2)).toContain('recent.txt');
+      // prepareDir removes all files from previous tasks so scanOutputs only returns current-task files
+      const contents = fs.readdirSync(dir2);
+      expect(contents).not.toContain('recent.txt');
     });
 
     it('removes old files beyond retention window', () => {

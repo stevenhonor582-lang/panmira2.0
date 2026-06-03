@@ -18,7 +18,15 @@ function resolveClaudePath(): string {
   if (process.env.CLAUDE_EXECUTABLE_PATH) return process.env.CLAUDE_EXECUTABLE_PATH;
   try {
     const cmd = isWindows ? 'where claude' : 'which claude';
-    return execSync(cmd, { encoding: 'utf-8' }).trim().split(/\r?\n/)[0];
+    const resolved = execSync(cmd, { encoding: 'utf-8' }).trim().split(/\r?\n/)[0];
+    if (resolved && fs.existsSync(resolved)) return resolved;
+    if (resolved) {
+      try {
+        const real = fs.realpathSync(resolved);
+        if (fs.existsSync(real)) return real;
+      } catch {}
+    }
+    return resolved;
   } catch {
     return isWindows ? 'claude' : '/usr/local/bin/claude';
   }

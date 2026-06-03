@@ -6,6 +6,9 @@
 import type { MemoryClient } from '../memory/memory-client.js';
 import type { Logger } from '../utils/logger.js';
 import type { WorkspaceManager } from '../memory/workspace-manager.js';
+import { MemoryManager } from '../memory-engine/memory-manager.js';
+import { PostgresStore } from '../memory-engine/storage/postgres-store.js';
+import { DocEmbedder } from '../memory/doc-embedder.js';
 
 const RATE_LIMIT_MS = 10 * 60 * 1000; // 10 minutes per chat
 const MAX_CACHE_SIZE = 100;
@@ -14,6 +17,7 @@ export class MemoryWriter {
   private folderCache = new Map<string, string>();
   private lastRecordTime = new Map<string, number>();
   private workspaceManager?: WorkspaceManager;
+  private memoryManager: MemoryManager | null = null;
 
   constructor(
     private memoryClient: MemoryClient,
@@ -22,6 +26,19 @@ export class MemoryWriter {
 
   setWorkspaceManager(wm: WorkspaceManager): void {
     this.workspaceManager = wm;
+  }
+
+  private getMemoryManager(): MemoryManager | null {
+    if (this.memoryManager) return this.memoryManager;
+    try {
+      const embedder = new DocEmbedder(this.logger);
+      const storage = new PostgresStore();
+      this.memoryManager = new MemoryManager(storage, embedder);
+      return this.memoryManager;
+    } catch (err: any) {
+      this.logger.warn({ err: err?.message }, 'Failed to init MemoryManager');
+      return null;
+    }
   }
 
   /**
@@ -62,6 +79,12 @@ export class MemoryWriter {
           tags,
           created_by: botName,
         });
+      }
+
+      // Also write to vector memory engine (fire-and-forget)
+      const mm = this.getMemoryManager();
+      if (mm) {
+        mm.store(content, metadata.userId ?? 'anonymous', 'default', { agentId: botName }).catch(() => {});
       }
 
       this.logger.debug({ botName, chatId: metadata.chatId }, 'Conversation memory recorded');
