@@ -343,6 +343,19 @@ export async function startApiServer(options: ApiServerOptions): Promise<http.Se
         return;
       }
 
+      // POST /api/internal/alert — PM2 crash alert endpoint (internal)
+      if (method === 'POST' && url === '/api/internal/alert') {
+        const raw = await readBody(req);
+        try {
+          const alert = JSON.parse(raw);
+          logger.error({ alert }, 'PM2 crash alert received');
+          jsonResponse(res, 200, { received: true });
+        } catch {
+          jsonResponse(res, 400, { error: 'Invalid JSON' });
+        }
+        return;
+      }
+
       // POST /api/test-provider — test an AI provider connection
       if (method === 'POST' && url === '/api/test-provider') {
         try {

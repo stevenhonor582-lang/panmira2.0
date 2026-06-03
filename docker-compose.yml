@@ -1,6 +1,39 @@
 version: "3.8"
 
 services:
+  # ── PostgreSQL ──
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: metabot
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-metabot}
+      POSTGRES_DB: metabot
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U metabot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ──
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ── MetaBot ──
   metabot:
     build: .
     restart: unless-stopped
@@ -8,19 +41,37 @@ services:
       - "${API_PORT:-9100}:9100"
     env_file: .env
     environment:
-      - META_MEMORY_URL=http://localhost:8100
-      - MEMORY_ENABLED=true
-      - MEMORY_PORT=8100
-      - MEMORY_DATABASE_DIR=/app/data
+      - DATABASE_URL=postgresql://metabot:${DB_PASSWORD:-metabot}@postgres:5432/metabot
+      - REDIS_URL=redis://redis:6379
+      - NODE_ENV=production
     volumes:
-      # Persist MetaMemory database
       - metabot-data:/app/data
-      # Persist Claude auth (run `claude login` inside container first)
-      - claude-config:/root/.claude
-      # Mount working directory for Claude to operate on
-      - ${CLAUDE_DEFAULT_WORKING_DIRECTORY:-.}:/workspace
-    working_dir: /app
+      - ${CLAUDE_WORKDIR:-./workspace}:/workspace
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f -H 'Authorization: Bearer ${API_SECRET}' http://localhost:9100/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start-period: 20s
+      retries: 3
+
+  # ── MetaMemory (optional, uncomment if needed) ──
+  # metamemory:
+  #   image: ghcr.io/xvirobotics/metamemory:latest
+  #   restart: unless-stopped
+  #   ports:
+  #     - "127.0.0.1:8100:8100"
+  #   volumes:
+  #     - memory-data:/app/data
+  #   environment:
+  #     - MEMORY_ADMIN_TOKEN=${MEMORY_ADMIN_TOKEN}
 
 volumes:
+  pgdata:
+  redisdata:
   metabot-data:
-  claude-config:
+  # memory-data:
