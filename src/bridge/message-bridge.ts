@@ -774,8 +774,12 @@ export class MessageBridge {
 
     // Orchestrator branch: if agent has orchestration config, use code-driven flow
     let agentRuntimeConfig: AgentRuntimeConfig | null = null;
+    this.logger.info({ agentId: this.config.agentId, botName: this.config.name }, '[DIAG] Checking orchestrator eligibility');
     if (this.config.agentId) {
       agentRuntimeConfig = await this.configReader.readFromAgent(this.config.agentId);
+      this.logger.info({ agentId: this.config.agentId, found: !!agentRuntimeConfig, hasIntents: agentRuntimeConfig?.orchestration?.intents?.length }, '[DIAG] Agent config loaded');
+    } else {
+      this.logger.warn({ botName: this.config.name }, '[DIAG] No agentId configured — skipping orchestrator');
     }
     if (agentRuntimeConfig && agentRuntimeConfig.orchestration.intents.length > 0) {
       this.logger.info({ chatId, agentId: this.config.agentId }, 'Using orchestrator flow');
