@@ -756,6 +756,14 @@ ${content}
     };
   }
 
+  server.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      logger.error({ port, host }, 'Port already in use — is another instance running?');
+      process.exit(1);
+    }
+    throw err;
+  });
+
   server.listen(port, host, () => {
     logger.info({ host, port }, 'API server started');
   });

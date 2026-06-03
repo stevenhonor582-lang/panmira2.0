@@ -862,7 +862,7 @@ ${knowledgeContext}`
 
     // Dynamic skill deployment
     try {
-      const selectedSkills = this.skillRouter.selectSkills(text || '');
+      const selectedSkills = this.skillRouter.selectSkills(text || '', this.config.name);
       const selectedNames = selectedSkills.map((s) => s.name);
       const mergedNames = [...new Set([...selectedNames, ...agentBoundSkills])];
       deploySelectedSkills(cwd, mergedNames, this.logger);
@@ -1515,7 +1515,7 @@ ${knowledgeContext}`
 
     // Dynamic skill deployment for API tasks (merge with agent-bound skills)
     try {
-      const selectedSkills = this.skillRouter.selectSkills(prompt);
+      const selectedSkills = this.skillRouter.selectSkills(prompt, this.config.name);
       const selectedNames = selectedSkills.map((s) => s.name);
       const mergedNames = [...new Set([...selectedNames, ...apiAgentBoundSkills])];
       deploySelectedSkills(cwd, mergedNames, this.logger);

@@ -29,6 +29,7 @@ module.exports = {
       max_restarts: 10,
       min_uptime: '10s',
       restart_delay: 3000,
+      kill_timeout: 10000,
 
       error_file: path.join(__dirname, 'logs', 'error.log'),
       out_file: path.join(__dirname, 'logs', 'out.log'),

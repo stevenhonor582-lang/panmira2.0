@@ -3,10 +3,46 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as url from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { pool } from '../db/index.js';
 import type { Logger } from '../utils/logger.js';
 import { SKILL_REGISTRY } from '../skills/skill-registry.js';
 
 /** Skills installed for all platforms. */
+
+/** Check if a bot has admin privileges (can manage global skills). */
+export async function isAdminBot(botName: string): Promise<boolean> {
+  try {
+    const { rows } = await pool.query(
+      `SELECT config_json->'permissions'->>'isAdminBot' as is_admin FROM bot_configs WHERE name = $1`,
+      [botName],
+    );
+    if (rows.length === 0) return false;
+    return rows[0].is_admin === 'true';
+  } catch {
+    return false;
+  }
+}
+
+/** Install a skill and record the bot-skill binding. */
+export async function installSkillWithBinding(
+  skillName: string,
+  botName: string,
+  scope: 'global' | 'bot',
+  logger: { info: (obj: any, msg: string) => void; warn: (obj: any, msg: string) => void },
+): Promise<void> {
+  try {
+    await pool.query(
+      `INSERT INTO bot_skill_bindings (bot_name, skill_name, enabled)
+       VALUES ($1, $2, true)
+       ON CONFLICT (bot_name, skill_name) DO UPDATE SET enabled = true, installed_at = now()`,
+      [botName, skillName],
+    );
+    logger.info({ skillName, botName, scope }, 'Skill binding created');
+  } catch (err: any) {
+    logger.warn({ err: err?.message, skillName, botName }, 'Failed to create skill binding');
+  }
+}
+
 const COMMON_SKILLS = ['metaskill', 'metamemory', 'panmira', 'phone-call', 'skill-hub'];
 
 /** Lark CLI AI Agent skills — installed via `npx skills add larksuite/cli` and

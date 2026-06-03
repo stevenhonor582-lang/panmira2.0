@@ -14,6 +14,10 @@ export interface SkillMeta {
   category: 'system' | 'communication' | 'productivity' | 'knowledge' | 'voice' | 'admin';
   platform: 'all' | 'feishu';
   alwaysLoad?: boolean;
+  /** Skill scope: 'global' = available to all bots, 'bot' = private to a single bot */
+  scope?: 'global' | 'bot';
+  /** Bot that owns this skill (only for scope='bot') */
+  ownerBot?: string;
 }
 
 /** Hardcoded skills with known routing metadata. */

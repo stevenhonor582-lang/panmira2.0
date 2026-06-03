@@ -1,9 +1,11 @@
 /**
  * Skill Router — selects relevant skills based on user message content.
  * Uses keyword matching against the Skill Registry to pick top-k skills.
+ * Now respects bot-level skill bindings (enable/disable) and scope.
  */
 
 import { SKILL_REGISTRY, type SkillMeta } from './skill-registry.js';
+import { pool } from '../db/index.js';
 
 const MAX_DYNAMIC_SKILLS = 5;
 
@@ -14,9 +16,9 @@ export class SkillRouter {
     this.platform = platform === 'feishu' ? 'feishu' : 'all';
   }
 
-  /** Select skills relevant to the given user message. */
-  selectSkills(userMessage: string): SkillMeta[] {
-    const available = SKILL_REGISTRY.filter((s) => s.platform === 'all' || s.platform === this.platform);
+  /** Select skills relevant to the given user message and bot. */
+  selectSkills(userMessage: string, botName?: string): SkillMeta[] {
+    const available = this.getAvailableForBot(botName);
 
     // Always-load skills
     const alwaysLoad = available.filter((s) => s.alwaysLoad);
@@ -32,7 +34,7 @@ export class SkillRouter {
       let score = 0;
       for (const trigger of skill.triggers) {
         if (msgLower.includes(trigger.toLowerCase())) {
-          score += trigger.length; // longer matches score higher
+          score += trigger.length;
         }
       }
       if (score > 0) {
@@ -40,11 +42,51 @@ export class SkillRouter {
       }
     }
 
-    // Sort by score descending, take top-k
     scored.sort((a, b) => b.score - a.score);
     const dynamic = scored.slice(0, MAX_DYNAMIC_SKILLS).map((s) => s.skill);
 
     return [...alwaysLoad, ...dynamic];
+  }
+
+  /**
+   * Get skill names that are enabled for a specific bot.
+   * Falls back to all global skills if no bindings exist (new bot).
+   */
+  async getEnabledSkillNames(botName: string): Promise<Set<string>> {
+    try {
+      const { rows } = await pool.query(
+        `SELECT skill_name FROM bot_skill_bindings WHERE bot_name = $1 AND enabled = true`,
+        [botName],
+      );
+      if (rows.length > 0) {
+        return new Set(rows.map((r: any) => r.skill_name));
+      }
+    } catch {
+      // Table might not exist yet — fall through to default
+    }
+    // New bot with no bindings: default to all global skills
+    return new Set(
+      SKILL_REGISTRY
+        .filter((s) => (!s.scope || s.scope === 'global') && (s.platform === 'all' || s.platform === this.platform))
+        .map((s) => s.name),
+    );
+  }
+
+  /** Get skills available to a specific bot, considering scope and bindings. */
+  private getAvailableForBot(botName?: string): SkillMeta[] {
+    const platformMatch = SKILL_REGISTRY.filter(
+      (s) => s.platform === 'all' || s.platform === this.platform,
+    );
+
+    if (!botName) {
+      // No bot context — return global skills only
+      return platformMatch.filter((s) => !s.scope || s.scope === 'global');
+    }
+
+    // Include: global skills + bot-private skills owned by this bot
+    return platformMatch.filter(
+      (s) => !s.scope || s.scope === 'global' || (s.scope === 'bot' && s.ownerBot === botName),
+    );
   }
 
   /** Get names of all skills that should be staged (for pre-loading). */
@@ -62,7 +104,7 @@ export class SkillRouter {
     const lines = available.map((s) => `- **${s.name}**: ${s.summary}`);
     return [
       '## Available Skills (summary only)\n',
-      'The following skills are available but not fully loaded. If the user asks about these capabilities, note that they exist but require the full skill to be loaded.',
+      'The following skills are available but not fully loaded.',
       '',
       ...lines,
     ].join('\n');
