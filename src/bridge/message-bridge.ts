@@ -30,6 +30,7 @@ import { ConfigReader } from './orchestrator/config-reader.js';
 import { Orchestrator } from './orchestrator/index.js';
 import { StepExecutor } from './orchestrator/step-executor.js';
 import type { AgentRuntimeConfig } from './orchestrator/types.js';
+import { matchIntent } from './orchestrator/intent-resolver.js';
 import { OutputArchiver } from './output-archiver.js';
 import { PanmiraRAG } from '../panmira/rag.js';
 import {
@@ -783,13 +784,20 @@ export class MessageBridge {
     } else {
       this.logger.warn({ botName: this.config.name }, '[DIAG] No agentId configured — skipping orchestrator');
     }
+    // ── Intent pre-check: match before routing ──
+    let matchedIntent: import('./orchestrator/types.js').IntentDefinition | null = null;
     if (agentRuntimeConfig && agentRuntimeConfig.orchestration.intents.length > 0) {
-      this.logger.info({ chatId, agentId: this.config.agentId }, 'Using orchestrator flow');
+      matchedIntent = matchIntent(text || '', agentRuntimeConfig.orchestration.intents);
+      this.logger.info({ chatId, matched: matchedIntent?.name || 'none', userMsg: (text || '').slice(0, 80) }, 'Intent pre-check result');
+    }
 
-      // ── Step 1: Clarification — ask structured questions if needed ──
+    // ── PATH A: Intent matched with valid chain → orchestration ──
+    if (matchedIntent && matchedIntent.chain.length > 0) {
+      this.logger.info({ chatId, intent: matchedIntent.name, chainSteps: matchedIntent.chain.length }, 'PATH A: orchestration');
+
+      // Clarification for matched intent
       if (this.clarificationMw) {
-        const intent = agentRuntimeConfig.orchestration.intents[0];
-        const targetSkill = intent.chain[0]?.skill || intent.name;
+        const targetSkill = matchedIntent.chain[0]?.skill || matchedIntent.name;
         try {
           let clarified = false;
           await this.clarificationMw.handle(
@@ -797,7 +805,6 @@ export class MessageBridge {
             async () => { clarified = true; },
           );
           if (!clarified) {
-            // Clarification card was sent — stop here, wait for user response
             this.logger.info({ chatId, targetSkill }, 'Clarification in progress, waiting for user');
             return;
           }
@@ -806,44 +813,54 @@ export class MessageBridge {
         }
       }
 
-      // ── Step 2: RAG — retrieve relevant knowledge ──
+      // RAG context retrieval
       const ragContext = await this.rag.retrieve(text || '', chatId, this.config.name);
       if (ragContext.sourceCount > 0) {
         this.logger.info({ chatId, sources: ragContext.sourceCount }, 'RAG context retrieved');
+        knowledgeContext = knowledgeContext
+          ? `${knowledgeContext}
+
+${ragContext.formattedContext}`
+          : ragContext.formattedContext;
       }
 
-      // ── Step 3: Skill selection — from agent intent chain ──
-      // Read skills from the matched intent's chain, not message keywords
-      const intent = agentRuntimeConfig.orchestration.intents[0];
-      const chainSkillNames = (intent.chain || [])
-        .map((s: any) => s.skill)
-        .filter((s: string) => s && s.length > 0);
-      // Also include agent-level skills and always-load system skills
-      const agentSkills = agentRuntimeConfig.skills || [];
-      const selectedNames = [...new Set([...chainSkillNames, ...agentSkills])];
-      if (selectedNames.length > 0) {
-        this.logger.info({ chatId, skills: selectedNames, source: 'agent-intent-chain' }, 'Skills selected for orchestration');
+      // Deploy intent chain skills
+      const chainSkillNames = matchedIntent.chain.map((s: any) => s.skill).filter(Boolean);
+      const skillNames = [...new Set([...chainSkillNames, ...(agentRuntimeConfig!.skills || [])])];
+      if (skillNames.length > 0) {
         try {
           const { deploySelectedSkills } = await import('../api/skills-installer.js');
-          deploySelectedSkills(cwd, selectedNames, this.logger);
+          deploySelectedSkills(cwd, skillNames, this.logger);
         } catch (err) {
-          this.logger.warn({ err }, 'Skill deployment failed, continuing with loaded skills');
+          this.logger.warn({ err }, 'Skill deployment failed');
         }
       }
 
-      // ── Step 4: Execute orchestration ──
       await this.executeWithOrchestrator(
         msg,
-        agentRuntimeConfig,
+        agentRuntimeConfig!,
         cwd,
         outputsDir,
         messageId,
         abortController,
+        knowledgeContext ?? undefined,
       );
       return;
     }
 
-    // Dynamic skill deployment: select relevant skills for this query
+    // ── PATH B/C: No intent match or empty chain → standard LLM ──
+    if (matchedIntent) {
+      this.logger.info({ chatId, intent: matchedIntent.name }, 'PATH B: standard LLM + intent context');
+      knowledgeContext = knowledgeContext
+        ? `## 用户意图: ${matchedIntent.name}
+
+${knowledgeContext}`
+        : `## 用户意图: ${matchedIntent.name}`;
+    } else {
+      this.logger.debug({ chatId }, 'PATH C: standard LLM (no intent match)');
+    }
+
+    // Dynamic skill deployment
     try {
       const selectedSkills = this.skillRouter.selectSkills(text || '');
       const selectedNames = selectedSkills.map((s) => s.name);
@@ -2270,6 +2287,7 @@ export class MessageBridge {
     outputsDir: string,
     cardMessageId: string,
     abortController: AbortController,
+    preFetchedKnowledge?: string,
   ): Promise<void> {
     const result = await this.orchestrator.execute(
       msg,
@@ -2278,7 +2296,9 @@ export class MessageBridge {
       outputsDir,
       cardMessageId,
       abortController,
-      (chatId) => this.getSender(chatId),
+      (chatId?: string) => this.getSender(chatId),
+      undefined, // ragContext - already merged into preFetchedKnowledge
+      preFetchedKnowledge,
     );
 
     this.audit.log({

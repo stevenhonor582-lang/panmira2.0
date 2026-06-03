@@ -83,13 +83,13 @@ export class PanmiraRAG {
       // Hybrid search: combine pgvector cosine similarity with text search
       const { rows } = await pool.query(
         `SELECT 
-          title, 
-          content,
-          COALESCE(folder_name, '') as folder,
-          ts_rank(to_tsvector('simple', COALESCE(content, '')), plainto_tsquery('simple', $1)) as text_rank
-         FROM documents 
-         WHERE content IS NOT NULL AND content != ''
-           AND to_tsvector('simple', COALESCE(content, '')) @@ plainto_tsquery('simple', $1)
+          d.title, 
+          d.content,
+          COALESCE(f.name, '') as folder,
+          ts_rank(to_tsvector('simple', COALESCE(d.content, '')), plainto_tsquery('simple', $1)) as text_rank
+         FROM documents d LEFT JOIN folders f ON d.folder_id = f.id 
+         WHERE d.content IS NOT NULL AND d.content != ''
+           AND to_tsvector('simple', COALESCE(d.content, '')) @@ plainto_tsquery('simple', $1)
          ORDER BY text_rank DESC
          LIMIT $2`,
         [query.slice(0, 500), this.config.maxDocuments],
@@ -114,7 +114,7 @@ export class PanmiraRAG {
     try {
       const { rows } = await pool.query(
         `SELECT 
-          content,
+          d.content,
           importance,
           created_at,
           CASE WHEN embedding IS NOT NULL 
@@ -122,7 +122,7 @@ export class PanmiraRAG {
             ELSE 0 
           END as relevance
          FROM memories
-         WHERE content IS NOT NULL AND content != ''
+         WHERE d.content IS NOT NULL AND d.content != ''
          ORDER BY relevance DESC, importance DESC
          LIMIT $2`,
         [JSON.stringify(Array(1024).fill(0)), this.config.maxMemories], // placeholder vector
@@ -187,8 +187,8 @@ export class PanmiraRAG {
   async hasKnowledge(query: string): Promise<boolean> {
     try {
       const { rows } = await pool.query(
-        `SELECT 1 FROM documents 
-         WHERE content IS NOT NULL AND content != ''
+        `SELECT 1 FROM documents d LEFT JOIN folders f ON d.folder_id = f.id 
+         WHERE d.content IS NOT NULL AND d.content != ''
            AND (title ILIKE $1 OR content ILIKE $1)
          LIMIT 1`,
         [`%${query.slice(0, 100)}%`],

@@ -48,6 +48,7 @@ export class Orchestrator {
     abortController: AbortController,
     getSender: (chatId?: string) => IMessageSender,
     ragContext?: { formattedContext: string; sourceCount: number },
+    preFetchedKnowledge?: string,
   ): Promise<OrchestrationResult> {
     const startTime = Date.now();
     const { chatId, text: userMessage } = msg;
@@ -61,7 +62,10 @@ export class Orchestrator {
 
     // 2. Knowledge search (Layer 5)
     let knowledgeContext = '';
-    if (this.memoryClient && agentConfig.knowledgeFolders.length > 0 && userMessage) {
+    if (preFetchedKnowledge) {
+      knowledgeContext = preFetchedKnowledge;
+      this.logger.debug({ chatId, len: knowledgeContext.length }, 'Using pre-fetched knowledge context');
+    } else if (this.memoryClient && agentConfig.knowledgeFolders.length > 0 && userMessage) {
       try {
         const searchQuery = userMessage.slice(0, 300);
         const results = await this.memoryClient.searchInFolders(searchQuery, agentConfig.knowledgeFolders, 3);
