@@ -290,20 +290,19 @@ function ensureIsolatedWorkspace(botName: string, configuredDir: string): string
   // Already correct: matches expected pattern
   if (expanded === expectedDir) return expanded;
 
-  // Generic shared workspace — must redirect
+  // Generic shared workspace root — must redirect to isolated
   if (expanded === genericDir) {
     try { fs.mkdirSync(expectedDir, { recursive: true }); } catch {}
     return expectedDir;
   }
 
-  // Subdirectory of generic workspace (e.g. ~/workspace/botName/) — redirect
+  // Subdirectory of workspace (e.g. ~/workspace/botName/) — keep as-is.
+  // Bot subdirectories under shared workspace are the canonical layout.
   if (expanded.startsWith(genericDir + path.sep)) {
-    try { fs.mkdirSync(expectedDir, { recursive: true }); } catch {}
-    return expectedDir;
+    return expanded;
   }
 
   // Another bot's workspace-xxx directory — must redirect
-  // Match pattern: ~/workspace-{someName} where someName !== botName
   const workspacePattern = new RegExp(`^${escapeRegex(path.join(os.homedir(), 'workspace-'))}(.+)$`);
   const match = expanded.match(workspacePattern);
   if (match && match[1] !== botName) {
@@ -311,7 +310,7 @@ function ensureIsolatedWorkspace(botName: string, configuredDir: string): string
     return expectedDir;
   }
 
-  // Custom path or already correct — keep as-is
+  // Custom path — keep as-is
   return expanded;
 }
 
