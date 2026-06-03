@@ -24,6 +24,8 @@ import { SkillRouter } from '../skills/skill-router.js';
 import { deploySelectedSkills } from '../api/skills-installer.js';
 import { CONTEXT_USAGE_THRESHOLD } from './context-manager.js';
 import { MemoryWriter } from './memory-writer.js';
+import { ClarificationMiddleware } from '../clarification/index.js';
+import type { FeishuCard } from '../clarification/card-builder.js';
 import { ConfigReader } from './orchestrator/config-reader.js';
 import { Orchestrator } from './orchestrator/index.js';
 import { StepExecutor } from './orchestrator/step-executor.js';
@@ -77,6 +79,7 @@ export class MessageBridge {
   private configReader: ConfigReader;
   private orchestrator: Orchestrator;
   private memoryWriter: MemoryWriter;
+  private clarificationMw: ClarificationMiddleware | null = null;
   private outputArchiver: OutputArchiver;
   private rag: PanmiraRAG;
   private workspaceManager?: import('../memory/workspace-manager.js').WorkspaceManager;

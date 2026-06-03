@@ -75,6 +75,22 @@ export interface BotConfigBase {
   codex?: CodexBotConfig;
   /** OpenAI-compatible provider config. Populated only when engine === 'openai-compat'. */
   openaiCompat?: OpenAICompatConfig;
+  /** Clarification engine: ask structured questions before executing skills. */
+  clarification?: {
+    enabled?: boolean;
+    maxQuestionsPerRound?: number;
+    sessionTtlHours?: number;
+    applicableSkills?: string[];
+    fallbackToLLM?: boolean;
+  };
+  /** Skill schemas for clarification engine. Keyed by skill name. */
+  skills?: Record<string, Array<{
+    name: string;
+    type: 'string' | 'number' | 'enum' | 'boolean';
+    question: string;
+    options?: string[];
+    required: boolean;
+  }>>;
   /** When true, skip platform WS connection — bot only receives messages via proxy_message. */
   proxyOnly?: boolean;
   /** Override context window size for display (e.g. 1000000 for 1M). */
