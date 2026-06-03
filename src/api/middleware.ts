@@ -5,7 +5,8 @@ import { jwtVerify, SignJWT } from 'jose';
 import type { User } from '../db/user-store.js';
 
 if (!process.env.JWT_SECRET) {
-  console.error('[AUTH] FATAL: JWT_SECRET environment variable is required');
+  // Use process.stderr for startup errors before logger is available
+  process.stderr.write('[AUTH] FATAL: JWT_SECRET environment variable is required\n');
   process.exit(1);
 }
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET);

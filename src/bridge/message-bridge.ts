@@ -607,7 +607,7 @@ export class MessageBridge {
             `Your ${batch.messages.length} media message(s) have been queued.`,
             'blue',
           )
-          .catch(() => {});
+          .catch((err) => this.logger.warn({ err, chatId }, 'Failed to process message queue'));
       }
       return;
     }
@@ -1128,7 +1128,7 @@ export class MessageBridge {
             durationMs,
             costUsd: lastState.costUsd,
           })
-          .catch(() => {});
+          .catch((err) => this.logger.warn({ err, chatId }, 'Failed to process message queue'));
       }
 
       // Auto-archive output files to MetaMemory (fire-and-forget)
@@ -1136,9 +1136,9 @@ export class MessageBridge {
         const outputFiles = this.outputsManager.scanOutputs(outputsDir);
         if (outputFiles.length > 0) {
           if (msg.chatType === 'group' && this.workspaceManager) {
-            this.outputArchiver.archiveFilesForGroup(chatId, this.config.name, outputFiles, this.workspaceManager).catch(() => {});
+            this.outputArchiver.archiveFilesForGroup(chatId, this.config.name, outputFiles, this.workspaceManager).catch((err) => this.logger.warn({ err, chatId }, 'Failed to archive files for group'));
           } else {
-            this.outputArchiver.archiveFiles(this.config.name, outputFiles).catch(() => {});
+            this.outputArchiver.archiveFiles(this.config.name, outputFiles).catch((err) => this.logger.warn({ err }, 'Failed to archive files'));
           }
         }
       }
@@ -1180,7 +1180,7 @@ export class MessageBridge {
       try {
         await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
       } catch (e) { this.logger.warn({ err: e, chatId }, 'sendOutputFiles failed'); }
-      })().catch(() => {});
+      })().catch((err) => this.logger.warn({ err, chatId }, 'Failed to send output files'));
     } catch (err: any) {
       this.logger.error({ err, chatId, userId }, 'Claude execution error');
 
@@ -1717,7 +1717,7 @@ export class MessageBridge {
             durationMs,
             costUsd: lastState.costUsd,
           })
-          .catch(() => {});
+          .catch((err) => this.logger.warn({ err, chatId }, 'Failed to process message queue'));
       }
 
       // Auto-archive output files to MetaMemory (fire-and-forget)
@@ -1725,9 +1725,9 @@ export class MessageBridge {
         const outputFiles = this.outputsManager.scanOutputs(outputsDir);
         if (outputFiles.length > 0) {
           if (options.chatType === 'group' && this.workspaceManager) {
-            this.outputArchiver.archiveFilesForGroup(chatId, this.config.name, outputFiles, this.workspaceManager).catch(() => {});
+            this.outputArchiver.archiveFilesForGroup(chatId, this.config.name, outputFiles, this.workspaceManager).catch((err) => this.logger.warn({ err, chatId }, 'Failed to archive files for group'));
           } else {
-            this.outputArchiver.archiveFiles(this.config.name, outputFiles).catch(() => {});
+            this.outputArchiver.archiveFiles(this.config.name, outputFiles).catch((err) => this.logger.warn({ err }, 'Failed to archive files'));
           }
         }
       }
@@ -2007,7 +2007,7 @@ export class MessageBridge {
     const botName = this.config.name;
 
     // C: Auto-save full conversation to knowledge base (fire-and-forget, no rate limit)
-    this.autoSaveToKnowledgeBase(chatId, prompt, lastState, chatType).catch(() => {});
+    this.autoSaveToKnowledgeBase(chatId, prompt, lastState, chatType).catch((err) => this.logger.warn({ err, chatId }, 'Failed to auto-save to knowledge base'));
 
     // A: Generate LLM summary and store in SessionManager
     const summary = await this.generateSessionSummary(prompt, lastState);

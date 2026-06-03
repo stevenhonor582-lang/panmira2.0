@@ -597,6 +597,6 @@ export class ClaudeExecutor {
 const _origBuildQueryOptions = ClaudeExecutor.prototype.buildQueryOptions;
 ClaudeExecutor.prototype.buildQueryOptions = function(...args) {
   const result = _origBuildQueryOptions.apply(this, args);
-  console.log('[DEBUG MODEL] config.claude.model =', this.config.claude.model, '-> queryOptions.model =', result.model);
+  // Debug log removed — model selection logged at info level above
   return result;
 };

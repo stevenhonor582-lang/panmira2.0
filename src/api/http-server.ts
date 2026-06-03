@@ -269,11 +269,48 @@ export async function startApiServer(options: ApiServerOptions): Promise<http.Se
     }
 
     try {
-      // GET /api/health — always handled here (lightweight)
+      // GET /api/health — enhanced health check with dependency status
       if (method === 'GET' && url === '/api/health') {
+        const checks: Record<string, { status: string; message?: string }> = {};
+
+        // DB check
+        try {
+          const { pool } = await import('../db/index.js');
+          const dbResult = await pool.query('SELECT 1 AS alive');
+          checks.db = dbResult.rows[0]?.alive === 1
+            ? { status: 'ok' }
+            : { status: 'fail', message: 'Unexpected query result' };
+        } catch (err: any) {
+          checks.db = { status: 'fail', message: err.message };
+        }
+
+        // Redis check
+        try {
+          const { createClient } = await import('redis');
+          const redis = createClient({ socket: { connectTimeout: 2000 } });
+          await redis.connect();
+          await redis.ping();
+          await redis.quit();
+          checks.redis = { status: 'ok' };
+        } catch (err: any) {
+          checks.redis = { status: err.code === 'ECONNREFUSED' ? 'warn' : 'fail', message: err.message };
+        }
+
+        // MetaMemory check
+        if (memoryServerUrl) {
+          try {
+            const resp = await fetch(`${memoryServerUrl}/health`, { signal: AbortSignal.timeout(2000) });
+            checks.memory = { status: resp.ok ? 'ok' : 'warn', message: `HTTP ${resp.status}` };
+          } catch (err: any) {
+            checks.memory = { status: 'warn', message: err.message };
+          }
+        }
+
         const peerStatuses = peerManager?.getPeerStatuses() ?? [];
-        jsonResponse(res, 200, {
-          status: 'ok',
+        const allOk = Object.values(checks).every(c => c.status === 'ok');
+
+        jsonResponse(res, allOk ? 200 : 503, {
+          status: allOk ? 'ok' : 'degraded',
           uptime: Math.floor((Date.now() - startTime) / 1000),
           bots: registry.list().length,
           peerBots: peerManager?.getPeerBots().length ?? 0,
@@ -281,6 +318,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<http.Se
           peersHealthy: peerStatuses.filter((p) => p.healthy).length,
           scheduledTasks: scheduler.taskCount(),
           recurringTasks: scheduler.recurringTaskCount(),
+          checks,
         });
         return;
       }
@@ -644,7 +682,7 @@ ${content}
           const handled = await handler(ctx, req, res, method, url);
           if (handled) return;
         } catch (err: any) {
-          console.error('[ROUTE ERROR]', handler.name, err.message);
+          logger.error({ handler: handler.name, err: err.message }, 'Route handler error');
         }
       }
 

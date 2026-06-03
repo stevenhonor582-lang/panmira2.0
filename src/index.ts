@@ -19,6 +19,7 @@ import { DocSync } from './sync/doc-sync.js';
 import { MemoryClient } from './memory/memory-client.js';
 
 import { pool } from './db/index.js';
+import { runPreflight } from './utils/preflight.js';
 import { SessionRegistry } from './session/session-registry.js';
 import { ChatSessionStore } from './db/chat-session-store.js';
 import { ScheduledTaskStore } from './db/scheduled-task-store.js';
@@ -60,6 +61,13 @@ async function main() {
   const scheduledTaskStore = new ScheduledTaskStore();
   const discoveredGroupsStore = new DiscoveredGroupStore();
   const logger = createLogger(appConfig.log.level);
+
+  // ── Preflight: validate environment before starting ──
+  const preflight = await runPreflight(logger);
+  if (!preflight.pass) {
+    logger.fatal({ failures: preflight.checks.filter(c => c.status === 'fail') }, 'Preflight check failed — aborting startup');
+    process.exit(1);
+  }
 
   // Ensure MEMORY_SECRET env var is available for Claude subprocesses (used by metamemory skill)
   if (appConfig.memory.secret && !process.env.MEMORY_SECRET) {
@@ -510,6 +518,6 @@ async function startBotsSafely<TConfig extends BotConfigBase, THandle>(
 }
 
 main().catch((err) => {
-  console.error('Fatal error:', err);
+  process.stderr.write(`Fatal error: ${err}\n`);
   process.exit(1);
 });

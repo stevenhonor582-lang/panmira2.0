@@ -8,7 +8,7 @@ import * as schema from './schema.js';
 
 const DATABASE_URL = process.env.DATABASE_URL || '';
 if (!DATABASE_URL) {
-  console.warn('[DB] WARNING: DATABASE_URL not set — database features disabled');
+  process.stderr.write('[DB] WARNING: DATABASE_URL not set — database features disabled\n');
 }
 
 export const pool = new pg.Pool({
@@ -19,7 +19,7 @@ export const pool = new pg.Pool({
 });
 
 pool.on('error', (err: any) => {
-  console.error('[DB] Unexpected pool error:', err.message);
+  process.stderr.write(`[DB] Unexpected pool error: ${err.message}\n`);
 });
 
 export const db = drizzle(pool, { schema });

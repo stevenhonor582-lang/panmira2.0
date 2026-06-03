@@ -125,6 +125,19 @@ export function createEventDispatcher(
     });
   }
 
+  // Register informational event handlers to suppress "no handle" warnings
+  dispatcher.register({
+    'im.message.message_read_v1': (_data: unknown) => {
+      // Message read receipt — informational, no action needed
+    },
+  });
+
+  dispatcher.register({
+    'im.chat.access_event.bot_p2p_chat_entered_v1': (_data: unknown) => {
+      // Bot entered P2P chat — informational, no action needed
+    },
+  });
+
   dispatcher.register({
     'im.message.receive_v1': async (data: any) => {
       try {
