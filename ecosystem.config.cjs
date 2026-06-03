@@ -34,7 +34,7 @@ module.exports = {
       merge_logs: true,
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
 
-      env: Object.assign({ NODE_ENV: 'production' }, envVars),
+      env: Object.assign({ NODE_ENV: 'production', NODE_OPTIONS: '--no-deprecation' }, envVars),
     },
   ],
 };
