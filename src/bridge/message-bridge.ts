@@ -836,7 +836,6 @@ export class MessageBridge {
       );
       return;
     }
-    }  // closes try-catch from knowledge context fetching
 
     // Dynamic skill deployment: select relevant skills for this query
     try {
