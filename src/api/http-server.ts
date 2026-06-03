@@ -1,5 +1,6 @@
 import * as crypto from 'node:crypto';
 import * as http from 'node:http';
+import * as net from 'node:net';
 import * as path from 'node:path';
 import type * as lark from '@larksuiteoapi/node-sdk';
 import type { Logger } from '../utils/logger.js';
@@ -284,16 +285,19 @@ export async function startApiServer(options: ApiServerOptions): Promise<http.Se
           checks.db = { status: 'fail', message: err.message };
         }
 
-        // Redis check
+        // Redis check (TCP socket, no dependency needed)
         try {
-          const { createClient } = await import('redis');
-          const redis = createClient({ socket: { connectTimeout: 2000 } });
-          await redis.connect();
-          await redis.ping();
-          await redis.quit();
+          await new Promise<void>((resolve, reject) => {
+            const socket = new net.Socket();
+            socket.setTimeout(2000);
+            socket.on('connect', () => { socket.destroy(); resolve(); });
+            socket.on('timeout', () => { socket.destroy(); reject(new Error('timeout')); });
+            socket.on('error', reject);
+            socket.connect(6379, '127.0.0.1');
+          });
           checks.redis = { status: 'ok' };
         } catch (err: any) {
-          checks.redis = { status: err.code === 'ECONNREFUSED' ? 'warn' : 'fail', message: err.message };
+          checks.redis = { status: err.message === 'timeout' ? 'warn' : 'fail', message: err.message };
         }
 
         // MetaMemory check

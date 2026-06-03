@@ -593,10 +593,3 @@ export class ClaudeExecutor {
   }
 }
 
-// DEBUG: log model being passed to queryOptions
-const _origBuildQueryOptions = ClaudeExecutor.prototype.buildQueryOptions;
-ClaudeExecutor.prototype.buildQueryOptions = function(...args) {
-  const result = _origBuildQueryOptions.apply(this, args);
-  // Debug log removed — model selection logged at info level above
-  return result;
-};

@@ -1,4 +1,4 @@
-import { createClient } from 'redis';
+import * as net from 'node:net';
 import { pool } from '../db/index.js';
 import type { Logger } from './logger.js';
 
@@ -47,29 +47,21 @@ export async function runPreflight(logger: Logger): Promise<PreflightResult> {
     checks.push({ name: 'DB:PostgreSQL', status: 'fail', message: `Cannot connect: ${err.message}` });
   }
 
-  // 3. Check Redis connectivity (if REDIS_URL is configured)
-  const redisUrl = process.env.REDIS_URL;
-  if (redisUrl) {
-    try {
-      const redis = createClient({ url: redisUrl, socket: { connectTimeout: 3000 } });
-      await redis.connect();
-      await redis.ping();
-      await redis.quit();
-      checks.push({ name: 'Cache:Redis', status: 'ok', message: 'Connected' });
-    } catch (err: any) {
-      checks.push({ name: 'Cache:Redis', status: 'warn', message: `Cannot connect: ${err.message}` });
-    }
-  } else {
-    // Try default localhost
-    try {
-      const redis = createClient({ socket: { connectTimeout: 3000 } });
-      await redis.connect();
-      await redis.ping();
-      await redis.quit();
-      checks.push({ name: 'Cache:Redis', status: 'ok', message: 'Connected (default)' });
-    } catch {
-      checks.push({ name: 'Cache:Redis', status: 'warn', message: 'Not available (non-critical)' });
-    }
+  // 3. Check Redis connectivity via TCP socket (no dependency needed)
+  const redisHost = process.env.REDIS_URL ? new URL(process.env.REDIS_URL).hostname : '127.0.0.1';
+  const redisPort = process.env.REDIS_URL ? parseInt(new URL(process.env.REDIS_URL).port || '6379') : 6379;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const socket = new net.Socket();
+      socket.setTimeout(3000);
+      socket.on('connect', () => { socket.destroy(); resolve(); });
+      socket.on('timeout', () => { socket.destroy(); reject(new Error('Connection timeout')); });
+      socket.on('error', reject);
+      socket.connect(redisPort, redisHost);
+    });
+    checks.push({ name: 'Cache:Redis', status: 'ok', message: `TCP reachable at ${redisHost}:${redisPort}` });
+  } catch (err: any) {
+    checks.push({ name: 'Cache:Redis', status: 'warn', message: `Not reachable: ${err.message}` });
   }
 
   // 4. Check bots config file
