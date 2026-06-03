@@ -84,7 +84,7 @@ export async function runPreflight(logger: Logger): Promise<PreflightResult> {
   const memoryUrl = process.env.META_MEMORY_URL;
   if (memoryUrl) {
     try {
-      const resp = await fetch(`${memoryUrl}/health`, { signal: AbortSignal.timeout(3000) });
+      const resp = await fetch(`${memoryUrl}/api/health`, { signal: AbortSignal.timeout(3000) });
       if (resp.ok) {
         checks.push({ name: 'Service:MetaMemory', status: 'ok', message: `Reachable at ${memoryUrl}` });
       } else {

@@ -303,7 +303,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<http.Se
         // MetaMemory check
         if (memoryServerUrl) {
           try {
-            const resp = await fetch(`${memoryServerUrl}/health`, { signal: AbortSignal.timeout(2000) });
+            const resp = await fetch(`${memoryServerUrl}/api/health`, { signal: AbortSignal.timeout(2000) });
             checks.memory = { status: resp.ok ? 'ok' : 'warn', message: `HTTP ${resp.status}` };
           } catch (err: any) {
             checks.memory = { status: 'warn', message: err.message };
