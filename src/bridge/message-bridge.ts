@@ -772,6 +772,7 @@ export class MessageBridge {
         ? `${knowledgeContext}\n\n## 前次会话摘要\n${pendingSummary}`
         : `## 前次会话摘要\n${pendingSummary}`;
       this.logger.info({ chatId, summaryLen: pendingSummary.length }, 'Injected pre-reset summary');
+    }
 
     // Orchestrator branch: if agent has orchestration config, use code-driven flow
     let agentRuntimeConfig: AgentRuntimeConfig | null = null;
