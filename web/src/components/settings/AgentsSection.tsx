@@ -176,7 +176,41 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
       if (res.status === 401) { logout(); return; }
       if (res.ok) {
         const data = await res.json();
-        const list = data.agents || [];
+        const agentList = data.agents || [];
+
+        // Also fetch templates and merge them in
+        let templateList: any[] = [];
+        try {
+          const tRes = await fetch('/api/templates', { headers: { Authorization: `Bearer ${token}` } });
+          if (tRes.ok) {
+            const tData = await tRes.json();
+            templateList = (tData || []).map((t: any) => ({
+              id: t.id,
+              name: t.name,
+              roleTemplate: t.display_name || t.name,
+              description: t.description || '',
+              systemPrompt: t.system_prompt || '',
+              capabilities: t.default_skills || [],
+              tools: [],
+              isActive: t.is_active,
+              category: t.category || 'template',
+              templateType: 'standard' as const,
+              sourceTemplateId: null,
+              knowledgeFolders: t.default_knowledge_folders || [],
+              skills: t.default_skills || [],
+              createdAt: t.created_at,
+              updatedAt: t.created_at,
+              // preserve template metadata
+              isTemplate: true,
+              default_agents: t.default_agents || [],
+              default_engine: t.default_engine,
+              default_model: t.default_model,
+              version: t.version,
+            }));
+          }
+        } catch { /* templates fetch failed, continue with agents only */ }
+
+        const list = [...templateList, ...agentList];
         setAgents(list);
         onAgentsLoaded?.(list);
       } else {
