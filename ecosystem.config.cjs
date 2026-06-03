@@ -22,6 +22,7 @@ module.exports = {
       script: 'src/index.ts',
       interpreter: path.join(__dirname, 'node_modules/.bin/tsx'),
       cwd: __dirname,
+      node_args: '--no-warnings=DeprecationWarning',
 
       watch: false,
       autorestart: true,
@@ -34,7 +35,7 @@ module.exports = {
       merge_logs: true,
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
 
-      env: Object.assign({ NODE_ENV: 'production', NODE_OPTIONS: '--no-deprecation' }, envVars),
+      env: Object.assign({ NODE_ENV: 'production', NODE_OPTIONS: '--no-warnings=DeprecationWarning' }, envVars),
     },
   ],
 };
