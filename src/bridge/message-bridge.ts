@@ -660,6 +660,7 @@ export class MessageBridge {
   }
 
   private async executeQuery(msg: IncomingMessage): Promise<void> {
+    console.log("[PANMIRA-DIAG] executeQuery called: " + this.config.name + " agentId=" + (this.config.agentId || "NONE"));
     const { userId, chatId, text, imageKey, fileKey, fileName, messageId: msgId } = msg;
     const { session, engineName } = this.prepareSessionForExecution(chatId);
     const cwd = session.workingDirectory;
