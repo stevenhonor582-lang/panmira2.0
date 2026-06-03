@@ -523,5 +523,17 @@
   "agents.blankExampleAgent": "Agent: Example output",
   "users.roleLabel": "Role",
   "common.confirm": "Confirm",
-  "common.cancel": "Cancel"
+  "common.cancel": "Cancel",
+  "skills.botSkills": "Bot Skills",
+  "skills.selectBot": "Select Bot",
+  "skills.allBots": "All Bots",
+  "skills.scopeGlobal": "Global",
+  "skills.scopeBot": "Bot Private",
+  "skills.installSkill": "Install Skill",
+  "skills.installForBot": "Install to {bot}",
+  "skills.noBindings": "No skills bound",
+  "skills.noBindingsDesc": "No skills bound to this bot yet.",
+  "skills.uninstall": "Uninstall",
+  "skills.availableSkills": "Available Skills",
+  "skills.searchAvailable": "Search available skills..."
 }

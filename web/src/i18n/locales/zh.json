@@ -523,5 +523,17 @@
   "agents.blankExampleAgent": "Agent：示例输出",
   "users.roleLabel": "角色",
   "common.confirm": "确认",
-  "common.cancel": "取消"
+  "common.cancel": "取消",
+  "skills.botSkills": "Bot 技能",
+  "skills.selectBot": "选择 Bot",
+  "skills.allBots": "全部 Bot",
+  "skills.scopeGlobal": "全局",
+  "skills.scopeBot": "Bot 私有",
+  "skills.installSkill": "安装技能",
+  "skills.installForBot": "安装到 {bot}",
+  "skills.noBindings": "暂无绑定技能",
+  "skills.noBindingsDesc": "该 Bot 尚未绑定任何技能，点击安装添加。",
+  "skills.uninstall": "卸载",
+  "skills.availableSkills": "可安装技能",
+  "skills.searchAvailable": "搜索可安装技能..."
 }
