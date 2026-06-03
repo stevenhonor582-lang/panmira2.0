@@ -211,9 +211,26 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
 
   const handleAgentSelect = useCallback((templateId: string) => {
     setSelectedTemplateId(templateId);
-    if (!templateId) { setBotSystemPrompt(''); return; }
-    const agent = agents.find((a) => a.id === templateId);
-    if (agent) setBotSystemPrompt(agent.systemPrompt || '');
+    if (!templateId) {
+      setBotSystemPrompt('');
+      setBotDesc('');
+      return;
+    }
+    const tmpl = agents.find((a) => a.id === templateId);
+    if (!tmpl) return;
+    
+    // Auto-populate from template
+    setBotSystemPrompt(tmpl.systemPrompt || tmpl.description || '');
+    setBotDesc(tmpl.description || '');
+    
+    // If this is a template (from /api/templates), auto-set engine+model
+    const t = tmpl as any;
+    if (t.isTemplate) {
+      if (t.default_engine && t.default_engine !== 'claude') {
+        setBotEngine(t.default_engine);
+      }
+      if (t.default_model) setBotModel(t.default_model);
+    }
   }, [agents]);
 
   const handleProviderChange = useCallback((providerId: string) => {
@@ -349,6 +366,13 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
     }
     if (selectedTemplateId) {
       body.agentId = selectedTemplateId;
+      // If selected template is from /api/templates, auto-populate skills + agents + knowledge
+      const t = agents.find((a) => a.id === selectedTemplateId) as any;
+      if (t?.isTemplate) {
+        if (t.default_skills?.length) body.skills = t.default_skills;
+        if (t.default_agents?.length) body.agents = t.default_agents;
+        if (t.knowledgeFolders?.length) body.knowledgeFolders = t.knowledgeFolders;
+      }
     } else {
       body.agentId = '';
       if (botSystemPrompt.trim()) body.systemPrompt = botSystemPrompt.trim();
@@ -538,7 +562,7 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
                     {t('bots.noTemplate')}
                   </button>
                   {agents
-                    .filter((a) => a.templateType === 'custom')
+                    .filter((a) => a.templateType === "custom" || a.templateType === "standard" || (a as any).isTemplate)
                     .filter((a) => !botAgentSearch || a.name.toLowerCase().includes(botAgentSearch.toLowerCase()) || (a.description || '').toLowerCase().includes(botAgentSearch.toLowerCase()))
                     .slice(0, 30)
                     .map((a) => (
