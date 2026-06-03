@@ -42,9 +42,9 @@ const ALWAYS_FILTERED_PREFIXES = ['CLAUDE'];
 
 /**
  * Auth-related env vars that are only filtered when an explicit API key
- * is provided in bots.json OR when ~/.claude/.credentials.json exists.
+ * is provided in bot config OR when ~/.claude/.credentials.json exists.
  * This ensures users who rely solely on ANTHROPIC_API_KEY env var can
- * still authenticate without configuring bots.json.
+ * still authenticate without configuring bot config.
  */
 const AUTH_ENV_VARS = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'];
 
@@ -67,7 +67,7 @@ function hasCredentialsFile(): boolean {
  * - Filters ANTHROPIC auth env vars only when an explicit API key is provided
  *   or credentials.json exists (so env-var-only users can still authenticate).
  * - Merges process.env so child inherits system PATH, TEMP, etc.
- * - Optionally injects an explicit ANTHROPIC_API_KEY from bots.json config.
+ * - Optionally injects an explicit ANTHROPIC_API_KEY from bot config config.
  */
 function createSpawnFn(explicitApiKey?: string, explicitBaseUrl?: string): (options: SpawnOptions) => SpawnedProcess {
   // Decide once whether to filter auth env vars

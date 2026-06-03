@@ -35,7 +35,7 @@ export interface SyncResult {
 }
 
 export interface DocSyncConfig {
-  /** Feishu app ID (from bots.json, first feishu bot). */
+  /** Feishu app ID (from bot config, first feishu bot). */
   feishuAppId: string;
   /** Feishu app secret. */
   feishuAppSecret: string;

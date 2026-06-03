@@ -102,7 +102,7 @@ export class KimiExecutor {
       // users see in the Kimi CLI.
       model: this.resolveDisplayName(rawModel) ?? rawModel,
       // Kimi for Coding ships with a 256k context window. Override per-bot via
-      // `kimi.contextWindow` in bots.json if you're on a different model.
+      // `kimi.contextWindow` in bot config if you're on a different model.
       contextWindow: kimiOpts.contextWindow ?? 262144,
     };
 

@@ -205,9 +205,9 @@ function expandUserPath(value: string): string {
   return value;
 }
 
-// --- Feishu JSON entry (used in bots.json) ---
+// --- Feishu bot configuration types ---
 
-/** Kimi-specific overrides in bots.json. */
+/** Kimi-specific configuration overrides. */
 export interface KimiJsonConfig {
   executable?: string;
   model?: string;
@@ -217,7 +217,7 @@ export interface KimiJsonConfig {
   contextWindow?: number;
 }
 
-/** Codex-specific overrides in bots.json. */
+/** Codex-specific configuration overrides. */
 export interface CodexJsonConfig {
   executable?: string;
   model?: string;
@@ -346,7 +346,7 @@ export function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
   };
 }
 
-// --- Telegram JSON entry (used in bots.json) ---
+// --- Telegram bot configuration types ---
 
 export interface TelegramBotJsonEntry extends EngineJsonFields {
   name: string;
@@ -394,7 +394,7 @@ export function telegramBotFromJson(entry: TelegramBotJsonEntry): TelegramBotCon
   };
 }
 
-// --- Web bot JSON entry (used in bots.json — no IM credentials needed) ---
+// --- Web bot configuration types ---
 
 export interface WebBotJsonEntry extends EngineJsonFields {
   name: string;
@@ -438,7 +438,7 @@ export function webBotFromJson(entry: WebBotJsonEntry): BotConfigBase {
   };
 }
 
-// --- WeChat JSON entry (used in bots.json) ---
+// --- WeChat bot configuration types ---
 
 export interface WechatBotJsonEntry extends EngineJsonFields {
   name: string;
@@ -619,7 +619,7 @@ function wechatBotFromEnv(): WechatBotConfig {
   };
 }
 
-// --- New bots.json format ---
+// --- Legacy bots.json format (seed only, deprecated) ---
 
 export interface PeerJsonEntry {
   name: string;
@@ -654,7 +654,7 @@ export async function loadAppConfigFromDB(): Promise<{
 
   const rows = await store.list();
   if (rows.length === 0) {
-    // DB empty — seed from bots.json if available (one-time migration)
+    // DB empty — one-time seed from legacy bots.json if available
     const legacyPath = process.env.BOTS_CONFIG;
     if (legacyPath) {
       const seeded = await store.seedFromJson(legacyPath);
