@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
 import * as path from 'node:path';
 import type { BotConfigBase } from '../config.js';
+import { isUserAllowed, resolveUserRole } from "../auth/role-permissions.js";
 import type { Logger } from '../utils/logger.js';
 import type { IncomingMessage, CardState, PendingQuestion } from '../types.js';
 import type { IMessageSender } from './message-sender.interface.js';
@@ -13,88 +14,40 @@ import { OutputsManager } from './outputs-manager.js';
 import { MemoryClient } from '../memory/memory-client.js';
 import { AuditLogger } from '../utils/audit-logger.js';
 import { CommandHandler } from './command-handler.js';
+import { pool } from '../db/index.js';
 import { OutputHandler } from './output-handler.js';
 import { CostTracker } from '../utils/cost-tracker.js';
 import { metrics } from '../utils/metrics.js';
 import type { SessionRegistry } from '../session/session-registry.js';
-
-const TASK_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
-const QUESTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes for user to answer
-const MAX_QUEUE_SIZE = 5; // max queued messages per chat
-const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour idle → abort
-const FINAL_CARD_RETRIES = 3;
-const FINAL_CARD_BASE_DELAY_MS = 2000;
-const TASK_TIMEOUT_MESSAGE = 'Task timed out (24 hour limit)';
-const IDLE_TIMEOUT_MESSAGE = 'Task aborted: no activity for 1 hour';
-const BATCH_DEBOUNCE_MS = 2000; // 2s window to collect multiple images/files
-const DEFAULT_IMAGE_TEXT = '请分析这张图片';
-const DEFAULT_FILE_TEXT = '请分析这个文件';
-
-interface PendingBatch {
-  messages: IncomingMessage[];
-  timerId: ReturnType<typeof setTimeout>;
-}
-
-interface RunningTask {
-  abortController: AbortController;
-  startTime: number;
-  executionHandle: ExecutionHandle;
-  pendingQuestion: PendingQuestion | null;
-  /** Index of the question currently being displayed within pendingQuestion.questions */
-  currentQuestionIndex: number;
-  /** Accumulated answers keyed by question header (for multi-question calls) */
-  collectedAnswers: Record<string, string>;
-  cardMessageId: string;
-  questionTimeoutId?: ReturnType<typeof setTimeout>;
-  processor: StreamProcessor;
-  rateLimiter: RateLimiter;
-  chatId: string;
-}
-
-export interface ApiTaskOptions {
-  prompt: string;
-  chatId: string;
-  userId?: string;
-  sendCards?: boolean;
-  /** Override maxTurns for this task (e.g. 1 for voice mode). */
-  maxTurns?: number;
-  /** Override model for this task (e.g. faster model for voice calls). */
-  model?: string;
-  /** Override allowed tools for this task (empty array = no tools). */
-  allowedTools?: string[];
-  /** Called on every card state update (streaming). `final` is true on the last update. */
-  onUpdate?: (state: CardState, messageId: string, final: boolean) => void;
-  /** Called when Claude asks a question. Return the answer JSON string. */
-  onQuestion?: (question: PendingQuestion) => Promise<string>;
-  /** Called with output files after execution completes (before cleanup). */
-  onOutputFiles?: (files: import('./outputs-manager.js').OutputFile[]) => void;
-  /** Group chat member names — injected into system prompt for inter-bot communication. */
-  groupMembers?: string[];
-  /** Group ID — used for inter-bot communication chatId pattern. */
-  groupId?: string;
-}
-
-export interface ApiTaskResult {
-  success: boolean;
-  responseText: string;
-  sessionId?: string;
-  costUsd?: number;
-  durationMs?: number;
-  error?: string;
-}
-
-export interface ActivityEventData {
-  type: 'task_started' | 'task_completed' | 'task_failed';
-  botName: string;
-  chatId: string;
-  userId?: string;
-  prompt?: string;
-  responsePreview?: string;
-  costUsd?: number;
-  durationMs?: number;
-  errorMessage?: string;
-  timestamp: number;
-}
+import type { ChatSessionStore } from '../db/chat-session-store.js';
+import { SkillRouter } from '../skills/skill-router.js';
+import { deploySelectedSkills } from '../api/skills-installer.js';
+import { CONTEXT_USAGE_THRESHOLD } from './context-manager.js';
+import { MemoryWriter } from './memory-writer.js';
+import { OutputArchiver } from './output-archiver.js';
+import {
+  TASK_TIMEOUT_MS,
+  QUESTION_TIMEOUT_MS,
+  MAX_QUEUE_SIZE,
+  IDLE_TIMEOUT_MS,
+  FINAL_CARD_RETRIES,
+  FINAL_CARD_BASE_DELAY_MS,
+  TASK_TIMEOUT_MESSAGE,
+  IDLE_TIMEOUT_MESSAGE,
+  BATCH_DEBOUNCE_MS,
+  DEFAULT_IMAGE_TEXT,
+  DEFAULT_FILE_TEXT,
+  isStaleSessionError,
+  isContextOverflowError,
+} from './bridge-types.js';
+export type { PendingBatch, RunningTask, ApiTaskOptions, ApiTaskResult, ActivityEventData } from './bridge-types.js';
+import type { PendingBatch, RunningTask, ApiTaskOptions, ApiTaskResult, ActivityEventData } from './bridge-types.js';
+import { sendFinalCard, sendPlanContent, sendCompletionNotice } from './card-renderer.js';
+import type { CardRendererDeps } from './card-renderer.js';
+import { executorForChat, prepareSessionForExecution, recordSession } from './bridge-session.js';
+import type { SessionHelperDeps } from './bridge-session.js';
+import { fetchKnowledgeContext } from './knowledge-fetcher.js';
+import type { KnowledgeFetcherDeps } from './knowledge-fetcher.js';
 
 export class MessageBridge {
   private engine: Engine;
@@ -107,6 +60,7 @@ export class MessageBridge {
   private commandHandler: CommandHandler;
   private outputHandler: OutputHandler;
   readonly costTracker: CostTracker;
+  private memoryClient: MemoryClient;
   private sessionRegistry?: SessionRegistry;
   private senderOverrides = new Map<string, IMessageSender>();
   private runningTasks = new Map<string, RunningTask>(); // keyed by chatId
@@ -114,6 +68,10 @@ export class MessageBridge {
   private pendingBatches = new Map<string, PendingBatch>(); // media debounce batches
   /** Callback for activity lifecycle events (task started/completed/failed). */
   onActivityEvent?: (event: ActivityEventData) => void;
+  private skillRouter: SkillRouter;
+  private memoryWriter: MemoryWriter;
+  private outputArchiver: OutputArchiver;
+  private workspaceManager?: import('../memory/workspace-manager.js').WorkspaceManager;
 
   constructor(
     private config: BotConfigBase,
@@ -121,17 +79,21 @@ export class MessageBridge {
     private sender: IMessageSender,
     memoryServerUrl: string,
     memorySecret?: string,
+    sessionStore?: ChatSessionStore,
   ) {
     this.engine = createEngine(config, logger);
     this.executor = this.engine.createExecutor();
     const defaultEngineName = resolveEngineName(config);
     this.engineCache.set(defaultEngineName, { engine: this.engine, executor: this.executor });
-    this.sessionManager = new SessionManager(config.claude.defaultWorkingDirectory, logger, config.name);
+    this.sessionManager = new SessionManager(config.claude.defaultWorkingDirectory, logger, config.name, sessionStore);
     this.outputsManager = new OutputsManager(config.claude.outputsBaseDir, logger);
     this.audit = new AuditLogger(logger);
     this.costTracker = new CostTracker();
 
     const memoryClient = new MemoryClient(memoryServerUrl, logger, memorySecret);
+    this.memoryClient = memoryClient;
+    this.memoryWriter = new MemoryWriter(memoryClient, logger);
+    this.outputArchiver = new OutputArchiver(memoryClient, logger);
 
     this.commandHandler = new CommandHandler(
       config,
@@ -145,15 +107,46 @@ export class MessageBridge {
     );
 
     this.outputHandler = new OutputHandler(logger, sender, this.outputsManager);
+
+    const isFeishu = !!(config as any).feishu;
+    this.skillRouter = new SkillRouter(isFeishu ? 'feishu' : 'all');
   }
 
   /** Emit an activity event if a listener is registered. */
   private emitActivity(event: ActivityEventData): void {
     try {
       this.onActivityEvent?.(event);
-    } catch {
-      /* ignore */
+    } catch (err: any) {
+      this.logger.debug({ err: err?.message }, 'Activity event emission failed');
     }
+  }
+
+  private get _sessionDeps(): SessionHelperDeps {
+    return {
+      config: this.config,
+      logger: this.logger,
+      sessionManager: this.sessionManager,
+      engineCache: this.engineCache,
+      sessionRegistry: this.sessionRegistry,
+      getSender: (chatId) => this.getSender(chatId),
+    };
+  }
+
+  private get _cardDeps(): CardRendererDeps {
+    return {
+      logger: this.logger,
+      sessionManager: this.sessionManager,
+      getSender: (chatId) => this.getSender(chatId),
+    };
+  }
+
+  private get _knowledgeDeps(): KnowledgeFetcherDeps {
+    return {
+      config: this.config,
+      logger: this.logger,
+      memoryClient: this.memoryClient,
+      workspaceManager: this.workspaceManager,
+    };
   }
 
   /**
@@ -163,17 +156,7 @@ export class MessageBridge {
    * on the same engine don't re-instantiate the SDK wrapper.
    */
   private executorForChat(chatId: string): Executor {
-    const session = this.sessionManager.getSession(chatId);
-    const name: EngineName = session.engine ?? resolveEngineName(this.config);
-    let entry = this.engineCache.get(name);
-    if (!entry) {
-      const engine = createEngine(this.config, this.logger, name);
-      const executor = engine.createExecutor();
-      entry = { engine, executor };
-      this.engineCache.set(name, entry);
-      this.logger.info({ engine: name, chatId }, 'Instantiated engine on demand for session override');
-    }
-    return entry.executor;
+    return executorForChat(this._sessionDeps, chatId);
   }
 
   /**
@@ -182,29 +165,7 @@ export class MessageBridge {
    * next execution so another engine does not try to resume it.
    */
   private prepareSessionForExecution(chatId: string) {
-    const session = this.sessionManager.getSession(chatId);
-    const engineName: EngineName = session.engine ?? resolveEngineName(this.config);
-
-    if (session.sessionId && session.sessionIdEngine && session.sessionIdEngine !== engineName) {
-      this.logger.info(
-        { chatId, sessionIdEngine: session.sessionIdEngine, engine: engineName },
-        'Clearing session id from a different engine',
-      );
-      this.sessionManager.resetSession(chatId);
-    }
-
-    if (session.model && session.modelEngine && session.modelEngine !== engineName) {
-      this.logger.info(
-        { chatId, modelEngine: session.modelEngine, engine: engineName },
-        'Clearing model override from a different engine',
-      );
-      this.sessionManager.setSessionModel(chatId, undefined);
-    }
-
-    return {
-      session: this.sessionManager.getSession(chatId),
-      engineName,
-    };
+    return prepareSessionForExecution(this._sessionDeps, chatId);
   }
 
   /** Inject the doc sync service for /sync commands. */
@@ -335,6 +296,15 @@ export class MessageBridge {
 
   async handleMessage(msg: IncomingMessage): Promise<void> {
     const { chatId, text } = msg;
+
+    // ── Permission check: reject users not in the bot allowlist ──
+    if (this.config.permissions) {
+      if (!isUserAllowed(this.config.permissions, msg.userId)) {
+        this.logger.warn({ userId: msg.userId, botName: this.config.name }, "User denied by permissions");
+        await this.getSender(msg.chatId).sendText(msg.chatId, "抱歉，你没有权限使用此助手。请联系管理员开通。");
+        return;
+      }
+    }
 
     // Handle commands (always allowed, even during pending questions)
     if (text.startsWith('/')) {
@@ -748,7 +718,7 @@ export class MessageBridge {
           : imageKey
             ? '🖼️ ' + text
             : text;
-    const processor = new StreamProcessor(displayPrompt);
+    const processor = new StreamProcessor(displayPrompt, this.config.contextWindow, this.config.claude.model);
     const initialState: CardState = {
       status: 'thinking',
       userPrompt: displayPrompt,
@@ -765,7 +735,42 @@ export class MessageBridge {
 
     const apiContext = { botName: this.config.name, chatId };
 
+    // Resolve agent knowledge and system prompt
+    let systemPromptOverride: string | undefined;
+    let knowledgeContext: string | null = null;
+    let agentBoundSkills: string[] = [];
+    try {
+      const knowledgeResult = await this.fetchKnowledgeContext(text, chatId);
+      systemPromptOverride = knowledgeResult.systemPromptOverride;
+      knowledgeContext = knowledgeResult.knowledgeContext;
+      agentBoundSkills = knowledgeResult.agentBoundSkills;
+    } catch (err) {
+      this.logger.warn({ err }, 'Knowledge search failed, continuing without injection');
+    }
+
+    // Inject pending summary from previous session reset
+    const pendingSummary = this.sessionManager.consumePendingSummary(chatId);
+    if (pendingSummary) {
+      knowledgeContext = knowledgeContext
+        ? `${knowledgeContext}\n\n## 前次会话摘要\n${pendingSummary}`
+        : `## 前次会话摘要\n${pendingSummary}`;
+      this.logger.info({ chatId, summaryLen: pendingSummary.length }, 'Injected pre-reset summary');
+    }
+
+    // Dynamic skill deployment: select relevant skills for this query
+    try {
+      const selectedSkills = this.skillRouter.selectSkills(text || '');
+      const selectedNames = selectedSkills.map((s) => s.name);
+      const mergedNames = [...new Set([...selectedNames, ...agentBoundSkills])];
+      deploySelectedSkills(cwd, mergedNames, this.logger);
+      this.logger.debug({ chatId, skills: mergedNames }, 'Skills deployed for query');
+    } catch (err) {
+      this.logger.warn({ err }, 'Skill deployment failed, using default skills');
+    }
+
     // Start multi-turn execution
+    // Resolve user role from permissions config
+    const userRole = resolveUserRole(this.config.permissions, userId);
     const executionHandle = this.executorForChat(chatId).startExecution({
       prompt,
       cwd,
@@ -774,6 +779,9 @@ export class MessageBridge {
       outputsDir,
       apiContext,
       model: session.model,
+      systemPromptOverride,
+      knowledgeContext,
+      userRole,
     });
 
     const rateLimiter = new RateLimiter(1500);
@@ -921,7 +929,7 @@ export class MessageBridge {
         }
       }
 
-      await rateLimiter.cancelAndWait();
+      rateLimiter.cancel();
 
       // Force terminal state if stream ended without one
       if (lastState.status !== 'complete' && lastState.status !== 'error') {
@@ -944,7 +952,7 @@ export class MessageBridge {
       // Auto-retry with fresh session when Claude can't find the conversation
       if (lastState.status === 'error' && isStaleSessionError(lastState.errorMessage) && session.sessionId) {
         this.logger.info({ chatId }, 'Stale session detected, retrying with fresh session');
-        this.sessionManager.resetSession(chatId);
+        const _summary = this.buildProactiveSummary(lastState); this.sessionManager.resetSession(chatId, _summary);
         lastState = { ...lastState, status: 'running', errorMessage: undefined };
         await this.getSender(chatId).updateCard(messageId, {
           ...lastState,
@@ -960,6 +968,9 @@ export class MessageBridge {
           outputsDir,
           apiContext,
           model: session.model,
+          systemPromptOverride,
+          knowledgeContext,
+      userRole,
         });
         executionHandle.finish();
         runningTask.executionHandle = retryHandle;
@@ -981,22 +992,29 @@ export class MessageBridge {
 
       // Auto-retry with fresh session on context overflow (e.g. third-party models without compaction)
       if (lastState.status === 'error' && isContextOverflowError(lastState.errorMessage) && session.sessionId) {
-        this.logger.info({ chatId }, 'Context overflow detected, retrying with fresh session');
-        this.sessionManager.resetSession(chatId);
+        this.logger.info(
+          { chatId, threshold: CONTEXT_USAGE_THRESHOLD },
+          'Context overflow detected, retrying with continuation prompt',
+        );
+        const _summary = this.buildProactiveSummary(lastState); this.sessionManager.resetSession(chatId, _summary);
         lastState = { ...lastState, status: 'running', errorMessage: undefined };
         await this.getSender(chatId).updateCard(messageId, {
           ...lastState,
-          responseText: '_Context limit reached, starting fresh session..._',
+          responseText: '_对话内容过长，正在压缩上下文并继续..._',
         });
 
+        const continuationPrompt = this.buildContinuationPrompt(prompt, lastState);
         const retryHandle = this.executorForChat(chatId).startExecution({
-          prompt,
+          prompt: continuationPrompt,
           cwd,
           sessionId: undefined,
           abortController,
           outputsDir,
           apiContext,
           model: session.model,
+          systemPromptOverride,
+          knowledgeContext,
+      userRole,
         });
         executionHandle.finish();
         runningTask.executionHandle = retryHandle;
@@ -1016,7 +1034,9 @@ export class MessageBridge {
         await rateLimiter.cancelAndWait();
       }
 
+      const finalCardStart = Date.now();
       await this.sendFinalCard(messageId, lastState, chatId);
+      this.logger.info({ chatId, finalCardMs: Date.now() - finalCardStart, status: lastState.status }, 'Final card sent');
 
       // Audit + cost tracking
       const durationMs = Date.now() - startTime;
@@ -1048,6 +1068,11 @@ export class MessageBridge {
         durationMs,
         errorMessage: lastState.errorMessage,
         timestamp: Date.now(),
+        inputTokens: lastState.inputTokens,
+        outputTokens: lastState.outputTokens,
+        cacheReadTokens: lastState.cacheReadTokens,
+        cacheCreationTokens: lastState.cacheCreationTokens,
+        model: lastState.model,
       });
       this.costTracker.record({
         botName: this.config.name,
@@ -1055,55 +1080,110 @@ export class MessageBridge {
         success: lastState.status === 'complete',
         costUsd: lastState.costUsd,
         durationMs,
+        inputTokens: lastState.inputTokens,
+        outputTokens: lastState.outputTokens,
+        cacheReadTokens: lastState.cacheReadTokens,
+        cacheCreationTokens: lastState.cacheCreationTokens,
       });
       metrics.incCounter('metabot_tasks_total');
       metrics.incCounter('metabot_tasks_by_status', lastState.status === 'complete' ? 'success' : 'error');
       metrics.observeHistogram('metabot_task_duration_seconds', durationMs / 1000);
       if (lastState.costUsd) metrics.observeHistogram('metabot_task_cost_usd', lastState.costUsd);
 
-      // Record in cross-platform session registry
-      this.recordSession(
-        chatId,
-        displayPrompt,
-        lastState.responseText,
-        processor.getSessionId(),
-        lastState.costUsd,
-        durationMs,
-      );
+      // Auto-record conversation memory (fire-and-forget)
+      if (lastState.status === 'complete' && text) {
+        this.memoryWriter
+          .record(this.config.name, text, lastState.responseText || '', {
+            chatId,
+            chatType: msg.chatType,
+            userId,
+            durationMs,
+            costUsd: lastState.costUsd,
+          })
+          .catch(() => {});
+      }
 
-      // Send completion notification for long-running tasks (>10s) so user gets a Feishu push
-      await this.sendCompletionNotice(chatId, lastState, durationMs);
+      // Auto-archive output files to MetaMemory (fire-and-forget)
+      if (outputsDir && lastState.status === 'complete') {
+        const outputFiles = this.outputsManager.scanOutputs(outputsDir);
+        if (outputFiles.length > 0) {
+          if (msg.chatType === 'group' && this.workspaceManager) {
+            this.outputArchiver.archiveFilesForGroup(chatId, this.config.name, outputFiles, this.workspaceManager).catch(() => {});
+          } else {
+            this.outputArchiver.archiveFiles(this.config.name, outputFiles).catch(() => {});
+          }
+        }
+      }
 
-      // Send any output files produced by Claude
-      await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
+      // Post-processing: fire-and-forget to avoid blocking task cleanup
+      const postProcessPromise = (async () => {
+        try {
+          await this.recordSession(
+            chatId,
+            displayPrompt,
+            lastState.responseText,
+            processor.getSessionId(),
+            lastState.costUsd,
+            durationMs,
+          );
+        } catch (e) { this.logger.warn({ err: e, chatId }, 'recordSession failed'); }
+
+        try {
+          await this.sendCompletionNotice(chatId, lastState, durationMs);
+        } catch (e) { this.logger.warn({ err: e, chatId }, 'sendCompletionNotice failed'); }
+
+      this.logger.info({ chatId, status: lastState.status, totalTokens: lastState.totalTokens, contextWindow: lastState.contextWindow, hasSessionId: !!session.sessionId, model: lastState.model }, 'Context usage check');
+      // Proactive session reset: if context usage is high, reset so next message starts fresh
+      // instead of waiting for an overflow error on the next call
+      if (lastState.status === 'complete' && lastState.totalTokens && lastState.contextWindow && session.sessionId) {
+        const usagePct = lastState.totalTokens / lastState.contextWindow;
+        if (usagePct >= CONTEXT_USAGE_THRESHOLD) {
+          this.logger.info(
+            { chatId, usagePct: Math.round(usagePct * 100), sessionId: session.sessionId },
+            'Proactive session reset: context usage above threshold',
+          );
+          try {
+            await this.handlePreResetContext(chatId, prompt, lastState, msg.chatType);
+            const _summary = this.buildProactiveSummary(lastState); this.sessionManager.resetSession(chatId, _summary);
+          } catch (e) { this.logger.warn({ err: e, chatId }, 'handlePreResetContext failed'); }
+        }
+      }
+
+      try {
+        await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
+      } catch (e) { this.logger.warn({ err: e, chatId }, 'sendOutputFiles failed'); }
+      })().catch(() => {});
     } catch (err: any) {
       this.logger.error({ err, chatId, userId }, 'Claude execution error');
 
       // Auto-retry with fresh session when Claude can't find the conversation or context overflows
       const errMsg: string = err.message || '';
-      if ((isStaleSessionError(errMsg) || isContextOverflowError(errMsg)) && session.sessionId) {
-        const isOverflow = isContextOverflowError(errMsg);
+      const isOverflow = isContextOverflowError(errMsg);
+      const isStale = isStaleSessionError(errMsg);
+      if ((isStale && session.sessionId) || isOverflow) {
         this.logger.info(
           { chatId, isOverflow },
           isOverflow
-            ? 'Context overflow in catch, retrying with fresh session'
+            ? 'Context overflow in catch, retrying with continuation prompt'
             : 'Stale session detected in catch, retrying with fresh session',
         );
-        this.sessionManager.resetSession(chatId);
-        const retryMsg = isOverflow
-          ? '_Context limit reached, starting fresh session..._'
-          : '_Session expired, retrying..._';
+        const _summary = this.buildProactiveSummary(lastState); this.sessionManager.resetSession(chatId, _summary);
+        const retryMsg = isOverflow ? '_对话内容过长，正在压缩上下文并继续..._' : '_Session expired, retrying..._';
         await this.getSender(chatId).updateCard(messageId, { ...lastState, status: 'running', responseText: retryMsg });
 
         try {
+          const retryPrompt = isOverflow ? this.buildContinuationPrompt(prompt, lastState) : prompt;
           const retryHandle = this.executorForChat(chatId).startExecution({
-            prompt,
+            prompt: retryPrompt,
             cwd,
             sessionId: undefined,
             abortController,
             outputsDir,
             apiContext,
             model: session.model,
+            systemPromptOverride,
+            knowledgeContext,
+      userRole,
           });
           executionHandle.finish();
           runningTask.executionHandle = retryHandle;
@@ -1145,6 +1225,11 @@ export class MessageBridge {
             durationMs,
             errorMessage: lastState.errorMessage,
             timestamp: Date.now(),
+            inputTokens: lastState.inputTokens,
+            outputTokens: lastState.outputTokens,
+            cacheReadTokens: lastState.cacheReadTokens,
+            cacheCreationTokens: lastState.cacheCreationTokens,
+            model: lastState.model,
           });
           this.costTracker.record({
             botName: this.config.name,
@@ -1152,11 +1237,15 @@ export class MessageBridge {
             success: lastState.status === 'complete',
             costUsd: lastState.costUsd,
             durationMs,
+            inputTokens: lastState.inputTokens,
+            outputTokens: lastState.outputTokens,
+            cacheReadTokens: lastState.cacheReadTokens,
+            cacheCreationTokens: lastState.cacheCreationTokens,
           });
           metrics.incCounter('metabot_tasks_total');
           metrics.incCounter('metabot_tasks_by_status', lastState.status === 'complete' ? 'success' : 'error');
 
-          this.recordSession(
+          await this.recordSession(
             chatId,
             displayPrompt,
             lastState.responseText,
@@ -1227,29 +1316,36 @@ export class MessageBridge {
         try {
           fs.unlinkSync(imagePath);
         } catch {
-          /* ignore */
+          // temp file cleanup, safe to ignore
         }
       }
       if (filePath) {
         try {
           fs.unlinkSync(filePath);
         } catch {
-          /* ignore */
+          // temp file cleanup, safe to ignore
         }
       }
       for (const p of extraPaths) {
         try {
           fs.unlinkSync(p);
         } catch {
-          /* ignore */
+          // temp file cleanup, safe to ignore
         }
       }
       try {
         this.outputsManager.cleanup(outputsDir);
-      } catch {
-        /* ignore */
+      } catch (err: any) {
+        this.logger.debug({ err: err?.message }, 'Output cleanup failed');
       }
     }
+  }
+
+  private async fetchKnowledgeContext(
+    text: string,
+    chatId: string,
+  ): Promise<{ systemPromptOverride?: string; knowledgeContext: string | null; agentBoundSkills: string[] }> {
+    return fetchKnowledgeContext(this._knowledgeDeps, text, chatId);
   }
 
   async executeApiTask(options: ApiTaskOptions): Promise<ApiTaskResult> {
@@ -1266,7 +1362,7 @@ export class MessageBridge {
     const outputsDir = this.outputsManager.prepareDir(chatId);
 
     const displayPrompt = prompt;
-    const processor = new StreamProcessor(displayPrompt);
+    const processor = new StreamProcessor(displayPrompt, this.config.contextWindow, this.config.claude.model);
     const rateLimiter = new RateLimiter(1500);
 
     const initialState: CardState = {
@@ -1292,6 +1388,38 @@ export class MessageBridge {
       groupId: options.groupId,
     };
 
+    // Knowledge retrieval for API tasks
+    let systemPromptOverride: string | undefined;
+    let knowledgeContext: string | null = null;
+    let apiAgentBoundSkills: string[] = [];
+    try {
+      const knowledgeResult = await this.fetchKnowledgeContext(prompt, chatId);
+      systemPromptOverride = knowledgeResult.systemPromptOverride;
+      knowledgeContext = knowledgeResult.knowledgeContext;
+      apiAgentBoundSkills = knowledgeResult.agentBoundSkills;
+    } catch (err) {
+      this.logger.warn({ err }, 'Knowledge search for API task failed, continuing without injection');
+    }
+
+    // Inject pending summary from previous session reset
+    const apiPendingSummary = this.sessionManager.consumePendingSummary(chatId);
+    if (apiPendingSummary) {
+      knowledgeContext = knowledgeContext
+        ? `${knowledgeContext}\n\n## 前次会话摘要\n${apiPendingSummary}`
+        : `## 前次会话摘要\n${apiPendingSummary}`;
+      this.logger.info({ chatId, summaryLen: apiPendingSummary.length }, 'API task: injected pre-reset summary');
+    }
+
+    // Dynamic skill deployment for API tasks (merge with agent-bound skills)
+    try {
+      const selectedSkills = this.skillRouter.selectSkills(prompt);
+      const selectedNames = selectedSkills.map((s) => s.name);
+      const mergedNames = [...new Set([...selectedNames, ...apiAgentBoundSkills])];
+      deploySelectedSkills(cwd, mergedNames, this.logger);
+    } catch (err: any) {
+      this.logger.debug({ err: err?.message }, 'Skill staging not available, using default skills');
+    }
+
     const executionHandle = this.executorForChat(chatId).startExecution({
       prompt,
       cwd,
@@ -1302,6 +1430,9 @@ export class MessageBridge {
       maxTurns: options.maxTurns,
       model: options.model ?? session.model,
       allowedTools: options.allowedTools,
+      systemPromptOverride,
+      knowledgeContext,
+
     });
 
     const startTime = Date.now();
@@ -1437,22 +1568,18 @@ export class MessageBridge {
       }
 
       // Auto-retry with fresh session when Claude can't find the conversation or context overflows
-      if (
-        lastState.status === 'error' &&
-        (isStaleSessionError(lastState.errorMessage) || isContextOverflowError(lastState.errorMessage)) &&
-        session.sessionId
-      ) {
-        const isOverflow = isContextOverflowError(lastState.errorMessage);
+      const isOverflowResult = lastState.status === 'error' && isContextOverflowError(lastState.errorMessage);
+      const isStaleResult = lastState.status === 'error' && isStaleSessionError(lastState.errorMessage) && session.sessionId;
+      if (isStaleResult || isOverflowResult) {
+        const isOverflow = isOverflowResult;
         this.logger.info(
           { chatId, isOverflow },
           isOverflow
-            ? 'API task: context overflow, retrying with fresh session'
+            ? 'API task: context overflow, retrying with continuation prompt'
             : 'API task: stale session detected, retrying with fresh session',
         );
-        this.sessionManager.resetSession(chatId);
-        const retryMsg = isOverflow
-          ? '_Context limit reached, starting fresh session..._'
-          : '_Session expired, retrying..._';
+        const _summary = this.buildProactiveSummary(lastState); this.sessionManager.resetSession(chatId, _summary);
+        const retryMsg = isOverflow ? '_对话内容过长，正在压缩上下文并继续..._' : '_Session expired, retrying..._';
         if (sendCards && messageId) {
           await this.getSender(chatId).updateCard(messageId, {
             ...lastState,
@@ -1461,14 +1588,18 @@ export class MessageBridge {
           });
         }
 
+        const retryPrompt = isOverflow ? this.buildContinuationPrompt(prompt, lastState) : prompt;
         const retryHandle = this.executorForChat(chatId).startExecution({
-          prompt,
+          prompt: retryPrompt,
           cwd,
           sessionId: undefined,
           abortController,
           outputsDir,
           apiContext,
           model: options.model ?? session.model,
+          systemPromptOverride,
+          knowledgeContext,
+
         });
         executionHandle.finish();
         runningTask.executionHandle = retryHandle;
@@ -1496,7 +1627,9 @@ export class MessageBridge {
       }
       options.onUpdate?.(lastState, effectiveMessageId, true);
 
-      await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
+      if (!options.skipOutputFiles) {
+        await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
+      }
 
       // Notify web clients about output files before cleanup
       if (options.onOutputFiles) {
@@ -1526,6 +1659,11 @@ export class MessageBridge {
         durationMs,
         errorMessage: lastState.errorMessage,
         timestamp: Date.now(),
+        inputTokens: lastState.inputTokens,
+        outputTokens: lastState.outputTokens,
+        cacheReadTokens: lastState.cacheReadTokens,
+        cacheCreationTokens: lastState.cacheCreationTokens,
+        model: lastState.model,
       });
       this.costTracker.record({
         botName: this.config.name,
@@ -1533,13 +1671,41 @@ export class MessageBridge {
         success: lastState.status === 'complete',
         costUsd: lastState.costUsd,
         durationMs,
+        inputTokens: lastState.inputTokens,
+        outputTokens: lastState.outputTokens,
+        cacheReadTokens: lastState.cacheReadTokens,
+        cacheCreationTokens: lastState.cacheCreationTokens,
       });
       metrics.incCounter('metabot_api_tasks_total');
       metrics.observeHistogram('metabot_task_duration_seconds', durationMs / 1000);
       if (lastState.costUsd) metrics.observeHistogram('metabot_task_cost_usd', lastState.costUsd);
 
+      // Auto-record conversation memory (fire-and-forget)
+      if (lastState.status === 'complete' && prompt) {
+        this.memoryWriter
+          .record(this.config.name, prompt, lastState.responseText || '', {
+            chatId,
+            chatType: options.chatType,
+            durationMs,
+            costUsd: lastState.costUsd,
+          })
+          .catch(() => {});
+      }
+
+      // Auto-archive output files to MetaMemory (fire-and-forget)
+      if (outputsDir && lastState.status === 'complete') {
+        const outputFiles = this.outputsManager.scanOutputs(outputsDir);
+        if (outputFiles.length > 0) {
+          if (options.chatType === 'group' && this.workspaceManager) {
+            this.outputArchiver.archiveFilesForGroup(chatId, this.config.name, outputFiles, this.workspaceManager).catch(() => {});
+          } else {
+            this.outputArchiver.archiveFiles(this.config.name, outputFiles).catch(() => {});
+          }
+        }
+      }
+
       // Record in cross-platform session registry
-      this.recordSession(
+      await this.recordSession(
         chatId,
         prompt,
         lastState.responseText,
@@ -1547,6 +1713,19 @@ export class MessageBridge {
         lastState.costUsd,
         durationMs,
       );
+
+      // Proactive session reset for API tasks too
+      if (lastState.status === 'complete' && lastState.totalTokens && lastState.contextWindow && session.sessionId) {
+        const usagePct = lastState.totalTokens / lastState.contextWindow;
+        if (usagePct >= CONTEXT_USAGE_THRESHOLD) {
+          this.logger.info(
+            { chatId, usagePct: Math.round(usagePct * 100), sessionId: session.sessionId },
+            'API task: proactive session reset (context usage above threshold)',
+          );
+          await this.handlePreResetContext(chatId, prompt, lastState, options.chatType);
+          const _summary = this.buildProactiveSummary(lastState); this.sessionManager.resetSession(chatId, _summary);
+        }
+      }
 
       return {
         success: lastState.status === 'complete',
@@ -1561,18 +1740,17 @@ export class MessageBridge {
 
       // Auto-retry with fresh session when Claude can't find the conversation or context overflows
       const errMsg: string = err.message || '';
-      if ((isStaleSessionError(errMsg) || isContextOverflowError(errMsg)) && session.sessionId) {
-        const isOverflow = isContextOverflowError(errMsg);
+      const isOverflow = isContextOverflowError(errMsg);
+      const isStale = isStaleSessionError(errMsg);
+      if ((isStale && session.sessionId) || isOverflow) {
         this.logger.info(
           { chatId, isOverflow },
           isOverflow
-            ? 'API task: context overflow in catch, retrying with fresh session'
+            ? 'API task: context overflow in catch, retrying with continuation prompt'
             : 'API task: stale session in catch, retrying with fresh session',
         );
-        this.sessionManager.resetSession(chatId);
-        const retryMsg = isOverflow
-          ? '_Context limit reached, starting fresh session..._'
-          : '_Session expired, retrying..._';
+        const _summary = this.buildProactiveSummary(lastState); this.sessionManager.resetSession(chatId, _summary);
+        const retryMsg = isOverflow ? '_对话内容过长，正在压缩上下文并继续..._' : '_Session expired, retrying..._';
         if (sendCards && messageId) {
           await this.getSender(chatId).updateCard(messageId, {
             ...lastState,
@@ -1582,14 +1760,18 @@ export class MessageBridge {
         }
 
         try {
+          const retryPrompt = isOverflow ? this.buildContinuationPrompt(prompt, lastState) : prompt;
           const retryHandle = this.executorForChat(chatId).startExecution({
-            prompt,
+            prompt: retryPrompt,
             cwd,
             sessionId: undefined,
             abortController,
             outputsDir,
             apiContext,
             model: options.model ?? session.model,
+            systemPromptOverride,
+            knowledgeContext,
+
           });
           executionHandle.finish();
           runningTask.executionHandle = retryHandle;
@@ -1687,8 +1869,8 @@ export class MessageBridge {
       this.processQueue(chatId);
       try {
         this.outputsManager.cleanup(outputsDir);
-      } catch {
-        /* ignore */
+      } catch (err: any) {
+        this.logger.debug({ err: err?.message }, 'Output cleanup failed');
       }
     }
   }
@@ -1699,47 +1881,14 @@ export class MessageBridge {
    * sends a plain text fallback so the user at least sees the result.
    */
   private async sendFinalCard(messageId: string, state: CardState, chatId?: string): Promise<void> {
-    // Accumulate usage into session and inject cumulative cost for display
-    if (chatId && (state.status === 'complete' || state.status === 'error')) {
-      this.sessionManager.addUsage(chatId, state.totalTokens ?? 0, state.costUsd ?? 0, state.durationMs ?? 0);
-      const session = this.sessionManager.getSession(chatId);
-      state.sessionCostUsd = session.cumulativeCostUsd;
-    }
-    for (let attempt = 0; attempt < FINAL_CARD_RETRIES; attempt++) {
-      const ok = await this.getSender(chatId).updateCard(messageId, state);
-      if (ok) return;
-      const delay = FINAL_CARD_BASE_DELAY_MS * Math.pow(2, attempt);
-      this.logger.warn({ attempt, delay, messageId }, 'Final card update failed, retrying');
-      await new Promise((r) => setTimeout(r, delay));
-    }
-    if (chatId) {
-      this.logger.error({ messageId, chatId }, 'All final card retries failed, sending text fallback');
-      const statusEmoji = state.status === 'complete' ? '✅' : '❌';
-      const summary = state.responseText ? state.responseText.slice(0, 2000) : state.errorMessage || 'Task finished';
-      try {
-        await this.getSender(chatId).sendText(chatId, `${statusEmoji} ${summary}`);
-      } catch {
-        /* last resort failed */
-      }
-    }
+    return sendFinalCard(this._cardDeps, messageId, state, chatId);
   }
 
   /**
    * Read and send plan file content to the user when ExitPlanMode is triggered.
    */
   private async sendPlanContent(chatId: string, processor: StreamProcessor, _currentState: CardState): Promise<void> {
-    const planPath = processor.getPlanFilePath();
-    if (!planPath) return;
-
-    try {
-      const planContent = await fsPromises.readFile(planPath, 'utf-8');
-      if (!planContent.trim()) return;
-
-      this.logger.info({ chatId, planPath }, 'Sending plan content to user');
-      await this.getSender(chatId).sendTextNotice(chatId, '📋 Plan', planContent, 'green');
-    } catch (err) {
-      this.logger.warn({ err, planPath, chatId }, 'Failed to read plan file for display');
-    }
+    return sendPlanContent(this._cardDeps, chatId, processor, _currentState);
   }
 
   /**
@@ -1747,70 +1896,300 @@ export class MessageBridge {
    * Card updates don't trigger Feishu mobile push notifications, but new messages do.
    * Only sends for tasks that took longer than 10 seconds.
    */
+  /** Get the OutputArchiver for external wiring (e.g. GroupCoordinator). */
+  getOutputArchiver(): OutputArchiver {
+    return this.outputArchiver;
+  }
+
+  /** Inject WorkspaceManager for proper document routing. */
+  setWorkspaceManager(wm: import('../memory/workspace-manager.js').WorkspaceManager): void {
+    this.workspaceManager = wm;
+    this.memoryWriter.setWorkspaceManager(wm);
+  }
+
   /** Record session and messages in the cross-platform registry. */
-  private recordSession(
+  private async recordSession(
     chatId: string,
     prompt: string,
     responseText: string | undefined,
     claudeSessionId: string | undefined,
     costUsd: number | undefined,
     durationMs: number | undefined,
-  ): void {
-    if (!this.sessionRegistry) return;
-    try {
-      this.sessionRegistry.createOrUpdate({
-        chatId,
-        botName: this.config.name,
-        claudeSessionId,
-        workingDirectory: this.sessionManager.getSession(chatId).workingDirectory,
-        prompt,
-        responseText,
-        costUsd,
-        durationMs,
-      });
-    } catch (err) {
-      this.logger.warn({ err, chatId }, 'Failed to record session in registry');
-    }
+  ): Promise<void> {
+    return recordSession(this._sessionDeps, chatId, prompt, responseText, claudeSessionId, costUsd, durationMs);
   }
 
   private async sendCompletionNotice(chatId: string, state: CardState, durationMs: number): Promise<void> {
-    // Some senders (WeChat) already send the final response as a standalone message, so skip
-    if (this.getSender(chatId).skipCompletionNotice) return;
-    // Only notify for tasks that took a while — quick tasks don't need it
-    if (durationMs < 10_000) return;
+    return sendCompletionNotice(this._cardDeps, chatId, state, durationMs);
+  }
 
-    const statusEmoji = state.status === 'complete' ? '✅' : '❌';
-    const durationStr =
-      durationMs >= 60_000 ? `${(durationMs / 60_000).toFixed(1)}min` : `${(durationMs / 1000).toFixed(0)}s`;
-    const costStr = state.sessionCostUsd
-      ? ` · $${state.sessionCostUsd.toFixed(2)}`
-      : state.costUsd
-        ? ` · $${state.costUsd.toFixed(2)}`
-        : '';
-    const statusWord = state.status === 'complete' ? 'Done' : 'Failed';
+  updateConfig(newConfig: BotConfigBase): void {
+    this.config = newConfig;
+    this.engine = createEngine(newConfig, this.logger);
+    this.executor = this.engine.createExecutor();
+    const engineName = resolveEngineName(newConfig);
+    this.engineCache.set(engineName, { engine: this.engine, executor: this.executor });
+  }
 
-    // Model display name: strip "claude-" prefix for brevity (e.g. "opus-4-7")
-    const modelStr = state.model ? ` · ${state.model.replace(/^claude-/, '')}` : '';
+  /**
+   * Build a continuation prompt that carries forward context from the previous (overflowed) session.
+   * The new Claude session gets: what was asked, what was done, and what still needs doing.
+   */
+  private buildContinuationPrompt(originalPrompt: string, lastState: CardState): string {
+    const parts: string[] = [
+      '## 上下文续接（前次对话因长度溢出被压缩）',
+      '',
+      `**用户原始请求**: ${originalPrompt.slice(0, 500)}`,
+      '',
+    ];
 
-    // Context usage: show totalTokens / contextWindow as percentage
-    let usageStr = '';
-    if (state.totalTokens && state.contextWindow) {
-      const pct = Math.round((state.totalTokens / state.contextWindow) * 100);
-      const tokensK = state.totalTokens >= 1000 ? `${(state.totalTokens / 1000).toFixed(1)}k` : `${state.totalTokens}`;
-      const ctxK = `${Math.round(state.contextWindow / 1000)}k`;
-      usageStr = ` · ${tokensK}/${ctxK} (${pct}%)`;
-    } else if (state.totalTokens) {
-      const tokensK = state.totalTokens >= 1000 ? `${(state.totalTokens / 1000).toFixed(1)}k` : `${state.totalTokens}`;
-      usageStr = ` · ${tokensK} tokens`;
+    if (lastState.toolCalls && lastState.toolCalls.length > 0) {
+      const toolSummary = lastState.toolCalls
+        .slice(-10)
+        .map((tc) => `- ${tc.name}${tc.detail ? ': ' + tc.detail.slice(0, 100) : ''} [${tc.status}]`)
+        .join('\n');
+      parts.push(`**已执行的操作**:\n${toolSummary}`, '');
     }
 
-    const message = `${statusEmoji} ${statusWord} (${durationStr}${costStr}${modelStr}${usageStr})`;
+    if (lastState.responseText && lastState.responseText.length > 0) {
+      const truncated =
+        lastState.responseText.length > 1500
+          ? lastState.responseText.slice(0, 1500) + '...(已截断)'
+          : lastState.responseText;
+      parts.push(`**上次的回复摘要**:\n${truncated}`, '');
+    }
 
+    parts.push('---', '');
+    parts.push('请基于以上上下文继续。如果之前的操作已完成，直接告诉用户结果。如果有未完成的工作，继续执行。');
+    parts.push('', `用户最新消息: ${originalPrompt}`);
+
+    return parts.join('\n');
+  }
+
+  /**
+   * Handle pre-reset context: generate summary (A) + auto-save to knowledge base (C).
+   * Called before resetSession() at proactive reset points.
+   */
+  private async handlePreResetContext(
+    chatId: string,
+    prompt: string,
+    lastState: CardState,
+    chatType?: string,
+  ): Promise<void> {
+    const botName = this.config.name;
+
+    // C: Auto-save full conversation to knowledge base (fire-and-forget, no rate limit)
+    this.autoSaveToKnowledgeBase(chatId, prompt, lastState, chatType).catch(() => {});
+
+    // A: Generate LLM summary and store in SessionManager
+    const summary = await this.generateSessionSummary(prompt, lastState);
+    if (summary) {
+      const session = this.sessionManager.getSession(chatId);
+      session.pendingSummary = summary;
+      this.sessionManager.markDirty();
+      this.logger.info({ chatId, summaryLen: summary.length, botName }, 'Pre-reset summary generated');
+    }
+  }
+
+  /**
+   * Generate a structured conversation summary using the default LLM provider.
+   */
+  private async generateSessionSummary(prompt: string, lastState: CardState): Promise<string | undefined> {
     try {
-      await this.getSender(chatId).sendText(chatId, message);
-    } catch (err) {
-      this.logger.warn({ err, chatId }, 'Failed to send completion notice');
+      const { rows } = await pool.query(
+        "SELECT api_key_encrypted, base_url, model FROM provider_configs WHERE type = 'LLM' AND is_default = true LIMIT 1",
+      );
+      if (!rows[0]?.api_key_encrypted) return undefined;
+
+      const { decrypt } = await import('../db/crypto.js');
+      const apiKey = decrypt(rows[0].api_key_encrypted);
+      const baseUrl = (rows[0].base_url || '').replace(/\/+$/, '');
+      const model = rows[0].model || 'GLM-5.1';
+      const isAnthropic = /\/anthropic/i.test(baseUrl);
+
+      const summaryPrompt = this.buildSummaryInput(prompt, lastState);
+
+      let summaryText: string | undefined;
+      if (isAnthropic) {
+        summaryText = await this.callAnthropicForSummary(baseUrl, apiKey, model, summaryPrompt);
+      } else {
+        summaryText = await this.callOpenAIForSummary(baseUrl, apiKey, model, summaryPrompt);
+      }
+
+      return summaryText;
+    } catch (err: any) {
+      this.logger.warn({ err: err?.message }, 'Failed to generate session summary');
+      return undefined;
     }
+  }
+
+  private buildSummaryInput(prompt: string, lastState: CardState): string {
+    const parts: string[] = [
+      '请用中文总结以下对话的核心内容，控制在2000字以内。',
+      '',
+      '要求：',
+      '1. 对话的主题和目标',
+      '2. 已完成的工作（具体结果）',
+      '3. 进行中或未完成的工作',
+      '4. 关键决策和结论',
+      '5. 用户明确的偏好或要求',
+      '',
+    ];
+
+    parts.push(`**用户请求**: ${prompt.slice(0, 500)}`);
+    parts.push('');
+
+    if (lastState.toolCalls && lastState.toolCalls.length > 0) {
+      const toolSummary = lastState.toolCalls
+        .slice(-15)
+        .map((tc) => `- ${tc.name}${tc.detail ? ': ' + tc.detail.slice(0, 200) : ''} [${tc.status}]`)
+        .join('\n');
+      parts.push(`**已执行的操作**:\n${toolSummary}`, '');
+    }
+
+    if (lastState.responseText && lastState.responseText.length > 0) {
+      const truncated =
+        lastState.responseText.length > 4000
+          ? lastState.responseText.slice(0, 4000) + '...(已截断)'
+          : lastState.responseText;
+      parts.push(`**助手回复**:\n${truncated}`, '');
+    }
+
+    parts.push('请输出结构化的对话摘要：');
+    return parts.join('\n');
+  }
+
+  private async callAnthropicForSummary(
+    baseUrl: string,
+    apiKey: string,
+    model: string,
+    summaryPrompt: string,
+  ): Promise<string | undefined> {
+    const res = await fetch(`${baseUrl}/v1/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 3000,
+        messages: [{ role: 'user', content: summaryPrompt }],
+      }),
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!res.ok) return undefined;
+    const data = (await res.json()) as { content: Array<{ type: string; text: string }> };
+    return data.content?.find((c) => c.type === 'text')?.text;
+  }
+
+  private async callOpenAIForSummary(
+    baseUrl: string,
+    apiKey: string,
+    model: string,
+    summaryPrompt: string,
+  ): Promise<string | undefined> {
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: summaryPrompt }],
+        max_tokens: 3000,
+      }),
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!res.ok) return undefined;
+    const data = (await res.json()) as { choices: Array<{ message: { content: string } }> };
+    return data.choices?.[0]?.message?.content;
+  }
+
+  /**
+   * Auto-save conversation to knowledge base before reset.
+   * Bypasses MemoryWriter's 10-minute rate limit.
+   */
+  private async autoSaveToKnowledgeBase(
+    chatId: string,
+    prompt: string,
+    lastState: CardState,
+    chatType?: string,
+  ): Promise<void> {
+    try {
+      const botName = this.config.name;
+      const title = `[上下文归档] ${prompt.replace(/\n/g, ' ').trim().slice(0, 57)}${prompt.length > 60 ? '...' : ''}`;
+
+      const ts = new Date().toISOString();
+      const lines = [`# 上下文归档 ${ts}`, '', `**用户请求**: ${prompt.slice(0, 500)}`, ''];
+
+      if (lastState.toolCalls && lastState.toolCalls.length > 0) {
+        const toolSummary = lastState.toolCalls
+          .slice(-15)
+          .map((tc) => `- ${tc.name}${tc.detail ? ': ' + tc.detail.slice(0, 200) : ''} [${tc.status}]`)
+          .join('\n');
+        lines.push(`**已执行的操作**:\n${toolSummary}`, '');
+      }
+
+      if (lastState.responseText) {
+        lines.push('**助手回复**:');
+        lines.push(lastState.responseText.slice(0, 4000));
+        lines.push('');
+      }
+
+      const content = lines.join('\n');
+      const tags = ['auto-archive', 'context-reset', botName, chatId];
+
+      if (this.workspaceManager) {
+        if (chatType === 'group') {
+          await this.workspaceManager.createGroupDoc(chatId, 'knowledge', title, content, tags);
+        } else {
+          await this.workspaceManager.createBotDoc(botName, 'knowledge', title, content, tags);
+        }
+      } else {
+        const folderId = await this.ensureKnowledgeFolder(botName);
+        if (folderId) {
+          await this.memoryClient.createDocument({
+            title,
+            content,
+            tags,
+            folder_id: folderId,
+            created_by: botName,
+          });
+        }
+      }
+
+      this.logger.info({ botName, chatId }, 'Auto-saved conversation to knowledge base before reset');
+    } catch (err: any) {
+      this.logger.warn({ err: err?.message, chatId }, 'Failed to auto-save to knowledge base');
+    }
+  }
+
+  private async ensureKnowledgeFolder(botName: string): Promise<string | null> {
+    const empRoot = await this.memoryClient.ensureFolder('数字员工');
+    if (!empRoot) return null;
+    const botRoot = await this.memoryClient.ensureFolder(botName, empRoot);
+    if (!botRoot) return null;
+    return await this.memoryClient.ensureFolder('知识沉淀', botRoot);
+  }
+
+
+  private buildProactiveSummary(state: { responseText?: string; toolCalls?: Array<{ name: string; detail: string }> }): string | undefined {
+    const parts: string[] = [];
+    if (state.responseText) {
+      parts.push("## 最近回复");
+      parts.push(state.responseText.slice(0, 2000));
+    }
+    if (state.toolCalls && state.toolCalls.length > 0) {
+      parts.push("## 最近的工具调用");
+      const lines = state.toolCalls.slice(-10).map(t => "- " + t.name + ": " + t.detail.slice(0, 200));
+      parts.push(lines.join(String.fromCharCode(10)));
+    }
+    return parts.length > 0 ? parts.join(String.fromCharCode(10) + String.fromCharCode(10)) : undefined;
   }
 
   destroy(): void {
@@ -1829,16 +2208,4 @@ export class MessageBridge {
     this.runningTasks.clear();
     this.sessionManager.destroy();
   }
-}
-
-export function isStaleSessionError(errorMessage?: string): boolean {
-  if (!errorMessage) return false;
-  return /no conversation found|conversation not found|session id|invalid session|thread\/resume.*failed|no rollout found|multiple.*tool_result.*blocks|each tool_use must have a single result/i.test(errorMessage);
-}
-
-export function isContextOverflowError(errorMessage?: string): boolean {
-  if (!errorMessage) return false;
-  return /context.window.exceeds.limit|context.length.exceeded|context.too.long|max.context.length|token.limit.exceeded|maximum.context/i.test(
-    errorMessage,
-  );
 }

@@ -1,0 +1,69 @@
+.wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.input {
+  width: 100%;
+  padding: 8px 12px;
+  padding-right: 64px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--glass-border);
+  background: var(--surface-2);
+  color: var(--text-0);
+  font-size: 13px;
+  font-family: var(--font-mono);
+  outline: none;
+  transition: border-color var(--duration-fast);
+}
+.input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(0, 214, 143, 0.1);
+}
+
+.display {
+  width: 100%;
+  padding: 8px 12px;
+  padding-right: 64px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--glass-border);
+  background: var(--surface-2);
+  color: var(--text-1);
+  font-size: 13px;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: all;
+}
+
+.actions {
+  position: absolute;
+  right: 6px;
+  display: flex;
+  gap: 2px;
+}
+
+.iconBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-xs);
+  color: var(--text-2);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color var(--duration-fast), background var(--duration-fast);
+}
+.iconBtn:hover {
+  color: var(--text-0);
+  background: var(--surface-hover);
+}
+
+.iconBtnCopied {
+  color: var(--green) !important;
+}

@@ -5,6 +5,8 @@ import * as url from 'node:url';
 import type { Logger } from '../utils/logger.js';
 import { MemoryStorage } from './memory-storage.js';
 import type { Role } from './memory-storage.js';
+import { DocEmbedder } from './doc-embedder.js';
+import { AutoTagger } from './auto-tagger.js';
 import {
   handleGetFolders,
   handleCreateFolder,
@@ -18,6 +20,11 @@ import {
   handleDeleteDocument,
   handleSearch,
   handleHealth,
+  handleSubmitFeedback,
+  handleRelatedDocuments,
+  handleStaleDocuments,
+  handlePromoteDocument,
+  handleSuggestPromote,
 } from './memory-routes.js';
 
 export interface MemoryServerOptions {
@@ -113,7 +120,19 @@ function resolveStaticDir(): string {
 
 export function startMemoryServer(options: MemoryServerOptions): { server: http.Server; storage: MemoryStorage } {
   const { port, databaseDir, secret, adminToken, readerToken, logger } = options;
-  const storage = new MemoryStorage(databaseDir, logger);
+  const embedder = new DocEmbedder(logger);
+  // Eager health check (non-blocking, logs result)
+  embedder.healthCheck().then((result) => {
+    if (result.ok) {
+      logger.info({ model: result.model, baseUrl: result.baseUrl }, 'Embedding provider health check: OK');
+    } else if (result.configured) {
+      logger.error({ model: result.model, error: result.error }, 'Embedding provider health check: FAILED (provider configured but unreachable)');
+    } else {
+      logger.warn('Embedding provider health check: NOT CONFIGURED (embeddings disabled)');
+    }
+  });
+  const autoTagger = new AutoTagger(logger);
+  const storage = new MemoryStorage(databaseDir, logger, embedder, autoTagger);
   const staticDir = resolveStaticDir();
 
   // Auth is enabled if any token is configured
@@ -162,7 +181,7 @@ export function startMemoryServer(options: MemoryServerOptions): { server: http.
 
       // Health (no auth needed)
       if (method === 'GET' && pathname === '/api/health') {
-        const result = handleHealth(storage);
+        const result = await handleHealth(storage, embedder);
         jsonResponse(res, result.status, result.body);
         return;
       }
@@ -180,70 +199,102 @@ export function startMemoryServer(options: MemoryServerOptions): { server: http.
 
       // Folders
       if (method === 'GET' && pathname === '/api/folders') {
-        const result = handleGetFolders(storage, role);
+        const result = await handleGetFolders(storage, role);
         jsonResponse(res, result.status, result.body);
         return;
       }
       if (method === 'POST' && pathname === '/api/folders') {
         const body = await parseJsonBody(req);
-        const result = handleCreateFolder(storage, body, role);
+        const result = await handleCreateFolder(storage, body, role);
         jsonResponse(res, result.status, result.body);
         return;
       }
       if (method === 'PUT' && pathname.startsWith('/api/folders/')) {
         const folderId = decodeURIComponent(pathname.slice('/api/folders/'.length));
         const body = await parseJsonBody(req);
-        const result = handleUpdateFolder(storage, folderId, body, role);
+        const result = await handleUpdateFolder(storage, folderId, body, role);
         jsonResponse(res, result.status, result.body);
         return;
       }
       if (method === 'DELETE' && pathname.startsWith('/api/folders/')) {
         const folderId = decodeURIComponent(pathname.slice('/api/folders/'.length));
-        const result = handleDeleteFolder(storage, folderId, role);
+        const result = await handleDeleteFolder(storage, folderId, role);
         jsonResponse(res, result.status, result.body);
         return;
       }
 
       // Documents
       if (method === 'GET' && pathname === '/api/documents/by-path') {
-        const result = handleGetDocumentByPath(storage, query, role);
+        const result = await handleGetDocumentByPath(storage, query, role);
         jsonResponse(res, result.status, result.body);
         return;
       }
       if (method === 'GET' && pathname === '/api/documents') {
-        const result = handleListDocuments(storage, query, role);
+        const result = await handleListDocuments(storage, query, role);
         jsonResponse(res, result.status, result.body);
         return;
       }
+
+      // Related documents (before catch-all /api/documents/:id)
+      if (method === 'GET' && pathname.startsWith('/api/documents/') && pathname.endsWith('/related')) {
+        const docId = decodeURIComponent(pathname.slice('/api/documents/'.length, -'/related'.length));
+        const result = await handleRelatedDocuments(storage, docId);
+        jsonResponse(res, result.status, result.body);
+        return;
+      }
+
+      // Suggest promote (before catch-all)
+      if (method === 'GET' && pathname === '/api/documents/suggest-promote') {
+        const result = await handleSuggestPromote(storage, query);
+        jsonResponse(res, result.status, result.body);
+        return;
+      }
+
+            // Stale documents (before catch-all)
+      if (method === 'GET' && pathname === '/api/documents/stale') {
+        const result = await handleStaleDocuments(storage, query);
+        jsonResponse(res, result.status, result.body);
+        return;
+      }
+
+      // Feedback
+      if (method === 'POST' && pathname.startsWith('/api/documents/') && pathname.endsWith('/feedback')) {
+        const docId = decodeURIComponent(pathname.slice('/api/documents/'.length, -'/feedback'.length));
+        const body = await parseJsonBody(req);
+        const result = await handleSubmitFeedback(storage, docId, body);
+        jsonResponse(res, result.status, result.body);
+        return;
+      }
+
       if (method === 'GET' && pathname.startsWith('/api/documents/')) {
         const docId = decodeURIComponent(pathname.slice('/api/documents/'.length));
-        const result = handleGetDocument(storage, docId, role);
+        const result = await handleGetDocument(storage, docId, role);
         jsonResponse(res, result.status, result.body);
         return;
       }
       if (method === 'POST' && pathname === '/api/documents') {
         const body = await parseJsonBody(req);
-        const result = handleCreateDocument(storage, body, role);
+        const result = await handleCreateDocument(storage, body, role);
         jsonResponse(res, result.status, result.body);
         return;
       }
       if (method === 'PUT' && pathname.startsWith('/api/documents/')) {
         const docId = decodeURIComponent(pathname.slice('/api/documents/'.length));
         const body = await parseJsonBody(req);
-        const result = handleUpdateDocument(storage, docId, body, role);
+        const result = await handleUpdateDocument(storage, docId, body, role);
         jsonResponse(res, result.status, result.body);
         return;
       }
       if (method === 'DELETE' && pathname.startsWith('/api/documents/')) {
         const docId = decodeURIComponent(pathname.slice('/api/documents/'.length));
-        const result = handleDeleteDocument(storage, docId, role);
+        const result = await handleDeleteDocument(storage, docId, role);
         jsonResponse(res, result.status, result.body);
         return;
       }
 
       // Search
       if (method === 'GET' && pathname === '/api/search') {
-        const result = handleSearch(storage, query, role);
+        const result = await handleSearch(storage, query, role);
         jsonResponse(res, result.status, result.body);
         return;
       }
@@ -277,6 +328,17 @@ export function startMemoryServer(options: MemoryServerOptions): { server: http.
         } catch {
           // File not found — fall through to 404
         }
+      }
+
+
+
+      // Promote to public
+      if (method === 'POST' && pathname.startsWith('/api/documents/') && pathname.endsWith('/promote')) {
+        const docId = decodeURIComponent(pathname.slice('/api/documents/'.length, -'/promote'.length));
+        const body = await parseJsonBody(req);
+        const result = await handlePromoteDocument(storage, docId, body);
+        jsonResponse(res, result.status, result.body);
+        return;
       }
 
       // 404 fallback

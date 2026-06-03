@@ -24,6 +24,10 @@ export class FeishuSenderAdapter implements IMessageSender {
     await this.sender.sendCard(chatId, buildTextCard(title, content, color));
   }
 
+  async sendRawCard(chatId: string, cardJson: string): Promise<void> {
+    await this.sender.sendCard(chatId, cardJson);
+  }
+
   async sendText(chatId: string, text: string): Promise<void> {
     return this.sender.sendText(chatId, text);
   }

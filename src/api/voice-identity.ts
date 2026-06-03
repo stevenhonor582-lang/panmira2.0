@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import type { Logger } from '../utils/logger.js';
+import type { VoiceIdentityDBStore } from '../db/voice-identity-store.js';
 
 export interface VoiceIdentity {
   id: string;
@@ -16,17 +17,23 @@ export class VoiceIdentityStore {
   private identities = new Map<string, VoiceIdentity>();
   private logger: Logger;
   private dataPath: string;
+  private dbStore: VoiceIdentityDBStore | undefined;
 
-  constructor(logger: Logger) {
+  constructor(logger: Logger, dbStore?: VoiceIdentityDBStore) {
     this.logger = logger.child({ module: 'voice-identity' });
+    this.dbStore = dbStore;
     this.dataPath = path.join(os.homedir(), '.metabot', 'voice-identities.json');
-    this.load();
+    if (dbStore) {
+      this.loadFromDB();
+    } else {
+      this.load();
+    }
   }
 
   register(identity: Omit<VoiceIdentity, 'registeredAt'>): VoiceIdentity {
     const full: VoiceIdentity = { ...identity, registeredAt: Date.now() };
     this.identities.set(identity.id, full);
-    this.save();
+    this.persist();
     this.logger.info({ id: identity.id, name: identity.name }, 'Voice identity registered');
     return full;
   }
@@ -50,14 +57,44 @@ export class VoiceIdentityStore {
     const identity = this.identities.get(id);
     if (!identity) return undefined;
     Object.assign(identity, updates);
-    this.save();
+    this.persist();
     return identity;
   }
 
   delete(id: string): boolean {
     const deleted = this.identities.delete(id);
-    if (deleted) this.save();
+    if (deleted) {
+      if (this.dbStore) {
+        this.dbStore.delete(id).catch(() => {});
+      }
+      this.persist();
+    }
     return deleted;
+  }
+
+  private async loadFromDB(): Promise<void> {
+    if (!this.dbStore) return;
+    try {
+      const rows = await this.dbStore.list();
+      for (const i of rows) {
+        this.identities.set(i.id, i);
+      }
+      if (rows.length > 0) {
+        this.logger.info({ count: rows.length }, 'Voice identities loaded from DB');
+      }
+    } catch (err) {
+      this.logger.warn({ err }, 'Failed to load voice identities from DB');
+    }
+  }
+
+  private persist(): void {
+    if (this.dbStore) {
+      for (const identity of this.identities.values()) {
+        this.dbStore.upsert(identity).catch(() => {});
+      }
+    } else {
+      this.save();
+    }
   }
 
   private load(): void {
@@ -78,16 +115,7 @@ export class VoiceIdentityStore {
     try {
       const dir = path.dirname(this.dataPath);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(
-        this.dataPath,
-        JSON.stringify(
-          {
-            identities: Array.from(this.identities.values()),
-          },
-          null,
-          2,
-        ),
-      );
+      fs.writeFileSync(this.dataPath, JSON.stringify({ identities: Array.from(this.identities.values()) }, null, 2));
     } catch (err) {
       this.logger.warn({ err }, 'Failed to save voice identities');
     }

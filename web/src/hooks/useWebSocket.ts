@@ -1,5 +1,5 @@
 /* ============================================================
-   MetaBot Web — WebSocket Hook
+   PanMira Web — WebSocket Hook
    ============================================================ */
 
 import { useCallback, useEffect, useRef } from 'react';
@@ -94,6 +94,7 @@ export function useWebSocket() {
         const msg = JSON.parse(event.data) as WSIncomingMessage;
         switch (msg.type) {
           case 'connected':
+            console.log('[WS] connected bots sample:', JSON.stringify(msg.bots?.[0]));
             setBots(msg.bots);
             // Request server-side sessions for each bot to restore history
             for (const bot of msg.bots) {
@@ -134,7 +135,7 @@ export function useWebSocket() {
             }
             // Desktop notification when task completes while tab is unfocused
             if (msg.type === 'complete' && msg.state.status === 'complete') {
-              notifyTaskComplete(msg.botName || 'MetaBot', msg.state.responseText?.slice(0, 100));
+              notifyTaskComplete(msg.botName || 'PanMira', msg.state.responseText?.slice(0, 100));
             }
             break;
           }

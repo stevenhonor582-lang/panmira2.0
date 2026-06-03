@@ -4,7 +4,36 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 /** Agent engine backing a bot. */
-export type EngineName = 'claude' | 'kimi' | 'codex';
+export type EngineName = 'claude' | 'kimi' | 'codex' | 'openai-compat';
+
+/** User permission role. */
+export type UserRole = "viewer" | "operator" | "editor" | "admin";
+
+/** A user entry in the bot access allowlist. */
+export interface AllowedUser {
+  userId: string;
+  name?: string;
+  role: UserRole;
+}
+
+/** Bot permission configuration — stored in bot_configs.config_json.permissions. */
+export interface PermissionConfig {
+  accessControl?: {
+    mode?: "all" | "allowlist";
+    allowedUsers?: AllowedUser[];
+  };
+  defaultRole?: UserRole;
+  bashSafety?: {
+    blockGitPush?: boolean;
+    blockPackageInstall?: boolean;
+    blockNetworkOps?: boolean;
+  };
+  fileSystem?: {
+    protectSkills?: boolean;
+    protectConfig?: boolean;
+  };
+}
+
 
 /** Shared config fields used by MessageBridge and Executors (platform-agnostic). */
 export interface BotConfigBase {
@@ -26,6 +55,8 @@ export interface BotConfigBase {
      *  key instead of ~/.claude/.credentials.json. Supports cc-switch compatibility:
      *  leave unset to let Claude Code resolve auth dynamically. */
     apiKey: string | undefined;
+    /** Explicit Anthropic-compatible base URL. When set, overrides ANTHROPIC_BASE_URL for this bot's Claude Code process. */
+    baseUrl: string | undefined;
     outputsBaseDir: string;
     downloadsDir: string;
   };
@@ -40,10 +71,20 @@ export interface BotConfigBase {
   };
   /** Codex-specific overrides. Populated only when engine === 'codex'. */
   codex?: CodexBotConfig;
+  /** OpenAI-compatible provider config. Populated only when engine === 'openai-compat'. */
+  openaiCompat?: OpenAICompatConfig;
   /** When true, skip platform WS connection — bot only receives messages via proxy_message. */
   proxyOnly?: boolean;
   /** Override context window size for display (e.g. 1000000 for 1M). */
   contextWindow?: number;
+  /** System prompt from Agent template. */
+  systemPrompt?: string;
+  /** Agent template ID for reference mode (resolved at execution time). */
+  agentId?: string;
+  /** Knowledge base folder IDs bound to this bot for automatic context injection. */
+  knowledgeFolders?: string[];
+  /** Bot permission configuration (user access, tool restrictions, file protection). */
+  permissions?: PermissionConfig;
 }
 
 /** Codex-specific overrides. Populated only when engine === 'codex'. */
@@ -59,6 +100,14 @@ export interface CodexBotConfig {
   contextWindow?: number;
   extraArgs?: string[];
   env?: Record<string, string>;
+}
+
+/** OpenAI-compatible provider config (Zhipu, MiniMax, DeepSeek, etc.). */
+export interface OpenAICompatConfig {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  contextWindow?: number;
 }
 
 /** Feishu bot config (extends base with Feishu credentials). */
@@ -170,6 +219,13 @@ interface EngineJsonFields {
   engine?: EngineName;
   kimi?: KimiJsonConfig;
   codex?: CodexJsonConfig;
+  /** System prompt from Agent template. */
+  systemPrompt?: string;
+  /** Agent template ID — resolved to systemPrompt at execution time. */
+  agentId?: string;
+  openaiCompat?: OpenAICompatConfig;
+  /** Knowledge base folder IDs for automatic context injection. */
+  knowledgeFolders?: string[];
 }
 
 export interface FeishuBotJsonEntry extends EngineJsonFields {
@@ -187,6 +243,7 @@ export interface FeishuBotJsonEntry extends EngineJsonFields {
   maxBudgetUsd?: number;
   model?: string;
   apiKey?: string;
+  baseUrl?: string;
   outputsBaseDir?: string;
   downloadsDir?: string;
   /** When true, respond to all messages in group chats without requiring @mention. */
@@ -195,7 +252,50 @@ export interface FeishuBotJsonEntry extends EngineJsonFields {
   proxyOnly?: boolean;
 }
 
-function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
+/**
+ * Ensure each bot has its own isolated workspace directory.
+ * Prevents accidental sharing when configs are copied between bots.
+ *
+ * Rules:
+ * 1. If configured dir matches ~/workspace-{botName}, keep it (correct).
+ * 2. If configured dir is the generic ~/workspace (shared by many bots), redirect to own dir.
+ * 3. If configured dir belongs to ANOTHER bot (e.g. workspace-foo for bot "bar"), redirect to own dir.
+ * 4. Otherwise (custom path, env-specific), keep the configured value.
+ */
+function ensureIsolatedWorkspace(botName: string, configuredDir: string): string {
+  const expanded = expandUserPath(configuredDir);
+  const expectedDir = path.join(os.homedir(), `workspace-${botName}`);
+  const genericDir = path.join(os.homedir(), 'workspace');
+
+  // Already correct: matches expected pattern
+  if (expanded === expectedDir) return expanded;
+
+  // Generic shared workspace — must redirect
+  if (expanded === genericDir) {
+    try { fs.mkdirSync(expectedDir, { recursive: true }); } catch {}
+    return expectedDir;
+  }
+
+  // Another bot's workspace-xxx directory — must redirect
+  // Match pattern: ~/workspace-{someName} where someName !== botName
+  const workspacePattern = new RegExp(`^${escapeRegex(path.join(os.homedir(), 'workspace-'))}(.+)$`);
+  const match = expanded.match(workspacePattern);
+  if (match && match[1] !== botName) {
+    try { fs.mkdirSync(expectedDir, { recursive: true }); } catch {}
+    return expectedDir;
+  }
+
+  // Custom path or already correct — keep as-is
+  return expanded;
+}
+
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^\${}()|[\]\\]/g, '\\$&');
+}
+
+export function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
+  // Auto-correct working directory: each bot must have its own isolated directory
+  entry = { ...entry, defaultWorkingDirectory: ensureIsolatedWorkspace(entry.name, entry.defaultWorkingDirectory) };
   const codex = buildCodexConfig(entry.codex);
   return {
     name: entry.name,
@@ -210,10 +310,17 @@ function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
     ...(entry.engine ? { engine: entry.engine } : {}),
     ...(entry.kimi ? { kimi: entry.kimi } : {}),
     ...(codex ? { codex } : {}),
+    ...(() => {
+      const o = buildOpenaiCompatConfig(entry);
+      return o ? { openaiCompat: o } : {};
+    })(),
     feishu: {
       appId: entry.feishuAppId,
       appSecret: entry.feishuAppSecret,
     },
+    ...(entry.systemPrompt ? { systemPrompt: entry.systemPrompt } : {}),
+    ...(entry.agentId ? { agentId: entry.agentId } : {}),
+    ...(entry.knowledgeFolders?.length ? { knowledgeFolders: entry.knowledgeFolders } : {}),
     claude: buildClaudeConfig(entry),
   };
 }
@@ -238,7 +345,7 @@ export interface TelegramBotJsonEntry extends EngineJsonFields {
   downloadsDir?: string;
 }
 
-function telegramBotFromJson(entry: TelegramBotJsonEntry): TelegramBotConfig {
+export function telegramBotFromJson(entry: TelegramBotJsonEntry): TelegramBotConfig {
   const codex = buildCodexConfig(entry.codex);
   return {
     name: entry.name,
@@ -251,9 +358,15 @@ function telegramBotFromJson(entry: TelegramBotJsonEntry): TelegramBotConfig {
     ...(entry.engine ? { engine: entry.engine } : {}),
     ...(entry.kimi ? { kimi: entry.kimi } : {}),
     ...(codex ? { codex } : {}),
+    ...(() => {
+      const o = buildOpenaiCompatConfig(entry);
+      return o ? { openaiCompat: o } : {};
+    })(),
     telegram: {
       botToken: entry.telegramBotToken,
     },
+    ...(entry.systemPrompt ? { systemPrompt: entry.systemPrompt } : {}),
+    ...(entry.agentId ? { agentId: entry.agentId } : {}),
     claude: buildClaudeConfig(entry),
   };
 }
@@ -289,6 +402,13 @@ export function webBotFromJson(entry: WebBotJsonEntry): BotConfigBase {
     ...(entry.engine ? { engine: entry.engine } : {}),
     ...(entry.kimi ? { kimi: entry.kimi } : {}),
     ...(codex ? { codex } : {}),
+    ...(() => {
+      const o = buildOpenaiCompatConfig(entry);
+      return o ? { openaiCompat: o } : {};
+    })(),
+    ...(entry.systemPrompt ? { systemPrompt: entry.systemPrompt } : {}),
+    ...(entry.agentId ? { agentId: entry.agentId } : {}),
+    ...(entry.knowledgeFolders?.length ? { knowledgeFolders: entry.knowledgeFolders } : {}),
     claude: buildClaudeConfig(entry),
   };
 }
@@ -309,7 +429,7 @@ export interface WechatBotJsonEntry extends EngineJsonFields {
   downloadsDir?: string;
 }
 
-function wechatBotFromJson(entry: WechatBotJsonEntry): WechatBotConfig {
+export function wechatBotFromJson(entry: WechatBotJsonEntry): WechatBotConfig {
   const codex = buildCodexConfig(entry.codex);
   return {
     name: entry.name,
@@ -317,10 +437,16 @@ function wechatBotFromJson(entry: WechatBotJsonEntry): WechatBotConfig {
     ...(entry.engine ? { engine: entry.engine } : {}),
     ...(entry.kimi ? { kimi: entry.kimi } : {}),
     ...(codex ? { codex } : {}),
+    ...(() => {
+      const o = buildOpenaiCompatConfig(entry);
+      return o ? { openaiCompat: o } : {};
+    })(),
     wechat: {
       ilinkBaseUrl: entry.ilinkBaseUrl,
       botToken: entry.wechatBotToken,
     },
+    ...(entry.systemPrompt ? { systemPrompt: entry.systemPrompt } : {}),
+    ...(entry.agentId ? { agentId: entry.agentId } : {}),
     claude: buildClaudeConfig(entry),
   };
 }
@@ -333,6 +459,7 @@ function buildClaudeConfig(entry: {
   maxBudgetUsd?: number;
   model?: string;
   apiKey?: string;
+  baseUrl?: string;
   outputsBaseDir?: string;
   downloadsDir?: string;
 }): BotConfigBase['claude'] {
@@ -344,6 +471,7 @@ function buildClaudeConfig(entry: {
       (process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined),
     model: entry.model || process.env.CLAUDE_MODEL || process.env.ANTHROPIC_MODEL || 'claude-opus-4-7',
     apiKey: entry.apiKey || undefined,
+    baseUrl: entry.baseUrl || undefined,
     outputsBaseDir:
       entry.outputsBaseDir ||
       process.env.OUTPUTS_BASE_DIR ||
@@ -352,6 +480,21 @@ function buildClaudeConfig(entry: {
       entry.downloadsDir ||
       process.env.DOWNLOADS_DIR ||
       path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`),
+  };
+}
+
+function buildOpenaiCompatConfig(entry: {
+  openaiCompat?: OpenAICompatConfig;
+  apiKey?: string;
+  baseUrl?: string;
+  model?: string;
+}): OpenAICompatConfig | undefined {
+  if (entry.openaiCompat) return entry.openaiCompat;
+  if (!entry.baseUrl || !entry.model) return undefined;
+  return {
+    baseUrl: entry.baseUrl,
+    apiKey: entry.apiKey || '',
+    model: entry.model,
   };
 }
 
@@ -392,6 +535,7 @@ function feishuBotFromEnv(): BotConfig {
       maxBudgetUsd: process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined,
       model: process.env.CLAUDE_MODEL || 'claude-opus-4-7',
       apiKey: undefined,
+      baseUrl: undefined,
       outputsBaseDir:
         process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
       downloadsDir: process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`),
@@ -414,6 +558,7 @@ function telegramBotFromEnv(): TelegramBotConfig {
       maxBudgetUsd: process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined,
       model: process.env.CLAUDE_MODEL || 'claude-opus-4-7',
       apiKey: undefined,
+      baseUrl: undefined,
       outputsBaseDir:
         process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
       downloadsDir: process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`),
@@ -436,6 +581,7 @@ function wechatBotFromEnv(): WechatBotConfig {
       maxBudgetUsd: process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined,
       model: process.env.CLAUDE_MODEL || 'claude-opus-4-7',
       apiKey: undefined,
+      baseUrl: undefined,
       outputsBaseDir: expandUserPath(
         process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
       ),
@@ -606,5 +752,141 @@ export function loadAppConfig(): AppConfig {
       readerToken: memoryReaderToken,
     },
     peers,
+  };
+}
+
+/** Load app config from database (Phase 1). Falls back to loadAppConfig() + seedFromJson(). */
+export async function loadAppConfigFromDB(): Promise<{
+  config: AppConfig;
+  botConfigStore: import('./db/bot-config-store.js').BotConfigStore;
+}> {
+  const { BotConfigStore } = await import('./db/bot-config-store.js');
+  const store = new BotConfigStore();
+
+  const rows = await store.list();
+  if (rows.length === 0) {
+    // DB empty — seed from bots.json, then load normally
+    const botsConfigPath = process.env.BOTS_CONFIG;
+    if (botsConfigPath) {
+      const seeded = await store.seedFromJson(botsConfigPath);
+      process.stdout.write(`[config] Seeded ${seeded.seeded} bots from JSON, skipped ${seeded.skipped}\n`);
+    }
+  }
+
+  // Re-read from DB
+  const allRows = await store.list();
+  if (allRows.length === 0) {
+    // No bots at all — fall back to legacy loading
+    return { config: loadAppConfig(), botConfigStore: store };
+  }
+
+  // Convert DB rows into config format, injecting secrets
+  const feishuBots: BotConfig[] = [];
+  const telegramBots: TelegramBotConfig[] = [];
+  const webBots: BotConfigBase[] = [];
+  const wechatBots: WechatBotConfig[] = [];
+
+  for (const row of allRows) {
+    const secrets = await store.getAllSecrets(row.name);
+    const entry = { ...row.configJson };
+
+    // Inject secrets back into config
+    if (secrets.feishu_app_secret) (entry as any).feishuAppSecret = secrets.feishu_app_secret;
+    if (secrets.openai_api_key) (entry as any).openaiApiKey = secrets.openai_api_key;
+    if (secrets.api_key) (entry as any).apiKey = secrets.api_key;
+    if (secrets.telegram_bot_token) (entry as any).telegramBotToken = secrets.telegram_bot_token;
+    if (secrets.wechat_bot_token) (entry as any).wechatBotToken = secrets.wechat_bot_token;
+
+    if (row.platform === 'feishu') {
+      feishuBots.push(feishuBotFromJson(entry as unknown as FeishuBotJsonEntry));
+    } else if (row.platform === 'telegram') {
+      telegramBots.push(telegramBotFromJson(entry as unknown as TelegramBotJsonEntry));
+    } else if (row.platform === 'web') {
+      webBots.push(webBotFromJson(entry as unknown as WebBotJsonEntry));
+    } else if (row.platform === 'wechat') {
+      wechatBots.push(wechatBotFromJson(entry as unknown as WechatBotJsonEntry));
+    }
+  }
+
+  // Build the rest of AppConfig from env vars (same as loadAppConfig)
+  const botsConfigPath = process.env.BOTS_CONFIG;
+  let parsedConfig: unknown;
+  if (botsConfigPath) {
+    try {
+      const raw = fs.readFileSync(path.resolve(botsConfigPath), 'utf-8');
+      parsedConfig = JSON.parse(raw);
+    } catch {
+      parsedConfig = undefined;
+    }
+  }
+
+  const memoryServerUrl = process.env.MEMORY_SERVER_URL || 'http://localhost:8100';
+  const apiPort = process.env.API_PORT ? parseInt(process.env.API_PORT, 10) : 9100;
+  const apiSecret = process.env.API_SECRET || undefined;
+  process.env.METABOT_API_PORT = String(apiPort);
+  if (apiSecret) process.env.METABOT_API_SECRET = apiSecret;
+
+  let feishuService: AppConfig['feishuService'];
+  if (process.env.FEISHU_SERVICE_APP_ID && process.env.FEISHU_SERVICE_APP_SECRET) {
+    feishuService = { appId: process.env.FEISHU_SERVICE_APP_ID, appSecret: process.env.FEISHU_SERVICE_APP_SECRET };
+  } else if (feishuBots.length > 0) {
+    feishuService = { appId: feishuBots[0].feishu.appId, appSecret: feishuBots[0].feishu.appSecret };
+  }
+
+  const memoryEnabled = process.env.MEMORY_ENABLED !== 'false';
+  const memoryPort = process.env.MEMORY_PORT ? parseInt(process.env.MEMORY_PORT, 10) : 8100;
+  const memoryDatabaseDir = process.env.MEMORY_DATABASE_DIR || './data';
+  const memorySecret = process.env.MEMORY_SECRET || process.env.API_SECRET || '';
+  const memoryAdminToken = process.env.MEMORY_ADMIN_TOKEN || undefined;
+  const memoryReaderToken = process.env.MEMORY_TOKEN || undefined;
+
+  const peers: PeerConfig[] = [];
+  if (botsConfigPath && parsedConfig && !Array.isArray(parsedConfig)) {
+    const cfg = parsedConfig as BotsJsonNewFormat;
+    if (cfg.peers) {
+      for (const p of cfg.peers) {
+        peers.push({ name: p.name, url: p.url.replace(/\/+$/, ''), secret: p.secret });
+      }
+    }
+  }
+  if (process.env.METABOT_PEERS) {
+    const urls = process.env.METABOT_PEERS.split(',')
+      .map((u) => u.trim())
+      .filter(Boolean);
+    const secrets = (process.env.METABOT_PEER_SECRETS || '').split(',').map((s) => s.trim());
+    const names = (process.env.METABOT_PEER_NAMES || '').split(',').map((s) => s.trim());
+    for (let i = 0; i < urls.length; i++) {
+      const url = urls[i].replace(/\/+$/, '');
+      if (!peers.some((p) => p.url === url)) {
+        peers.push({
+          name: names[i] || url.replace(/^https?:\/\//, '').replace(/[:.]/g, '-'),
+          url,
+          secret: secrets[i] || undefined,
+        });
+      }
+    }
+  }
+
+  return {
+    config: {
+      feishuBots,
+      telegramBots,
+      webBots,
+      wechatBots,
+      feishuService,
+      log: { level: process.env.LOG_LEVEL || 'info' },
+      memoryServerUrl,
+      api: { port: apiPort, secret: apiSecret },
+      memory: {
+        enabled: memoryEnabled,
+        port: memoryPort,
+        databaseDir: memoryDatabaseDir,
+        secret: memorySecret,
+        adminToken: memoryAdminToken,
+        readerToken: memoryReaderToken,
+      },
+      peers,
+    },
+    botConfigStore: store,
   };
 }

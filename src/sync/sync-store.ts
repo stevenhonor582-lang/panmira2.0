@@ -1,10 +1,4 @@
-/**
- * Sync mapping store: tracks MetaMemory → Feishu Wiki sync state.
- * Uses SQLite (same DB as MetaMemory) for persistence.
- */
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import Database from 'better-sqlite3';
+import { pool } from '../db/index.js';
 import type { Logger } from '../utils/logger.js';
 
 export interface SyncMapping {
@@ -29,69 +23,36 @@ export interface SyncConfig {
 }
 
 export class SyncStore {
-  private db: Database.Database;
-
-  constructor(databaseDir: string, private logger: Logger) {
-    fs.mkdirSync(databaseDir, { recursive: true });
-    const dbPath = path.join(databaseDir, 'sync-mapping.db');
-    this.db = new Database(dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.initSchema();
-    this.logger.info({ dbPath }, 'Sync store initialized');
+  constructor(
+    private databaseDir: string,
+    private logger: Logger,
+  ) {
+    this.logger.info('Sync store initialized');
   }
 
-  private initSchema(): void {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS sync_config (
-        key   TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS document_mappings (
-        memory_doc_id      TEXT PRIMARY KEY,
-        memory_path        TEXT NOT NULL,
-        feishu_node_token  TEXT NOT NULL,
-        feishu_doc_id      TEXT NOT NULL,
-        content_hash       TEXT NOT NULL DEFAULT '',
-        synced_at          TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS folder_mappings (
-        memory_folder_id   TEXT PRIMARY KEY,
-        memory_path        TEXT NOT NULL,
-        feishu_node_token  TEXT NOT NULL
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_doc_mappings_path ON document_mappings(memory_path);
-      CREATE INDEX IF NOT EXISTS idx_folder_mappings_path ON folder_mappings(memory_path);
-    `);
+  async getConfig(key: string): Promise<string | undefined> {
+    const result = await pool.query('SELECT value FROM sync_config WHERE key = $1', [key]);
+    return result.rows[0]?.value;
   }
 
-  // --- Config ---
-
-  getConfig(key: string): string | undefined {
-    const row = this.db.prepare('SELECT value FROM sync_config WHERE key = ?').get(key) as { value: string } | undefined;
-    return row?.value;
+  async setConfig(key: string, value: string): Promise<void> {
+    await pool.query('INSERT INTO sync_config (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = $2', [
+      key,
+      value,
+    ]);
   }
 
-  setConfig(key: string, value: string): void {
-    this.db.prepare(
-      'INSERT INTO sync_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?',
-    ).run(key, value, value);
-  }
-
-  getWikiSpaceId(): string | undefined {
+  async getWikiSpaceId(): Promise<string | undefined> {
     return this.getConfig('wiki_space_id');
   }
 
-  setWikiSpaceId(spaceId: string): void {
-    this.setConfig('wiki_space_id', spaceId);
+  async setWikiSpaceId(spaceId: string): Promise<void> {
+    await this.setConfig('wiki_space_id', spaceId);
   }
 
-  // --- Document mappings ---
-
-  getDocMapping(memoryDocId: string): SyncMapping | undefined {
-    const row = this.db.prepare('SELECT * FROM document_mappings WHERE memory_doc_id = ?').get(memoryDocId) as any;
+  async getDocMapping(memoryDocId: string): Promise<SyncMapping | undefined> {
+    const result = await pool.query('SELECT * FROM document_mappings WHERE memory_doc_id = $1', [memoryDocId]);
+    const row = result.rows[0];
     if (!row) return undefined;
     return {
       memoryDocId: row.memory_doc_id,
@@ -103,8 +64,9 @@ export class SyncStore {
     };
   }
 
-  getDocMappingByPath(memoryPath: string): SyncMapping | undefined {
-    const row = this.db.prepare('SELECT * FROM document_mappings WHERE memory_path = ?').get(memoryPath) as any;
+  async getDocMappingByPath(memoryPath: string): Promise<SyncMapping | undefined> {
+    const result = await pool.query('SELECT * FROM document_mappings WHERE memory_path = $1', [memoryPath]);
+    const row = result.rows[0];
     if (!row) return undefined;
     return {
       memoryDocId: row.memory_doc_id,
@@ -116,25 +78,30 @@ export class SyncStore {
     };
   }
 
-  upsertDocMapping(mapping: SyncMapping): void {
-    this.db.prepare(`
-      INSERT INTO document_mappings (memory_doc_id, memory_path, feishu_node_token, feishu_doc_id, content_hash, synced_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(memory_doc_id) DO UPDATE SET
-        memory_path = ?, feishu_node_token = ?, feishu_doc_id = ?, content_hash = ?, synced_at = ?
-    `).run(
-      mapping.memoryDocId, mapping.memoryPath, mapping.feishuNodeToken, mapping.feishuDocId, mapping.contentHash, mapping.syncedAt,
-      mapping.memoryPath, mapping.feishuNodeToken, mapping.feishuDocId, mapping.contentHash, mapping.syncedAt,
+  async upsertDocMapping(mapping: SyncMapping): Promise<void> {
+    await pool.query(
+      `INSERT INTO document_mappings (memory_doc_id, memory_path, feishu_node_token, feishu_doc_id, content_hash, synced_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT(memory_doc_id) DO UPDATE SET
+         memory_path = $2, feishu_node_token = $3, feishu_doc_id = $4, content_hash = $5, synced_at = $6`,
+      [
+        mapping.memoryDocId,
+        mapping.memoryPath,
+        mapping.feishuNodeToken,
+        mapping.feishuDocId,
+        mapping.contentHash,
+        mapping.syncedAt,
+      ],
     );
   }
 
-  deleteDocMapping(memoryDocId: string): void {
-    this.db.prepare('DELETE FROM document_mappings WHERE memory_doc_id = ?').run(memoryDocId);
+  async deleteDocMapping(memoryDocId: string): Promise<void> {
+    await pool.query('DELETE FROM document_mappings WHERE memory_doc_id = $1', [memoryDocId]);
   }
 
-  getAllDocMappings(): SyncMapping[] {
-    const rows = this.db.prepare('SELECT * FROM document_mappings').all() as any[];
-    return rows.map((row) => ({
+  async getAllDocMappings(): Promise<SyncMapping[]> {
+    const result = await pool.query('SELECT * FROM document_mappings');
+    return result.rows.map((row: any) => ({
       memoryDocId: row.memory_doc_id,
       memoryPath: row.memory_path,
       feishuNodeToken: row.feishu_node_token,
@@ -144,10 +111,9 @@ export class SyncStore {
     }));
   }
 
-  // --- Folder mappings ---
-
-  getFolderMapping(memoryFolderId: string): FolderMapping | undefined {
-    const row = this.db.prepare('SELECT * FROM folder_mappings WHERE memory_folder_id = ?').get(memoryFolderId) as any;
+  async getFolderMapping(memoryFolderId: string): Promise<FolderMapping | undefined> {
+    const result = await pool.query('SELECT * FROM folder_mappings WHERE memory_folder_id = $1', [memoryFolderId]);
+    const row: any = result.rows[0];
     if (!row) return undefined;
     return {
       memoryFolderId: row.memory_folder_id,
@@ -156,52 +122,46 @@ export class SyncStore {
     };
   }
 
-  upsertFolderMapping(mapping: FolderMapping): void {
-    this.db.prepare(`
-      INSERT INTO folder_mappings (memory_folder_id, memory_path, feishu_node_token)
-      VALUES (?, ?, ?)
-      ON CONFLICT(memory_folder_id) DO UPDATE SET
-        memory_path = ?, feishu_node_token = ?
-    `).run(
-      mapping.memoryFolderId, mapping.memoryPath, mapping.feishuNodeToken,
-      mapping.memoryPath, mapping.feishuNodeToken,
+  async upsertFolderMapping(mapping: FolderMapping): Promise<void> {
+    await pool.query(
+      `INSERT INTO folder_mappings (memory_folder_id, memory_path, feishu_node_token)
+       VALUES ($1, $2, $3)
+       ON CONFLICT(memory_folder_id) DO UPDATE SET
+         memory_path = $2, feishu_node_token = $3`,
+      [mapping.memoryFolderId, mapping.memoryPath, mapping.feishuNodeToken],
     );
   }
 
-  deleteFolderMapping(memoryFolderId: string): void {
-    this.db.prepare('DELETE FROM folder_mappings WHERE memory_folder_id = ?').run(memoryFolderId);
+  async deleteFolderMapping(memoryFolderId: string): Promise<void> {
+    await pool.query('DELETE FROM folder_mappings WHERE memory_folder_id = $1', [memoryFolderId]);
   }
 
-  getAllFolderMappings(): FolderMapping[] {
-    const rows = this.db.prepare('SELECT * FROM folder_mappings').all() as any[];
-    return rows.map((row) => ({
+  async getAllFolderMappings(): Promise<FolderMapping[]> {
+    const result = await pool.query('SELECT * FROM folder_mappings');
+    return result.rows.map((row: any) => ({
       memoryFolderId: row.memory_folder_id,
       memoryPath: row.memory_path,
       feishuNodeToken: row.feishu_node_token,
     }));
   }
 
-  // --- Stats ---
-
-  getStats(): { documentCount: number; folderCount: number; wikiSpaceId: string | undefined } {
-    const docCount = (this.db.prepare('SELECT COUNT(*) as count FROM document_mappings').get() as { count: number }).count;
-    const folderCount = (this.db.prepare('SELECT COUNT(*) as count FROM folder_mappings').get() as { count: number }).count;
+  async getStats(): Promise<{ documentCount: number; folderCount: number; wikiSpaceId: string | undefined }> {
+    const docResult = await pool.query('SELECT COUNT(*) as count FROM document_mappings');
+    const folderResult = await pool.query('SELECT COUNT(*) as count FROM folder_mappings');
     return {
-      documentCount: docCount,
-      folderCount: folderCount,
-      wikiSpaceId: this.getWikiSpaceId(),
+      documentCount: Number(docResult.rows[0].count),
+      folderCount: Number(folderResult.rows[0].count),
+      wikiSpaceId: await this.getWikiSpaceId(),
     };
   }
 
-  /** Clear all mappings (for full re-sync). */
-  clearAll(): void {
-    this.db.prepare('DELETE FROM document_mappings').run();
-    this.db.prepare('DELETE FROM folder_mappings').run();
-    this.db.prepare('DELETE FROM sync_config').run();
+  async clearAll(): Promise<void> {
+    await pool.query('DELETE FROM document_mappings');
+    await pool.query('DELETE FROM folder_mappings');
+    await pool.query('DELETE FROM sync_config');
   }
 
   close(): void {
-    this.db.close();
     this.logger.info('Sync store closed');
   }
 }

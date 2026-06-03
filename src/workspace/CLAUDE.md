@@ -1,60 +1,28 @@
-# MetaBot Workspace
+# VMT 内容工厂 — Bot 工作区
 
-This workspace is managed by **MetaBot** — an AI assistant accessible via Feishu/Telegram that runs the Claude Code or Kimi agent engine with full tool access. The bot's engine is configured per-bot in `bots.json` (`engine: "claude" | "kimi"`).
+> 全局宪法: ~/.claude/CLAUDE.md 是本工作区的上级编排权威，每次会话必读。
+> 角色流程: 如果本目录有 CLAUDE.md，定义了本 Bot 的专属工作流。
+> 共享资源: /home/ubuntu/VMT-知识库/ 和 /home/ubuntu/VMT-共享素材/ 对所有 Bot 开放。
 
-## Available Skills
+---
 
-### /metaskill — AI Agent Team Generator
-Create AI agent teams, individual agents, or custom skills for any project.
+## VMT 全局技能 (44个)
 
-```
-/metaskill ios app          → generates full .claude/ agent team
-/metaskill a security agent → creates a single agent
-/metaskill a deploy skill   → creates a custom slash command
-```
+所有 vmt-* 技能已部署在 ~/.claude/skills/，所有 Bot 共享。不需要在工作区本地安装。
 
-### /metamemory — Shared Knowledge Store
-Read and write persistent memory documents across sessions. Use the `mm` shell shortcut for quick operations:
+## VMT 共享目录
 
-```bash
-mm search <query>       # Search documents
-mm get <doc_id>         # Get document by ID
-mm list [folder_id]     # List documents
-mm folders              # Browse folder tree
-```
+| 目录 | 用途 | 权限 |
+|------|------|------|
+| /home/ubuntu/VMT-知识库/ | 行业调研、客户画像、技术文档 | 知识管理员维护，其他只读 |
+| /home/ubuntu/VMT-共享素材/ | 素材需求单、SEO配置、策略简报、发布输出 | 所有Bot可读写 |
 
-For full API (create with tags, update, delete), use the `/metamemory` skill.
+## MetaBot 基础命令
 
-### /metabot — Agent Bus, Scheduling & Bot Management
-Use the `mb` shell shortcut for quick operations:
+mb bots | mb task <bot> <chatId> <prompt> | mm search <query> | lark-cli <domain> +<action>
 
-```bash
-mb bots                                    # List all bots
-mb task <botName> <chatId> <prompt>        # Delegate task
-mb schedule list                           # List scheduled tasks
-mb schedule add <bot> <chatId> <sec> <prompt>  # Schedule a task
-mb health                                  # Health check
-```
+## 关键规则
 
-For full API (create bots, update tasks, sendCards), use the `/metabot` skill.
-
-### Feishu / Lark CLI (Feishu bots only)
-
-`lark-cli` is the official Feishu CLI tool with 200+ commands covering 11 business domains. It is pre-installed and configured for Feishu bots.
-
-```bash
-lark-cli docs +create --title "..." --markdown "..."    # Create document
-lark-cli docs +fetch --doc "<url>"                       # Read document
-lark-cli im +messages-send --chat-id oc_xxx --text "Hi"  # Send message
-lark-cli calendar +agenda --as user                      # View calendar
-lark-cli base records list ...                           # Query bitable
-```
-
-19 AI Agent Skills are installed (lark-doc, lark-im, lark-calendar, lark-sheets, lark-base, lark-task, lark-drive, lark-mail, lark-wiki, etc.) providing structured guidance for each domain.
-
-## Guidelines
-
-- **Search before creating** — always check if a file or document already exists before creating new ones.
-- **Use metamemory** — when you discover important knowledge, project patterns, or user preferences, save them to memory so future sessions can benefit.
-- **Output files** — when generating files the user needs (images, PDFs, reports), copy them to the outputs directory provided in the system prompt so they get sent to the chat automatically.
-- **Be concise in chat** — responses appear as Feishu/Telegram cards with limited space. Keep answers focused and use markdown formatting.
+1. 不确定本 Bot 角色时，先读本目录 CLAUDE.md
+2. 需要共享知识/素材时，查 VMT-知识库/INDEX.json 或 VMT-共享素材/INDEX.json
+3. 不要在工作区本地复制技能文件（全局已统一管理）

@@ -1,10 +1,8 @@
 import * as path from 'node:path';
 import * as lark from '@larksuiteoapi/node-sdk';
-import { loadAppConfig, type BotConfig } from './config.js';
+import { loadAppConfigFromDB, type BotConfig } from './config.js';
 import { createLogger, type Logger } from './utils/logger.js';
-import { createEventDispatcher } from './feishu/event-handler.js';
-import { MessageSender } from './feishu/message-sender.js';
-import { FeishuSenderAdapter } from './feishu/feishu-sender-adapter.js';
+import { startFeishuBot, type FeishuBotHandle } from './feishu/feishu-bot-starter.js';
 import { MessageBridge } from './bridge/message-bridge.js';
 import type { IMessageSender } from './bridge/message-sender.interface.js';
 import type { BotConfigBase } from './config.js';
@@ -16,107 +14,51 @@ import { PeerManager } from './api/peer-manager.js';
 import { TaskScheduler } from './scheduler/task-scheduler.js';
 import { startApiServer } from './api/http-server.js';
 import { startMemoryServer } from './memory/memory-server.js';
+import { WorkspaceManager } from './memory/workspace-manager.js';
 import { DocSync } from './sync/doc-sync.js';
 import { MemoryClient } from './memory/memory-client.js';
 
+import { pool } from './db/index.js';
 import { SessionRegistry } from './session/session-registry.js';
+import { ChatSessionStore } from './db/chat-session-store.js';
+import { ScheduledTaskStore } from './db/scheduled-task-store.js';
+import { AgentBus } from './api/agent-bus.js';
+import { GroupSessionManager } from './api/group-session.js';
+import { GroupCoordinator } from './api/group-coordinator.js';
+import { BindingEngine } from './api/routing-bindings.js';
+import { IntentRouter } from './api/intent-router.js';
+import { CoordinatorConfigStore } from './db/coordinator-config-store.js';
+import { DiscoveredGroupStore } from './db/discovered-group-store.js';
 
-interface FeishuBotHandle {
-  name: string;
-  bridge: MessageBridge;
-  wsClient: lark.WSClient;
-  config: BotConfigBase;
-  sender: IMessageSender;
-  feishuClient: lark.Client;
-}
+async function backfillEmbedDocuments(embedder: any, logger: Logger): Promise<void> {
+  const { rows } = await pool.query(
+    "SELECT id, title, content FROM documents WHERE embedding IS NULL AND content != ''",
+  );
+  if (rows.length === 0) return;
 
-async function startFeishuBot(
-  botConfig: BotConfig,
-  logger: Logger,
-  memoryServerUrl: string,
-  memorySecret?: string,
-): Promise<FeishuBotHandle> {
-  const botLogger = logger.child({ bot: botConfig.name });
+  logger.info({ count: rows.length }, 'Starting embedding backfill...');
+  let backfilled = 0;
 
-  botLogger.info('Starting Feishu bot...');
-
-  // Create Feishu API client
-  const clientDomain = (botConfig.feishu as any).domain === 'Lark' ? lark.Domain.Lark : lark.Domain.Feishu;
-  const client = new lark.Client({
-    appId: botConfig.feishu.appId,
-    appSecret: botConfig.feishu.appSecret,
-    domain: clientDomain,
-    disableTokenCache: false,
-  });
-
-  // Fetch bot info to get bot's open_id for accurate @mention detection
-  let botOpenId: string | undefined;
-  try {
-    const botInfo: any = await client.request({ method: 'GET', url: '/open-apis/bot/v3/info' });
-    botOpenId = botInfo?.bot?.open_id;
-    if (botOpenId) {
-      botLogger.info({ botOpenId }, 'Bot info fetched');
-    } else {
-      botLogger.warn(
-        'Could not get bot open_id. Ensure the Feishu app has Bot capability enabled and the app version is published.',
-      );
+  for (const row of rows) {
+    try {
+      const text = `${row.title}\n${row.content}`.slice(0, 2000);
+      const embedding = await embedder.embed(text);
+      if (embedding.every((v: number) => v === 0)) continue;
+      await pool.query('UPDATE documents SET embedding = $1 WHERE id = $2', [JSON.stringify(embedding), row.id]);
+      backfilled++;
+    } catch (err: any) {
+      logger.warn({ err: err.message, docId: row.id }, 'Backfill embedding failed for doc');
     }
-  } catch (err: any) {
-    botLogger.warn(
-      { err: err?.message || err },
-      'Failed to fetch bot info. Check: 1) Bot capability is enabled in Feishu app 2) App is published 3) App credentials are correct',
-    );
   }
 
-  // Create sender and bridge (FeishuSenderAdapter wraps the Feishu-specific MessageSender)
-  const rawSender = new MessageSender(client, botLogger);
-  const sender = new FeishuSenderAdapter(rawSender);
-  const bridge = new MessageBridge(botConfig, botLogger, sender, memoryServerUrl, memorySecret);
-
-  // Create event dispatcher wired to the bridge
-  const dispatcher = createEventDispatcher(
-    botConfig,
-    botLogger,
-    (msg) => {
-      bridge.handleMessage(msg).catch((err) => {
-        botLogger.error({ err, msg }, 'Unhandled error in message bridge');
-      });
-    },
-    botOpenId,
-    rawSender,
-    (event) => {
-      bridge.handleCardAction(event).catch((err) => {
-        botLogger.error({ err, event }, 'Unhandled error in card action handler');
-      });
-    },
-  );
-
-  // Create WebSocket client
-  const wsClient = new lark.WSClient({
-    appId: botConfig.feishu.appId,
-    appSecret: botConfig.feishu.appSecret,
-    domain: clientDomain,
-    loggerLevel: lark.LoggerLevel.info,
-  });
-
-  // Start WebSocket connection with event dispatcher
-  await wsClient.start({ eventDispatcher: dispatcher });
-
-  botLogger.info('Feishu bot is running');
-  botLogger.info(
-    {
-      defaultWorkingDirectory: botConfig.claude.defaultWorkingDirectory,
-      maxTurns: botConfig.claude.maxTurns ?? 'unlimited',
-      maxBudgetUsd: botConfig.claude.maxBudgetUsd ?? 'unlimited',
-    },
-    'Configuration',
-  );
-
-  return { name: botConfig.name, bridge, wsClient, config: botConfig, sender, feishuClient: client };
+  logger.info({ backfilled, total: rows.length }, 'Embedding backfill completed');
 }
 
 async function main() {
-  const appConfig = loadAppConfig();
+  const { config: appConfig, botConfigStore } = await loadAppConfigFromDB();
+  const chatSessionStore = new ChatSessionStore();
+  const scheduledTaskStore = new ScheduledTaskStore();
+  const discoveredGroupsStore = new DiscoveredGroupStore();
   const logger = createLogger(appConfig.log.level);
 
   // Ensure MEMORY_SECRET env var is available for Claude subprocesses (used by metamemory skill)
@@ -144,13 +86,50 @@ async function main() {
   const normalFeishuBots = appConfig.feishuBots.filter((b) => !b.proxyOnly);
   const proxyOnlyFeishuBots = appConfig.feishuBots.filter((b) => b.proxyOnly);
 
+  // Initialize Agent Bus, Group Session Manager, and Coordinator for multi-bot collaboration
+  const agentBus = new AgentBus(registry, logger);
+  const groupSessionManager = new GroupSessionManager(logger);
+  const bindingEngine = new BindingEngine(logger);
+  const coordinatorConfigStore = new CoordinatorConfigStore();
+  const groupCoordinator = new GroupCoordinator(
+    registry,
+    agentBus,
+    groupSessionManager,
+    new IntentRouter(logger),
+    logger,
+    bindingEngine,
+    coordinatorConfigStore,
+  );
+  await groupCoordinator.reloadFromDB();
+
+  // Create Feishu service client early (needed for group name resolution at startup)
+  let feishuServiceClient: lark.Client | undefined;
+  if (appConfig.feishuService) {
+    feishuServiceClient = new lark.Client({
+      appId: appConfig.feishuService.appId,
+      appSecret: appConfig.feishuService.appSecret,
+      disableTokenCache: false,
+    });
+    logger.info('Feishu service client initialized');
+  }
+
   // Start bots independently so a single platform/API timeout does not
   // take down the whole MetaBot process.
   const feishuHandles =
     normalFeishuBots.length > 0
       ? await startBotsSafely(
           normalFeishuBots,
-          (bot) => startFeishuBot(bot, logger, appConfig.memoryServerUrl, appConfig.memory.secret || undefined),
+          (bot) =>
+            startFeishuBot(
+              bot,
+              logger,
+              appConfig.memoryServerUrl,
+              appConfig.memory.secret || undefined,
+              groupCoordinator,
+              chatSessionStore,
+              discoveredGroupsStore,
+              feishuServiceClient,
+            ),
           logger,
           'feishu',
         )
@@ -166,6 +145,7 @@ async function main() {
       sender,
       appConfig.memoryServerUrl,
       appConfig.memory.secret || undefined,
+      chatSessionStore,
     );
     registry.register({ name: botConfig.name, platform: 'feishu', config: botConfig, bridge, sender });
     botLogger.info('Registered as proxyOnly bot (no Feishu WS connection)');
@@ -175,7 +155,14 @@ async function main() {
     telegramCount > 0
       ? await startBotsSafely(
           appConfig.telegramBots,
-          (bot) => startTelegramBot(bot, logger, appConfig.memoryServerUrl, appConfig.memory.secret || undefined),
+          (bot) =>
+            startTelegramBot(
+              bot,
+              logger,
+              appConfig.memoryServerUrl,
+              appConfig.memory.secret || undefined,
+              chatSessionStore,
+            ),
           logger,
           'telegram',
         )
@@ -185,7 +172,14 @@ async function main() {
     wechatCount > 0
       ? await startBotsSafely(
           appConfig.wechatBots,
-          (bot) => startWechatBot(bot, logger, appConfig.memoryServerUrl, appConfig.memory.secret || undefined),
+          (bot) =>
+            startWechatBot(
+              bot,
+              logger,
+              appConfig.memoryServerUrl,
+              appConfig.memory.secret || undefined,
+              chatSessionStore,
+            ),
           logger,
           'wechat',
         )
@@ -223,6 +217,7 @@ async function main() {
       sender,
       appConfig.memoryServerUrl,
       appConfig.memory.secret || undefined,
+      chatSessionStore,
     );
     registry.register({ name: webConfig.name, platform: 'web', config: webConfig, bridge, sender });
   }
@@ -247,7 +242,7 @@ async function main() {
   logger.info({ bots: allNames }, 'All bots started');
 
   // Create task scheduler
-  const scheduler = new TaskScheduler(registry, logger);
+  const scheduler = new TaskScheduler(registry, logger, scheduledTaskStore);
 
   // Initialize peer manager for cross-instance bot discovery
   let peerManager: PeerManager | undefined;
@@ -272,15 +267,69 @@ async function main() {
     });
   }
 
-  // Create a dedicated Feishu service client for wiki sync & doc reader
-  let feishuServiceClient: lark.Client | undefined;
-  if (appConfig.feishuService) {
-    feishuServiceClient = new lark.Client({
-      appId: appConfig.feishuService.appId,
-      appSecret: appConfig.feishuService.appSecret,
-      disableTokenCache: false,
+  // Initialize workspace manager and ensure all workspaces exist
+  let workspaceManager: WorkspaceManager | undefined;
+  if (memoryServer) {
+    workspaceManager = new WorkspaceManager(memoryServer.storage, logger);
+    await workspaceManager.ensureOrgWorkspace();
+    for (const botName of allNames) {
+      await workspaceManager.ensureBotWorkspace(botName);
+    }
+    logger.info({ botCount: allNames.length }, 'Bot/Org工作空间已初始化');
+
+    // Auto-bind: sync knowledge_folders from standard templates to custom agents
+    let boundCount = 0;
+    for (const botName of allNames) {
+      const botInfo = registry.get(botName);
+      const agentId = botInfo?.config.agentId;
+      if (!agentId) continue;
+      const { rows: agentRows } = await pool.query('SELECT name FROM agents WHERE id = $1', [agentId]);
+      const agentName = agentRows[0]?.name;
+      if (!agentName) continue;
+      const { rows: stdRows } = await pool.query(
+        "SELECT knowledge_folders FROM agents WHERE name = $1 AND template_type = 'standard'",
+        [agentName],
+      );
+      const folders = stdRows[0]?.knowledge_folders || [];
+      if (folders.length === 0) continue;
+      await pool.query('UPDATE agents SET knowledge_folders = $1 WHERE id = $2', [
+        JSON.stringify(folders),
+        agentId,
+      ]);
+      boundCount++;
+    }
+    logger.info({ boundCount }, '知识库文件夹已从标准模板同步到数字员工');
+
+    // Backfill embeddings for existing documents without vectors (background, non-blocking)
+    const { DocEmbedder } = await import('./memory/doc-embedder.js');
+    const backfillEmbedder = new DocEmbedder(logger);
+    backfillEmbedDocuments(backfillEmbedder, logger).catch((err) => {
+      logger.warn({ err: err.message }, 'Embedding backfill failed (non-critical)');
     });
-    logger.info('Feishu service client initialized (for wiki sync & doc reader)');
+  }
+
+  // Initialize group workspaces after Feishu client is available (for name resolution)
+  if (workspaceManager) {
+    const discoveredGroups = await discoveredGroupsStore.list();
+    // Eagerly resolve group names from Feishu API before creating workspaces
+    if (feishuServiceClient) {
+      for (const g of discoveredGroups.filter((g) => !g.chatName)) {
+        try {
+          const resp = await feishuServiceClient.im.v1.chat.get({ path: { chat_id: g.chatId } });
+          const name = resp?.data?.name;
+          if (name) {
+            g.chatName = name;
+            await discoveredGroupsStore.updateName(g.chatId, name);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    for (const group of discoveredGroups) {
+      await workspaceManager.ensureGroupWorkspace(group.chatId, group.chatName || undefined);
+    }
+    logger.info({ groupCount: discoveredGroups.length }, '群协作空间已初始化');
   }
 
   // Initialize wiki sync service (uses dedicated service app credentials)
@@ -321,11 +370,25 @@ async function main() {
     if (bot) bot.bridge.setSessionRegistry(sessionRegistry);
   }
 
+  // Wire OutputArchiver into GroupCoordinator for group collaboration archiving
+  for (const entry of registry.list()) {
+    const bot = registry.get(entry.name);
+    if (bot) {
+      groupCoordinator.setOutputArchiver(bot.bridge.getOutputArchiver());
+      if (workspaceManager) {
+        bot.bridge.setWorkspaceManager(workspaceManager);
+      }
+    }
+  }
+  if (workspaceManager) {
+    groupCoordinator.setWorkspaceManager(workspaceManager);
+  }
+
   // Resolve bots config path for API-driven bot CRUD
   const botsConfigPath = process.env.BOTS_CONFIG ? path.resolve(process.env.BOTS_CONFIG) : undefined;
 
   // Start API server
-  const apiServer = startApiServer({
+  const apiServer = await startApiServer({
     port: appConfig.api.port,
     secret: appConfig.api.secret,
     registry,
@@ -339,15 +402,51 @@ async function main() {
     memoryAuthToken:
       appConfig.memory.adminToken || appConfig.memory.readerToken || appConfig.memory.secret || undefined,
     sessionRegistry,
+    botConfigStore,
+    chatSessionStore,
+    agentBus,
+    groupSessionManager,
+    bindingEngine,
+    coordinatorConfigStore,
+    groupCoordinator,
+    discoveredGroupsStore,
+    workspaceManager,
   });
 
   // Graceful shutdown
-  const shutdown = () => {
-    logger.info('Shutting down...');
+  let shuttingDown = false;
+  const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.info({ signal }, 'Shutting down...');
+
     scheduler.destroy();
     if (peerManager) {
       peerManager.destroy();
     }
+
+    // Wait for running tasks to finish (max 30s)
+    const runningBridges = [
+      ...feishuHandles.map((h) => h.bridge),
+      ...telegramHandles.map((h) => h.bridge),
+      ...wechatHandles.map((h) => h.bridge),
+    ];
+    const busyBridges = runningBridges.filter((b) => b.getRunningTasksInfo().length > 0);
+    if (busyBridges.length > 0) {
+      logger.info({ count: busyBridges.length }, 'Waiting for running tasks to complete...');
+      await Promise.race([
+        new Promise<void>((resolve) => {
+          const check = setInterval(() => {
+            if (busyBridges.every((b) => b.getRunningTasksInfo().length === 0)) {
+              clearInterval(check);
+              resolve();
+            }
+          }, 1000);
+        }),
+        new Promise<void>((resolve) => setTimeout(resolve, 30_000)),
+      ]);
+    }
+
     apiServer.close();
     if (docSync) {
       docSync.destroy();
@@ -368,11 +467,18 @@ async function main() {
       handle.bridge.destroy();
       handle.stop();
     }
+    try {
+      await pool.end();
+      logger.info('Database pool closed');
+    } catch {
+      /* ignore */
+    }
+    logger.info('Shutdown complete');
     process.exit(0);
   };
 
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
 
 async function startBotsSafely<TConfig extends BotConfigBase, THandle>(

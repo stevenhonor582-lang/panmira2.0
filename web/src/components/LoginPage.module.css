@@ -156,6 +156,32 @@
 
 .footer a:hover { color: var(--accent-text); }
 
+.modeLinks {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.modeLink {
+  background: none;
+  border: none;
+  color: var(--text-2);
+  font-size: 12.5px;
+  cursor: pointer;
+  padding: 0;
+  transition: color var(--duration-fast);
+}
+
+.modeLink:hover { color: var(--accent); }
+
+.modeSep {
+  color: var(--text-3);
+  font-size: 11px;
+  user-select: none;
+}
+
 @media (max-width: 480px) {
   .card { padding: 40px 28px; margin: 0 16px; }
 }

@@ -5,6 +5,7 @@ import type { IncomingMessage } from '../types.js';
 import { WechatClient, type ILinkMessage, type ILinkMessageItem } from './wechat-client.js';
 import { WechatSender } from './wechat-sender.js';
 import { MessageBridge } from '../bridge/message-bridge.js';
+import type { ChatSessionStore } from '../db/chat-session-store.js';
 
 export interface WechatBotHandle {
   name: string;
@@ -20,6 +21,7 @@ export async function startWechatBot(
   logger: Logger,
   memoryServerUrl: string,
   memorySecret?: string,
+  sessionStore?: ChatSessionStore,
 ): Promise<WechatBotHandle> {
   const botLogger = logger.child({ bot: config.name });
 
@@ -51,7 +53,7 @@ export async function startWechatBot(
   }
 
   const sender = new WechatSender(client, botLogger);
-  const bridge = new MessageBridge(config, botLogger, sender, memoryServerUrl, memorySecret);
+  const bridge = new MessageBridge(config, botLogger, sender, memoryServerUrl, memorySecret, sessionStore);
 
   // Start long polling
   const abortController = new AbortController();

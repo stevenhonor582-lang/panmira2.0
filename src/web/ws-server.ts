@@ -12,6 +12,8 @@ import { GroupManager, type ChatGroup } from './group-manager.js';
 import { ProxySender } from './proxy-sender.js';
 import { StreamingASRSession, createStreamingASRSession, isStreamingASRAvailable } from '../api/streaming-asr.js';
 import type { SessionRegistry, SessionRecord, SessionMessage } from '../session/session-registry.js';
+import type { BotConfigStore } from '../db/bot-config-store.js';
+import { verifyAccessToken } from '../api/middleware.js';
 
 // ─── Client → Server messages ──────────────────────────────────────────────
 
@@ -122,6 +124,7 @@ export function setupWebSocketServer(
   secret?: string,
   peerManager?: PeerManager,
   sessionRegistry?: SessionRegistry,
+  botConfigStore?: BotConfigStore,
 ): WebSocketHandle {
   const wsLogger = logger.child({ module: 'ws' });
 
@@ -137,7 +140,7 @@ export function setupWebSocketServer(
   const groupManager = new GroupManager();
 
   // Handle HTTP upgrade requests
-  server.on('upgrade', (req, socket, head) => {
+  server.on('upgrade', async (req, socket, head) => {
     const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
 
     // Only upgrade requests to /ws path
@@ -146,10 +149,19 @@ export function setupWebSocketServer(
       return;
     }
 
-    // Auth via ?token=SECRET query parameter (if secret is configured)
+    // Auth via ?token= query parameter (JWT or API_SECRET)
     if (secret) {
       const token = url.searchParams.get('token');
-      if (token !== secret) {
+      let authorized = false;
+      if (token) {
+        const jwtPayload = await verifyAccessToken(token);
+        if (jwtPayload) {
+          authorized = true;
+        } else if (token === secret) {
+          authorized = true;
+        }
+      }
+      if (!authorized) {
         socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
         socket.destroy();
         wsLogger.warn('WebSocket connection rejected: invalid token');
@@ -183,9 +195,13 @@ export function setupWebSocketServer(
     const peerBots = peerManager?.getPeerBots() ?? [];
     sendMessage(ws, { type: 'connected', bots: [...bots, ...peerBots] });
 
-    // Heartbeat: ping every 30s, close if no pong
+    // Heartbeat: ping every 30s, close if no activity
     let isAlive = true;
     ws.on('pong', () => {
+      isAlive = true;
+    });
+    // Any client message (including app-level ping) proves liveness
+    ws.on('message', () => {
       isAlive = true;
     });
 
@@ -337,8 +353,13 @@ export function setupWebSocketServer(
             sendMessage(ws, { type: 'error', chatId: '', error: 'Session sync not available' });
             break;
           }
-          const sessions = sessionRegistry.listSessions(msg.botName);
-          sendMessage(ws, { type: 'sessions_list', botName: msg.botName, sessions });
+          (async () => {
+            const sessions = await sessionRegistry.listSessions(msg.botName);
+            sendMessage(ws, { type: 'sessions_list', botName: msg.botName, sessions });
+          })().catch((err) => {
+            wsLogger.error({ err }, 'WS list_sessions error');
+            sendMessage(ws, { type: 'error', chatId: '', error: err.message || 'Internal error' });
+          });
           break;
         }
 
@@ -347,24 +368,28 @@ export function setupWebSocketServer(
             sendMessage(ws, { type: 'error', chatId: msg.chatId, error: 'Session sync not available' });
             break;
           }
-          const claudeSessionId = sessionRegistry.linkChatId(msg.sessionId, msg.chatId);
-          // Set the Claude session ID in the bot's SessionManager so future messages resume the conversation
-          if (claudeSessionId) {
-            const session = sessionRegistry.getSession(msg.sessionId);
-            if (session) {
-              const bot = registry.get(session.botName);
-              if (bot) {
-                bot.bridge.getSessionManager().setSessionId(msg.chatId, claudeSessionId);
+          (async () => {
+            const claudeSessionId = await sessionRegistry.linkChatId(msg.sessionId, msg.chatId);
+            if (claudeSessionId) {
+              const session = await sessionRegistry.getSession(msg.sessionId);
+              if (session) {
+                const bot = registry.get(session.botName);
+                if (bot) {
+                  bot.bridge.getSessionManager().setSessionId(msg.chatId, claudeSessionId);
+                }
               }
             }
-          }
-          const history = sessionRegistry.getMessages(msg.sessionId);
-          sendMessage(ws, {
-            type: 'session_adopted',
-            chatId: msg.chatId,
-            sessionId: msg.sessionId,
-            claudeSessionId,
-            history,
+            const history = await sessionRegistry.getMessages(msg.sessionId);
+            sendMessage(ws, {
+              type: 'session_adopted',
+              chatId: msg.chatId,
+              sessionId: msg.sessionId,
+              claudeSessionId,
+              history,
+            });
+          })().catch((err) => {
+            wsLogger.error({ err, chatId: msg.chatId }, 'WS adopt_session error');
+            sendMessage(ws, { type: 'error', chatId: msg.chatId, error: err.message || 'Internal error' });
           });
           break;
         }
@@ -374,8 +399,13 @@ export function setupWebSocketServer(
             sendMessage(ws, { type: 'error', chatId: '', error: 'Session sync not available' });
             break;
           }
-          const messages = sessionRegistry.getMessages(msg.sessionId, msg.since);
-          sendMessage(ws, { type: 'session_history', sessionId: msg.sessionId, messages });
+          (async () => {
+            const messages = await sessionRegistry.getMessages(msg.sessionId, msg.since);
+            sendMessage(ws, { type: 'session_history', sessionId: msg.sessionId, messages });
+          })().catch((err) => {
+            wsLogger.error({ err }, 'WS get_session_history error');
+            sendMessage(ws, { type: 'error', chatId: '', error: err.message || 'Internal error' });
+          });
           break;
         }
 
@@ -384,11 +414,16 @@ export function setupWebSocketServer(
             sendMessage(ws, { type: 'error', chatId: msg.chatId, error: 'Session sync not available' });
             break;
           }
-          const session = sessionRegistry.findByChatId(msg.chatId);
-          if (session) {
-            sessionRegistry.renameSession(session.id, msg.title);
-            sendMessage(ws, { type: 'session_renamed', chatId: msg.chatId, title: msg.title });
-          }
+          (async () => {
+            const session = await sessionRegistry.findByChatId(msg.chatId);
+            if (session) {
+              await sessionRegistry.renameSession(session.id, msg.title);
+              sendMessage(ws, { type: 'session_renamed', chatId: msg.chatId, title: msg.title });
+            }
+          })().catch((err) => {
+            wsLogger.error({ err, chatId: msg.chatId }, 'WS rename_session error');
+            sendMessage(ws, { type: 'error', chatId: msg.chatId, error: err.message || 'Internal error' });
+          });
           break;
         }
 
@@ -397,11 +432,16 @@ export function setupWebSocketServer(
             sendMessage(ws, { type: 'error', chatId: msg.chatId, error: 'Session sync not available' });
             break;
           }
-          const delSession = sessionRegistry.findByChatId(msg.chatId);
-          if (delSession) {
-            sessionRegistry.deleteSession(delSession.id);
-            sendMessage(ws, { type: 'session_deleted', chatId: msg.chatId });
-          }
+          (async () => {
+            const delSession = await sessionRegistry.findByChatId(msg.chatId);
+            if (delSession) {
+              await sessionRegistry.deleteSession(delSession.id);
+              sendMessage(ws, { type: 'session_deleted', chatId: msg.chatId });
+            }
+          })().catch((err) => {
+            wsLogger.error({ err, chatId: msg.chatId }, 'WS delete_session error');
+            sendMessage(ws, { type: 'error', chatId: msg.chatId, error: err.message || 'Internal error' });
+          });
           break;
         }
 
@@ -484,10 +524,29 @@ export function setupWebSocketServer(
   wsLogger.info('WebSocket server initialized on /ws');
 
   return {
-    broadcastBotList() {
-      const bots = registry.list();
+    async broadcastBotList() {
+      const localBots = registry.list();
+      const runningNames = new Set(localBots.map((b) => b.name));
       const peerBots = peerManager?.getPeerBots() ?? [];
-      const msg = JSON.stringify({ type: 'bots_updated', bots: [...bots, ...peerBots] });
+      let pausedBots: any[] = [];
+      if (botConfigStore) {
+        try {
+          const allRows = await botConfigStore.listAll();
+          pausedBots = allRows
+            .filter((r) => !runningNames.has(r.name))
+            .map((r) => ({
+              name: r.name,
+              platform: r.platform,
+              engine: 'paused',
+              workingDirectory: (r.configJson as any).defaultWorkingDirectory || '',
+              description: (r.configJson as any).description || '',
+              paused: true,
+            }));
+        } catch {
+          /* ignore */
+        }
+      }
+      const msg = JSON.stringify({ type: 'bots_updated', bots: [...localBots, ...pausedBots, ...peerBots] });
       for (const ws of connectedClients) {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(msg);
@@ -875,7 +934,7 @@ function sendMessage(ws: WebSocket, msg: ServerMessage): void {
  * Returns true if the request was handled, false otherwise.
  */
 export function serveStaticFiles(req: HttpIncomingMessage, res: ServerResponse, url: string): boolean {
-  // Only handle GET /web/*
+  // Only handle GET
   if (req.method !== 'GET') return false;
 
   // Redirect /web to /web/

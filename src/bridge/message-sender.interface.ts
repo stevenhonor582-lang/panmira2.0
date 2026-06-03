@@ -14,6 +14,9 @@ export interface IMessageSender {
   /** Send a simple notice message (for command responses: /help, /reset, /stop, etc.). */
   sendTextNotice(chatId: string, title: string, content: string, color?: string): Promise<void>;
 
+  /** Send a pre-built card JSON string directly. */
+  sendRawCard(chatId: string, cardJson: string): Promise<void>;
+
   /** Send a plain text message. */
   sendText(chatId: string, text: string): Promise<void>;
 

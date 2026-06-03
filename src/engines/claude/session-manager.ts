@@ -3,69 +3,57 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import type { Logger } from '../../utils/logger.js';
 import type { EngineName } from '../types.js';
+import type { ChatSessionStore } from '../../db/chat-session-store.js';
 
 export interface UserSession {
   sessionId: string | undefined;
-  /** Engine that owns sessionId. Engine session stores are not interchangeable. */
   sessionIdEngine?: EngineName;
   workingDirectory: string;
   lastUsed: number;
-  /** Cumulative token usage across all queries in this session */
   cumulativeTokens: number;
-  /** Cumulative cost (USD) across all queries in this session */
   cumulativeCostUsd: number;
-  /** Cumulative duration (ms) across all queries in this session */
   cumulativeDurationMs: number;
-  /** Per-session model override (e.g. "claude-opus-4-7"). Falls back to bot default when undefined. */
-  model?: string;
-  /** Engine that owns model. Model names are engine-specific. */
-  modelEngine?: EngineName;
-  /** Per-session engine override. Falls back to bot default when undefined. */
-  engine?: EngineName;
-}
-
-interface PersistedSession {
-  sessionId: string;
-  sessionIdEngine?: EngineName;
-  workingDirectory: string;
-  lastUsed: number;
-  cumulativeTokens?: number;
-  cumulativeCostUsd?: number;
-  cumulativeDurationMs?: number;
   model?: string;
   modelEngine?: EngineName;
   engine?: EngineName;
+  pendingSummary?: string;
 }
 
-const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_SESSIONS = 10_000;
 
 export class SessionManager {
   private sessions = new Map<string, UserSession>();
   private cleanupTimer: ReturnType<typeof setInterval>;
-  private persistPath: string;
+  private botName: string;
+  private dbStore: ChatSessionStore | undefined;
+  private dirty = false;
+  private flushTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(
     private defaultWorkingDirectory: string,
     private logger: Logger,
     botName: string = 'default',
+    dbStore?: ChatSessionStore,
   ) {
-    // Persist sessions to a file under the project data dir
-    const dataDir = process.env.SESSION_STORE_DIR
-      || path.join(os.homedir(), '.metabot');
-    fs.mkdirSync(dataDir, { recursive: true });
-    this.persistPath = path.join(dataDir, `sessions-${botName}.json`);
+    this.botName = botName;
+    this.dbStore = dbStore;
 
-    this.loadFromDisk();
+    if (dbStore) {
+      this.loadFromDB();
+    } else {
+      this.loadFromDisk();
+    }
 
-    // Periodic cleanup every hour
     this.cleanupTimer = setInterval(() => this.cleanupExpired(), 60 * 60 * 1000);
+    if (dbStore) {
+      this.flushTimer = setInterval(() => this.flushToDB(), 30_000);
+    }
   }
 
   getSession(chatId: string): UserSession {
     let session = this.sessions.get(chatId);
     if (!session) {
-      // Evict least-recently-used session if at capacity
       if (this.sessions.size >= MAX_SESSIONS) {
         this.evictOldest();
       }
@@ -78,6 +66,9 @@ export class SessionManager {
         cumulativeDurationMs: 0,
       };
       this.sessions.set(chatId, session);
+    } else {
+      // Always use the latest defaultWorkingDirectory from DB config
+      session.workingDirectory = this.defaultWorkingDirectory;
     }
     session.lastUsed = Date.now();
     return session;
@@ -94,7 +85,6 @@ export class SessionManager {
     }
     if (oldestKey) {
       this.sessions.delete(oldestKey);
-      this.logger.debug({ chatId: oldestKey }, 'Evicted oldest session (capacity limit)');
     }
   }
 
@@ -102,25 +92,16 @@ export class SessionManager {
     const session = this.getSession(chatId);
     session.sessionId = sessionId;
     session.sessionIdEngine = engine;
-    this.logger.debug({ chatId, sessionId: sessionId.slice(0, 8), engine }, 'Session ID updated');
-    this.saveToDisk();
+    this.markDirty();
   }
 
-  /** Set per-session model override. Pass undefined to clear. */
   setSessionModel(chatId: string, model: string | undefined, engine?: EngineName): void {
     const session = this.getSession(chatId);
     session.model = model;
     session.modelEngine = model ? engine : undefined;
-    this.logger.info({ chatId, model, engine: session.modelEngine }, 'Session model override updated');
-    this.saveToDisk();
+    this.markDirty();
   }
 
-  /**
-   * Set per-session engine override. Pass undefined to clear and fall back
-   * to the bot's configured engine. Switching engines also clears the prior
-   * `sessionId` (engines track conversation state in different stores) and
-   * any stale model override, so the next turn starts a fresh session.
-   */
   setSessionEngine(chatId: string, engine: EngineName | undefined): void {
     const session = this.getSession(chatId);
     if (session.engine === engine) return;
@@ -129,20 +110,18 @@ export class SessionManager {
     session.sessionIdEngine = undefined;
     session.model = undefined;
     session.modelEngine = undefined;
-    this.logger.info({ chatId, engine }, 'Session engine override updated (session reset)');
-    this.saveToDisk();
+    this.markDirty();
   }
 
-  /** Accumulate token/cost/duration from a completed query into the session totals. */
   addUsage(chatId: string, tokens: number, costUsd: number, durationMs: number): void {
     const session = this.getSession(chatId);
     session.cumulativeTokens += tokens;
     session.cumulativeCostUsd += costUsd;
     session.cumulativeDurationMs += durationMs;
-    this.saveToDisk();
+    this.markDirty();
   }
 
-  resetSession(chatId: string): void {
+  resetSession(chatId: string, summary?: string): void {
     const session = this.sessions.get(chatId);
     if (session) {
       session.sessionId = undefined;
@@ -150,8 +129,23 @@ export class SessionManager {
       session.cumulativeTokens = 0;
       session.cumulativeCostUsd = 0;
       session.cumulativeDurationMs = 0;
-      // Keep working directory
-      this.logger.info({ chatId }, 'Session reset');
+      if (summary) { session.pendingSummary = summary; }
+      this.markDirty();
+    }
+  }
+
+  consumePendingSummary(chatId: string): string | undefined {
+    const session = this.sessions.get(chatId);
+    if (!session?.pendingSummary) return undefined;
+    const summary = session.pendingSummary;
+    session.pendingSummary = undefined;
+    this.markDirty();
+    return summary;
+  }
+
+  markDirty(): void {
+    this.dirty = true;
+    if (!this.dbStore) {
       this.saveToDisk();
     }
   }
@@ -162,20 +156,86 @@ export class SessionManager {
     for (const [chatId, session] of this.sessions) {
       if (now - session.lastUsed > SESSION_TTL_MS) {
         this.sessions.delete(chatId);
-        this.logger.debug({ chatId }, 'Expired session cleaned up');
         changed = true;
       }
     }
     if (changed) {
-      this.saveToDisk();
+      if (this.dbStore) {
+        this.dbStore.deleteExpired(this.botName, SESSION_TTL_MS).catch(() => {});
+      } else {
+        this.saveToDisk();
+      }
     }
+  }
+
+  private async loadFromDB(): Promise<void> {
+    if (!this.dbStore) return;
+    try {
+      const rows = await this.dbStore.listByBot(this.botName);
+      const now = Date.now();
+      let loaded = 0;
+      for (const r of rows) {
+        if (now - r.lastUsed > SESSION_TTL_MS) continue;
+        this.sessions.set(r.chatId, {
+          sessionId: r.sessionId ?? undefined,
+          sessionIdEngine: (r.sessionIdEngine as EngineName) ?? undefined,
+          workingDirectory: this.defaultWorkingDirectory,
+          lastUsed: r.lastUsed,
+          cumulativeTokens: r.cumulativeTokens,
+          cumulativeCostUsd: Number(r.cumulativeCostUsd),
+          cumulativeDurationMs: r.cumulativeDurationMs,
+          model: r.model ?? undefined,
+          modelEngine: (r.modelEngine as EngineName) ?? undefined,
+          engine: (r.engine as EngineName) ?? undefined,
+        });
+        loaded++;
+      }
+      if (loaded > 0) {
+        this.logger.info({ loaded }, 'Restored sessions from DB');
+      }
+    } catch (err) {
+      this.logger.warn({ err }, 'Failed to load sessions from DB, starting fresh');
+    }
+  }
+
+  private async flushToDB(): Promise<void> {
+    if (!this.dirty || !this.dbStore) return;
+    this.dirty = false;
+    try {
+      for (const [chatId, session] of this.sessions) {
+        if (session.sessionId || session.model || session.engine) {
+          await this.dbStore.upsert({
+            botName: this.botName,
+            chatId,
+            sessionId: session.sessionId ?? null,
+            sessionIdEngine: session.sessionIdEngine ?? null,
+            workingDirectory: session.workingDirectory,
+            lastUsed: session.lastUsed,
+            cumulativeTokens: session.cumulativeTokens,
+            cumulativeCostUsd: session.cumulativeCostUsd,
+            cumulativeDurationMs: session.cumulativeDurationMs,
+            model: session.model ?? null,
+            modelEngine: session.modelEngine ?? null,
+            engine: session.engine ?? null,
+          });
+        }
+      }
+    } catch (err) {
+      this.logger.warn({ err }, 'Failed to flush sessions to DB');
+      this.dirty = true;
+    }
+  }
+
+  private persistPath(): string {
+    const dataDir = process.env.SESSION_STORE_DIR || path.join(os.homedir(), '.metabot');
+    fs.mkdirSync(dataDir, { recursive: true });
+    return path.join(dataDir, `sessions-${this.botName}.json`);
   }
 
   private saveToDisk(): void {
     try {
-      const data: Record<string, PersistedSession> = {};
+      const data: Record<string, any> = {};
       for (const [chatId, session] of this.sessions) {
-        // Persist sessions that have a sessionId, model, or engine override
         if (session.sessionId || session.model || session.engine) {
           data[chatId] = {
             sessionId: session.sessionId || '',
@@ -188,10 +248,11 @@ export class SessionManager {
             model: session.model,
             modelEngine: session.modelEngine,
             engine: session.engine,
+            ...(session.pendingSummary ? { pendingSummary: session.pendingSummary } : {}),
           };
         }
       }
-      fs.writeFileSync(this.persistPath, JSON.stringify(data, null, 2), 'utf-8');
+      fs.writeFileSync(this.persistPath(), JSON.stringify(data, null, 2), 'utf-8');
     } catch (err) {
       this.logger.warn({ err }, 'Failed to persist sessions to disk');
     }
@@ -199,30 +260,31 @@ export class SessionManager {
 
   private loadFromDisk(): void {
     try {
-      if (!fs.existsSync(this.persistPath)) return;
-      const raw = fs.readFileSync(this.persistPath, 'utf-8');
-      const data: Record<string, PersistedSession> = JSON.parse(raw);
+      const p = this.persistPath();
+      if (!fs.existsSync(p)) return;
+      const raw = fs.readFileSync(p, 'utf-8');
+      const data: Record<string, any> = JSON.parse(raw);
       const now = Date.now();
       let loaded = 0;
-      for (const [chatId, persisted] of Object.entries(data)) {
-        // Skip expired sessions
-        if (now - persisted.lastUsed > SESSION_TTL_MS) continue;
+      for (const [chatId, s] of Object.entries(data)) {
+        if (now - s.lastUsed > SESSION_TTL_MS) continue;
         this.sessions.set(chatId, {
-          sessionId: persisted.sessionId || undefined,
-          sessionIdEngine: persisted.sessionIdEngine,
-          workingDirectory: persisted.workingDirectory,
-          lastUsed: persisted.lastUsed,
-          cumulativeTokens: persisted.cumulativeTokens ?? 0,
-          cumulativeCostUsd: persisted.cumulativeCostUsd ?? 0,
-          cumulativeDurationMs: persisted.cumulativeDurationMs ?? 0,
-          model: persisted.model,
-          modelEngine: persisted.modelEngine,
-          engine: persisted.engine,
+          sessionId: s.sessionId || undefined,
+          sessionIdEngine: s.sessionIdEngine,
+          workingDirectory: this.defaultWorkingDirectory,
+          lastUsed: s.lastUsed,
+          cumulativeTokens: s.cumulativeTokens ?? 0,
+          cumulativeCostUsd: s.cumulativeCostUsd ?? 0,
+          cumulativeDurationMs: s.cumulativeDurationMs ?? 0,
+          model: s.model,
+          modelEngine: s.modelEngine,
+          engine: s.engine,
+          pendingSummary: s.pendingSummary,
         });
         loaded++;
       }
       if (loaded > 0) {
-        this.logger.info({ loaded, path: this.persistPath }, 'Restored sessions from disk');
+        this.logger.info({ loaded, path: p }, 'Restored sessions from disk');
       }
     } catch (err) {
       this.logger.warn({ err }, 'Failed to load sessions from disk, starting fresh');
@@ -231,6 +293,11 @@ export class SessionManager {
 
   destroy(): void {
     clearInterval(this.cleanupTimer);
-    this.saveToDisk();
+    if (this.flushTimer) clearInterval(this.flushTimer);
+    if (this.dbStore) {
+      this.flushToDB().catch(() => {});
+    } else {
+      this.saveToDisk();
+    }
   }
 }

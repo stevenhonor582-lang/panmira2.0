@@ -1,11 +1,12 @@
 import type { Logger } from '../utils/logger.js';
+import { pool } from '../db/index.js';
 
 type CircuitState = 'closed' | 'open' | 'half-open';
 
 interface CircuitConfig {
-  failureThreshold: number;   // failures before opening (default 5)
-  resetTimeoutMs: number;     // time before trying half-open (default 60s)
-  halfOpenMaxAttempts: number; // successful attempts to close (default 2)
+  failureThreshold: number;
+  resetTimeoutMs: number;
+  halfOpenMaxAttempts: number;
 }
 
 interface BotCircuit {
@@ -29,6 +30,25 @@ export class CircuitBreaker {
     };
   }
 
+  async init(): Promise<void> {
+    try {
+      const { rows } = await pool.query('SELECT * FROM circuit_breaker_states');
+      for (const r of rows) {
+        this.circuits.set(r.bot_name, {
+          state: r.state as CircuitState,
+          failures: r.failures,
+          lastFailure: Number(r.last_failure),
+          halfOpenSuccesses: r.half_open_successes,
+        });
+      }
+      if (rows.length > 0) {
+        this.logger.info({ restored: rows.length }, 'Circuit breaker states restored from DB');
+      }
+    } catch {
+      /* table may not exist yet */
+    }
+  }
+
   private getCircuit(botName: string): BotCircuit {
     let circuit = this.circuits.get(botName);
     if (!circuit) {
@@ -38,25 +58,35 @@ export class CircuitBreaker {
     return circuit;
   }
 
-  /** Check if a bot is available (circuit not open). */
+  private persist(botName: string): void {
+    const c = this.circuits.get(botName);
+    if (!c) return;
+    pool
+      .query(
+        `INSERT INTO circuit_breaker_states (bot_name, state, failures, last_failure, half_open_successes, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (bot_name) DO UPDATE SET state = $2, failures = $3, last_failure = $4, half_open_successes = $5, updated_at = $6`,
+        [botName, c.state, c.failures, c.lastFailure, c.halfOpenSuccesses, Date.now()],
+      )
+      .catch(() => {});
+  }
+
   isAvailable(botName: string): boolean {
     const circuit = this.getCircuit(botName);
     if (circuit.state === 'closed') return true;
     if (circuit.state === 'open') {
-      // Check if reset timeout has elapsed -> transition to half-open
       if (Date.now() - circuit.lastFailure >= this.config.resetTimeoutMs) {
         circuit.state = 'half-open';
         circuit.halfOpenSuccesses = 0;
         this.logger.info({ botName }, 'Circuit half-open, allowing probe request');
+        this.persist(botName);
         return true;
       }
       return false;
     }
-    // half-open: allow requests
     return true;
   }
 
-  /** Record a successful execution. */
   recordSuccess(botName: string): void {
     const circuit = this.getCircuit(botName);
     if (circuit.state === 'half-open') {
@@ -67,28 +97,26 @@ export class CircuitBreaker {
         this.logger.info({ botName }, 'Circuit closed (recovered)');
       }
     } else if (circuit.state === 'closed') {
-      // Reset failure count on success
       circuit.failures = 0;
     }
+    this.persist(botName);
   }
 
-  /** Record a failed execution. */
   recordFailure(botName: string): void {
     const circuit = this.getCircuit(botName);
     circuit.failures++;
     circuit.lastFailure = Date.now();
 
     if (circuit.state === 'half-open') {
-      // Failure during half-open -> back to open
       circuit.state = 'open';
       this.logger.warn({ botName, failures: circuit.failures }, 'Circuit re-opened (half-open probe failed)');
     } else if (circuit.failures >= this.config.failureThreshold) {
       circuit.state = 'open';
       this.logger.warn({ botName, failures: circuit.failures }, 'Circuit opened (threshold reached)');
     }
+    this.persist(botName);
   }
 
-  /** Get status for all circuits. */
   getStatus(): Record<string, { state: CircuitState; failures: number }> {
     const status: Record<string, { state: CircuitState; failures: number }> = {};
     for (const [name, circuit] of this.circuits) {
@@ -97,9 +125,9 @@ export class CircuitBreaker {
     return status;
   }
 
-  /** Reset a specific bot's circuit. */
   reset(botName: string): void {
     this.circuits.delete(botName);
+    pool.query('DELETE FROM circuit_breaker_states WHERE bot_name = $1', [botName]).catch(() => {});
     this.logger.info({ botName }, 'Circuit manually reset');
   }
 }

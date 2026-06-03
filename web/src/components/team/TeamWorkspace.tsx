@@ -63,7 +63,7 @@ export function TeamWorkspace() {
   const teamChatBotName = useStore((st) => st.teamChatBotName);
   const setTeamChatBotName = useStore((st) => st.setTeamChatBotName);
   const teamDetailTab = useStore((st) => st.teamDetailTab);
-  const setTeamDetailTab = useStore((st) => st.setTeamDetailTab);
+  const setTeamDetailTab = useStore((st) => st.setTeamDetailTab) as (tab: 'activity' | 'stats' | 'info' | 'sessions') => void;
 
   const { loading, error } = useTeamPoller();
 
@@ -118,7 +118,7 @@ export function TeamWorkspace() {
     return (
       <div className={s.loadingState}>
         <div className={s.spinner} />
-        <span>Loading team...</span>
+        <span>加载团队...</span>
       </div>
     );
   }
@@ -138,24 +138,24 @@ export function TeamWorkspace() {
       <div className={s.statusBar}>
         <div className={s.statusStats}>
           <span className={s.statChip}>
-            <span className={s.statNum}>{summary?.totalBots || 0}</span> Bots
+            <span className={s.statNum}>{summary?.totalBots || 0}</span> 机器人
           </span>
           <span className={s.statDivider} />
           <span className={s.statChip}>
-            <span className={s.statNum}>{totalAgents}</span> Sub-agents
+            <span className={s.statNum}>{totalAgents}</span> 子智能体
           </span>
           <span className={s.statDivider} />
           {(summary?.busyBots || 0) > 0 && (
             <>
               <span className={`${s.statChip} ${s.statBusy}`}>
                 <span className={s.busyPulse} />
-                <span className={s.statNum}>{summary?.busyBots}</span> Busy
+                <span className={s.statNum}>{summary?.busyBots}</span> 忙碌
               </span>
               <span className={s.statDivider} />
             </>
           )}
           <span className={s.statChip}>
-            ${(summary?.totalCostUsd || 0).toFixed(2)}
+            ¥{(summary?.totalCostUsd || 0).toFixed(2)}
           </span>
         </div>
 
@@ -210,7 +210,7 @@ export function TeamWorkspace() {
                 <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
               </svg>
             </div>
-            <span>Select an agent to view details</span>
+            <span>选择一个智能体查看详情</span>
           </div>
         )}
 

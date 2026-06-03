@@ -45,6 +45,14 @@ export interface CardState {
   contextWindow?: number;
   /** Cumulative session cost (USD), accumulated across queries until /reset */
   sessionCostUsd?: number;
+  /** Input tokens consumed (non-cache) */
+  inputTokens?: number;
+  /** Output tokens consumed */
+  outputTokens?: number;
+  /** Cache read tokens */
+  cacheReadTokens?: number;
+  /** Cache creation tokens */
+  cacheCreationTokens?: number;
   /** Background tasks (e.g. Monitor) the agent has spawned during this turn. */
   backgroundEvents?: BackgroundEvent[];
 }

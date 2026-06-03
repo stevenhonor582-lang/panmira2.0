@@ -1,5 +1,6 @@
 /* ---- Empty State (shown when no messages) ---- */
 
+import { useTranslation } from 'react-i18next';
 import styles from '../ChatView.module.css';
 
 interface Props {
@@ -9,9 +10,10 @@ interface Props {
 }
 
 export function EmptyState({ onHintClick, botName, botDescription }: Props) {
-  const displayName = botName || 'MetaBot';
+  const { t } = useTranslation();
+  const displayName = botName || 'PanMira';
   const initial = displayName.charAt(0).toUpperCase();
-  const description = botDescription || 'Your AI coding assistant. Ask me anything about code, architecture, debugging, or let me build something for you.';
+  const description = botDescription || t('empty.defaultDescription');
 
   return (
     <div className={styles.emptyState}>
@@ -22,10 +24,10 @@ export function EmptyState({ onHintClick, botName, botDescription }: Props) {
       <div className={styles.emptySubtitle}>{description}</div>
       <div className={styles.emptyHints}>
         {[
-          'Explain how this project works',
-          'Find and fix bugs in my code',
-          'Write tests for the main module',
-          'Refactor this function',
+          t('empty.hint1'),
+          t('empty.hint2'),
+          t('empty.hint3'),
+          t('empty.hint4'),
         ].map((hint) => (
           <button
             key={hint}

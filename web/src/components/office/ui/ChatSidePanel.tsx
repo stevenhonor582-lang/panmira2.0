@@ -130,6 +130,7 @@ export function ChatSidePanel({ botName, botStatus, onClose }: ChatSidePanelProp
           autoScrollRef={autoScrollRef}
           isRunning={isRunning}
           onAnswer={handleAnswer}
+          onPreview={() => {}}
         />
       </div>
 

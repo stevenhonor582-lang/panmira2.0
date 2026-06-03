@@ -73,7 +73,10 @@ export async function handleTaskRoutes(
         jsonResponse(res, 404, { error: `Bot not found on peer "${targetPeerName}": ${botName}` });
         return true;
       }
-      logger.info({ botName, peerName: targetPeerName, chatId, promptLength: prompt.length }, 'Forwarding talk to peer (qualified)');
+      logger.info(
+        { botName, peerName: targetPeerName, chatId, promptLength: prompt.length },
+        'Forwarding talk to peer (qualified)',
+      );
       try {
         const result = await peerManager.forwardTask(peerMatch.peer, { botName, chatId, prompt, sendCards });
         const statusCode = (result as any).success === false ? 500 : 200;
@@ -106,14 +109,21 @@ export async function handleTaskRoutes(
       // Async mode: accept immediately, execute in background
       if (asyncMode) {
         const asyncTask = asyncTaskStore.create({
-          botName, chatId, prompt, callbackChatId, callbackBotName,
+          botName,
+          chatId,
+          prompt,
+          callbackChatId,
+          callbackBotName,
         });
 
         (async () => {
           asyncTaskStore.update(asyncTask.id, { status: 'running' });
           try {
             const result = await bot.bridge.executeApiTask({
-              prompt, chatId, userId: 'api', sendCards: sendCards ?? true,
+              prompt,
+              chatId,
+              userId: 'api',
+              sendCards: sendCards ?? true,
             });
             asyncTaskStore.update(asyncTask.id, {
               status: result.success ? 'completed' : 'failed',
@@ -181,19 +191,21 @@ export async function handleTaskRoutes(
         chatId,
         userId: 'api',
         sendCards: sendCards ?? true,
-        ...(hasWsSubscribers ? {
-          onUpdate: (state, bridgeMessageId, final) => {
-            const msgType = final ? 'complete' : 'state';
-            subs!.broadcast(chatId, {
-              type: msgType,
-              chatId,
-              messageId: bridgeMessageId,
-              state,
-              botName,
-              ...(grouptalkGroupId ? { groupId: grouptalkGroupId } : {}),
-            });
-          },
-        } : {}),
+        ...(hasWsSubscribers
+          ? {
+              onUpdate: (state, bridgeMessageId, final) => {
+                const msgType = final ? 'complete' : 'state';
+                subs!.broadcast(chatId, {
+                  type: msgType,
+                  chatId,
+                  messageId: bridgeMessageId,
+                  state,
+                  botName,
+                  ...(grouptalkGroupId ? { groupId: grouptalkGroupId } : {}),
+                });
+              },
+            }
+          : {}),
       });
 
       if (result.success) {
@@ -214,7 +226,10 @@ export async function handleTaskRoutes(
     if (!origin && peerManager) {
       const peerMatch = peerManager.findBotPeer(botName);
       if (peerMatch) {
-        logger.info({ botName, peerName: peerMatch.peer.name, peerUrl: peerMatch.peer.url, chatId, promptLength: prompt.length }, 'Forwarding talk to peer');
+        logger.info(
+          { botName, peerName: peerMatch.peer.name, peerUrl: peerMatch.peer.url, chatId, promptLength: prompt.length },
+          'Forwarding talk to peer',
+        );
         try {
           const result = await peerManager.forwardTask(peerMatch.peer, { botName, chatId, prompt, sendCards });
           const statusCode = (result as any).success === false ? 500 : 200;
@@ -256,23 +271,44 @@ export async function handleTaskRoutes(
 
     if (cronExpr) {
       const recurring = scheduler.scheduleRecurring({
-        botName, chatId, prompt, cronExpr, timezone, sendCards, label,
+        botName,
+        chatId,
+        prompt,
+        cronExpr,
+        timezone,
+        sendCards,
+        label,
       });
       jsonResponse(res, 201, {
-        id: recurring.id, type: 'recurring', botName: recurring.botName,
-        chatId: recurring.chatId, prompt: recurring.prompt, cronExpr: recurring.cronExpr,
-        timezone: recurring.timezone, nextExecuteAt: new Date(recurring.nextExecuteAt).toISOString(),
-        sendCards: recurring.sendCards, label: recurring.label, status: recurring.status,
+        id: recurring.id,
+        type: 'recurring',
+        botName: recurring.botName,
+        chatId: recurring.chatId,
+        prompt: recurring.prompt,
+        cronExpr: recurring.cronExpr,
+        timezone: recurring.timezone,
+        nextExecuteAt: new Date(recurring.nextExecuteAt).toISOString(),
+        sendCards: recurring.sendCards,
+        label: recurring.label,
+        status: recurring.status,
       });
     } else if (typeof delaySeconds === 'number' && delaySeconds > 0) {
       const task = scheduler.scheduleTask({ botName, chatId, prompt, delaySeconds, sendCards, label });
       jsonResponse(res, 201, {
-        id: task.id, type: 'one-time', botName: task.botName, chatId: task.chatId,
-        prompt: task.prompt, executeAt: new Date(task.executeAt).toISOString(),
-        sendCards: task.sendCards, label: task.label, status: task.status,
+        id: task.id,
+        type: 'one-time',
+        botName: task.botName,
+        chatId: task.chatId,
+        prompt: task.prompt,
+        executeAt: new Date(task.executeAt).toISOString(),
+        sendCards: task.sendCards,
+        label: task.label,
+        status: task.status,
       });
     } else {
-      jsonResponse(res, 400, { error: 'Provide either cronExpr (recurring) or delaySeconds (one-time, positive number)' });
+      jsonResponse(res, 400, {
+        error: 'Provide either cronExpr (recurring) or delaySeconds (one-time, positive number)',
+      });
     }
     return true;
   }
@@ -280,16 +316,31 @@ export async function handleTaskRoutes(
   // GET /api/schedule
   if (method === 'GET' && url === '/api/schedule') {
     const tasks = scheduler.listTasks().map((t) => ({
-      id: t.id, type: 'one-time', botName: t.botName, chatId: t.chatId,
-      prompt: t.prompt, executeAt: new Date(t.executeAt).toISOString(),
-      sendCards: t.sendCards, label: t.label, status: t.status, createdAt: new Date(t.createdAt).toISOString(),
+      id: t.id,
+      type: 'one-time',
+      botName: t.botName,
+      chatId: t.chatId,
+      prompt: t.prompt,
+      executeAt: new Date(t.executeAt).toISOString(),
+      sendCards: t.sendCards,
+      label: t.label,
+      status: t.status,
+      createdAt: new Date(t.createdAt).toISOString(),
     }));
     const recurringTasks = scheduler.listRecurringTasks().map((r) => ({
-      id: r.id, type: 'recurring', botName: r.botName, chatId: r.chatId,
-      prompt: r.prompt, cronExpr: r.cronExpr, timezone: r.timezone,
+      id: r.id,
+      type: 'recurring',
+      botName: r.botName,
+      chatId: r.chatId,
+      prompt: r.prompt,
+      cronExpr: r.cronExpr,
+      timezone: r.timezone,
       nextExecuteAt: new Date(r.nextExecuteAt).toISOString(),
       lastExecutedAt: r.lastExecutedAt ? new Date(r.lastExecutedAt).toISOString() : null,
-      sendCards: r.sendCards, label: r.label, status: r.status, createdAt: new Date(r.createdAt).toISOString(),
+      sendCards: r.sendCards,
+      label: r.label,
+      status: r.status,
+      createdAt: new Date(r.createdAt).toISOString(),
     }));
     jsonResponse(res, 200, { tasks, recurringTasks });
     return true;
@@ -299,7 +350,11 @@ export async function handleTaskRoutes(
   if (method === 'POST' && /^\/api\/schedule\/[^/]+\/pause$/.test(url)) {
     const id = url.split('/')[3];
     const paused = scheduler.pauseRecurring(id);
-    jsonResponse(res, paused ? 200 : 404, paused ? { id, status: 'paused' } : { error: `Recurring task not found or not pausable: ${id}` });
+    jsonResponse(
+      res,
+      paused ? 200 : 404,
+      paused ? { id, status: 'paused' } : { error: `Recurring task not found or not pausable: ${id}` },
+    );
     return true;
   }
 
@@ -309,7 +364,11 @@ export async function handleTaskRoutes(
     const resumed = scheduler.resumeRecurring(id);
     if (resumed) {
       const recurring = scheduler.getRecurringTask(id);
-      jsonResponse(res, 200, { id, status: 'active', nextExecuteAt: recurring ? new Date(recurring.nextExecuteAt).toISOString() : null });
+      jsonResponse(res, 200, {
+        id,
+        status: 'active',
+        nextExecuteAt: recurring ? new Date(recurring.nextExecuteAt).toISOString() : null,
+      });
     } else {
       jsonResponse(res, 404, { error: `Recurring task not found or not resumable: ${id}` });
     }
@@ -335,9 +394,15 @@ export async function handleTaskRoutes(
 
     if (updated) {
       jsonResponse(res, 200, {
-        id: updated.id, type: 'one-time', botName: updated.botName, chatId: updated.chatId,
-        prompt: updated.prompt, executeAt: new Date(updated.executeAt).toISOString(),
-        sendCards: updated.sendCards, label: updated.label, status: updated.status,
+        id: updated.id,
+        type: 'one-time',
+        botName: updated.botName,
+        chatId: updated.chatId,
+        prompt: updated.prompt,
+        executeAt: new Date(updated.executeAt).toISOString(),
+        sendCards: updated.sendCards,
+        label: updated.label,
+        status: updated.status,
       });
       return true;
     }
@@ -352,11 +417,17 @@ export async function handleTaskRoutes(
 
     if (updatedRecurring) {
       jsonResponse(res, 200, {
-        id: updatedRecurring.id, type: 'recurring', botName: updatedRecurring.botName,
-        chatId: updatedRecurring.chatId, prompt: updatedRecurring.prompt,
-        cronExpr: updatedRecurring.cronExpr, timezone: updatedRecurring.timezone,
+        id: updatedRecurring.id,
+        type: 'recurring',
+        botName: updatedRecurring.botName,
+        chatId: updatedRecurring.chatId,
+        prompt: updatedRecurring.prompt,
+        cronExpr: updatedRecurring.cronExpr,
+        timezone: updatedRecurring.timezone,
         nextExecuteAt: new Date(updatedRecurring.nextExecuteAt).toISOString(),
-        sendCards: updatedRecurring.sendCards, label: updatedRecurring.label, status: updatedRecurring.status,
+        sendCards: updatedRecurring.sendCards,
+        label: updatedRecurring.label,
+        status: updatedRecurring.status,
       });
       return true;
     }
@@ -386,6 +457,72 @@ export async function handleTaskRoutes(
     }
 
     jsonResponse(res, 404, { error: `Task not found or not cancellable: ${id}` });
+    return true;
+  }
+
+  // --- Agent Bus endpoints ---
+
+  // POST /api/agent/send — send message to a specific bot
+  if (method === 'POST' && url === '/api/agent/send') {
+    const bus = ctx.agentBus;
+    if (!bus) {
+      jsonResponse(res, 503, { error: 'AgentBus not configured' });
+      return true;
+    }
+    const body: any = await parseJsonBody(req);
+    const targetBot = body.targetBot as string;
+    const prompt = body.prompt as string;
+    const chatId = body.chatId as string;
+    if (!targetBot || !prompt || !chatId) {
+      jsonResponse(res, 400, { error: 'Missing required fields: targetBot, prompt, chatId' });
+      return true;
+    }
+    const result = await bus!.sendToBot({
+      targetBot,
+      prompt,
+      chatId,
+      sendCards: (body.sendCards as boolean | undefined) ?? false,
+      groupId: body.groupId as string | undefined,
+      groupMembers: body.groupMembers as string[] | undefined,
+    });
+    jsonResponse(res, 200, result);
+    return true;
+  }
+
+  // POST /api/agent/broadcast — broadcast to multiple specialists
+  if (method === 'POST' && url === '/api/agent/broadcast') {
+    const bus = ctx.agentBus;
+    if (!bus) {
+      jsonResponse(res, 503, { error: 'AgentBus not configured' });
+      return true;
+    }
+    const body: any = await parseJsonBody(req);
+    const specialists = body.specialties as string[];
+    const prompt = body.prompt as string;
+    const chatId = body.chatId as string;
+    if (!specialists?.length || !prompt || !chatId) {
+      jsonResponse(res, 400, { error: 'Missing required fields: specialists (array), prompt, chatId' });
+      return true;
+    }
+    const results = await bus!.sendToSpecialists(specialists, prompt, chatId, (body.groupId as string) || chatId, {
+      sendCards: body.sendCards as boolean | undefined,
+    });
+    const obj: Record<string, any> = {};
+    for (const [name, result] of results) obj[name] = result;
+    jsonResponse(res, 200, { specialists: obj });
+    return true;
+  }
+
+  // GET /api/group/:groupId/history — get group session history
+  if (method === 'GET' && url.startsWith('/api/group/') && url.endsWith('/history')) {
+    const gsm = ctx.groupSessionManager;
+    if (!gsm) {
+      jsonResponse(res, 503, { error: 'GroupSessionManager not configured' });
+      return true;
+    }
+    const groupId = url.slice('/api/group/'.length, -'/history'.length);
+    const history = gsm!.getHistory(groupId);
+    jsonResponse(res, 200, { groupId, messages: history });
     return true;
   }
 

@@ -113,4 +113,55 @@ export class IntentRouter {
     );
     return result;
   }
+
+  /**
+   * Route a message to multiple specialist candidates.
+   * Returns all bots scored above the threshold, sorted by confidence.
+   */
+  async routeMulti(
+    message: string,
+    availableBots: BotInfo[],
+    options?: { minConfidence?: number; maxResults?: number },
+  ): Promise<RouteResult[]> {
+    const minConfidence = options?.minConfidence ?? 0.2;
+    const maxResults = options?.maxResults ?? 5;
+
+    if (availableBots.length === 0) return [];
+
+    const msgLower = message.toLowerCase();
+    const results: RouteResult[] = [];
+
+    for (const bot of availableBots) {
+      const desc = (bot.description || '').toLowerCase();
+      const name = bot.name.toLowerCase();
+      const specialties = (bot.specialties || []).map((s) => s.toLowerCase());
+      let score = 0;
+      const matches: string[] = [];
+
+      const keywords = [
+        ...desc.split(/[\s,./\-_]+/).filter((w) => w.length > 2),
+        ...name.split(/[\s\-_]+/).filter((w) => w.length > 2),
+      ];
+      for (const kw of keywords) {
+        if (msgLower.includes(kw)) { score += 1; matches.push(kw); }
+      }
+      for (const specialty of specialties) {
+        if (msgLower.includes(specialty)) { score += 3; matches.push(`specialty:${specialty}`); }
+      }
+      if (msgLower.includes(name)) { score += 10; matches.push(`name:${name}`); }
+
+      const confidence = score > 0 ? Math.min(score / 5, 1) : 0.1;
+      results.push({
+        targetBot: bot.name,
+        confidence,
+        reasoning: matches.length > 0 ? `Matched: ${matches.join(', ')}` : 'No keyword match',
+        mode: this.mode,
+      });
+    }
+
+    return results
+      .sort((a, b) => b.confidence - a.confidence)
+      .filter((r) => r.confidence >= minConfidence)
+      .slice(0, maxResults);
+  }
 }

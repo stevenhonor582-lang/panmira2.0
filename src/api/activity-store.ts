@@ -1,12 +1,5 @@
-/**
- * Activity event store — tracks task lifecycle events for the Team workspace.
- * SQLite-backed with an in-memory ring buffer for fast access.
- */
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import * as os from 'node:os';
 import * as crypto from 'node:crypto';
-import Database from 'better-sqlite3';
+import { pool } from '../db/index.js';
 import type { Logger } from '../utils/logger.js';
 
 export interface ActivityEvent {
@@ -21,69 +14,67 @@ export interface ActivityEvent {
   durationMs?: number;
   errorMessage?: string;
   timestamp: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+  model?: string;
 }
 
 const MAX_BUFFER_SIZE = 100;
-const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
 
 export class ActivityStore {
-  private db: Database.Database;
   private buffer: ActivityEvent[] = [];
 
   constructor(private logger: Logger) {
-    const dataDir = process.env.SESSION_STORE_DIR || path.join(os.homedir(), '.metabot');
-    fs.mkdirSync(dataDir, { recursive: true });
-    const dbPath = path.join(dataDir, 'activity.db');
-    this.db = new Database(dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.initSchema();
-
-    // Cleanup old events on startup
+    this.migrate();
     this.cleanup();
-
-    // Load recent events into buffer
-    this.buffer = this.list({ limit: MAX_BUFFER_SIZE });
-
-    this.logger.info({ dbPath }, 'Activity store initialized');
+    this.loadBuffer();
+    this.logger.info('Activity store initialized');
   }
 
-  private initSchema(): void {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS activity_events (
-        id TEXT PRIMARY KEY,
-        type TEXT NOT NULL,
-        bot_name TEXT NOT NULL,
-        chat_id TEXT NOT NULL,
-        user_id TEXT,
-        prompt TEXT,
-        response_preview TEXT,
-        cost_usd REAL,
-        duration_ms REAL,
-        error_message TEXT,
-        timestamp INTEGER NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_activity_timestamp ON activity_events(timestamp DESC);
-      CREATE INDEX IF NOT EXISTS idx_activity_bot_name ON activity_events(bot_name, timestamp DESC);
-    `);
+  private async loadBuffer(): Promise<void> {
+    this.buffer = await this.list({ limit: MAX_BUFFER_SIZE });
   }
 
-  /** Record an activity event. Returns the event with generated ID. */
-  record(event: Omit<ActivityEvent, 'id'>): ActivityEvent {
+  private async migrate(): Promise<void> {
+    await pool.query(`ALTER TABLE activity_events ADD COLUMN IF NOT EXISTS input_tokens INT DEFAULT 0`);
+    await pool.query(`ALTER TABLE activity_events ADD COLUMN IF NOT EXISTS output_tokens INT DEFAULT 0`);
+    await pool.query(`ALTER TABLE activity_events ADD COLUMN IF NOT EXISTS cache_read_tokens INT DEFAULT 0`);
+    await pool.query(`ALTER TABLE activity_events ADD COLUMN IF NOT EXISTS cache_creation_tokens INT DEFAULT 0`);
+    await pool.query(`ALTER TABLE activity_events ADD COLUMN IF NOT EXISTS model TEXT`);
+  }
+
+  async record(event: Omit<ActivityEvent, 'id'>): Promise<ActivityEvent> {
     const id = crypto.randomUUID();
     const full: ActivityEvent = { id, ...event };
 
-    this.db.prepare(`
-      INSERT INTO activity_events (id, type, bot_name, chat_id, user_id, prompt, response_preview, cost_usd, duration_ms, error_message, timestamp)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id, event.type, event.botName, event.chatId,
-      event.userId || null, event.prompt?.slice(0, 200) || null,
-      event.responsePreview?.slice(0, 200) || null,
-      event.costUsd || null, event.durationMs || null,
-      event.errorMessage?.slice(0, 500) || null, event.timestamp,
+    await pool.query(
+      `
+      INSERT INTO activity_events (id, type, bot_name, chat_id, user_id, prompt, response_preview, cost_usd, duration_ms, error_message, timestamp, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, model)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+    `,
+      [
+        id,
+        event.type,
+        event.botName,
+        event.chatId,
+        event.userId || null,
+        event.prompt?.slice(0, 200) || null,
+        event.responsePreview?.slice(0, 200) || null,
+        event.costUsd || null,
+        event.durationMs || null,
+        event.errorMessage?.slice(0, 500) || null,
+        event.timestamp,
+        event.inputTokens || 0,
+        event.outputTokens || 0,
+        event.cacheReadTokens || 0,
+        event.cacheCreationTokens || 0,
+        event.model || null,
+      ],
     );
 
-    // Add to ring buffer
     this.buffer.unshift(full);
     if (this.buffer.length > MAX_BUFFER_SIZE) {
       this.buffer.pop();
@@ -92,45 +83,38 @@ export class ActivityStore {
     return full;
   }
 
-  /** List recent activity events. */
-  list(opts: { limit?: number; botName?: string; since?: number } = {}): ActivityEvent[] {
+  async list(opts: { limit?: number; botName?: string; since?: number } = {}): Promise<ActivityEvent[]> {
     const { limit = 50, botName, since } = opts;
 
     let sql = 'SELECT * FROM activity_events WHERE 1=1';
     const params: any[] = [];
+    let paramIdx = 1;
 
     if (botName) {
-      sql += ' AND bot_name = ?';
+      sql += ` AND bot_name = $${paramIdx++}`;
       params.push(botName);
     }
     if (since) {
-      sql += ' AND timestamp > ?';
+      sql += ` AND timestamp > $${paramIdx++}`;
       params.push(since);
     }
 
-    sql += ' ORDER BY timestamp DESC LIMIT ?';
+    sql += ` ORDER BY timestamp DESC LIMIT $${paramIdx}`;
     params.push(limit);
 
-    return this.db.prepare(sql).all(...params).map(this.mapRow) as ActivityEvent[];
+    const { rows } = await pool.query(sql, params);
+    return rows.map(this.mapRow);
   }
 
-  /** Get recent events from in-memory buffer (fast). */
   getRecent(limit = 50): ActivityEvent[] {
     return this.buffer.slice(0, limit);
   }
 
-  /** Clean up events older than 7 days. */
-  cleanup(): void {
-    const cutoff = Date.now() - MAX_AGE_MS;
-    const result = this.db.prepare('DELETE FROM activity_events WHERE timestamp < ?').run(cutoff);
-    if (result.changes > 0) {
-      this.logger.info({ deleted: result.changes }, 'Activity store cleanup');
-    }
+  async cleanup(): Promise<void> {
+    // Disabled — activity_events kept permanently as billing records.
   }
 
-  close(): void {
-    this.db.close();
-  }
+  close(): void {}
 
   private mapRow(row: any): ActivityEvent {
     return {
@@ -145,6 +129,11 @@ export class ActivityStore {
       durationMs: row.duration_ms || undefined,
       errorMessage: row.error_message || undefined,
       timestamp: row.timestamp,
+      inputTokens: row.input_tokens || undefined,
+      outputTokens: row.output_tokens || undefined,
+      cacheReadTokens: row.cache_read_tokens || undefined,
+      cacheCreationTokens: row.cache_creation_tokens || undefined,
+      model: row.model || undefined,
     };
   }
 }

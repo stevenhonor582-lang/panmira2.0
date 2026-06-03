@@ -1,16 +1,10 @@
 import type { BotConfigBase } from '../config.js';
 import type { Logger } from '../utils/logger.js';
-import type {
-  ClaudeExecutor,
-  ExecutionHandle,
-  ExecutorOptions,
-  SDKMessage,
-  ApiContext,
-} from './claude/executor.js';
+import type { ClaudeExecutor, ExecutionHandle, ExecutorOptions, SDKMessage, ApiContext } from './claude/executor.js';
 import type { CodexExecutor } from './codex/executor.js';
 import type { StreamProcessor } from './claude/stream-processor.js';
 
-export type EngineName = 'claude' | 'kimi' | 'codex';
+export type EngineName = 'claude' | 'kimi' | 'codex' | 'openai-compat';
 
 /**
  * An Engine is a programmable agent backend (Claude Code, Kimi Code, …).
@@ -42,14 +36,7 @@ export interface Executor {
 
 export type StreamProcessorLike = StreamProcessor;
 
-export type {
-  ClaudeExecutor,
-  CodexExecutor,
-  ExecutionHandle,
-  ExecutorOptions,
-  SDKMessage,
-  ApiContext,
-};
+export type { ClaudeExecutor, CodexExecutor, ExecutionHandle, ExecutorOptions, SDKMessage, ApiContext };
 
 /** Context passed to engine factory. */
 export interface EngineContext {

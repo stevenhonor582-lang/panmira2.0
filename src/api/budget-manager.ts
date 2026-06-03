@@ -2,9 +2,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import type { Logger } from '../utils/logger.js';
+import type { BudgetStore } from '../db/budget-store.js';
 
 interface BudgetRecord {
-  date: string;  // YYYY-MM-DD
+  date: string;
   costUsd: number;
   taskCount: number;
 }
@@ -23,21 +24,29 @@ export class BudgetManager {
   private logger: Logger;
   private dataPath: string;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  private dbStore: BudgetStore | undefined;
+  private dirty = false;
+  private flushTimer: ReturnType<typeof setInterval> | undefined;
 
-  constructor(logger: Logger) {
+  constructor(logger: Logger, dbStore?: BudgetStore) {
     this.logger = logger.child({ module: 'budget' });
+    this.dbStore = dbStore;
     this.dataPath = path.join(os.homedir(), '.metabot', 'budgets.json');
-    this.load();
+
+    if (dbStore) {
+      this.loadFromDB();
+      this.flushTimer = setInterval(() => this.flushToDB(), 30_000);
+    } else {
+      this.load();
+    }
   }
 
-  /** Set daily budget limit for a bot. 0 = unlimited. */
   setLimit(botName: string, dailyLimitUsd: number): void {
     const budget = this.getOrCreate(botName);
     budget.dailyLimitUsd = dailyLimitUsd;
-    this.scheduleSave();
+    this.markDirty();
   }
 
-  /** Check if bot can accept a new task (within budget). */
   canAcceptTask(botName: string): { allowed: boolean; reason?: string } {
     const budget = this.budgets.get(botName);
     if (!budget || budget.dailyLimitUsd <= 0) return { allowed: true };
@@ -54,38 +63,38 @@ export class BudgetManager {
     return { allowed: true };
   }
 
-  /** Record cost for a completed task. */
   recordCost(botName: string, costUsd: number): void {
     const budget = this.getOrCreate(botName);
     this.rolloverIfNeeded(budget);
     budget.todaySpent += costUsd;
     budget.todayTasks++;
-    this.scheduleSave();
+    this.markDirty();
   }
 
-  /** Get budget info for a bot. */
-  getBudget(botName: string): BotBudget | undefined {
-    const budget = this.budgets.get(botName);
-    if (budget) this.rolloverIfNeeded(budget);
-    return budget;
-  }
-
-  /** Get all budgets. */
-  getAllBudgets(): BotBudget[] {
-    return Array.from(this.budgets.values()).map(b => {
-      this.rolloverIfNeeded(b);
-      return { ...b };
-    });
-  }
-
-  /** Pause/unpause a bot. */
-  setPaused(botName: string, paused: boolean): void {
+  pauseBot(botName: string): void {
     const budget = this.getOrCreate(botName);
-    budget.paused = paused;
-    this.scheduleSave();
+    budget.paused = true;
+    this.markDirty();
   }
 
-  /** Get cost report. */
+  resumeBot(botName: string): void {
+    const budget = this.getOrCreate(botName);
+    budget.paused = false;
+    this.markDirty();
+  }
+
+  getStatus(botName: string): { spent: number; limit: number; tasks: number; paused: boolean } | null {
+    const budget = this.budgets.get(botName);
+    if (!budget) return null;
+    this.rolloverIfNeeded(budget);
+    return {
+      spent: budget.todaySpent,
+      limit: budget.dailyLimitUsd,
+      tasks: budget.todayTasks,
+      paused: budget.paused,
+    };
+  }
+
   getReport(period: 'daily' | 'weekly' | 'monthly' = 'daily'): Record<string, { spent: number; tasks: number; limit: number }> {
     const report: Record<string, { spent: number; tasks: number; limit: number }> = {};
     const now = new Date();
@@ -114,6 +123,10 @@ export class BudgetManager {
     return report;
   }
 
+  getAllBudgets(): BotBudget[] {
+    return Array.from(this.budgets.values());
+  }
+
   private getOrCreate(botName: string): BotBudget {
     let budget = this.budgets.get(botName);
     if (!budget) {
@@ -134,19 +147,21 @@ export class BudgetManager {
     const today = new Date().toISOString().split('T')[0];
     if (budget.history.length > 0) {
       const lastDate = budget.history[budget.history.length - 1]?.date;
-      if (lastDate === today) return; // already current
+      if (lastDate === today) return;
     }
 
-    // If there was spending, record it
     if (budget.todaySpent > 0 || budget.todayTasks > 0) {
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
-      budget.history.push({
+      const histEntry = {
         date: yesterday.toISOString().split('T')[0],
         costUsd: budget.todaySpent,
         taskCount: budget.todayTasks,
-      });
-      // Keep last 90 days
+      };
+      budget.history.push(histEntry);
+      if (this.dbStore) {
+        this.dbStore.addHistory({ botName: budget.botName, ...histEntry }).catch(() => {});
+      }
       if (budget.history.length > 90) {
         budget.history = budget.history.slice(-90);
       }
@@ -154,6 +169,56 @@ export class BudgetManager {
 
     budget.todaySpent = 0;
     budget.todayTasks = 0;
+  }
+
+  private markDirty(): void {
+    this.dirty = true;
+    if (!this.dbStore) {
+      this.scheduleSave();
+    }
+  }
+
+  private async loadFromDB(): Promise<void> {
+    if (!this.dbStore) return;
+    try {
+      const rows = await this.dbStore.list();
+      for (const r of rows) {
+        const history = await this.dbStore.getHistory(r.botName);
+        this.budgets.set(r.botName, {
+          botName: r.botName,
+          dailyLimitUsd: r.dailyLimitUsd,
+          todaySpent: r.todaySpent,
+          todayTasks: r.todayTasks,
+          paused: r.paused,
+          history,
+        });
+      }
+      if (this.budgets.size > 0) {
+        this.logger.info({ count: this.budgets.size }, 'Budgets loaded from DB');
+      }
+    } catch (err) {
+      this.logger.warn({ err }, 'Failed to load budgets from DB');
+    }
+  }
+
+  private async flushToDB(): Promise<void> {
+    if (!this.dirty || !this.dbStore) return;
+    this.dirty = false;
+    try {
+      for (const budget of this.budgets.values()) {
+        await this.dbStore.upsert({
+          botName: budget.botName,
+          dailyLimitUsd: budget.dailyLimitUsd,
+          todaySpent: budget.todaySpent,
+          todayTasks: budget.todayTasks,
+          paused: budget.paused,
+          lastRollover: new Date().toISOString().split('T')[0],
+        });
+      }
+    } catch (err) {
+      this.logger.warn({ err }, 'Failed to flush budgets to DB');
+      this.dirty = true;
+    }
   }
 
   private load(): void {
@@ -189,8 +254,13 @@ export class BudgetManager {
   }
 
   destroy(): void {
+    if (this.flushTimer) clearInterval(this.flushTimer);
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
+    }
+    if (this.dbStore) {
+      this.flushToDB().catch(() => {});
+    } else {
       this.save();
     }
   }

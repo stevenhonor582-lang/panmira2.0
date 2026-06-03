@@ -1,80 +1,55 @@
-import Database from 'better-sqlite3';
-import * as path from 'node:path';
-import * as os from 'node:os';
-import * as fs from 'node:fs';
+import { pool } from '../db/index.js';
 import type { Logger } from '../utils/logger.js';
 
 export interface Team {
   id: string;
   name: string;
-  members: string[];      // bot names
-  roles: Record<string, string>; // botName -> role
+  members: string[];
+  roles: Record<string, string>;
   budgetDailyUsd: number;
   createdAt: number;
   updatedAt: number;
 }
 
 export class TeamManager {
-  private db: Database.Database;
   private logger: Logger;
 
   constructor(logger: Logger) {
     this.logger = logger.child({ module: 'team-manager' });
-    const dbDir = path.join(os.homedir(), '.metabot');
-    if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
-    const dbPath = path.join(dbDir, 'teams.db');
-    this.db = new Database(dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.migrate();
   }
 
-  private migrate(): void {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS teams (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL UNIQUE,
-        members TEXT NOT NULL DEFAULT '[]',
-        roles TEXT NOT NULL DEFAULT '{}',
-        budget_daily_usd REAL NOT NULL DEFAULT 0,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS group_memberships (
-        group_id TEXT NOT NULL,
-        bot_name TEXT NOT NULL,
-        joined_at INTEGER NOT NULL,
-        PRIMARY KEY (group_id, bot_name)
-      );
-    `);
-    this.logger.info('Team database initialized');
-  }
-
-  create(name: string, members: string[] = [], budgetDailyUsd: number = 0): Team {
+  async create(name: string, members: string[] = [], budgetDailyUsd: number = 0): Promise<Team> {
     const id = `team-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const now = Date.now();
-    this.db.prepare(
-      'INSERT INTO teams (id, name, members, roles, budget_daily_usd, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run(id, name, JSON.stringify(members), '{}', budgetDailyUsd, now, now);
+    await pool.query(
+      'INSERT INTO teams (id, name, members, roles, budget_daily_usd, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [id, name, JSON.stringify(members), '{}', budgetDailyUsd, now, now],
+    );
     return { id, name, members, roles: {}, budgetDailyUsd, createdAt: now, updatedAt: now };
   }
 
-  get(id: string): Team | undefined {
-    const row = this.db.prepare('SELECT * FROM teams WHERE id = ?').get(id) as any;
+  async get(id: string): Promise<Team | undefined> {
+    const result = await pool.query('SELECT * FROM teams WHERE id = $1', [id]);
+    const row = result.rows[0];
     return row ? this.rowToTeam(row) : undefined;
   }
 
-  getByName(name: string): Team | undefined {
-    const row = this.db.prepare('SELECT * FROM teams WHERE name = ?').get(name) as any;
+  async getByName(name: string): Promise<Team | undefined> {
+    const result = await pool.query('SELECT * FROM teams WHERE name = $1', [name]);
+    const row = result.rows[0];
     return row ? this.rowToTeam(row) : undefined;
   }
 
-  list(): Team[] {
-    const rows = this.db.prepare('SELECT * FROM teams ORDER BY created_at DESC').all() as any[];
-    return rows.map(r => this.rowToTeam(r));
+  async list(): Promise<Team[]> {
+    const result = await pool.query('SELECT * FROM teams ORDER BY created_at DESC');
+    return result.rows.map((r: any) => this.rowToTeam(r));
   }
 
-  update(id: string, updates: Partial<Pick<Team, 'name' | 'members' | 'roles' | 'budgetDailyUsd'>>): Team | undefined {
-    const team = this.get(id);
+  async update(
+    id: string,
+    updates: Partial<Pick<Team, 'name' | 'members' | 'roles' | 'budgetDailyUsd'>>,
+  ): Promise<Team | undefined> {
+    const team = await this.get(id);
     if (!team) return undefined;
 
     const newName = updates.name ?? team.name;
@@ -83,37 +58,41 @@ export class TeamManager {
     const newBudget = updates.budgetDailyUsd ?? team.budgetDailyUsd;
     const now = Date.now();
 
-    this.db.prepare(
-      'UPDATE teams SET name=?, members=?, roles=?, budget_daily_usd=?, updated_at=? WHERE id=?'
-    ).run(newName, JSON.stringify(newMembers), JSON.stringify(newRoles), newBudget, now, id);
+    await pool.query('UPDATE teams SET name=$1, members=$2, roles=$3, budget_daily_usd=$4, updated_at=$5 WHERE id=$6', [
+      newName,
+      JSON.stringify(newMembers),
+      JSON.stringify(newRoles),
+      newBudget,
+      now,
+      id,
+    ]);
 
     return { ...team, name: newName, members: newMembers, roles: newRoles, budgetDailyUsd: newBudget, updatedAt: now };
   }
 
-  delete(id: string): boolean {
-    const result = this.db.prepare('DELETE FROM teams WHERE id = ?').run(id);
-    return result.changes > 0;
+  async delete(id: string): Promise<boolean> {
+    const result = await pool.query('DELETE FROM teams WHERE id = $1', [id]);
+    return (result.rowCount ?? 0) > 0;
   }
 
-  // --- Persistent group memberships (replace in-memory GroupManager) ---
-
-  saveGroupMembership(groupId: string, botName: string): void {
-    this.db.prepare(
-      'INSERT OR REPLACE INTO group_memberships (group_id, bot_name, joined_at) VALUES (?, ?, ?)'
-    ).run(groupId, botName, Date.now());
+  async saveGroupMembership(groupId: string, botName: string): Promise<void> {
+    await pool.query(
+      'INSERT INTO group_memberships (group_id, bot_name, joined_at) VALUES ($1, $2, $3) ON CONFLICT (group_id, bot_name) DO UPDATE SET joined_at = EXCLUDED.joined_at',
+      [groupId, botName, Date.now()],
+    );
   }
 
-  getGroupMembers(groupId: string): string[] {
-    const rows = this.db.prepare('SELECT bot_name FROM group_memberships WHERE group_id = ?').all(groupId) as any[];
-    return rows.map(r => r.bot_name);
+  async getGroupMembers(groupId: string): Promise<string[]> {
+    const result = await pool.query('SELECT bot_name FROM group_memberships WHERE group_id = $1', [groupId]);
+    return result.rows.map((r: any) => r.bot_name);
   }
 
-  removeGroupMembership(groupId: string, botName: string): void {
-    this.db.prepare('DELETE FROM group_memberships WHERE group_id = ? AND bot_name = ?').run(groupId, botName);
+  async removeGroupMembership(groupId: string, botName: string): Promise<void> {
+    await pool.query('DELETE FROM group_memberships WHERE group_id = $1 AND bot_name = $2', [groupId, botName]);
   }
 
-  deleteGroup(groupId: string): void {
-    this.db.prepare('DELETE FROM group_memberships WHERE group_id = ?').run(groupId);
+  async deleteGroup(groupId: string): Promise<void> {
+    await pool.query('DELETE FROM group_memberships WHERE group_id = $1', [groupId]);
   }
 
   private rowToTeam(row: any): Team {
@@ -128,7 +107,5 @@ export class TeamManager {
     };
   }
 
-  destroy(): void {
-    this.db.close();
-  }
+  destroy(): void {}
 }

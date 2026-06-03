@@ -3,11 +3,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import { query, SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from '@anthropic-ai/claude-agent-sdk';
 import type { SDKUserMessage, SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk';
-import type { BotConfigBase } from '../../config.js';
+import type { BotConfigBase, UserRole } from '../../config.js';
+import { ROLE_TOOLS, createBashGuardHook, createFSGuardHook } from '../../auth/role-permissions.js';
 import type { Logger } from '../../utils/logger.js';
 import { AsyncQueue } from '../../utils/async-queue.js';
+import { ContextLayer, ContextManager } from '../../bridge/context-manager.js';
 
 const isWindows = process.platform === 'win32';
 
@@ -59,7 +61,7 @@ function hasCredentialsFile(): boolean {
  * - Merges process.env so child inherits system PATH, TEMP, etc.
  * - Optionally injects an explicit ANTHROPIC_API_KEY from bots.json config.
  */
-function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => SpawnedProcess {
+function createSpawnFn(explicitApiKey?: string, explicitBaseUrl?: string): (options: SpawnOptions) => SpawnedProcess {
   // Decide once whether to filter auth env vars
   const filterAuthVars = !!(explicitApiKey || hasCredentialsFile());
 
@@ -67,22 +69,29 @@ function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => Spaw
     const nodePath = process.execPath;
 
     // Merge provided env with process.env for a complete environment
-    const baseEnv = options.env && Object.keys(options.env).length > 0
-      ? { ...process.env, ...options.env }
-      : { ...process.env };
+    const baseEnv =
+      options.env && Object.keys(options.env).length > 0 ? { ...process.env, ...options.env } : { ...process.env };
 
     // Filter out env vars that interfere with auth or cause nested session errors
     const env: Record<string, string> = {};
     for (const [key, value] of Object.entries(baseEnv)) {
       if (value === undefined) continue;
-      if (ALWAYS_FILTERED_PREFIXES.some(p => key.startsWith(p))) continue;
-      if (filterAuthVars && AUTH_ENV_VARS.some(v => key.startsWith(v))) continue;
+      if (ALWAYS_FILTERED_PREFIXES.some((p) => key.startsWith(p))) continue;
+      if (filterAuthVars && AUTH_ENV_VARS.some((v) => key.startsWith(v))) continue;
       env[key] = value;
     }
 
-    // Inject explicit API key from bots.json (after filtering, so it takes effect)
+    // Inject explicit API key and base URL from bot config (after filtering, so they take effect)
     if (explicitApiKey) {
-      env.ANTHROPIC_API_KEY = explicitApiKey;
+      if (explicitBaseUrl) {
+        env.ANTHROPIC_AUTH_TOKEN = explicitApiKey;
+      } else {
+        env.ANTHROPIC_API_KEY = explicitApiKey;
+        env.ANTHROPIC_AUTH_TOKEN = explicitApiKey;
+      }
+    }
+    if (explicitBaseUrl) {
+      env.ANTHROPIC_BASE_URL = explicitBaseUrl;
     }
 
     const child = spawn(nodePath, options.args, {
@@ -118,6 +127,12 @@ export interface ExecutorOptions {
   model?: string;
   /** Override allowed tools for this execution (empty array = no tools). */
   allowedTools?: string[];
+  /** User role for tool restriction enforcement. */
+  userRole?: UserRole;
+  /** Override systemPrompt (e.g. resolved from agentId at execution time). */
+  systemPromptOverride?: string;
+  /** Knowledge base context to inject into system prompt. */
+  knowledgeContext?: string | null;
 }
 
 export type SDKMessage = {
@@ -181,7 +196,13 @@ export class ClaudeExecutor {
     private logger: Logger,
   ) {}
 
-  private buildQueryOptions(cwd: string, sessionId: string | undefined, abortController: AbortController, outputsDir?: string, apiContext?: ApiContext): Record<string, unknown> {
+  private buildQueryOptions(
+    cwd: string,
+    sessionId: string | undefined,
+    abortController: AbortController,
+    outputsDir?: string,
+    systemPromptOverride?: string,
+  ): Record<string, unknown> {
     const queryOptions: Record<string, unknown> = {
       permissionMode: 'bypassPermissions' as const,
       allowDangerouslySkipPermissions: true,
@@ -189,51 +210,54 @@ export class ClaudeExecutor {
       abortController,
       includePartialMessages: true,
       // Load MCP servers and settings from user/project config files
-      settingSources: ['user', 'project'],
+      settingSources: this.config.claude.baseUrl ? ['project'] : ['user', 'project'],
       // Cross-platform spawn: custom spawn filters CLAUDE* env vars and uses
       // process.execPath to avoid PATH issues on Windows; fileURLToPath converts
       // file:// URLs to native paths for the SDK CLI entrypoint.
-      spawnClaudeCodeProcess: createSpawnFn(this.config.claude.apiKey),
-      executableArgs: [path.join(path.dirname(fileURLToPath(import.meta.resolve('@anthropic-ai/claude-agent-sdk'))), 'cli.js')],
+      spawnClaudeCodeProcess: createSpawnFn(this.config.claude.apiKey, this.config.claude.baseUrl),
+      executableArgs: [
+        path.join(path.dirname(fileURLToPath(import.meta.resolve('@anthropic-ai/claude-agent-sdk'))), 'cli.js'),
+      ],
       pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE,
     };
 
-    // Build system prompt appendix from sections
-    const appendSections: string[] = [];
+    // Build system prompt with priority-based ContextManager
+    const ctx = new ContextManager();
+
+    const effectiveSystemPrompt = systemPromptOverride ?? this.config.systemPrompt;
+    if (effectiveSystemPrompt) {
+      this.logger.info(
+        {
+          source: systemPromptOverride ? 'agent-ref' : 'config',
+          systemPromptLength: effectiveSystemPrompt.length,
+          preview: effectiveSystemPrompt.slice(0, 80),
+        },
+        'System prompt loaded',
+      );
+      ctx.addLayer({ layer: ContextLayer.IDENTITY, content: effectiveSystemPrompt });
+    }
 
     if (outputsDir) {
-      appendSections.push(`## Output Files\nWhen producing output files for the user (images, PDFs, documents, archives, code files, etc.), copy them to: ${outputsDir}\nUse \`cp\` via the Bash tool. The bridge will automatically send files placed there to the user.`);
+      ctx.addLayer({
+        layer: ContextLayer.SYSTEM,
+        content: `## Output Files\nWhen producing output files for the user (images, PDFs, documents, archives, code files, etc.), copy them to: ${outputsDir}\nUse \`cp\` via the Bash tool. The bridge will automatically send files placed there to the user.`,
+      });
     }
 
-    if (apiContext) {
-      // botName and chatId are per-session — inject into system prompt to avoid
-      // race conditions when multiple chats run concurrently.
-      // Port and secret are already set as METABOT_* env vars in config.ts.
-      appendSections.push(
-        `## MetaBot API\nYou are running as bot "${apiContext.botName}" in chat "${apiContext.chatId}".\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`
-      );
+    // apiContext and knowledgeContext are dynamic (change per-session/per-query).
+    // The caller (startExecution) prepends them to the first user message so the
+    // system prompt stays 100% static and cacheable across all sessions.
 
-      // Group chat — tell the bot who else is in the group and how to talk to them
-      if (apiContext.groupMembers && apiContext.groupMembers.length > 0) {
-        const others = apiContext.groupMembers.filter((m) => m !== apiContext.botName);
-        const groupId = apiContext.groupId;
-        if (groupId) {
-          appendSections.push(
-            `## Group Chat\nYou are in a group chat (group: ${groupId}) with these bots: ${others.join(', ')}.\nTo talk to another bot, use: \`mb talk <botName> grouptalk-${groupId}-<botName> "message"\`\nExample: \`mb talk ${others[0]} grouptalk-${groupId}-${others[0]} "hello"\`\nIMPORTANT: Always use the grouptalk-${groupId}-<botName> chatId pattern when talking to other bots in this group.`
-          );
-        } else {
-          appendSections.push(
-            `## Group Chat\nYou are in a group chat with these bots: ${others.join(', ')}.\nUse \`mb talk <botName> <chatId> "message"\` to communicate with other bots in the group.`
-          );
-        }
-      }
-    }
-
-    if (appendSections.length > 0) {
+    const assembledPrompt = ctx.buildPrompt(50000); // ~50K token budget for system prompt
+    if (assembledPrompt) {
       queryOptions.systemPrompt = {
         type: 'preset',
         preset: 'claude_code',
-        append: '\n\n' + appendSections.join('\n\n'),
+        append: '\n\n' + assembledPrompt,
+        // Cache the entire system prompt (preset + append) across sessions.
+        // Dynamic sections (git status, directory listing, date) are moved to
+        // the first user message by the SDK so the system prompt stays static.
+        excludeDynamicSections: true,
       };
     }
 
@@ -268,26 +292,61 @@ export class ClaudeExecutor {
 
     const inputQueue = new AsyncQueue<SDKUserMessage>();
 
+    // Prepend dynamic context (session info, knowledge) to the first user message.
+    // This keeps the system prompt 100% static and cacheable.
+    let dynamicPrefix = '';
+    if (apiContext) {
+      dynamicPrefix += `## Current Session\n- Bot: ${apiContext.botName}\n- Chat: ${apiContext.chatId}\n`;
+      if (apiContext.groupMembers && apiContext.groupMembers.length > 0) {
+        const others = apiContext.groupMembers.filter((m) => m !== apiContext.botName);
+        const groupId = apiContext.groupId;
+        if (groupId) {
+          dynamicPrefix += `- Group: ${groupId}\n- Other members: ${others.join(', ')}\n- Use grouptalk-${groupId}-<botName> as chatId for inter-bot communication\n`;
+        } else {
+          dynamicPrefix += `- Other members: ${others.join(', ')}\n`;
+        }
+      }
+      dynamicPrefix += '\n';
+    }
+    if (options.knowledgeContext) {
+      dynamicPrefix += `${options.knowledgeContext}\n`;
+    }
+
+    const fullPrompt = dynamicPrefix ? dynamicPrefix + prompt : prompt;
+
     // Push the initial user message
     const initialMessage: SDKUserMessage = {
       type: 'user',
       message: {
         role: 'user' as const,
-        content: prompt,
+        content: fullPrompt,
       },
       parent_tool_use_id: null,
       session_id: sessionId || '',
     };
     inputQueue.enqueue(initialMessage);
 
-    const queryOptions = this.buildQueryOptions(cwd, sessionId, abortController, outputsDir, apiContext);
+    const queryOptions = this.buildQueryOptions(
+      cwd,
+      sessionId,
+      abortController,
+      outputsDir,
+      options.systemPromptOverride,
+    );
     if (options.maxTurns !== undefined) {
       queryOptions.maxTurns = options.maxTurns;
     }
     if (options.model) {
       queryOptions.model = options.model;
     }
-    if (options.allowedTools !== undefined) {
+    if (options.userRole) {
+      const roleTools = ROLE_TOOLS[options.userRole];
+      if (options.allowedTools !== undefined) {
+        queryOptions.allowedTools = options.allowedTools.filter((t: string) => roleTools.includes(t));
+      } else {
+        queryOptions.allowedTools = roleTools;
+      }
+    } else if (options.allowedTools !== undefined) {
       queryOptions.allowedTools = options.allowedTools;
     }
 
@@ -313,12 +372,18 @@ export class ClaudeExecutor {
         // Safety timeout: auto-resolve with empty answers after 6 minutes
         // (slightly longer than bridge's 5-minute QUESTION_TIMEOUT_MS) to
         // prevent indefinite hang if the bridge fails to deliver an answer.
-        const timeout = setTimeout(() => {
-          if (pendingQuestionResolvers.delete(id)) {
-            logger.warn({ toolUseId: id }, 'AskUserQuestion hook timed out after 6 minutes — returning empty answers');
-            resolve({});
-          }
-        }, 6 * 60 * 1000);
+        const timeout = setTimeout(
+          () => {
+            if (pendingQuestionResolvers.delete(id)) {
+              logger.warn(
+                { toolUseId: id },
+                'AskUserQuestion hook timed out after 6 minutes — returning empty answers',
+              );
+              resolve({});
+            }
+          },
+          6 * 60 * 1000,
+        );
 
         const onAbort = () => {
           clearTimeout(timeout);
@@ -347,16 +412,32 @@ export class ClaudeExecutor {
     };
 
     queryOptions.hooks = {
-      PreToolUse: [{
-        matcher: 'AskUserQuestion',
-        hooks: [askUserQuestionHook as any],
-      }, {
-        matcher: 'EnterPlanMode',
-        hooks: [allowPlanModeHook as any],
-      }, {
-        matcher: 'ExitPlanMode',
-        hooks: [allowPlanModeHook as any],
-      }],
+      PreToolUse: [
+        {
+          matcher: 'AskUserQuestion',
+          hooks: [askUserQuestionHook as any],
+        },
+        {
+          matcher: 'EnterPlanMode',
+          hooks: [allowPlanModeHook as any],
+        },
+        {
+          matcher: 'ExitPlanMode',
+          hooks: [allowPlanModeHook as any],
+        },
+        {
+          matcher: 'Bash',
+          hooks: [createBashGuardHook(this.config.permissions) as any],
+        },
+        {
+          matcher: 'Write',
+          hooks: [createFSGuardHook(this.config.permissions, this.config.claude.defaultWorkingDirectory) as any],
+        },
+        {
+          matcher: 'Edit',
+          hooks: [createFSGuardHook(this.config.permissions, this.config.claude.defaultWorkingDirectory) as any],
+        },
+      ],
     };
 
     const stream = query({
@@ -373,19 +454,20 @@ export class ClaudeExecutor {
           reject(new DOMException('Aborted', 'AbortError'));
           return;
         }
-        abortController.signal.addEventListener('abort', () => {
-          reject(new DOMException('Aborted', 'AbortError'));
-        }, { once: true });
+        abortController.signal.addEventListener(
+          'abort',
+          () => {
+            reject(new DOMException('Aborted', 'AbortError'));
+          },
+          { once: true },
+        );
       });
 
       const iterator = stream[Symbol.asyncIterator]();
 
       try {
         while (true) {
-          const result = await Promise.race([
-            iterator.next(),
-            abortPromise,
-          ]);
+          const result = await Promise.race([iterator.next(), abortPromise]);
           if (result.done) break;
           yield result.value as SDKMessage;
         }
@@ -393,7 +475,11 @@ export class ClaudeExecutor {
         if (err.name === 'AbortError' || abortController.signal.aborted) {
           logger.info('Claude execution aborted');
           // Clean up the underlying iterator (non-blocking)
-          try { iterator.return?.(undefined); } catch { /* ignore */ }
+          try {
+            iterator.return?.(undefined);
+          } catch {
+            /* ignore */
+          }
           return;
         }
         throw err;
@@ -467,29 +553,42 @@ export class ClaudeExecutor {
         reject(new DOMException('Aborted', 'AbortError'));
         return;
       }
-      abortController.signal.addEventListener('abort', () => {
-        reject(new DOMException('Aborted', 'AbortError'));
-      }, { once: true });
+      abortController.signal.addEventListener(
+        'abort',
+        () => {
+          reject(new DOMException('Aborted', 'AbortError'));
+        },
+        { once: true },
+      );
     });
 
     const iterator = stream[Symbol.asyncIterator]();
 
     try {
       while (true) {
-        const result = await Promise.race([
-          iterator.next(),
-          abortPromise,
-        ]);
+        const result = await Promise.race([iterator.next(), abortPromise]);
         if (result.done) break;
         yield result.value as SDKMessage;
       }
     } catch (err: any) {
       if (err.name === 'AbortError' || abortController.signal.aborted) {
         this.logger.info('Claude execution aborted');
-        try { iterator.return?.(undefined); } catch { /* ignore */ }
+        try {
+          iterator.return?.(undefined);
+        } catch {
+          /* ignore */
+        }
         return;
       }
       throw err;
     }
   }
 }
+
+// DEBUG: log model being passed to queryOptions
+const _origBuildQueryOptions = ClaudeExecutor.prototype.buildQueryOptions;
+ClaudeExecutor.prototype.buildQueryOptions = function(...args) {
+  const result = _origBuildQueryOptions.apply(this, args);
+  console.log('[DEBUG MODEL] config.claude.model =', this.config.claude.model, '-> queryOptions.model =', result.model);
+  return result;
+};

@@ -91,6 +91,10 @@ export class WechatSender implements IMessageSender {
     await this.sendText(chatId, text);
   }
 
+  async sendRawCard(chatId: string, cardJson: string): Promise<void> {
+    await this.sendText(chatId, cardJson);
+  }
+
   async sendText(chatId: string, text: string): Promise<void> {
     try {
       const chunks = splitLongText(text, MAX_TEXT_LENGTH);

@@ -24,7 +24,7 @@ export class OutputsManager {
     private logger: Logger,
   ) {}
 
-  /** Create a fresh per-chat outputs directory, preserving recent files. */
+  /** Create a fresh per-chat outputs directory, clearing all files from previous tasks. */
   prepareDir(chatId: string): string {
     const dir = path.join(this.baseDir, chatId);
 
@@ -35,30 +35,16 @@ export class OutputsManager {
       this.pendingCleanups.delete(dir);
     }
 
-    // Only remove files older than RETENTION_MS, keep recent ones
+    // Remove all files from previous tasks so scanOutputs only returns current-task files
     try {
       if (fs.existsSync(dir)) {
-        const now = Date.now();
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          if (!entry.isFile()) continue;
-          const filePath = path.join(dir, entry.name);
-          try {
-            const stat = fs.statSync(filePath);
-            if (now - stat.mtimeMs > RETENTION_MS) {
-              fs.unlinkSync(filePath);
-            }
-          } catch { /* ignore individual file errors */ }
-        }
-      } else {
-        fs.mkdirSync(dir, { recursive: true });
+        fs.rmSync(dir, { recursive: true, force: true });
       }
-    } catch {
-      // If anything fails, ensure the directory exists
-      fs.mkdirSync(dir, { recursive: true });
-    }
+    } catch { /* ignore */ }
 
-    this.logger.debug({ dir }, 'Prepared outputs directory');
+    fs.mkdirSync(dir, { recursive: true });
+
+    this.logger.debug({ dir }, 'Prepared outputs directory (clean)');
     return dir;
   }
 

@@ -1,0 +1,42 @@
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+
+.hoverable {
+  transition: border-color var(--duration-fast), box-shadow var(--duration-fast);
+}
+.hoverable:hover {
+  border-color: var(--glass-border-hover);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.pad { padding: 18px 20px; }
+
+.accentBorder:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 16px rgba(0, 214, 143, 0.12);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-0);
+  letter-spacing: -0.1px;
+}
+
+.body {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.5;
+  margin-top: 8px;
+}

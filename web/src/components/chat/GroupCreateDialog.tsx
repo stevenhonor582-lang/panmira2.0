@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useStore } from '../../store';
 import type { WSOutgoingMessage } from '../../types';
 
@@ -8,6 +9,7 @@ interface GroupCreateDialogProps {
 }
 
 export function GroupCreateDialog({ onClose, onSend }: GroupCreateDialogProps) {
+  const { t } = useTranslation();
   const bots = useStore((s) => s.bots);
   const [name, setName] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -28,17 +30,17 @@ export function GroupCreateDialog({ onClose, onSend }: GroupCreateDialogProps) {
   return (
     <div style={styles.overlay} onClick={onClose}>
       <div style={styles.dialog} onClick={(e) => e.stopPropagation()}>
-        <h3 style={styles.title}>New Group</h3>
+        <h3 style={styles.title}>{t('group.newGroup')}</h3>
 
         <input
           style={styles.input}
-          placeholder="Group name..."
+          placeholder={t('group.groupNamePlaceholder')}
           value={name}
           onChange={(e) => setName(e.target.value)}
           autoFocus
         />
 
-        <div style={styles.label}>Select members (at least 2):</div>
+        <div style={styles.label}>{t('group.selectMembers')}</div>
         <div style={styles.botList}>
           {bots.map((bot) => (
             <label key={bot.name} style={styles.botItem}>
@@ -54,7 +56,7 @@ export function GroupCreateDialog({ onClose, onSend }: GroupCreateDialogProps) {
         </div>
 
         <div style={styles.actions}>
-          <button style={styles.cancelBtn} onClick={onClose}>Cancel</button>
+          <button style={styles.cancelBtn} onClick={onClose}>{t('coordinator.cancel')}</button>
           <button
             style={{
               ...styles.createBtn,
@@ -63,7 +65,7 @@ export function GroupCreateDialog({ onClose, onSend }: GroupCreateDialogProps) {
             disabled={!name.trim() || selected.size < 2}
             onClick={handleCreate}
           >
-            Create Group
+            {t('group.createGroup')}
           </button>
         </div>
       </div>

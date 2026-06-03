@@ -59,6 +59,65 @@
   background: var(--void);
 }
 
+/* ═══ Group Banner ═══ */
+.groupBanner {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--glass-border);
+  animation: fadeIn 200ms var(--ease-out);
+}
+
+.groupBannerIcon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.groupBannerInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.groupBannerName {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-0);
+  letter-spacing: -0.2px;
+}
+
+.groupBannerMembers {
+  font-size: 11px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.groupBannerBadge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: var(--r-xs);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
 /* ═══ Message List ═══ */
 .messageList {
   flex: 1;
@@ -1700,6 +1759,9 @@
   .chatLayout { flex-direction: column; }
   .container { height: 100%; /* flex child of mobileMain, not full viewport */ }
   .messageListInner { padding: 16px 12px 8px; }
+  .groupBanner { padding: 8px 12px; gap: 8px; }
+  .groupBannerIcon { width: 28px; height: 28px; }
+  .groupBannerName { font-size: 13px; }
   .inputArea {
     padding: 0 8px;
     padding-bottom: env(safe-area-inset-bottom, 0px);

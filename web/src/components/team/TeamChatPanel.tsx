@@ -75,10 +75,10 @@ export function TeamChatPanel({ botName, onClose }: TeamChatPanelProps) {
     <div className={s.panel}>
       <div className={s.header}>
         <div className={s.headerLeft}>
-          <span className={s.headerLabel}>Chat with</span>
+          <span className={s.headerLabel}>对话</span>
           <span className={s.headerBot}>{botName}</span>
         </div>
-        <button className={s.closeBtn} onClick={onClose} title="Close chat">
+        <button className={s.closeBtn} onClick={onClose} title="关闭对话">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <path d="M18 6L6 18M6 6l12 12" />
           </svg>
@@ -91,6 +91,7 @@ export function TeamChatPanel({ botName, onClose }: TeamChatPanelProps) {
           autoScrollRef={autoScrollRef}
           isRunning={isRunning}
           onAnswer={handleAnswer}
+          onPreview={() => {}}
         />
       </div>
 

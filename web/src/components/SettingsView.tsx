@@ -1,262 +1,103 @@
-import { useState, useCallback } from 'react';
+import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useStore } from '../store';
-import type { BotInfo } from '../types';
-import { BotManageDialog } from './BotManageDialog';
+import { Badge, Button } from './ui';
+import { SkillsSection } from './settings/SkillsSection';
+import { UsersSection } from './settings/UsersSection';
+import { SystemSection } from './settings/SystemSection';
+import { ProjectsSection } from './settings/ProjectsSection';
+import { CoordinatorSection } from './settings/CoordinatorSection';
+import { ProvidersSection } from './settings/ProvidersSection';
+import { BotsSection } from './settings/BotsSection';
+import { AgentsSection } from './settings/AgentsSection';
+import type { AgentTemplate } from './settings/AgentsSection';
+import { KnowledgeSection } from './settings/KnowledgeSection';
 import styles from './SettingsView.module.css';
 
+type Section = 'providers' | 'bots' | 'agents' | 'skills' | 'projects' | 'sessions' | 'users' | 'coordinator' | 'system' | 'knowledge';
+
+function getSections(t: (key: string) => string): { id: Section; label: string }[] {
+  return [
+    { id: 'users', label: t('settings.users') },
+    { id: 'providers', label: t('settings.providers') },
+    { id: 'bots', label: t('settings.bots') },
+    { id: 'coordinator', label: t('settings.coordinator') },
+    { id: 'knowledge', label: t('settings.knowledge') },
+    { id: 'agents', label: t('settings.agents') },
+    { id: 'skills', label: t('settings.skills') },
+    { id: 'projects', label: t('settings.projects') },
+    { id: 'system', label: t('settings.system') },
+  ];
+}
+
 export function SettingsView() {
-  const theme = useStore((s) => s.theme);
-  const toggleTheme = useStore((s) => s.toggleTheme);
-  const fontSize = useStore((s) => s.fontSize);
-  const setFontSize = useStore((s) => s.setFontSize);
-  const token = useStore((s) => s.token);
+  const { t } = useTranslation();
   const logout = useStore((s) => s.logout);
-  const connected = useStore((s) => s.connected);
   const bots = useStore((s) => s.bots);
-  const sessions = useStore((s) => s.sessions);
-  const clearSessions = useStore((s) => s.clearSessions);
+  const aiProviders = useStore((s) => s.aiProviders);
+  const [activeSection, setActiveSection] = useState<Section>('providers');
+  const [sharedAgents, setSharedAgents] = useState<AgentTemplate[]>([]);
+  const sections = getSections(t);
 
-  const [dialogMode, setDialogMode] = useState<'create' | 'edit' | null>(null);
-  const [editBot, setEditBot] = useState<BotInfo | undefined>();
-
-  const handleCreateBot = useCallback(() => {
-    setEditBot(undefined);
-    setDialogMode('create');
+  useEffect(() => {
+    if (sharedAgents.length > 0) return;
+    const token = useStore.getState().token;
+    if (!token) return;
+    fetch('/api/agents', { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((data) => setSharedAgents(data.agents || []))
+      .catch(() => {});
   }, []);
 
-  const handleEditBot = useCallback((bot: BotInfo) => {
-    setEditBot(bot);
-    setDialogMode('edit');
-  }, []);
-
-  const handleDeleteBot = useCallback(async (botName: string) => {
-    if (!window.confirm(`Delete bot "${botName}"? This cannot be undone.`)) return;
-    try {
-      await fetch(`/api/bots/${encodeURIComponent(botName)}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-    } catch {
-      // ignore — bot list will update via WS
+  const renderSection = () => {
+    switch (activeSection) {
+      case 'providers':
+        return <ProvidersSection />;
+      case 'bots':
+        return <BotsSection agents={sharedAgents} />;
+      case 'agents':
+        return <AgentsSection onAgentsLoaded={setSharedAgents} />;
+      case 'skills':
+        return <SkillsSection />;
+      case 'projects':
+        return <ProjectsSection />;
+      case 'system':
+        return <SystemSection />;
+      case 'users':
+        return <UsersSection />;
+      case 'coordinator':
+        return <CoordinatorSection />;
+      case 'knowledge':
+        return <KnowledgeSection />;
     }
-  }, [token]);
-
-  const maskedToken = token
-    ? `${token.slice(0, 6)}${'*'.repeat(Math.min(token.length - 6, 20))}`
-    : 'Not set';
+  };
 
   return (
-    <div className={styles.container}>
-      <div className={styles.header}>
-        <h1 className={styles.title}>Settings</h1>
-        <p className={styles.subtitle}>
-          Manage your MetaBot configuration and preferences.
-        </p>
-      </div>
-
-      {/* Appearance */}
-      <div className={styles.section}>
-        <h2 className={styles.sectionTitle}>Appearance</h2>
-        <div className={styles.card}>
-          <div className={styles.cardItem}>
-            <div className={styles.cardItemLeft}>
-              <span className={styles.cardItemLabel}>Dark Mode</span>
-              <span className={styles.cardItemDesc}>
-                Toggle between dark and light themes
-              </span>
-            </div>
-            <button
-              className={`${styles.toggle} ${
-                theme === 'dark' ? styles.toggleOn : ''
-              }`}
-              onClick={toggleTheme}
-              aria-label="Toggle theme"
-            />
-          </div>
-
-          <div className={styles.cardItem}>
-            <div className={styles.cardItemLeft}>
-              <span className={styles.cardItemLabel}>Font Size</span>
-              <span className={styles.cardItemDesc}>
-                Adjust text size for readability
-              </span>
-            </div>
-            <div className={styles.fontSizeGroup}>
-              {(['small', 'normal', 'large', 'xl'] as const).map((size) => (
-                <button
-                  key={size}
-                  className={`${styles.fontSizeBtn} ${
-                    fontSize === size ? styles.fontSizeBtnActive : ''
-                  }`}
-                  onClick={() => setFontSize(size)}
-                >
-                  {{ small: 'S', normal: 'M', large: 'L', xl: 'XL' }[size]}
-                </button>
-              ))}
-            </div>
-          </div>
+    <div className={styles.layout}>
+      <nav className={styles.sidebar}>
+        <div className={styles.sidebarHeader}>
+          <h1 className={styles.sidebarTitle}>{t('settings.title')}</h1>
         </div>
-      </div>
-
-      {/* Connection */}
-      <div className={styles.section}>
-        <h2 className={styles.sectionTitle}>Connection</h2>
-        <div className={styles.card}>
-          <div className={styles.cardItem}>
-            <div className={styles.cardItemLeft}>
-              <span className={styles.cardItemLabel}>Status</span>
-              <span className={styles.cardItemDesc}>
-                WebSocket connection to MetaBot server
-              </span>
-            </div>
-            <span
-              className={`${styles.connBadge} ${
-                connected ? styles.connBadgeOnline : styles.connBadgeOffline
-              }`}
-            >
-              <span
-                className={`${styles.connDot} ${
-                  connected ? styles.connDotOn : styles.connDotOff
-                }`}
-              />
-              {connected ? 'Connected' : 'Disconnected'}
-            </span>
-          </div>
-
-          <div className={styles.cardItem}>
-            <div className={styles.cardItemLeft}>
-              <span className={styles.cardItemLabel}>API Token</span>
-              <span className={styles.cardItemDesc}>{maskedToken}</span>
-            </div>
-            <button
-              className={`${styles.btn} ${styles.btnOutline}`}
-              onClick={logout}
-            >
-              Disconnect
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Bots */}
-      <div className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <h2 className={styles.sectionTitle}>
-            Bots ({bots.length})
-          </h2>
+        {sections.map((s) => (
           <button
-            className={`${styles.btn} ${styles.btnAccent}`}
-            onClick={handleCreateBot}
+            key={s.id}
+            className={`${styles.navItem} ${activeSection === s.id ? styles.navItemActive : ''}`}
+            onClick={() => setActiveSection(s.id)}
           >
-            + Add Bot
+            {s.label}
+            {s.id === 'providers' && aiProviders.length > 0 && <Badge>{aiProviders.length}</Badge>}
+            {s.id === 'bots' && bots.length > 0 && <Badge>{bots.length}</Badge>}
+            {s.id === 'agents' && sharedAgents.length > 0 && <Badge>{sharedAgents.length}</Badge>}
           </button>
+        ))}
+        <div className={styles.sidebarFooter}>
+          <Button variant="danger" size="sm" onClick={logout}>{t('settings.logout')}</Button>
         </div>
-        <div className={styles.card}>
-          {bots.length === 0 ? (
-            <div className={styles.cardItem}>
-              <div className={styles.cardItemLeft}>
-                <span className={styles.cardItemLabel}>No bots available</span>
-                <span className={styles.cardItemDesc}>
-                  {connected
-                    ? 'No bots are configured on the server'
-                    : 'Connect to see available bots'}
-                </span>
-              </div>
-            </div>
-          ) : (
-            <div className={styles.botList}>
-              {bots.map((bot) => (
-                <div key={bot.name} className={styles.botItem}>
-                  <span
-                    className={`${styles.botDot} ${
-                      connected ? styles.botDotOnline : styles.botDotOffline
-                    }`}
-                  />
-                  <div className={styles.botInfo}>
-                    <div className={styles.botName}>{bot.name}</div>
-                    <div className={styles.botMeta}>
-                      {bot.platform} &middot; {bot.workingDirectory}
-                    </div>
-                    {bot.description && (
-                      <div
-                        className={styles.cardItemDesc}
-                        style={{ marginTop: '2px' }}
-                      >
-                        {bot.description}
-                      </div>
-                    )}
-                  </div>
-                  <div className={styles.botActions}>
-                    <button
-                      className={`${styles.btn} ${styles.btnSmall} ${styles.btnOutline}`}
-                      onClick={() => handleEditBot(bot)}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className={`${styles.btn} ${styles.btnSmall} ${styles.btnDanger}`}
-                      onClick={() => handleDeleteBot(bot.name)}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+      </nav>
 
-      {/* Data */}
-      <div className={styles.section}>
-        <h2 className={styles.sectionTitle}>Data</h2>
-        <div className={styles.card}>
-          <div className={styles.cardItem}>
-            <div className={styles.cardItemLeft}>
-              <span className={styles.cardItemLabel}>Chat History</span>
-              <span className={styles.cardItemDesc}>
-                {sessions.size} conversation{sessions.size !== 1 ? 's' : ''}{' '}
-                stored locally
-              </span>
-            </div>
-            <button
-              className={`${styles.btn} ${styles.btnDanger}`}
-              onClick={() => {
-                if (
-                  window.confirm(
-                    'Clear all conversations? This cannot be undone.',
-                  )
-                ) {
-                  clearSessions();
-                }
-              }}
-            >
-              Clear All
-            </button>
-          </div>
-        </div>
+      <div className={styles.content}>
+        {renderSection()}
       </div>
-
-      {/* Version */}
-      <div className={styles.version}>
-        MetaBot Web &middot; Built with{' '}
-        <a
-          href="https://github.com/anthropics/claude-code"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Claude Code
-        </a>
-      </div>
-
-      {/* Bot manage dialog */}
-      {dialogMode && (
-        <BotManageDialog
-          mode={dialogMode}
-          bot={editBot}
-          onClose={() => setDialogMode(null)}
-        />
-      )}
     </div>
   );
 }

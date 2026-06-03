@@ -31,7 +31,7 @@ export interface BotStatus {
   specialties?: string[];
   icon?: string;
   platform: string;
-  engine?: 'claude' | 'kimi' | 'codex';
+  engine?: 'claude' | 'kimi' | 'codex' | 'openai-compat';
   model?: string;
   workingDirectory: string;
   status: 'idle' | 'busy' | 'error';
@@ -45,6 +45,10 @@ export interface BotStatus {
     completedTasks: number;
     failedTasks: number;
     totalCostUsd: number;
+    totalInputTokens: number;
+    totalOutputTokens: number;
+    totalCacheReadTokens: number;
+    totalCacheCreationTokens: number;
   };
   agents?: AgentMetadata[];
 }
@@ -57,6 +61,10 @@ export interface TeamStatus {
     idleBots: number;
     totalCostUsd: number;
     totalTasks: number;
+    totalInputTokens: number;
+    totalOutputTokens: number;
+    totalCacheReadTokens: number;
+    totalCacheCreationTokens: number;
   };
 }
 
@@ -95,10 +103,21 @@ function loadSessions(): Map<string, ChatSession> {
 
 /* ---- store interface ---- */
 
+export interface CurrentUser {
+  id: string;
+  email: string | null;
+  name: string;
+  role: 'admin' | 'member';
+  tenantId: string;
+}
+
 export interface AppStore {
   // Auth
   token: string | null;
+  currentUser: CurrentUser | null;
   login: (token: string) => void;
+  loginWithEmail: (email: string, password: string) => Promise<void>;
+  registerWithEmail: (email: string, password: string, name?: string) => Promise<void>;
   logout: () => void;
 
   // Connection
@@ -172,8 +191,8 @@ export interface AppStore {
   setSelectedAgentKey: (key: string | null) => void;
   teamChatBotName: string | null;
   setTeamChatBotName: (name: string | null) => void;
-  teamDetailTab: 'activity' | 'stats' | 'info';
-  setTeamDetailTab: (tab: 'activity' | 'stats' | 'info') => void;
+  teamDetailTab: 'activity' | 'stats' | 'info' | 'sessions';
+  setTeamDetailTab: (tab: 'activity' | 'stats' | 'info' | 'sessions') => void;
 
   // Activity feed
   activityEvents: ActivityEvent[];
@@ -188,20 +207,135 @@ export interface AppStore {
   sidebarOpen: boolean;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
+
+  // Global defaults for new bots
+  defaultEngine: string;
+  setDefaultEngine: (engine: string) => void;
+  defaultModel: string;
+  setDefaultModel: (model: string) => void;
+  defaultWorkDir: string;
+  setDefaultWorkDir: (dir: string) => void;
+
+  // AI Providers
+  aiProviders: import('./utils/models').AIProvider[];
+  loadProviders: () => Promise<void>;
+  addProvider: (provider: import('./utils/models').AIProvider) => Promise<void>;
+  updateProvider: (id: string, updates: Partial<import('./utils/models').AIProvider>) => Promise<void>;
+  removeProvider: (id: string) => Promise<void>;
+  defaultProviderId: string;
+  setDefaultProviderId: (id: string) => void;
+  // ASR (streaming speech recognition)
+  asrState: 'idle' | 'connecting' | 'active' | 'error';
+  asrPartialText: string;
+  setAsrState: (state: 'idle' | 'connecting' | 'active' | 'error') => void;
+  setAsrPartialText: (text: string) => void;
 }
 
 export const useStore = create<AppStore>((set, get) => ({
   /* ---- Auth ---- */
-  token: localStorage.getItem('metabot:token'),
+  token: (() => {
+    const t = localStorage.getItem('metabot:token');
+    if (t && t.startsWith('eyJ')) {
+      try {
+        const payload = JSON.parse(atob(t.split('.')[1]));
+        if (payload.exp && payload.exp * 1000 < Date.now()) {
+          // Access token expired — try refresh in background
+          const rt = localStorage.getItem('metabot:refresh');
+          if (rt) {
+            fetch('/api/auth/refresh', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ refreshToken: rt }),
+            }).then(r => r.ok ? r.json() : null).then(data => {
+              if (data?.accessToken) {
+                localStorage.setItem('metabot:token', data.accessToken);
+                if (data.refreshToken) localStorage.setItem('metabot:refresh', data.refreshToken);
+                set({ token: data.accessToken });
+              } else {
+                localStorage.removeItem('metabot:token');
+                localStorage.removeItem('metabot:user');
+                localStorage.removeItem('metabot:refresh');
+                set({ token: null, currentUser: null });
+              }
+            }).catch(() => {});
+          }
+          // Return expired token temporarily so UI doesn't flash login page
+          return t;
+        }
+      } catch { /* not a valid JWT, keep it (could be API secret) */ }
+    }
+    return t;
+  })(),
+  currentUser: (() => { try { return JSON.parse(localStorage.getItem('metabot:user') || 'null'); } catch { return null; } })(),
 
   login(token: string) {
     localStorage.setItem('metabot:token', token);
     set({ token });
+    // Fetch current user info
+    if (token.startsWith('eyJ')) {
+      fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((user) => {
+          if (user) {
+            localStorage.setItem('metabot:user', JSON.stringify(user));
+            set({ currentUser: user });
+          }
+        })
+        .catch(() => {});
+    } else {
+      // API secret login — assume admin, fetch user list to get admin user
+      fetch('/api/auth/users', { headers: { Authorization: `Bearer ${token}` } })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          const admin = (data?.users || []).find((u: any) => u.role === 'admin');
+          if (admin) {
+            localStorage.setItem('metabot:user', JSON.stringify(admin));
+            set({ currentUser: admin });
+          }
+        })
+        .catch(() => {});
+    }
+  },
+
+  async loginWithEmail(email: string, password: string) {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Login failed');
+    }
+    const data = await res.json();
+    localStorage.setItem('metabot:token', data.accessToken);
+    localStorage.setItem('metabot:user', JSON.stringify(data.user));
+    if (data.refreshToken) localStorage.setItem('metabot:refresh', data.refreshToken);
+    set({ token: data.accessToken, currentUser: data.user });
+  },
+
+  async registerWithEmail(email: string, password: string, name?: string) {
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, name }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Registration failed');
+    }
+    const data = await res.json();
+    localStorage.setItem('metabot:token', data.accessToken);
+    localStorage.setItem('metabot:user', JSON.stringify(data.user));
+    if (data.refreshToken) localStorage.setItem('metabot:refresh', data.refreshToken);
+    set({ token: data.accessToken, currentUser: data.user });
   },
 
   logout() {
     localStorage.removeItem('metabot:token');
-    set({ token: null, connected: false, bots: [], activeBotName: null });
+    localStorage.removeItem('metabot:user');
+    localStorage.removeItem('metabot:refresh');
+    set({ token: null, currentUser: null, connected: false, bots: [], activeBotName: null });
   },
 
   /* ---- Connection ---- */
@@ -514,7 +648,7 @@ export const useStore = create<AppStore>((set, get) => ({
     set({ teamChatBotName: name });
   },
   teamDetailTab: 'activity',
-  setTeamDetailTab(tab: 'activity' | 'stats' | 'info') {
+  setTeamDetailTab(tab: 'activity' | 'stats' | 'info' | 'sessions') {
     set({ teamDetailTab: tab });
   },
 
@@ -548,4 +682,116 @@ export const useStore = create<AppStore>((set, get) => ({
   setSidebarOpen(open: boolean) {
     set({ sidebarOpen: open });
   },
+
+  /* ---- Global defaults ---- */
+  defaultEngine: localStorage.getItem('metabot:defaultEngine') || 'claude',
+  setDefaultEngine(engine: string) {
+    localStorage.setItem('metabot:defaultEngine', engine);
+    set({ defaultEngine: engine });
+  },
+  defaultModel: localStorage.getItem('metabot:defaultModel') || '',
+  setDefaultModel(model: string) {
+    localStorage.setItem('metabot:defaultModel', model);
+    set({ defaultModel: model });
+  },
+  defaultWorkDir: localStorage.getItem('metabot:defaultWorkDir') || '',
+  setDefaultWorkDir(dir: string) {
+    localStorage.setItem('metabot:defaultWorkDir', dir);
+    set({ defaultWorkDir: dir });
+  },
+
+  /* ---- AI Providers ---- */
+  aiProviders: [] as import('./utils/models').AIProvider[],
+  async loadProviders() {
+    try {
+      const token = get().token;
+      const authHeaders: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await fetch('/api/providers', { headers: authHeaders });
+      const data = await res.json();
+      const serverProviders: Array<{ id: string; name: string; baseUrl: string; model: string; isDefault: boolean; apiKeyEncrypted: string | null }> = data.providers || [];
+
+      // Migrate localStorage providers to server on first load
+      const localRaw = localStorage.getItem('metabot:aiProviders');
+      if (localRaw && serverProviders.length === 0) {
+        try {
+          const localProviders: import('./utils/models').AIProvider[] = JSON.parse(localRaw);
+          for (const p of localProviders) {
+            await fetch('/api/providers', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', ...authHeaders },
+              body: JSON.stringify({ name: p.name, type: 'openai', baseUrl: p.baseUrl, apiKey: p.apiKey, model: p.model, isDefault: false }),
+            });
+          }
+          const res2 = await fetch('/api/providers', { headers: authHeaders });
+          const data2 = await res2.json();
+          set({ aiProviders: (data2.providers || []).map(mapServerProvider) });
+          localStorage.removeItem('metabot:aiProviders');
+          return;
+        } catch { /* migration failed, continue with server data */ }
+      }
+
+      const mapped = serverProviders.map(mapServerProvider);
+      const defaultP = serverProviders.find((p) => p.isDefault);
+      set({ aiProviders: mapped, defaultProviderId: defaultP?.id || '' });
+      localStorage.removeItem('metabot:aiProviders');
+    } catch { /* fetch failed */ }
+  },
+  async addProvider(provider) {
+    const token = get().token;
+    const res = await fetch('/api/providers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ name: provider.name, type: 'openai', baseUrl: provider.baseUrl, apiKey: provider.apiKey, model: provider.model }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      set({ aiProviders: [...get().aiProviders, mapServerProvider(data.provider)] });
+    }
+  },
+  async updateProvider(id, updates) {
+    const token = get().token;
+    const res = await fetch(`/api/providers/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(updates),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const providers = get().aiProviders.map((p) => p.id === id ? mapServerProvider(data.provider) : p);
+      set({ aiProviders: providers });
+    }
+  },
+  async removeProvider(id) {
+    const token = get().token;
+    const res = await fetch(`/api/providers/${id}`, { method: 'DELETE', headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (res.ok) {
+      const providers = get().aiProviders.filter((p) => p.id !== id);
+      const updates: Partial<AppStore> = { aiProviders: providers };
+      if (get().defaultProviderId === id) updates.defaultProviderId = '';
+      set(updates);
+    }
+  },
+  defaultProviderId: '',
+  setDefaultProviderId(id) {
+    const token = get().token;
+    if (token) {
+      fetch(`/api/providers/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ isDefault: true }),
+      }).catch(() => {});
+    }
+    set({ defaultProviderId: id });
+  },
 }));
+
+function mapServerProvider(p: { id: string; name: string; baseUrl: string; model: string; apiKeyEncrypted: string | null; type?: string }): import('./utils/models').AIProvider {
+  return {
+    id: p.id,
+    name: p.name,
+    baseUrl: p.baseUrl,
+    apiKey: p.apiKeyEncrypted || '',
+    model: p.model,
+    type: (p.type === 'embedding' ? 'embedding' : 'LLM') as import('./utils/models').AIProvider['type'],
+  };
+}

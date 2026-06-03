@@ -1,12 +1,5 @@
-/**
- * In-memory store for async task status.
- *
- * When /api/talk receives `async: true`, the task is executed in the background
- * and this store tracks its lifecycle (accepted → running → completed/failed).
- * Completed tasks are automatically cleaned up after 1 hour.
- */
-
 import * as crypto from 'node:crypto';
+import { pool } from '../db/index.js';
 
 export interface AsyncTask {
   id: string;
@@ -30,17 +23,45 @@ export interface AsyncTask {
 export class AsyncTaskStore {
   private tasks = new Map<string, AsyncTask>();
   private cleanupInterval: ReturnType<typeof setInterval>;
+  private initialized = false;
 
   constructor() {
-    // Clean up completed tasks older than 1 hour
     this.cleanupInterval = setInterval(() => {
       const cutoff = Date.now() - 3600_000;
       for (const [id, task] of this.tasks) {
         if (task.completedAt && task.completedAt < cutoff) {
           this.tasks.delete(id);
+          pool.query('DELETE FROM async_tasks WHERE id = $1', [id]).catch(() => {});
         }
       }
-    }, 300_000); // every 5 minutes
+      pool
+        .query('DELETE FROM async_tasks WHERE completed_at IS NOT NULL AND completed_at < $1', [cutoff])
+        .catch(() => {});
+    }, 300_000);
+  }
+
+  async init(): Promise<void> {
+    if (this.initialized) return;
+    this.initialized = true;
+    try {
+      const { rows } = await pool.query("SELECT * FROM async_tasks WHERE status IN ('accepted', 'running')");
+      for (const r of rows) {
+        this.tasks.set(r.id, {
+          id: r.id,
+          botName: r.bot_name,
+          chatId: r.chat_id,
+          prompt: r.prompt,
+          status: r.status as AsyncTask['status'],
+          createdAt: Number(r.created_at),
+          completedAt: r.completed_at ? Number(r.completed_at) : undefined,
+          result: r.result || undefined,
+          callbackChatId: r.callback_chat_id || undefined,
+          callbackBotName: r.callback_bot_name || undefined,
+        });
+      }
+    } catch {
+      /* table may not exist yet during migration */
+    }
   }
 
   create(opts: {
@@ -61,6 +82,22 @@ export class AsyncTaskStore {
       callbackBotName: opts.callbackBotName,
     };
     this.tasks.set(task.id, task);
+    pool
+      .query(
+        `INSERT INTO async_tasks (id, bot_name, chat_id, prompt, status, created_at, callback_chat_id, callback_bot_name)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          task.id,
+          task.botName,
+          task.chatId,
+          task.prompt,
+          task.status,
+          task.createdAt,
+          task.callbackChatId || null,
+          task.callbackBotName || null,
+        ],
+      )
+      .catch(() => {});
     return task;
   }
 
@@ -72,6 +109,14 @@ export class AsyncTaskStore {
     const task = this.tasks.get(id);
     if (task) {
       Object.assign(task, updates);
+      pool
+        .query(`UPDATE async_tasks SET status = $1, completed_at = $2, result = $3 WHERE id = $4`, [
+          task.status,
+          task.completedAt || null,
+          task.result ? JSON.stringify(task.result) : null,
+          id,
+        ])
+        .catch(() => {});
     }
   }
 

@@ -10,11 +10,11 @@ export type {
 import type { CardState, CardStatus } from '../types.js';
 
 const STATUS_CONFIG: Record<CardStatus, { color: string; title: string; icon: string }> = {
-  thinking: { color: 'blue', title: 'Thinking...', icon: '🔵' },
-  running: { color: 'blue', title: 'Running...', icon: '🔵' },
-  complete: { color: 'green', title: 'Complete', icon: '🟢' },
-  error: { color: 'red', title: 'Error', icon: '🔴' },
-  waiting_for_input: { color: 'yellow', title: 'Waiting for Input', icon: '🟡' },
+  thinking: { color: 'blue', title: '思考中...', icon: '💡' },
+  running: { color: 'blue', title: '执行中...', icon: '⚡' },
+  complete: { color: 'green', title: '完成', icon: '✅' },
+  error: { color: 'red', title: '出错', icon: '❌' },
+  waiting_for_input: { color: 'yellow', title: '等待输入', icon: '❓' },
 };
 
 const BG_ICON: Record<'running' | 'completed' | 'failed' | 'stopped', string> = {
@@ -24,82 +24,85 @@ const BG_ICON: Record<'running' | 'completed' | 'failed' | 'stopped', string> = 
   stopped: '⏹️',
 };
 
+const MAX_VISIBLE_TOOLS = 3;
+const MAX_CONTENT_LENGTH = 28000;
+
 function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
   return text.slice(0, max) + '…';
 }
 
-const MAX_CONTENT_LENGTH = 28000;
-
 function truncateContent(text: string): string {
   if (text.length <= MAX_CONTENT_LENGTH) return text;
   const half = Math.floor(MAX_CONTENT_LENGTH / 2) - 50;
-  return (
-    text.slice(0, half) +
-    '\n\n... (content truncated) ...\n\n' +
-    text.slice(-half)
-  );
+  return text.slice(0, half) + '\n\n... (内容过长已截断) ...\n\n' + text.slice(-half);
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const min = Math.floor(ms / 60000);
+  const sec = Math.round((ms % 60000) / 1000);
+  return `${min}m${sec}s`;
+}
+
+function formatCost(usd: number): string {
+  if (usd < 0.01) return `$${usd.toFixed(4)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
+function formatModelName(model: string): string {
+  return model
+    .replace(/^claude-/, '')
+    .replace(/^glm-/, 'GLM-')
+    .replace(/^openai-compat:/, '');
 }
 
 export function buildCard(state: CardState): string {
   const config = STATUS_CONFIG[state.status];
   const elements: unknown[] = [];
 
-  // Tool calls section
-  if (state.toolCalls.length > 0) {
-    const toolLines = state.toolCalls.map((t) => {
-      const icon = t.status === 'running' ? '⏳' : '✅';
-      return `${icon} **${t.name}** ${t.detail}`;
-    });
-    elements.push({
-      tag: 'markdown',
-      content: toolLines.join('\n'),
-    });
+  const headerTitle = buildHeaderTitle(state, config);
+
+  // Tool calls (collapsed)
+  const toolSection = buildToolSection(state);
+  if (toolSection) {
+    elements.push({ tag: 'markdown', content: toolSection });
     elements.push({ tag: 'hr' });
   }
 
-  // Background tasks (Monitor, etc.) — show live stdout events / final status
+  // Background tasks
   if (state.backgroundEvents && state.backgroundEvents.length > 0) {
     const lines = state.backgroundEvents.map((ev) => {
       const icon = BG_ICON[ev.status];
-      const shortId = ev.taskId.slice(0, 6);
-      const desc = truncate(ev.description, 60);
-      const last = ev.lastEvent ? ` — _${truncate(ev.lastEvent, 140)}_` : '';
-      return `${icon} **${desc}** \`${shortId}\`${last}`;
+      const desc = truncate(ev.description, 40);
+      const last = ev.lastEvent ? ` _${truncate(ev.lastEvent, 80)}_` : '';
+      return `${icon} ${desc}${last}`;
     });
-    elements.push({
-      tag: 'markdown',
-      content: '📡 **Background**\n' + lines.join('\n'),
-    });
+    elements.push({ tag: 'markdown', content: lines.join('\n') });
     elements.push({ tag: 'hr' });
   }
 
   // Response content
   if (state.responseText) {
-    elements.push({
-      tag: 'markdown',
-      content: truncateContent(state.responseText),
-    });
+    elements.push({ tag: 'markdown', content: truncateContent(state.responseText) });
   } else if (state.status === 'thinking') {
+    const promptPreview = truncate(state.userPrompt || '', 80);
     elements.push({
       tag: 'markdown',
-      content: '_Thinking..._',
+      content: promptPreview ? `> ${promptPreview}\n\n正在分析...` : '正在思考...',
     });
   }
 
-  // Pending question section — interactive buttons + text-fallback hint
+  // Pending question
   if (state.pendingQuestion) {
     elements.push({ tag: 'hr' });
     state.pendingQuestion.questions.forEach((q, qi) => {
-      // Question prompt
-      const descLines = q.options.map(
-        (opt, i) => `**${i + 1}.** ${opt.label} — _${opt.description}_`,
-      );
+      const descLines = q.options.map((opt, i) => `**${i + 1}.** ${opt.label} — _${opt.description}_`);
       elements.push({
         tag: 'markdown',
         content: [`**[${q.header}] ${q.question}**`, '', ...descLines].join('\n'),
       });
-      // Interactive buttons: one per option + an explicit "Other" button
       const actions = q.options.map((opt, oi) => ({
         tag: 'button',
         text: { tag: 'plain_text', content: `${oi + 1}. ${opt.label}` },
@@ -111,72 +114,30 @@ export function buildCard(state: CardState): string {
           optionIndex: oi,
         },
       }));
-      elements.push({
-        tag: 'action',
-        actions,
-      });
+      elements.push({ tag: 'action', actions });
     });
-    elements.push({
-      tag: 'markdown',
-      content: '_点击按钮选择，或直接输入自定义答案_',
-    });
+    elements.push({ tag: 'markdown', content: '_点击按钮选择，或直接输入自定义答案_' });
   }
 
-  // Error message
+  // Error
   if (state.errorMessage) {
-    elements.push({
-      tag: 'markdown',
-      content: `**Error:** ${state.errorMessage}`,
-    });
+    elements.push({ tag: 'markdown', content: `**Error:** ${state.errorMessage}` });
   }
 
-  // Stats note — show context usage during all states, full stats on complete/error
-  {
-    const parts: string[] = [];
-    if (state.totalTokens && state.contextWindow) {
-      const pct = Math.round((state.totalTokens / state.contextWindow) * 100);
-      const tokensK = state.totalTokens >= 1000
-        ? `${(state.totalTokens / 1000).toFixed(1)}k`
-        : `${state.totalTokens}`;
-      const ctxK = `${Math.round(state.contextWindow / 1000)}k`;
-      parts.push(`ctx: ${tokensK}/${ctxK} (${pct}%)`);
-    }
-    if (state.status === 'complete' || state.status === 'error') {
-      if (state.sessionCostUsd != null) {
-        parts.push(`$${state.sessionCostUsd.toFixed(2)}`);
-      }
-      if (state.model) {
-        // Strip the claude- prefix (claude-opus-4-7 → opus-4-7) but keep the
-        // full Kimi model name since e.g. `for-coding` loses too much context.
-        parts.push(state.model.replace(/^claude-/, ''));
-      }
-      if (state.durationMs !== undefined) {
-        parts.push(`${(state.durationMs / 1000).toFixed(1)}s`);
-      }
-    }
-    if (parts.length > 0) {
-      elements.push({
-        tag: 'note',
-        elements: [
-          {
-            tag: 'plain_text',
-            content: parts.join(' | '),
-          },
-        ],
-      });
-    }
+  // Stats footer
+  const statsLine = buildStatsLine(state);
+  if (statsLine) {
+    elements.push({
+      tag: 'note',
+      elements: [{ tag: 'plain_text', content: statsLine }],
+    });
   }
 
   const card = {
-    // update_multi lets us re-render the same card after an action click
-    // without hitting Feishu error 108002 ("card has already been updated").
     config: { wide_screen_mode: true, update_multi: true },
     header: {
       template: config.color,
-      title: {
-        content: `${config.icon} ${config.title}`,
-        tag: 'plain_text',
-      },
+      title: { content: headerTitle, tag: 'plain_text' },
     },
     elements,
   };
@@ -184,35 +145,99 @@ export function buildCard(state: CardState): string {
   return JSON.stringify(card);
 }
 
+function buildHeaderTitle(state: CardState, config: (typeof STATUS_CONFIG)[CardStatus]): string {
+  if (state.status === 'running') {
+    const activeTool = state.toolCalls.find((t) => t.status === 'running');
+    if (activeTool) {
+      const detail = activeTool.detail ? ` ${activeTool.detail}` : '';
+      return `${config.icon} ${activeTool.name}${detail}`;
+    }
+  }
+  if (state.status === 'complete' && state.durationMs !== undefined) {
+    return `${config.icon} 完成 · ${formatDuration(state.durationMs)}`;
+  }
+  if (state.status === 'error') {
+    return `${config.icon} 出错`;
+  }
+  return `${config.icon} ${config.title}`;
+}
+
+function buildToolSection(state: CardState): string | null {
+  if (state.toolCalls.length === 0) return null;
+
+  const total = state.toolCalls.length;
+  const running = state.toolCalls.filter((t) => t.status === 'running').length;
+
+  if (total <= MAX_VISIBLE_TOOLS) {
+    return state.toolCalls
+      .map((t) => {
+        const icon = t.status === 'running' ? '⏳' : '✅';
+        return `${icon} **${t.name}** ${t.detail}`;
+      })
+      .join('\n');
+  }
+
+  const recent = state.toolCalls.slice(-MAX_VISIBLE_TOOLS);
+  const lines = recent.map((t) => {
+    const icon = t.status === 'running' ? '⏳' : '✅';
+    return `${icon} **${t.name}** ${t.detail}`;
+  });
+  const summary = `📋 共 ${total} 步${running > 0 ? `，${running} 步进行中` : '，全部完成'}`;
+  return [summary, ...lines].join('\n');
+}
+
+function buildStatsLine(state: CardState): string | null {
+  const parts: string[] = [];
+
+  if (state.totalTokens && state.contextWindow) {
+    const pct = Math.round((state.totalTokens / state.contextWindow) * 100);
+    const usedK = state.totalTokens >= 1000 ? `${(state.totalTokens / 1000).toFixed(1)}k` : `${state.totalTokens}`;
+    const totalK = `${Math.round(state.contextWindow / 1000)}k`;
+    parts.push(`上下文 ${usedK}/${totalK} (${pct}%)`);
+  }
+
+  if (state.model) {
+    parts.push(formatModelName(state.model));
+  }
+
+  if (state.status === 'complete' || state.status === 'error') {
+    if (state.sessionCostUsd != null) {
+      parts.push(formatCost(state.sessionCostUsd));
+    }
+    if (state.durationMs !== undefined) {
+      parts.push(formatDuration(state.durationMs));
+    }
+  }
+
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
 export function buildHelpCard(): string {
   const card = {
     config: { wide_screen_mode: true },
     header: {
       template: 'blue',
-      title: {
-        content: '📖 Help',
-        tag: 'plain_text',
-      },
+      title: { content: '📖 帮助', tag: 'plain_text' },
     },
     elements: [
       {
         tag: 'markdown',
         content: [
-          '**Available Commands:**',
-          '`/reset` - Clear session, start fresh',
-          '`/stop` - Abort current running task',
-          '`/status` - Show current session info',
-          '`/memory` - Memory document commands',
-          '`/help` - Show this help message',
+          '**命令列表:**',
+          '`/reset` - 清除会话，重新开始',
+          '`/stop` - 中止当前任务',
+          '`/status` - 查看会话状态',
+          '`/memory` - 记忆文档操作',
+          '`/help` - 显示帮助',
           '',
-          '**Usage:**',
-          'Send any text message to start a conversation with Claude Code.',
-          'Each chat has an independent session with a fixed working directory.',
+          '**使用说明:**',
+          '发送任意文本即可开始对话。',
+          '每个聊天有独立的会话和工作目录。',
           '',
-          '**Memory Commands:**',
-          '`/memory list` - Show folder tree',
-          '`/memory search <query>` - Search documents',
-          '`/memory status` - Server health check',
+          '**记忆命令:**',
+          '`/memory list` - 查看文档列表',
+          '`/memory search <关键词>` - 搜索文档',
+          '`/memory status` - 服务状态检查',
         ].join('\n'),
       },
     ],
@@ -230,22 +255,86 @@ export function buildStatusCard(
     config: { wide_screen_mode: true },
     header: {
       template: 'blue',
-      title: {
-        content: '📊 Status',
-        tag: 'plain_text',
-      },
+      title: { content: '📊 状态', tag: 'plain_text' },
     },
     elements: [
       {
         tag: 'markdown',
         content: [
-          `**User:** \`${userId}\``,
-          `**Working Directory:** \`${workingDirectory}\``,
-          `**Session:** ${sessionId ? `\`${sessionId.slice(0, 8)}...\`` : '_None_'}`,
-          `**Running:** ${isRunning ? 'Yes ⏳' : 'No'}`,
+          `**用户:** \`${userId}\``,
+          `**工作目录:** \`${workingDirectory}\``,
+          `**会话:** ${sessionId ? `\`${sessionId.slice(0, 8)}...\`` : '_无_'}`,
+          `**运行中:** ${isRunning ? '是 ⏳' : '否'}`,
         ].join('\n'),
       },
     ],
+  };
+  return JSON.stringify(card);
+}
+
+export interface TaskSummaryEntry {
+  botName: string;
+  status: 'completed' | 'failed' | 'timeout';
+  task: string;
+  resultPreview: string;
+  error?: string;
+  durationMs?: number;
+}
+
+export interface TaskSummaryState {
+  title: string;
+  userTask: string;
+  totalDurationMs?: number;
+  entries: TaskSummaryEntry[];
+}
+
+export function buildTaskSummaryCard(state: TaskSummaryState): string {
+  const successCount = state.entries.filter((e) => e.status === 'completed').length;
+  const failCount = state.entries.length - successCount;
+  const color = failCount === 0 ? 'green' : failCount === state.entries.length ? 'red' : 'orange';
+  const titleIcon = failCount === 0 ? '✅' : '⚠️';
+  const titleText = `${titleIcon} ${state.title} (${successCount}/${state.entries.length} 成功)`;
+
+  const elements: unknown[] = [];
+
+  const overviewLines = [`📋 **用户需求:** ${state.userTask}`];
+  if (state.totalDurationMs !== undefined) {
+    overviewLines.push(`⏱️ 总耗时: ${formatDuration(state.totalDurationMs)}`);
+  }
+  elements.push({ tag: 'markdown', content: overviewLines.join('\n') });
+  elements.push({ tag: 'hr' });
+
+  for (const entry of state.entries) {
+    const statusIcon = entry.status === 'completed' ? '✅' : '❌';
+    const taskLabel = entry.task ? ` — ${entry.task}` : '';
+    const durationStr = entry.durationMs !== undefined ? ` ⏱️${formatDuration(entry.durationMs)}` : '';
+
+    const lines = [`**${statusIcon} ${entry.botName}${taskLabel}**${durationStr}`];
+
+    if (entry.status === 'completed' && entry.resultPreview) {
+      lines.push(truncate(entry.resultPreview, 500));
+    }
+
+    if (entry.status !== 'completed') {
+      if (entry.error) {
+        const isTurnError = entry.error.includes('maximum number of turn');
+        lines.push(`⚠️ ${truncate(entry.error, 300)}`);
+        if (isTurnError || entry.status === 'timeout') {
+          lines.push('💡 建议：将任务拆分为更小的子任务后重试');
+        }
+      }
+    }
+
+    elements.push({ tag: 'markdown', content: lines.join('\n') });
+  }
+
+  const card = {
+    config: { wide_screen_mode: true },
+    header: {
+      template: color,
+      title: { content: titleText, tag: 'plain_text' },
+    },
+    elements,
   };
   return JSON.stringify(card);
 }
@@ -255,17 +344,9 @@ export function buildTextCard(title: string, content: string, color: string = 'b
     config: { wide_screen_mode: true },
     header: {
       template: color,
-      title: {
-        content: title,
-        tag: 'plain_text',
-      },
+      title: { content: title, tag: 'plain_text' },
     },
-    elements: [
-      {
-        tag: 'markdown',
-        content,
-      },
-    ],
+    elements: [{ tag: 'markdown', content }],
   };
   return JSON.stringify(card);
 }

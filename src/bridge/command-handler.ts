@@ -39,41 +39,56 @@ export class CommandHandler {
 
     switch (cmd.toLowerCase()) {
       case '/help':
-        await this.sender.sendTextNotice(chatId, '📖 Help', [
-          '**Available Commands:**',
-          '`/reset` - Clear session, start fresh',
-          '`/stop` - Abort current running task',
-          '`/status` - Show current session info',
-          '`/model` - Show current engine/model; `/model list` - Available options',
-          '`/model claude`, `/model kimi`, or `/model codex` - Switch engine (resets session)',
-          '`/model <name>` - Set model for current engine',
-          '`/memory` - Memory document commands',
-          '`/help` - Show this help message',
-          '',
-          '**Usage:**',
-          'Send any text message to start a conversation with the configured agent engine.',
-          'Each chat has an independent session with a fixed working directory.',
-          '',
-          '**Memory Commands:**',
-          '`/memory list` - Show folder tree',
-          '`/memory search <query>` - Search documents',
-          '`/memory status` - Server health check',
-          '',
-          '**Sync Commands:**',
-          '`/sync` - Sync MetaMemory to Feishu Wiki',
-          '`/sync status` - Show sync status',
-        ].join('\n'));
+        await this.sender.sendTextNotice(
+          chatId,
+          '📖 Help',
+          [
+            '**Available Commands:**',
+            '`/reset` - Clear session, start fresh',
+            '`/stop` - Abort current running task',
+            '`/status` - Show current session info',
+            '`/model` - Show current engine/model; `/model list` - Available options',
+            '`/model claude`, `/model kimi`, or `/model codex` - Switch engine (resets session)',
+            '`/model <name>` - Set model for current engine',
+            '`/memory` - Memory document commands',
+            '`/help` - Show this help message',
+            '',
+            '**Usage:**',
+            'Send any text message to start a conversation with the configured agent engine.',
+            'Each chat has an independent session with a fixed working directory.',
+            '',
+            '**Memory Commands:**',
+            '`/memory list` - Show folder tree',
+            '`/memory search <query>` - Search documents',
+            '`/memory status` - Server health check',
+            '',
+            '**Sync Commands:**',
+            '`/sync` - Sync MetaMemory to Feishu Wiki',
+            '`/sync status` - Show sync status',
+          ].join('\n'),
+        );
         return true;
 
       case '/reset':
         this.sessionManager.resetSession(chatId);
-        await this.sender.sendTextNotice(chatId, '✅ Session Reset', 'Conversation cleared. Working directory preserved.', 'green');
+        await this.sender.sendTextNotice(
+          chatId,
+          '✅ Session Reset',
+          'Conversation cleared. Working directory preserved.',
+          'green',
+        );
         return true;
 
       case '/stop': {
         const task = this.getRunningTask(chatId);
         if (task) {
-          this.audit.log({ event: 'task_stopped', botName: this.config.name, chatId, userId, durationMs: Date.now() - task.startTime });
+          this.audit.log({
+            event: 'task_stopped',
+            botName: this.config.name,
+            chatId,
+            userId,
+            durationMs: Date.now() - task.startTime,
+          });
           this.stopTask(chatId);
           await this.sender.sendTextNotice(chatId, '🛑 Stopped', 'Current task has been aborted.', 'orange');
         } else {
@@ -89,14 +104,18 @@ export class CommandHandler {
         const activeEngine = session.engine ?? botEngine;
         const defaultModel = this.defaultModelForEngine(activeEngine) || '_default_';
         const activeModel = session.model || defaultModel;
-        await this.sender.sendTextNotice(chatId, '📊 Status', [
-          `**User:** \`${userId}\``,
-          `**Engine:** \`${activeEngine}\`${session.engine ? ' (session override)' : ''}`,
-          `**Working Directory:** \`${session.workingDirectory}\``,
-          `**Session:** ${session.sessionId ? `\`${session.sessionId.slice(0, 8)}...\`` : '_None_'}`,
-          `**Model:** \`${activeModel}\`${session.model ? ' (session override)' : ''}`,
-          `**Running:** ${isRunning ? 'Yes ⏳' : 'No'}`,
-        ].join('\n'));
+        await this.sender.sendTextNotice(
+          chatId,
+          '📊 Status',
+          [
+            `**User:** \`${userId}\``,
+            `**Engine:** \`${activeEngine}\`${session.engine ? ' (session override)' : ''}`,
+            `**Working Directory:** \`${session.workingDirectory}\``,
+            `**Session:** ${session.sessionId ? `\`${session.sessionId.slice(0, 8)}...\`` : '_None_'}`,
+            `**Model:** \`${activeModel}\`${session.model ? ' (session override)' : ''}`,
+            `**Running:** ${isRunning ? 'Yes ⏳' : 'No'}`,
+          ].join('\n'),
+        );
         return true;
       }
 
@@ -166,17 +185,32 @@ export class CommandHandler {
           break;
         }
         default:
-          await this.sender.sendTextNotice(chatId, '📝 Memory', `Unknown sub-command: \`${subCmd}\`\nUse \`/memory\` for help.`, 'orange');
+          await this.sender.sendTextNotice(
+            chatId,
+            '📝 Memory',
+            `Unknown sub-command: \`${subCmd}\`\nUse \`/memory\` for help.`,
+            'orange',
+          );
       }
     } catch (err: any) {
       this.logger.error({ err, chatId }, 'Memory command error');
-      await this.sender.sendTextNotice(chatId, '❌ Memory Error', `Failed to connect to memory server: ${err.message}`, 'red');
+      await this.sender.sendTextNotice(
+        chatId,
+        '❌ Memory Error',
+        `Failed to connect to memory server: ${err.message}`,
+        'red',
+      );
     }
   }
 
   private async handleSyncCommand(chatId: string, args: string): Promise<void> {
     if (!this.docSync) {
-      await this.sender.sendTextNotice(chatId, '❌ Sync Unavailable', 'Wiki sync is not configured for this bot.', 'red');
+      await this.sender.sendTextNotice(
+        chatId,
+        '❌ Sync Unavailable',
+        'Wiki sync is not configured for this bot.',
+        'red',
+      );
       return;
     }
 
@@ -185,11 +219,21 @@ export class CommandHandler {
     if (!subCmd) {
       // Default: trigger full sync
       if (this.docSync.isSyncing()) {
-        await this.sender.sendTextNotice(chatId, '⏳ Sync In Progress', 'A sync is already running. Please wait.', 'orange');
+        await this.sender.sendTextNotice(
+          chatId,
+          '⏳ Sync In Progress',
+          'A sync is already running. Please wait.',
+          'orange',
+        );
         return;
       }
 
-      await this.sender.sendTextNotice(chatId, '🔄 Sync Started', 'Syncing MetaMemory documents to Feishu Wiki...', 'blue');
+      await this.sender.sendTextNotice(
+        chatId,
+        '🔄 Sync Started',
+        'Syncing MetaMemory documents to Feishu Wiki...',
+        'blue',
+      );
 
       try {
         const result = await this.docSync.syncAll();
@@ -220,18 +264,27 @@ export class CommandHandler {
 
     switch (subCmd.toLowerCase()) {
       case 'status': {
-        const stats = this.docSync.getStats();
+        const stats = await this.docSync.getStats();
         const spaceId = stats.wikiSpaceId || 'Not configured';
-        await this.sender.sendTextNotice(chatId, '📊 Sync Status', [
-          `**Wiki Space:** \`${spaceId}\``,
-          `**Synced Documents:** ${stats.documentCount}`,
-          `**Synced Folders:** ${stats.folderCount}`,
-          `**Currently Syncing:** ${this.docSync.isSyncing() ? 'Yes' : 'No'}`,
-        ].join('\n'));
+        await this.sender.sendTextNotice(
+          chatId,
+          '📊 Sync Status',
+          [
+            `**Wiki Space:** \`${spaceId}\``,
+            `**Synced Documents:** ${stats.documentCount}`,
+            `**Synced Folders:** ${stats.folderCount}`,
+            `**Currently Syncing:** ${this.docSync.isSyncing() ? 'Yes' : 'No'}`,
+          ].join('\n'),
+        );
         break;
       }
       default:
-        await this.sender.sendTextNotice(chatId, '📝 Sync', 'Usage:\n- `/sync` — Sync all documents to Feishu Wiki\n- `/sync status` — Show sync status', 'blue');
+        await this.sender.sendTextNotice(
+          chatId,
+          '📝 Sync',
+          'Usage:\n- `/sync` — Sync all documents to Feishu Wiki\n- `/sync status` — Show sync status',
+          'blue',
+        );
     }
   }
 
@@ -310,11 +363,12 @@ export class CommandHandler {
         { id: 'gpt-5.2-codex', label: 'GPT-5.2 Codex', note: 'Legacy Codex coding model' },
       ];
       const models = activeEngine === 'kimi' ? kimiModels : activeEngine === 'codex' ? codexModels : claudeModels;
-      const header = activeEngine === 'kimi'
-        ? '**Available Kimi models:**'
-        : activeEngine === 'codex'
-          ? '**Common Codex models:**'
-          : '**Available Claude models:**';
+      const header =
+        activeEngine === 'kimi'
+          ? '**Available Kimi models:**'
+          : activeEngine === 'codex'
+            ? '**Common Codex models:**'
+            : '**Available Claude models:**';
       const lines = [
         `**Current engine:** \`${activeEngine}\`${session.engine ? ' (session override)' : ''}`,
         '',
@@ -329,11 +383,15 @@ export class CommandHandler {
       }
       lines.push('');
       if (activeEngine === 'claude') {
-        lines.push('_Tip: append `[1m]` to a model name to enable the 1M context window. Only Opus 4.7/4.6 and Sonnet 4.6 support it._');
+        lines.push(
+          '_Tip: append `[1m]` to a model name to enable the 1M context window. Only Opus 4.7/4.6 and Sonnet 4.6 support it._',
+        );
       } else if (activeEngine === 'codex') {
         lines.push('_Tip: leave unset to use the Codex CLI default from `~/.codex/config.toml`._');
       } else {
-        lines.push('_Tip: leave unset to use the kimi-cli default (recommended for subscription users — the server picks the best available)._');
+        lines.push(
+          '_Tip: leave unset to use the kimi-cli default (recommended for subscription users — the server picks the best available)._',
+        );
       }
       lines.push('Use `/model <name>` to set the model for the current engine.');
       await this.sender.sendTextNotice(chatId, '🤖 Available Models', lines.join('\n'));
@@ -373,6 +431,8 @@ export class CommandHandler {
         return this.config.kimi?.model;
       case 'codex':
         return this.config.codex?.model || this.config.codex?.displayModel;
+      case 'openai-compat':
+        return this.config.openaiCompat?.model;
     }
   }
 
@@ -384,6 +444,8 @@ export class CommandHandler {
         return '`kimi-for-coding`, `kimi-k2`';
       case 'codex':
         return '`gpt-5.4-codex`, `gpt-5.4`, `gpt-5.2-codex`';
+      case 'openai-compat':
+        return '`glm-4-flash`, `deepseek-chat`, `abab-6.5s-chat`';
     }
   }
 
@@ -395,10 +457,12 @@ export class CommandHandler {
         return '_Make sure `kimi login` has been completed on this host._';
       case 'codex':
         return '_Make sure Codex CLI is authenticated (`codex login`) or configured with an API key._';
+      case 'openai-compat':
+        return "_API Key is configured in the bot's openaiCompat settings._";
     }
   }
 }
 
 function isEngineName(value: string): value is EngineName {
-  return value === 'claude' || value === 'kimi' || value === 'codex';
+  return value === 'claude' || value === 'kimi' || value === 'codex' || value === 'openai-compat';
 }

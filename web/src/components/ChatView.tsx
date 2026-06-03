@@ -7,6 +7,7 @@
    ============================================================ */
 
 import { useRef, useCallback, useMemo, useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useStore } from '../store';
 import { useWebSocket } from '../hooks/useWebSocket';
 import type { CardState, FileAttachment } from '../types';
@@ -43,6 +44,7 @@ function useIsMobile(breakpoint = 768) {
 }
 
 export function ChatView() {
+  const { t } = useTranslation();
   const activeSessionId = useStore((s) => s.activeSessionId);
   const sessions = useStore((s) => s.sessions);
   const addMessage = useStore((s) => s.addMessage);
@@ -53,6 +55,7 @@ export function ChatView() {
   const token = useStore((s) => s.token);
 
   const activeBot = bots.find((b) => b.name === activeBotName);
+  const groups = useStore((s) => s.groups);
 
   const { send, sendBinary } = useWebSocket();
 
@@ -63,6 +66,9 @@ export function ChatView() {
 
   const session = activeSessionId ? sessions.get(activeSessionId) : undefined;
   const messages = session?.messages || [];
+
+  // Group info for group sessions
+  const activeGroup = session?.groupId ? groups.find((g) => g.id === session.groupId) : undefined;
 
   // Detect if Claude is currently processing
   const isRunning = useMemo(() => {
@@ -329,6 +335,27 @@ export function ChatView() {
   return (
     <div className={styles.chatLayout}>
       <div className={styles.container}>
+        {/* Group header banner */}
+        {activeGroup && (
+          <div className={styles.groupBanner}>
+            <div className={styles.groupBannerIcon}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+            </div>
+            <div className={styles.groupBannerInfo}>
+              <span className={styles.groupBannerName}>{activeGroup.name}</span>
+              <span className={styles.groupBannerMembers}>
+                {activeGroup.members.join(' · ')}
+              </span>
+            </div>
+            <span className={styles.groupBannerBadge}>{t('chat.groupLabel')}</span>
+          </div>
+        )}
+
         {/* Messages or empty state */}
         {hasMessages ? (
           <MessageList

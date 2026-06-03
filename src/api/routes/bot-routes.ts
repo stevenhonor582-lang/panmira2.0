@@ -1,11 +1,11 @@
 import * as fs from 'node:fs';
 import type * as http from 'node:http';
-import { addBot, removeBot, updateBot, getBotEntry } from '../bots-config-writer.js';
-import { installSkillsToWorkDir } from '../skills-installer.js';
-import { webBotFromJson } from '../../config.js';
+import { installSkillsToWorkDir, installSkillsWithStaging } from '../skills-installer.js';
+import { webBotFromJson, feishuBotFromJson, telegramBotFromJson, wechatBotFromJson } from '../../config.js';
 import { resolveEngineName } from '../../engines/index.js';
 import { NullSender } from '../../web/null-sender.js';
 import { MessageBridge } from '../../bridge/message-bridge.js';
+import { startFeishuBot } from '../../feishu/feishu-bot-starter.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import type { RouteContext } from './types.js';
 
@@ -16,7 +16,7 @@ export async function handleBotRoutes(
   method: string,
   url: string,
 ): Promise<boolean> {
-  const { registry, logger, botsConfigPath, peerManager, memoryServerUrl, memoryAuthToken, ws } = ctx;
+  const { registry, logger, botsConfigPath, peerManager, memoryServerUrl, memoryAuthToken, ws, botConfigStore } = ctx;
 
   // GET /api/bots/:name/profile — detailed bot profile with stats
   if (method === 'GET' && /^\/api\/bots\/[^/]+\/profile$/.test(url)) {
@@ -29,12 +29,16 @@ export async function handleBotRoutes(
     const stats = bot.bridge.costTracker.getStats();
     const botStats = stats.byBot[botName];
     jsonResponse(res, 200, {
-      name: bot.name, description: bot.config.description, specialties: bot.config.specialties,
-      icon: bot.config.icon, platform: bot.platform,
+      name: bot.name,
+      description: bot.config.description,
+      specialties: bot.config.specialties,
+      icon: bot.config.icon,
+      platform: bot.platform,
       engine: resolveEngineName(bot.config),
       model: defaultModelForConfig(bot.config),
       workingDirectory: bot.config.claude.defaultWorkingDirectory,
-      maxConcurrentTasks: bot.config.maxConcurrentTasks, budgetLimitDaily: bot.config.budgetLimitDaily,
+      maxConcurrentTasks: bot.config.maxConcurrentTasks,
+      budgetLimitDaily: bot.config.budgetLimitDaily,
       stats: botStats || { totalTasks: 0, completedTasks: 0, failedTasks: 0, totalCostUsd: 0 },
     });
     return true;
@@ -43,8 +47,30 @@ export async function handleBotRoutes(
   // GET /api/bots
   if (method === 'GET' && url === '/api/bots') {
     const localBots = registry.list();
+    const runningNames = new Set(localBots.map((b) => b.name));
     const peerBots = peerManager?.getPeerBots() ?? [];
-    jsonResponse(res, 200, { bots: [...localBots, ...peerBots] });
+
+    // Include paused bots from DB
+    let pausedBots: any[] = [];
+    if (botConfigStore) {
+      try {
+        const allRows = await botConfigStore.listAll();
+        pausedBots = allRows
+          .filter((r) => !runningNames.has(r.name))
+          .map((r) => ({
+            name: r.name,
+            platform: r.platform,
+            engine: 'paused',
+            workingDirectory: (r.configJson as any).defaultWorkingDirectory || '',
+            description: (r.configJson as any).description || '',
+            paused: true,
+          }));
+      } catch {
+        /* ignore */
+      }
+    }
+
+    jsonResponse(res, 200, { bots: [...localBots, ...pausedBots, ...peerBots] });
     return true;
   }
 
@@ -56,8 +82,8 @@ export async function handleBotRoutes(
 
   // POST /api/bots — create a new bot
   if (method === 'POST' && url === '/api/bots') {
-    if (!botsConfigPath) {
-      jsonResponse(res, 400, { error: 'Bot CRUD requires BOTS_CONFIG to be set' });
+    if (!botConfigStore) {
+      jsonResponse(res, 400, { error: 'Bot CRUD requires database (BotConfigStore)' });
       return true;
     }
     const body = await parseJsonBody(req);
@@ -83,11 +109,19 @@ export async function handleBotRoutes(
         return true;
       }
       entry = {
-        name, ...(body.description ? { description: body.description } : {}),
+        name,
+        ...(body.description ? { description: body.description } : {}),
         ...(body.engine ? { engine: body.engine } : {}),
         ...(body.codex ? { codex: body.codex } : {}),
         ...(body.kimi ? { kimi: body.kimi } : {}),
-        feishuAppId: appId, feishuAppSecret: appSecret, defaultWorkingDirectory: workDir,
+        ...(body.systemPrompt ? { systemPrompt: body.systemPrompt } : {}),
+        ...(body.agentId ? { agentId: body.agentId } : {}),
+        ...(body.openaiCompat ? { openaiCompat: body.openaiCompat } : {}),
+        ...(body.apiKey ? { apiKey: body.apiKey } : {}),
+        ...(body.baseUrl ? { baseUrl: body.baseUrl } : {}),
+        feishuAppId: appId,
+        feishuAppSecret: appSecret,
+        defaultWorkingDirectory: workDir,
         ...(body.maxTurns ? { maxTurns: body.maxTurns } : {}),
         ...(body.maxBudgetUsd ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
         ...(body.model ? { model: body.model } : {}),
@@ -100,11 +134,18 @@ export async function handleBotRoutes(
         return true;
       }
       entry = {
-        name, ...(body.description ? { description: body.description } : {}),
+        name,
+        ...(body.description ? { description: body.description } : {}),
         ...(body.engine ? { engine: body.engine } : {}),
         ...(body.codex ? { codex: body.codex } : {}),
         ...(body.kimi ? { kimi: body.kimi } : {}),
-        telegramBotToken: token, defaultWorkingDirectory: workDir,
+        ...(body.systemPrompt ? { systemPrompt: body.systemPrompt } : {}),
+        ...(body.agentId ? { agentId: body.agentId } : {}),
+        ...(body.openaiCompat ? { openaiCompat: body.openaiCompat } : {}),
+        ...(body.apiKey ? { apiKey: body.apiKey } : {}),
+        ...(body.baseUrl ? { baseUrl: body.baseUrl } : {}),
+        telegramBotToken: token,
+        defaultWorkingDirectory: workDir,
         ...(body.maxTurns ? { maxTurns: body.maxTurns } : {}),
         ...(body.maxBudgetUsd ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
         ...(body.model ? { model: body.model } : {}),
@@ -116,10 +157,14 @@ export async function handleBotRoutes(
         return true;
       }
       entry = {
-        name, ...(body.description ? { description: body.description } : {}),
+        name,
+        ...(body.description ? { description: body.description } : {}),
         ...(body.engine ? { engine: body.engine } : {}),
         ...(body.codex ? { codex: body.codex } : {}),
         ...(body.kimi ? { kimi: body.kimi } : {}),
+        ...(body.systemPrompt ? { systemPrompt: body.systemPrompt } : {}),
+        ...(body.agentId ? { agentId: body.agentId } : {}),
+        ...(body.openaiCompat ? { openaiCompat: body.openaiCompat } : {}),
         defaultWorkingDirectory: workDir,
         ...(body.maxTurns ? { maxTurns: body.maxTurns } : {}),
         ...(body.maxBudgetUsd ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
@@ -131,29 +176,62 @@ export async function handleBotRoutes(
       const workDir = body.defaultWorkingDirectory as string;
       fs.mkdirSync(workDir, { recursive: true });
 
-      addBot(botsConfigPath, platform as 'feishu' | 'telegram' | 'web', entry as any);
-      logger.info({ name, platform }, 'Bot added to config');
+      await botConfigStore.create(platform, entry);
+      logger.info({ name, platform }, 'Bot added to DB');
 
       if (body.installSkills) {
-        installSkillsToWorkDir(workDir, logger, { platform: platform as 'feishu' | 'telegram' | 'web' });
+        installSkillsWithStaging(workDir, logger, { platform: platform as 'feishu' | 'telegram' | 'web' });
       }
 
       let activated = false;
       if (platform === 'web') {
         const config = webBotFromJson(entry as any);
         const sender = new NullSender();
-        const bridge = new MessageBridge(config, logger, sender,
-          memoryServerUrl || 'http://localhost:8100', memoryAuthToken);
+        const bridge = new MessageBridge(
+          config,
+          logger,
+          sender,
+          memoryServerUrl || 'http://localhost:8100',
+          memoryAuthToken,
+          ctx.chatSessionStore,
+        );
         registry.register({ name, platform: 'web', config, bridge, sender });
+        wireActivityEvents(name, ctx);
         activated = true;
         logger.info({ name }, 'Web bot activated immediately');
         ws.handle?.broadcastBotList();
+      } else if (platform === 'feishu') {
+        try {
+          const config = feishuBotFromJson(entry as any);
+          const handle = await startFeishuBot(
+            config,
+            logger,
+            memoryServerUrl || 'http://localhost:8100',
+            memoryAuthToken,
+          );
+          registry.register({
+            name,
+            platform: 'feishu',
+            config,
+            bridge: handle.bridge,
+            sender: handle.sender,
+            feishuClient: handle.feishuClient,
+            feishuWsClient: handle.wsClient,
+          });
+          wireActivityEvents(name, ctx);
+          activated = true;
+          logger.info({ name }, 'Feishu bot hot-registered');
+          ws.handle?.broadcastBotList();
+        } catch (activateErr: any) {
+          logger.warn(
+            { name, err: activateErr?.message },
+            'Feishu bot saved to DB but activation failed; will activate on next restart',
+          );
+        }
       }
 
-      jsonResponse(res, 201, {
-        name, platform, workingDirectory: workDir,
-        message: activated ? 'Bot added and activated.' : 'Bot added. PM2 will restart to activate it.',
-      });
+      const message = activated ? 'Bot added and activated.' : 'Bot added. Will activate on next server restart.';
+      jsonResponse(res, 201, { name, platform, workingDirectory: workDir, message });
     } catch (err: any) {
       if (err.message?.includes('already exists')) {
         jsonResponse(res, 409, { error: err.message });
@@ -164,23 +242,143 @@ export async function handleBotRoutes(
     return true;
   }
 
-  // PUT /api/bots/:name — update an existing bot
+  // POST /api/bots/:name/pause — pause a running bot (disconnect)
+  if (method === 'POST' && /^\/api\/bots\/[^/]+\/pause$/.test(url)) {
+    const name = decodeURIComponent(url.split('/')[3]);
+    const bot = registry.get(name);
+    if (!bot) {
+      jsonResponse(res, 404, { error: `Bot not found or not running: ${name}` });
+      return true;
+    }
+    registry.deregister(name);
+    if (botConfigStore) await botConfigStore.setActive(name, false);
+    logger.info({ name }, 'Bot paused');
+    ws.handle?.broadcastBotList();
+    jsonResponse(res, 200, { name, paused: true });
+    return true;
+  }
+
+  // POST /api/bots/:name/resume — resume a paused bot (reconnect)
+  if (method === 'POST' && /^\/api\/bots\/[^/]+\/resume$/.test(url)) {
+    const name = decodeURIComponent(url.split('/')[3]);
+    if (registry.get(name)) {
+      jsonResponse(res, 400, { error: `Bot already running: ${name}` });
+      return true;
+    }
+    if (!botConfigStore) {
+      jsonResponse(res, 400, { error: 'Resume requires database' });
+      return true;
+    }
+    const row = await botConfigStore.findByName(name);
+    if (!row) {
+      jsonResponse(res, 404, { error: `Bot not found: ${name}` });
+      return true;
+    }
+
+    await botConfigStore.setActive(name, true);
+    const secrets = await botConfigStore.getAllSecrets(name);
+    const merged = { ...row.configJson };
+    if (secrets.feishu_app_secret) (merged as any).feishuAppSecret = secrets.feishu_app_secret;
+    if (secrets.openai_api_key) (merged as any).openaiApiKey = secrets.openai_api_key;
+    if (secrets.api_key) (merged as any).apiKey = secrets.api_key;
+    if (secrets.telegram_bot_token) (merged as any).telegramBotToken = secrets.telegram_bot_token;
+
+    try {
+      if (row.platform === 'feishu') {
+        const config = feishuBotFromJson(merged as any);
+        const handle = await startFeishuBot(
+          config,
+          logger,
+          memoryServerUrl || 'http://localhost:8100',
+          memoryAuthToken,
+        );
+        registry.register({
+          name,
+          platform: 'feishu',
+          config,
+          bridge: handle.bridge,
+          sender: handle.sender,
+          feishuClient: handle.feishuClient,
+          feishuWsClient: handle.wsClient,
+        });
+        wireActivityEvents(name, ctx);
+      } else if (row.platform === 'web') {
+        const config = webBotFromJson(merged as any);
+        const sender = new NullSender();
+        const bridge = new MessageBridge(
+          config,
+          logger,
+          sender,
+          memoryServerUrl || 'http://localhost:8100',
+          memoryAuthToken,
+          ctx.chatSessionStore,
+        );
+        registry.register({ name, platform: 'web', config, bridge, sender });
+        wireActivityEvents(name, ctx);
+      } else {
+        jsonResponse(res, 400, { error: `Resume not supported for platform: ${row.platform}` });
+        return true;
+      }
+      logger.info({ name }, 'Bot resumed');
+      ws.handle?.broadcastBotList();
+      jsonResponse(res, 200, { name, resumed: true });
+    } catch (err: any) {
+      logger.error({ name, err: err?.message }, 'Bot resume failed');
+      jsonResponse(res, 500, { error: `Resume failed: ${err?.message}` });
+    }
+    return true;
+  }
+
+  // PUT /api/bots/:name — update an existing bot (DB + hot reload)
   if (method === 'PUT' && url.startsWith('/api/bots/')) {
     const name = decodeURIComponent(url.slice('/api/bots/'.length));
     if (!name) {
       jsonResponse(res, 400, { error: 'Missing bot name' });
       return true;
     }
-    if (!botsConfigPath) {
-      jsonResponse(res, 400, { error: 'Bot CRUD requires BOTS_CONFIG to be set' });
-      return true;
-    }
+
     const body = await parseJsonBody(req);
-    const updated = updateBot(botsConfigPath, name, body);
-    if (!updated) {
-      jsonResponse(res, 404, { error: `Bot not found: ${name}` });
-      return true;
+
+    // Save to DB if available
+    if (botConfigStore) {
+      const updated = await botConfigStore.update(name, body);
+      if (!updated) {
+        jsonResponse(res, 404, { error: `Bot not found: ${name}` });
+        return true;
+      }
     }
+
+    // Hot reload: rebuild config from DB row and apply to running bot
+    if (botConfigStore) {
+      try {
+        const row = await botConfigStore.findByName(name);
+        if (row) {
+          const secrets = await botConfigStore.getAllSecrets(name);
+          const merged = { ...row.configJson };
+          if (secrets.feishu_app_secret) (merged as any).feishuAppSecret = secrets.feishu_app_secret;
+          if (secrets.openai_api_key) (merged as any).openaiApiKey = secrets.openai_api_key;
+          if (secrets.api_key) (merged as any).apiKey = secrets.api_key;
+          if (secrets.telegram_bot_token) (merged as any).telegramBotToken = secrets.telegram_bot_token;
+          if (secrets.wechat_bot_token) (merged as any).wechatBotToken = secrets.wechat_bot_token;
+
+          let newConfig: import('../../config.js').BotConfigBase | undefined;
+          if (row.platform === 'feishu') {
+            newConfig = feishuBotFromJson(merged as any);
+          } else if (row.platform === 'telegram') {
+            newConfig = telegramBotFromJson(merged as any);
+          } else if (row.platform === 'web') {
+            newConfig = webBotFromJson(merged as any);
+          }
+          if (newConfig) {
+            registry.updateConfig(name, newConfig);
+            logger.info({ name }, 'Bot config hot-reloaded from DB');
+          }
+        }
+      } catch (reloadErr: any) {
+        logger.warn({ name, err: reloadErr?.message }, 'Hot reload failed; config saved to DB');
+      }
+    }
+
     logger.info({ name, updates: Object.keys(body) }, 'Bot config updated');
     ws.handle?.broadcastBotList();
     jsonResponse(res, 200, { name, updated: true });
@@ -200,10 +398,30 @@ export async function handleBotRoutes(
       ? { running: true, workingDirectory: running.config.claude.defaultWorkingDirectory }
       : { running: false };
 
-    if (botsConfigPath) {
-      const found = getBotEntry(botsConfigPath, name);
-      if (found) {
-        jsonResponse(res, 200, { name, platform: found.platform, ...runningInfo, config: found.entry });
+    if (botConfigStore) {
+      const row = await botConfigStore.findByName(name);
+      if (row) {
+        // Strip sensitive fields before sending to client
+        const safeConfig = { ...row.configJson };
+        delete (safeConfig as any).feishuAppSecret;
+        delete (safeConfig as any).openaiApiKey;
+        delete (safeConfig as any).apiKey;
+        delete (safeConfig as any).telegramBotToken;
+        delete (safeConfig as any).wechatBotToken;
+
+        // Add credential hints for edit form (decrypted, user can verify)
+        const secrets = await botConfigStore.getAllSecrets(name);
+        if (secrets.feishu_app_secret) {
+          (safeConfig as any).feishuAppSecret = secrets.feishu_app_secret;
+        }
+        if (secrets.api_key) {
+          (safeConfig as any).apiKey = secrets.api_key;
+        }
+        if (secrets.openai_api_key) {
+          (safeConfig as any).openaiApiKey = secrets.openai_api_key;
+        }
+
+        jsonResponse(res, 200, { name, platform: row.platform, ...runningInfo, config: safeConfig });
         return true;
       }
     }
@@ -224,27 +442,25 @@ export async function handleBotRoutes(
       jsonResponse(res, 400, { error: 'Missing bot name' });
       return true;
     }
-    if (!botsConfigPath) {
-      jsonResponse(res, 400, { error: 'Bot CRUD requires BOTS_CONFIG to be set' });
-      return true;
-    }
 
     try {
-      const removed = removeBot(botsConfigPath, name);
+      let removed = false;
+      if (botConfigStore) {
+        removed = await botConfigStore.delete(name);
+      }
+      if (!removed && registry.get(name)) {
+        removed = true;
+      }
       if (!removed) {
         jsonResponse(res, 404, { error: `Bot not found: ${name}` });
         return true;
       }
       registry.deregister(name);
-      logger.info({ name }, 'Bot removed from config');
+      logger.info({ name }, 'Bot removed');
       ws.handle?.broadcastBotList();
       jsonResponse(res, 200, { name, removed: true, message: 'Bot removed.' });
     } catch (err: any) {
-      if (err.message?.includes('Cannot remove the last bot')) {
-        jsonResponse(res, 400, { error: err.message });
-      } else {
-        throw err;
-      }
+      throw err;
     }
     return true;
   }
@@ -260,5 +476,17 @@ function defaultModelForConfig(config: import('../../config.js').BotConfigBase):
       return config.kimi?.model;
     case 'codex':
       return config.codex?.model || config.codex?.displayModel;
+    case 'openai-compat':
+      return config.openaiCompat?.model;
   }
+}
+
+function wireActivityEvents(botName: string, ctx: RouteContext): void {
+  const bot = ctx.registry.get(botName);
+  if (!bot || !ctx.activityStore) return;
+  bot.bridge.onActivityEvent = (event) => {
+    ctx.activityStore!.record(event).then((recorded) => {
+      ctx.ws.handle?.broadcastAll({ type: 'activity_event', event: recorded });
+    });
+  };
 }

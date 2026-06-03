@@ -12,8 +12,8 @@ interface AgentTooltipProps {
 }
 
 function formatCost(usd: number): string {
-  if (usd < 0.01) return `$${usd.toFixed(4)}`;
-  return `$${usd.toFixed(2)}`;
+  if (usd < 0.01) return `¥${usd.toFixed(4)}`;
+  return `¥${usd.toFixed(2)}`;
 }
 
 function formatDuration(ms: number): string {

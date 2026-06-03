@@ -12,8 +12,8 @@ describe('buildCard', () => {
     };
     const json = JSON.parse(buildCard(state));
     expect(json.header.template).toBe('blue');
-    expect(json.header.title.content).toContain('Thinking');
-    expect(json.elements.some((e: any) => e.tag === 'markdown' && /thinking/i.test(e.content))).toBe(true);
+    expect(json.header.title.content).toContain('思考');
+    expect(json.elements.some((e: any) => e.tag === 'markdown' && /分析|思考/.test(e.content))).toBe(true);
   });
 
   it('builds running card with tool calls', () => {
@@ -72,15 +72,17 @@ describe('buildCard', () => {
       toolCalls: [],
       pendingQuestion: {
         toolUseId: 'q1',
-        questions: [{
-          question: 'Which env?',
-          header: 'Deploy',
-          options: [
-            { label: 'Production', description: 'Live environment' },
-            { label: 'Staging', description: 'Test environment' },
-          ],
-          multiSelect: false,
-        }],
+        questions: [
+          {
+            question: 'Which env?',
+            header: 'Deploy',
+            options: [
+              { label: 'Production', description: 'Live environment' },
+              { label: 'Staging', description: 'Test environment' },
+            ],
+            multiSelect: false,
+          },
+        ],
       },
     };
     const json = JSON.parse(buildCard(state));
@@ -114,7 +116,7 @@ describe('buildCard', () => {
       toolCalls: [],
     };
     const json = JSON.parse(buildCard(state));
-    const md = json.elements.find((e: any) => e.tag === 'markdown' && e.content.includes('truncated'));
+    const md = json.elements.find((e: any) => e.tag === 'markdown' && e.content.includes('截断'));
     expect(md).toBeDefined();
   });
 
@@ -125,19 +127,24 @@ describe('buildCard', () => {
       responseText: 'watching…',
       toolCalls: [],
       backgroundEvents: [
-        { taskId: 'bheol4172', description: 'Watching CI for PR #215', status: 'running', lastEvent: 'check (20) running' },
+        {
+          taskId: 'bheol4172',
+          description: 'Watching CI for PR #215',
+          status: 'running',
+          lastEvent: 'check (20) running',
+        },
         { taskId: 'bmkr16j6f', description: 'Watching deploy', status: 'completed', lastEvent: 'CI done: success' },
       ],
     };
     const json = JSON.parse(buildCard(state));
-    const bg = json.elements.find((e: any) => e.tag === 'markdown' && /Background/.test(e.content));
+    const bg = json.elements.find((e: any) => e.tag === 'markdown' && e.content.includes('Watching CI'));
     expect(bg).toBeDefined();
     expect(bg.content).toContain('⏳');
     expect(bg.content).toContain('✅');
     expect(bg.content).toContain('Watching CI for PR #215');
     expect(bg.content).toContain('check (20) running');
     expect(bg.content).toContain('CI done: success');
-    expect(bg.content).toContain('bheol4'); // short task id
+    // task ID not shown in card output — only description + lastEvent
   });
 
   it('omits background section when no events', () => {
@@ -148,7 +155,7 @@ describe('buildCard', () => {
       toolCalls: [],
     };
     const json = JSON.parse(buildCard(state));
-    const bg = json.elements.find((e: any) => e.tag === 'markdown' && /Background/.test(e.content));
+    const bg = json.elements.find((e: any) => e.tag === 'markdown' && e.content.includes('Watching CI'));
     expect(bg).toBeUndefined();
   });
 });
@@ -156,7 +163,7 @@ describe('buildCard', () => {
 describe('buildHelpCard', () => {
   it('returns valid card JSON', () => {
     const json = JSON.parse(buildHelpCard());
-    expect(json.header.title.content).toContain('Help');
+    expect(json.header.title.content).toContain('帮助');
     expect(json.elements.length).toBeGreaterThan(0);
   });
 });
@@ -168,14 +175,14 @@ describe('buildStatusCard', () => {
     expect(md).toContain('user123');
     expect(md).toContain('/home/user/project');
     expect(md).toContain('sess-abc');
-    expect(md).toContain('Yes');
+    expect(md).toContain('是');
   });
 
   it('shows no session', () => {
     const json = JSON.parse(buildStatusCard('user', '/home', undefined, false));
     const md = json.elements[0].content;
-    expect(md).toContain('None');
-    expect(md).toContain('No');
+    expect(md).toContain('无');
+    expect(md).toContain('否');
   });
 });
 

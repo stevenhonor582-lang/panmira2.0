@@ -1,21 +1,20 @@
 import { useMemo } from 'react';
 import type { ActivityEvent } from '../../types';
+import { formatDuration } from '../../utils/helpers';
 import s from './ActivityTimeline.module.css';
 
-function formatTime(ts: number): string {
-  const d = new Date(ts);
+function formatTime(ts: number | string): string {
+  const n = typeof ts === 'string' ? Number(ts) : ts;
+  if (!n || isNaN(n)) return '—';
+  const d = new Date(n);
+  if (isNaN(d.getTime())) return '—';
   const now = new Date();
   const isToday = d.toDateString() === now.toDateString();
-  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  return isToday ? time : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${time}`;
-}
-
-function formatDuration(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  const sec = s % 60;
-  return `${m}m ${sec}s`;
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const time = `${hh}:${mm}`;
+  if (isToday) return `今天 ${time}`;
+  return `${d.getMonth() + 1}月${d.getDate()}日 ${time}`;
 }
 
 function EventIcon({ type }: { type: ActivityEvent['type'] }) {
@@ -55,7 +54,7 @@ export function ActivityTimeline({ events, botFilter }: Props) {
   if (filtered.length === 0) {
     return (
       <div className={s.empty}>
-        <span className={s.emptyText}>No activity yet</span>
+        <span className={s.emptyText}>暂无活动记录</span>
       </div>
     );
   }

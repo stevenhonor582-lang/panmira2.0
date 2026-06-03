@@ -1,9 +1,11 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useStore } from '../store';
 import { useWebSocket } from '../hooks/useWebSocket';
 import type { BotInfo, ChatGroup, ChatSession } from '../types';
 import { GroupCreateDialog } from './chat';
+import { hash, relTime, GRADIENT_PAIRS } from '../utils/helpers';
 import s from './Layout.module.css';
 
 /* ═══════════════════════════════════════════════════════════════
@@ -73,6 +75,13 @@ function IconTeam() {
     </svg>
   );
 }
+function IconFolder() {
+  return (
+    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
+    </svg>
+  );
+}
 function IconPanelLeft() {
   return (
     <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -89,29 +98,20 @@ function IconSearch() {
     </svg>
   );
 }
+function IconDashboard() {
+  return (
+    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+    </svg>
+  );
+}
 
 /* ═══════════════════════════════════════════════════════════════
    Gradient Ring Avatar — SVG with gradient stroke ring + initial
    ═══════════════════════════════════════════════════════════════ */
-
-const GRADIENT_PAIRS = [
-  ['#00d68f', '#00b876'],
-  ['#00c9a7', '#00a88a'],
-  ['#00b4d8', '#0096c7'],
-  ['#22c55e', '#16a34a'],
-  ['#14b8a6', '#0d9488'],
-  ['#00d68f', '#059669'],
-  ['#10b981', '#00d68f'],
-  ['#06b6d4', '#0891b2'],
-  ['#00c9a7', '#14b8a6'],
-  ['#22c55e', '#00d68f'],
-];
-
-function hash(str: string): number {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
-  return Math.abs(h);
-}
 
 function GradientAvatar({ name, size = 44 }: { name: string; size?: number }) {
   const h = hash(name);
@@ -150,20 +150,8 @@ function GradientAvatar({ name, size = 44 }: { name: string; size?: number }) {
    Helpers
    ═══════════════════════════════════════════════════════════════ */
 
-function relTime(ts: number): string {
-  const d = Date.now() - ts;
-  const m = Math.floor(d / 60_000);
-  if (m < 1) return 'now';
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  const days = Math.floor(h / 24);
-  if (days < 7) return `${days}d`;
-  return new Date(ts).toLocaleDateString();
-}
-
-function sessionPreview(session: ChatSession): { text: string; status?: string } {
-  if (session.messages.length === 0) return { text: 'Start a conversation' };
+function sessionPreview(session: ChatSession, t: (key: string) => string): { text: string; status?: string } {
+  if (session.messages.length === 0) return { text: t('nav.startConversation') };
   const last = session.messages[session.messages.length - 1];
   if (last.type === 'user') return { text: (last.text || '').slice(0, 60) };
   if (last.state) {
@@ -200,6 +188,7 @@ function BotCard({
   onDeleteSession: (id: string) => void;
   onRenameSession: (id: string, title: string) => void;
 }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -207,7 +196,7 @@ function BotCard({
   const isActive = activeBotName === bot.name && activeView === 'chat';
   const sorted = [...botSessions].sort((a, b) => b.updatedAt - a.updatedAt);
   const latest = sorted[0] || null;
-  const preview = latest ? sessionPreview(latest) : null;
+  const preview = latest ? sessionPreview(latest, t) : null;
   const hasMultiple = sorted.length > 1;
 
   const startRename = useCallback((session: ChatSession) => {
@@ -248,20 +237,20 @@ function BotCard({
             {preview?.status === 'thinking' && (
               <span className={s.previewThinking}>
                 <span className={s.dot} /><span className={s.dot} /><span className={s.dot} />
-                Thinking...
+                {t('bot.thinking')}
               </span>
             )}
             {preview?.status === 'running' && (
               <span className={s.previewRunning}>
                 <span className={s.miniSpinner} />
-                Running...
+                {t('bot.running')}
               </span>
             )}
             {preview?.status === 'error' && (
               <span className={s.previewError}>{preview.text}</span>
             )}
             {!preview?.status && (
-              <span>{preview?.text || bot.description || 'Ready'}</span>
+              <span>{preview?.text || bot.description || t('bot.ready')}</span>
             )}
           </div>
         </div>
@@ -269,7 +258,7 @@ function BotCard({
         <button
           className={s.addBtn}
           onClick={(e) => { e.stopPropagation(); onNewSession(bot.name); }}
-          title="New chat"
+          title={t('nav.newConversation')}
         >
           <IconPlus />
         </button>
@@ -281,7 +270,7 @@ function BotCard({
           className={s.expandToggle}
           onClick={() => setExpanded(!expanded)}
         >
-          <span className={s.expandLabel}>{sorted.length} chats</span>
+          <span className={s.expandLabel}>{sorted.length} {t('nav.conversationCount')}</span>
           <svg
             width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor"
             strokeWidth="2" strokeLinecap="round" style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 200ms' }}
@@ -357,6 +346,7 @@ function GroupCard({
   onNewSession: (group: ChatGroup) => void;
   onDelete: (groupId: string) => void;
 }) {
+  const { t } = useTranslation();
   const sorted = [...groupSessions].sort((a, b) => b.updatedAt - a.updatedAt);
   const latest = sorted[0] || null;
   const isActive = latest && activeSessionId === latest.id && activeView === 'chat';
@@ -385,7 +375,7 @@ function GroupCard({
         <button
           className={s.addBtn}
           onClick={(e) => { e.stopPropagation(); onDelete(group.id); }}
-          title="Delete group"
+          title={t('nav.deleteGroup')}
           style={{ opacity: 1 }}
         >
           <IconX size={12} />
@@ -408,12 +398,14 @@ function routeMatchesView(pathname: string, view: string): boolean {
   if (view === 'memory') return p.startsWith('/memory');
   if (view === 'settings') return p.startsWith('/settings');
   if (view === 'team') return p.startsWith('/team');
+  if (view === 'dashboard') return p.startsWith('/dashboard');
   return true;
 }
 
 interface LayoutProps { children: ReactNode; }
 
 export function Layout({ children }: LayoutProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const activeView = useStore((s) => s.activeView);
@@ -455,6 +447,7 @@ export function Layout({ children }: LayoutProps) {
   const sessionsByBot = useMemo(() => {
     const map = new Map<string, ChatSession[]>();
     for (const session of sessions.values()) {
+      if (session.groupId) continue;
       const list = map.get(session.botName) || [];
       list.push(session);
       map.set(session.botName, list);
@@ -513,7 +506,7 @@ export function Layout({ children }: LayoutProps) {
 
   const handleMobileBack = useCallback(() => { setMobileShowChat(false); }, []);
 
-  const handleNav = useCallback((view: 'chat' | 'memory' | 'settings' | 'team', path: string) => {
+  const handleNav = useCallback((view: 'chat' | 'memory' | 'settings' | 'team' | 'dashboard', path: string) => {
     setView(view);
     navigate(path);
     setMobileShowChat(false);
@@ -561,9 +554,10 @@ export function Layout({ children }: LayoutProps) {
         <input
           className={s.searchInput}
           type="text"
-          placeholder="Search chats..."
+          placeholder={t('nav.searchPlaceholder')}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
+          autoComplete="off"
           spellCheck={false}
         />
         {searchQuery && (
@@ -575,7 +569,7 @@ export function Layout({ children }: LayoutProps) {
 
       {filteredBots.length === 0 ? (
         <div className={s.emptyAgents}>
-          {searchQuery ? 'No matches' : connected ? 'No agents configured' : 'Connecting...'}
+          {searchQuery ? t('nav.noMatch') : connected ? t('nav.noAgents') : t('nav.connecting')}
         </div>
       ) : (
         filteredBots.map((bot) => (
@@ -598,7 +592,7 @@ export function Layout({ children }: LayoutProps) {
       {groups.length > 0 && (
         <>
           <div className={s.agentsHeader} style={{ padding: '14px 10px 6px' }}>
-            <span className={s.agentsLabel}>Groups</span>
+            <span className={s.agentsLabel}>{t('nav.groups')}</span>
           </div>
           {groups.map((group) => (
             <GroupCard
@@ -619,7 +613,7 @@ export function Layout({ children }: LayoutProps) {
       {bots.length >= 2 && (
         <button className={s.expandToggle} style={{ padding: '10px 14px' }} onClick={() => setShowGroupDialog(true)}>
           <IconPlus />
-          <span>New Group</span>
+          <span>{t('nav.newGroup')}</span>
         </button>
       )}
     </>
@@ -656,13 +650,13 @@ export function Layout({ children }: LayoutProps) {
             <div className={s.mobileListBrand}>
               <div className={s.logoMark}>M</div>
               <span className={s.mobileListTitle}>
-                {activeView === 'chat' ? 'Chats' : activeView === 'memory' ? 'Memory' : activeView === 'team' ? 'Team' : 'Settings'}
+                {activeView === 'chat' ? t('nav.chat') : activeView === 'memory' ? t('nav.memory') : activeView === 'team' ? t('nav.team') : activeView === 'dashboard' ? t('nav.dashboard') : t('nav.settings')}
               </span>
             </div>
             {activeView === 'chat' && (
               <div className={s.connIndicator}>
                 <span className={`${s.connDot} ${connected ? s.connOn : s.connOff}`} />
-                <span className={s.connText}>{connected ? 'Live' : 'Offline'}</span>
+                <span className={s.connText}>{connected ? t('nav.online') : t('nav.offline')}</span>
               </div>
             )}
           </div>
@@ -686,28 +680,35 @@ export function Layout({ children }: LayoutProps) {
               onClick={() => handleNav('chat', '/')}
             >
               <IconChat />
-              <span>Chats</span>
+              <span>{t('nav.chat')}</span>
             </button>
             <button
               className={`${s.mobileTab} ${activeView === 'team' ? s.mobileTabActive : ''}`}
               onClick={() => handleNav('team', '/team')}
             >
               <IconTeam />
-              <span>Team</span>
+              <span>{t('nav.team')}</span>
             </button>
             <button
               className={`${s.mobileTab} ${activeView === 'memory' ? s.mobileTabActive : ''}`}
               onClick={() => handleNav('memory', '/memory')}
             >
               <IconMemory />
-              <span>Memory</span>
+              <span>{t('nav.memory')}</span>
+            </button>
+            <button
+              className={`${s.mobileTab} ${activeView === 'dashboard' ? s.mobileTabActive : ''}`}
+              onClick={() => handleNav('dashboard', '/dashboard')}
+            >
+              <IconDashboard />
+              <span>{t('nav.dashboard')}</span>
             </button>
             <button
               className={`${s.mobileTab} ${activeView === 'settings' ? s.mobileTabActive : ''}`}
               onClick={() => handleNav('settings', '/settings')}
             >
               <IconSettings />
-              <span>Settings</span>
+              <span>{t('nav.settings')}</span>
             </button>
           </nav>
         )}
@@ -739,7 +740,7 @@ export function Layout({ children }: LayoutProps) {
         <div className={s.brand}>
           <div className={s.logo}>
             <div className={s.logoMark}>M</div>
-            <span className={s.logoType}>MetaBot</span>
+            <span className={s.logoType}>PanMira</span>
           </div>
           <button className={s.panelBtn} onClick={toggleSidebar}>
             <IconPanelLeft />
@@ -748,10 +749,10 @@ export function Layout({ children }: LayoutProps) {
 
         {/* Agents header */}
         <div className={s.agentsHeader}>
-          <span className={s.agentsLabel}>Agents</span>
+          <span className={s.agentsLabel}>{t('nav.agents')}</span>
           <div className={s.connIndicator}>
             <span className={`${s.connDot} ${connected ? s.connOn : s.connOff}`} />
-            <span className={s.connText}>{connected ? 'Live' : 'Offline'}</span>
+            <span className={s.connText}>{connected ? t('nav.online') : t('nav.offline')}</span>
           </div>
         </div>
 
@@ -765,21 +766,28 @@ export function Layout({ children }: LayoutProps) {
             onClick={() => handleNav('team', '/team')}
           >
             <IconTeam />
-            <span>Team</span>
+            <span>{t('nav.team')}</span>
           </button>
           <button
             className={`${s.navBtn} ${activeView === 'memory' ? s.navActive : ''}`}
             onClick={() => handleNav('memory', '/memory')}
           >
             <IconMemory />
-            <span>Memory</span>
+            <span>{t('nav.memory')}</span>
           </button>
           <button
             className={`${s.navBtn} ${activeView === 'settings' ? s.navActive : ''}`}
             onClick={() => handleNav('settings', '/settings')}
           >
             <IconSettings />
-            <span>Settings</span>
+            <span>{t('nav.settings')}</span>
+          </button>
+          <button
+            className={`${s.navBtn} ${activeView === 'dashboard' ? s.navActive : ''}`}
+            onClick={() => handleNav('dashboard', '/dashboard')}
+          >
+            <IconDashboard />
+            <span>{t('nav.dashboard')}</span>
           </button>
         </nav>
       </aside>

@@ -6,6 +6,8 @@ import { MessageSender } from './message-sender.js';
 // Re-export from shared types so existing imports continue to work
 export type { IncomingMessage } from '../types.js';
 import type { IncomingMessage } from '../types.js';
+import type { GroupCoordinator } from '../api/group-coordinator.js';
+import type { DiscoveredGroupStore } from '../db/discovered-group-store.js';
 
 export type MessageHandler = (msg: IncomingMessage) => void;
 
@@ -45,7 +47,7 @@ function getCachedMedia(chatId: string, userId: string): CachedMedia[] {
   const items = pendingMediaCache.get(key);
   if (!items) return [];
   const now = Date.now();
-  const valid = items.filter(m => now - m.ts < MEDIA_CACHE_TTL_MS);
+  const valid = items.filter((m) => now - m.ts < MEDIA_CACHE_TTL_MS);
   if (valid.length === 0) {
     pendingMediaCache.delete(key);
     return [];
@@ -78,15 +80,21 @@ export function createEventDispatcher(
   botOpenId?: string,
   messageSender?: MessageSender,
   onCardAction?: CardActionHandler,
+  coordinator?: GroupCoordinator,
+  coordinatorBotName?: string,
+  discoveredGroupsStore?: DiscoveredGroupStore,
+  feishuServiceClient?: any,
 ): lark.EventDispatcher {
   const dispatcher = new lark.EventDispatcher({});
 
   // Register the card action trigger handler (fired when a user clicks a button
   // on an interactive card). The lark SDK types omit this event so we cast.
   if (onCardAction) {
-    (dispatcher as unknown as {
-      register: (handlers: Record<string, (data: unknown) => unknown>) => void;
-    }).register({
+    (
+      dispatcher as unknown as {
+        register: (handlers: Record<string, (data: unknown) => unknown>) => void;
+      }
+    ).register({
       'card.action.trigger': (data: unknown) => {
         try {
           const d = data as {
@@ -142,6 +150,27 @@ export function createEventDispatcher(
         const chatType = message.chat_type;
         const messageId = message.message_id;
 
+        // Auto-discover groups for the settings UI
+        if (chatType === 'group' && discoveredGroupsStore) {
+          discoveredGroupsStore.upsert(chatId, coordinatorBotName || config.name).catch(() => {});
+          // Eagerly resolve group name from Feishu API
+          if (feishuServiceClient) {
+            (async () => {
+              try {
+                const groups = await discoveredGroupsStore.list();
+                const entry = groups.find((g) => g.chatId === chatId);
+                if (entry && !entry.chatName) {
+                  const resp = await feishuServiceClient.im.v1.chat.get({ path: { chat_id: chatId } });
+                  const name = resp?.data?.name;
+                  if (name) await discoveredGroupsStore.updateName(chatId, name);
+                }
+              } catch {
+                /* ignore */
+              }
+            })();
+          }
+        }
+
         // In group chats, only respond when the bot is @mentioned
         // Exceptions: 2-member groups are treated like DMs; groupNoMention mode skips @mention check
         const mentions = message.mentions;
@@ -150,10 +179,16 @@ export function createEventDispatcher(
             ? mentions?.some((m: any) => m.id?.open_id === botOpenId)
             : mentions && mentions.length > 0;
           if (!botMentioned) {
+            const hasAnyMention = mentions && mentions.length > 0;
             // groupNoMention mode: respond to all messages without @mention
+            // But if someone else is @mentioned, let that bot handle it instead
             if (config.groupNoMention) {
+              if (hasAnyMention) {
+                logger.debug({ chatId }, 'Group: someone else is @mentioned, skipping');
+                return;
+              }
               logger.debug({ chatId }, 'Group no-mention mode enabled, processing without @mention');
-            } else if (messageSender && await isPrivateLikeGroup(chatId, messageSender)) {
+            } else if (messageSender && (await isPrivateLikeGroup(chatId, messageSender))) {
               logger.debug({ chatId }, 'Private-like group (2 members), processing without @mention');
             } else if (msgType === 'image' || msgType === 'file') {
               // Cache media messages for later retrieval when user @mentions bot
@@ -221,7 +256,10 @@ export function createEventDispatcher(
               imageKey = postImages[0];
               postExtraImages = postImages.slice(1);
             }
-            logger.debug({ extractedText: text.slice(0, 200), imageKey, postImageCount: postImages.length }, 'Extracted post content');
+            logger.debug(
+              { extractedText: text.slice(0, 200), imageKey, postImageCount: postImages.length },
+              'Extracted post content',
+            );
           } catch {
             logger.warn({ content: message.content }, 'Failed to parse post message content');
             return;
@@ -261,7 +299,7 @@ export function createEventDispatcher(
         // Collect extra media: post images (2nd+) and cached group media
         let extraMedia: IncomingMessage['extraMedia'];
         if (postExtraImages.length > 0) {
-          extraMedia = postExtraImages.map(key => ({
+          extraMedia = postExtraImages.map((key) => ({
             messageId,
             imageKey: key,
           }));
@@ -270,7 +308,7 @@ export function createEventDispatcher(
         if (chatType === 'group') {
           const cached = getCachedMedia(chatId, userId);
           if (cached.length > 0) {
-            const cachedMedia = cached.map(m => ({
+            const cachedMedia = cached.map((m) => ({
               messageId: m.messageId,
               imageKey: m.imageKey,
               fileKey: m.fileKey,
@@ -282,6 +320,46 @@ export function createEventDispatcher(
           }
         }
 
+        // Coordinator pre-check: /coordinator command works on ANY bot in group
+        if (coordinator && chatType === 'group' && coordinatorBotName) {
+          // /coordinator command — handle on any bot, no coordinator status needed
+          if (coordinator.isCoordinatorCommand(text)) {
+            logger.info({ chatId, coordinatorBotName }, 'Coordinator command pre-check: handling /coordinator');
+            await coordinator.handlePreCheckCoordinatorCommand(
+              { messageId, chatId, chatType, userId, text, imageKey, fileKey, fileName, extraMedia },
+              coordinatorBotName,
+            );
+            return;
+          }
+          // Normal coordinator interception
+          const isCoord = coordinator.isCoordinator(coordinatorBotName, chatId);
+          if (isCoord) {
+            logger.info({ chatId, coordinatorBotName }, 'Coordinator intercept: delegating group message');
+            coordinator.handleGroupMessage({
+              messageId,
+              chatId,
+              chatType,
+              userId,
+              text,
+              imageKey,
+              fileKey,
+              fileName,
+              extraMedia,
+            });
+            return;
+          }
+          // Non-coordinator bot in a group with a coordinator
+          // If this bot was @mentioned directly, let it handle the message (user explicitly targeted it)
+          // Otherwise skip — let the coordinator dispatch when needed
+          if (coordinator.hasGroupCoordinator(chatId)) {
+            const directlyMentioned = botOpenId ? mentions?.some((m: any) => m.id?.open_id === botOpenId) : false;
+            if (!directlyMentioned) {
+              logger.info({ chatId, coordinatorBotName }, 'Coordinator group: non-coordinator bot skipping message');
+              return;
+            }
+            logger.info({ chatId, coordinatorBotName }, 'Coordinator group: @mentioned bot handling directly');
+          }
+        }
         onMessage({ messageId, chatId, chatType, userId, text, imageKey, fileKey, fileName, extraMedia });
       } catch (err) {
         logger.error({ err }, 'Error handling message event');
@@ -294,7 +372,9 @@ export function createEventDispatcher(
 
 /** Parse image/file message content, returning media fields or undefined on failure. */
 function parseMediaMessage(
-  message: any, msgType: string, logger: Logger,
+  message: any,
+  msgType: string,
+  logger: Logger,
 ): { imageKey?: string; fileKey?: string; fileName?: string } | undefined {
   try {
     const content = JSON.parse(message.content);
@@ -305,7 +385,7 @@ function parseMediaMessage(
     if (msgType === 'file') {
       const fileKey = content.file_key;
       const fileName = content.file_name;
-      return (fileKey && fileName) ? { fileKey, fileName } : undefined;
+      return fileKey && fileName ? { fileKey, fileName } : undefined;
     }
   } catch {
     logger.warn({ msgType }, 'Failed to parse media message for caching');
@@ -406,4 +486,3 @@ function extractTextFromPost(content: Record<string, unknown>): string {
 
   return '';
 }
-

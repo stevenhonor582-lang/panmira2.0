@@ -11,6 +11,7 @@ interface MessageListProps {
   onAnswer: (toolUseId: string, answer: string) => void;
   onPreview: (f: FileAttachment) => void;
   autoScrollRef: React.MutableRefObject<boolean>;
+  isRunning?: boolean;
 }
 
 export function MessageList({ messages, onAnswer, onPreview, autoScrollRef }: MessageListProps) {

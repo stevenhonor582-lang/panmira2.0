@@ -42,10 +42,29 @@ export interface CardState {
 export interface BotInfo {
   name: string;
   description?: string;
+  specialties?: string[];
+  icon?: string;
   platform: string;
-  engine?: 'claude' | 'kimi' | 'codex';
+  engine?: 'claude' | 'kimi' | 'codex' | 'openai-compat';
   model?: string;
   workingDirectory: string;
+  ttsVoice?: string;
+  systemPrompt?: string;
+  templateId?: string;
+  maxConcurrentTasks?: number;
+  budgetLimitDaily?: number;
+
+  // Edit form support — masked/non-sensitive fields from backend
+  maxTurns?: number;
+  feishuAppIdMasked?: string;
+  hasFeishuSecret?: boolean;
+  openaiCompat?: {
+    baseUrl?: string;
+    hasApiKey?: boolean;
+    model?: string;
+  };
+  apiKeyMasked?: string;
+  claudeBaseUrl?: string;
 }
 
 export interface FileAttachment {
@@ -139,7 +158,7 @@ export interface ActivityEvent {
   costUsd?: number;
   durationMs?: number;
   errorMessage?: string;
-  timestamp: number;
+  timestamp: number | string;
 }
 
 /* --- WebSocket messages --- */
@@ -184,5 +203,28 @@ export type WSOutgoingMessage =
   | { type: 'stop_asr' }
   | { type: 'ping' };
 
-export type ActiveView = 'chat' | 'memory' | 'voice' | 'settings' | 'team';
+export interface AllowedUser {
+  userId: string;
+  name?: string;
+  role: 'viewer' | 'operator' | 'editor' | 'admin';
+}
+
+export interface PermissionConfig {
+  accessControl?: {
+    mode?: 'all' | 'allowlist';
+    allowedUsers?: AllowedUser[];
+  };
+  defaultRole?: 'viewer' | 'operator' | 'editor' | 'admin';
+  bashSafety?: {
+    blockGitPush?: boolean;
+    blockPackageInstall?: boolean;
+    blockNetworkOps?: boolean;
+  };
+  fileSystem?: {
+    protectSkills?: boolean;
+    protectConfig?: boolean;
+  };
+}
+
+export type ActiveView = 'chat' | 'memory' | 'voice' | 'settings' | 'team' | 'dashboard';
 export type Theme = 'dark' | 'light';

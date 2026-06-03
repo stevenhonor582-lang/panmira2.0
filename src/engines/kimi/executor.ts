@@ -295,6 +295,8 @@ interface TurnState {
   /** Last seen StatusUpdate token breakdown (summed into totalTokens). */
   lastInputTokens?: number;
   lastOutputTokens?: number;
+  lastCacheReadTokens?: number;
+  lastCacheCreationTokens?: number;
 }
 
 function translateEvent(event: StreamEvent, state: TurnState, logger: Logger): SDKMessage[] {
@@ -387,9 +389,9 @@ function translateEvent(event: StreamEvent, state: TurnState, logger: Logger): S
         } | null;
       };
       if (payload.token_usage) {
-        state.lastInputTokens = payload.token_usage.input_other
-          + payload.token_usage.input_cache_read
-          + payload.token_usage.input_cache_creation;
+        state.lastInputTokens = payload.token_usage.input_other;
+        state.lastCacheReadTokens = payload.token_usage.input_cache_read;
+        state.lastCacheCreationTokens = payload.token_usage.input_cache_creation;
         state.lastOutputTokens = payload.token_usage.output;
       } else if (typeof payload.context_usage === 'number') {
         // Fallback: only a single cumulative number is available.

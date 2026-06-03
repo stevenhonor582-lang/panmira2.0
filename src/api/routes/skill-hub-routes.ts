@@ -3,7 +3,8 @@ import * as path from 'node:path';
 import type * as http from 'node:http';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import type { RouteContext } from './types.js';
-import { installSkillFromHub } from '../skills-installer.js';
+import { SKILL_REGISTRY, refreshSkillRegistry } from '../../skills/skill-registry.js';
+import { installSkillFromHub, installFromGithub, syncSkillToBotStaging } from '../skills-installer.js';
 
 export async function handleSkillHubRoutes(
   ctx: RouteContext,
@@ -19,10 +20,13 @@ export async function handleSkillHubRoutes(
 
   // GET /api/skills/search?q=...
   if (method === 'GET' && url.startsWith('/api/skills/search')) {
-    if (!store) { jsonResponse(res, 503, { error: 'Skill Hub not available' }); return true; }
+    if (!store) {
+      jsonResponse(res, 503, { error: 'Skill Hub not available' });
+      return true;
+    }
     const params = new URL(url, 'http://localhost').searchParams;
     const query = params.get('q') || '';
-    const localResults = store.search(query);
+    const localResults = await store.search(query);
     // Include peer skills if not a peer request
     const isPeer = req.headers['x-metabot-origin'] === 'peer';
     if (!isPeer && peerManager) {
@@ -30,7 +34,11 @@ export async function handleSkillHubRoutes(
       const filtered = query
         ? peerSkills.filter((s) => {
             const q = query.toLowerCase();
-            return s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q) || s.tags.some((t) => t.toLowerCase().includes(q));
+            return (
+              s.name.toLowerCase().includes(q) ||
+              s.description.toLowerCase().includes(q) ||
+              s.tags.some((t) => t.toLowerCase().includes(q))
+            );
           })
         : peerSkills;
       jsonResponse(res, 200, { skills: [...localResults, ...filtered.map((s) => ({ ...s, snippet: '' }))] });
@@ -40,9 +48,25 @@ export async function handleSkillHubRoutes(
     return true;
   }
 
+  // GET /api/skills/registry — list platform skills for agent binding
+  if (method === 'GET' && url === '/api/skills/registry') {
+    const skills = SKILL_REGISTRY.map((s) => ({
+      name: s.name,
+      summary: s.summary,
+      category: s.category,
+      platform: s.platform,
+      alwaysLoad: s.alwaysLoad || false,
+    }));
+    jsonResponse(res, 200, { skills });
+    return true;
+  }
+
   // POST /api/skills/:name/publish-from-bot — publish from a bot's working directory
   if (method === 'POST' && /^\/api\/skills\/[^/]+\/publish-from-bot$/.test(url)) {
-    if (!store) { jsonResponse(res, 503, { error: 'Skill Hub not available' }); return true; }
+    if (!store) {
+      jsonResponse(res, 503, { error: 'Skill Hub not available' });
+      return true;
+    }
     const skillName = decodeURIComponent(url.split('/')[3]);
     const body = await parseJsonBody(req);
     const botName = body.botName as string;
@@ -77,14 +101,17 @@ export async function handleSkillHubRoutes(
       }
     }
 
-    const record = store.publish({ name: skillName, skillMd, referencesTar, author: botName });
+    const record = await store.publish({ name: skillName, skillMd, referencesTar, author: botName });
     jsonResponse(res, 201, { name: record.name, version: record.version, published: true });
     return true;
   }
 
   // POST /api/skills/:name/install — install a skill to a bot
   if (method === 'POST' && /^\/api\/skills\/[^/]+\/install$/.test(url)) {
-    if (!store) { jsonResponse(res, 503, { error: 'Skill Hub not available' }); return true; }
+    if (!store) {
+      jsonResponse(res, 503, { error: 'Skill Hub not available' });
+      return true;
+    }
     const skillName = decodeURIComponent(url.split('/')[3]);
     const body = await parseJsonBody(req);
     const botName = body.botName as string;
@@ -119,7 +146,7 @@ export async function handleSkillHubRoutes(
       referencesTar = peerSkill.referencesTar;
     } else {
       // Fetch from local store
-      const content = store.getContent(skillName);
+      const content = await store.getContent(skillName);
       if (!content) {
         jsonResponse(res, 404, { error: `Skill not found: ${skillName}` });
         return true;
@@ -136,9 +163,12 @@ export async function handleSkillHubRoutes(
 
   // GET /api/skills/:name — get skill details
   if (method === 'GET' && /^\/api\/skills\/[^/]+$/.test(url)) {
-    if (!store) { jsonResponse(res, 503, { error: 'Skill Hub not available' }); return true; }
+    if (!store) {
+      jsonResponse(res, 503, { error: 'Skill Hub not available' });
+      return true;
+    }
     const skillName = decodeURIComponent(url.split('/')[3]);
-    const record = store.get(skillName);
+    const record = await store.get(skillName);
     if (record) {
       jsonResponse(res, 200, record);
       return true;
@@ -162,8 +192,11 @@ export async function handleSkillHubRoutes(
 
   // GET /api/skills — list all skills
   if (method === 'GET' && (url === '/api/skills' || url.startsWith('/api/skills?'))) {
-    if (!store) { jsonResponse(res, 503, { error: 'Skill Hub not available' }); return true; }
-    const localSkills = store.list();
+    if (!store) {
+      jsonResponse(res, 503, { error: 'Skill Hub not available' });
+      return true;
+    }
+    const localSkills = await store.list();
     const isPeer = req.headers['x-metabot-origin'] === 'peer';
     if (!isPeer && peerManager?.getPeerSkills) {
       const peerSkills = peerManager.getPeerSkills();
@@ -176,19 +209,20 @@ export async function handleSkillHubRoutes(
 
   // POST /api/skills — publish a skill directly
   if (method === 'POST' && url === '/api/skills') {
-    if (!store) { jsonResponse(res, 503, { error: 'Skill Hub not available' }); return true; }
+    if (!store) {
+      jsonResponse(res, 503, { error: 'Skill Hub not available' });
+      return true;
+    }
     const body = await parseJsonBody(req);
     const skillMd = body.skillMd as string;
     if (!skillMd) {
       jsonResponse(res, 400, { error: 'Missing skillMd' });
       return true;
     }
-    const referencesTar = body.referencesTar
-      ? Buffer.from(body.referencesTar as string, 'base64')
-      : undefined;
+    const referencesTar = body.referencesTar ? Buffer.from(body.referencesTar as string, 'base64') : undefined;
 
-    const record = store.publish({
-      name: body.name as string || '',
+    const record = await store.publish({
+      name: (body.name as string) || '',
       skillMd,
       referencesTar,
       author: body.author as string,
@@ -199,14 +233,55 @@ export async function handleSkillHubRoutes(
 
   // DELETE /api/skills/:name
   if (method === 'DELETE' && /^\/api\/skills\/[^/]+$/.test(url)) {
-    if (!store) { jsonResponse(res, 503, { error: 'Skill Hub not available' }); return true; }
+    if (!store) {
+      jsonResponse(res, 503, { error: 'Skill Hub not available' });
+      return true;
+    }
     const skillName = decodeURIComponent(url.split('/')[3]);
-    const removed = store.remove(skillName);
+    const removed = await store.remove(skillName);
     if (removed) {
       jsonResponse(res, 200, { name: skillName, removed: true });
     } else {
       jsonResponse(res, 404, { error: `Skill not found: ${skillName}` });
     }
+    return true;
+  }
+
+  // POST /api/skills/install-from-github — install a skill from a GitHub URL
+  if (method === 'POST' && url === '/api/skills/install-from-github') {
+    const body = await parseJsonBody(req);
+    const githubUrl = body.githubUrl as string;
+    if (!githubUrl) {
+      jsonResponse(res, 400, { error: 'Missing githubUrl' });
+      return true;
+    }
+    try {
+      const result = installFromGithub(githubUrl, body.skillName as string | undefined, logger);
+
+      // Sync to all existing bots' staging dirs so they can use the new skill
+      if (!result.alreadyInstalled) {
+        const botWorkDirs = registry.list().map((b) => b.workingDirectory);
+        syncSkillToBotStaging(result.name, botWorkDirs, logger);
+        refreshSkillRegistry();
+      }
+
+      jsonResponse(res, 200, {
+        installed: true,
+        name: result.name,
+        path: result.path,
+        alreadyInstalled: result.alreadyInstalled,
+      });
+    } catch (err: any) {
+      logger.warn({ err: err.message, githubUrl }, 'Failed to install skill from GitHub');
+      jsonResponse(res, 400, { error: err.message });
+    }
+    return true;
+  }
+
+  // POST /api/skills/refresh — re-scan ~/.claude/skills/ and update registry
+  if (method === 'POST' && url === '/api/skills/refresh') {
+    const updated = refreshSkillRegistry();
+    jsonResponse(res, 200, { total: updated.length });
     return true;
   }
 

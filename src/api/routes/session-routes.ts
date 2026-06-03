@@ -17,6 +17,41 @@ export async function handleSessionRoutes(
     return true;
   }
 
+  // GET /api/sessions/all — list all sessions across all bots (summary, paginated)
+  if (method === 'GET' && url.startsWith('/api/sessions/all')) {
+    const bots = ctx.registry.listRegistered();
+    const all = await Promise.all(
+      bots.map(async (b) => {
+        try {
+          const sessions = await sessionRegistry.listSessions(b.name);
+          return sessions.map((s: any) => ({
+            id: s.id,
+            botName: s.botName,
+            platform: s.platform || 'unknown',
+            chatId: s.chatId,
+            title: s.title || '(untitled)',
+            updatedAt: s.updatedAt,
+            createdAt: s.createdAt,
+          }));
+        } catch {
+          return [];
+        }
+      }),
+    );
+    const flat = all.flat().sort((a: any, b: any) => {
+      const ta = new Date(a.updatedAt || a.createdAt).getTime();
+      const tb = new Date(b.updatedAt || b.createdAt).getTime();
+      return tb - ta;
+    });
+    const params = new URL(url, 'http://localhost').searchParams;
+    const page = Math.max(1, Number(params.get('page')) || 1);
+    const limit = Math.min(100, Math.max(1, Number(params.get('limit')) || 20));
+    const start = (page - 1) * limit;
+    const paginated = flat.slice(start, start + limit);
+    jsonResponse(res, 200, { sessions: paginated, total: flat.length, page, limit });
+    return true;
+  }
+
   // GET /api/sessions?botName=X — list sessions for a bot
   if (method === 'GET' && (url.startsWith('/api/sessions?') || url === '/api/sessions')) {
     const params = new URL(url, 'http://localhost').searchParams;
@@ -25,7 +60,7 @@ export async function handleSessionRoutes(
       jsonResponse(res, 400, { error: 'botName query parameter required' });
       return true;
     }
-    const sessions = sessionRegistry.listSessions(botName);
+    const sessions = await sessionRegistry.listSessions(botName);
     jsonResponse(res, 200, { sessions });
     return true;
   }
@@ -34,14 +69,14 @@ export async function handleSessionRoutes(
   const messagesMatch = url.match(/^\/api\/sessions\/([^/]+)\/messages/);
   if (method === 'GET' && messagesMatch) {
     const sessionId = decodeURIComponent(messagesMatch[1]);
-    const session = sessionRegistry.getSession(sessionId);
+    const session = await sessionRegistry.getSession(sessionId);
     if (!session) {
       jsonResponse(res, 404, { error: 'Session not found' });
       return true;
     }
     const params = new URL(url, 'http://localhost').searchParams;
     const since = params.get('since') ? Number(params.get('since')) : undefined;
-    const messages = sessionRegistry.getMessages(sessionId, since);
+    const messages = await sessionRegistry.getMessages(sessionId, since);
     jsonResponse(res, 200, { session, messages });
     return true;
   }
@@ -56,14 +91,14 @@ export async function handleSessionRoutes(
       jsonResponse(res, 400, { error: 'chatId required' });
       return true;
     }
-    const claudeSessionId = sessionRegistry.linkChatId(sessionId, chatId, platform);
-    if (claudeSessionId === undefined && !sessionRegistry.getSession(sessionId)) {
+    const claudeSessionId = await sessionRegistry.linkChatId(sessionId, chatId, platform);
+    if (claudeSessionId === undefined && !(await sessionRegistry.getSession(sessionId))) {
       jsonResponse(res, 404, { error: 'Session not found' });
       return true;
     }
     // Set in SessionManager so future messages resume the conversation
     if (claudeSessionId) {
-      const session = sessionRegistry.getSession(sessionId);
+      const session = await sessionRegistry.getSession(sessionId);
       if (session) {
         const bot = ctx.registry.get(session.botName);
         if (bot) {
@@ -71,7 +106,7 @@ export async function handleSessionRoutes(
         }
       }
     }
-    const history = sessionRegistry.getMessages(sessionId);
+    const history = await sessionRegistry.getMessages(sessionId);
     jsonResponse(res, 200, { sessionId, claudeSessionId, history });
     return true;
   }
@@ -80,13 +115,13 @@ export async function handleSessionRoutes(
   const detailMatch = url.match(/^\/api\/sessions\/([^/]+)$/);
   if (method === 'GET' && detailMatch) {
     const sessionId = decodeURIComponent(detailMatch[1]);
-    const session = sessionRegistry.getSession(sessionId);
+    const session = await sessionRegistry.getSession(sessionId);
     if (!session) {
       jsonResponse(res, 404, { error: 'Session not found' });
       return true;
     }
-    const links = sessionRegistry.getLinks(sessionId);
-    const messages = sessionRegistry.getMessages(sessionId);
+    const links = await sessionRegistry.getLinks(sessionId);
+    const messages = await sessionRegistry.getMessages(sessionId);
     jsonResponse(res, 200, { session, links, messages });
     return true;
   }

@@ -1,6 +1,7 @@
 /* ---- Input Bar (textarea, file picker, DnD, paste, hold-to-talk STT, send/stop buttons) ---- */
 
 import { useState, useRef, useCallback, useEffect, type KeyboardEvent, type DragEvent, type ClipboardEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { FileAttachment, WSOutgoingMessage } from '../../types';
 import { useStore } from '../../store';
 import { fileCategory, formatFileSize } from './helpers';
@@ -27,6 +28,7 @@ interface InputBarProps {
 type VoiceState = 'idle' | 'recording' | 'recognizing' | 'preview';
 
 export function InputBar({ connected, isRunning, onSend, onStop, onStartCall, callActive, send, sendBinary }: InputBarProps) {
+  const { t } = useTranslation();
   const [input, setInput] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -55,8 +57,8 @@ export function InputBar({ connected, isRunning, onSend, onStop, onStartCall, ca
   const streamRef = useRef<MediaStream | null>(null);
   const touchStartYRef = useRef(0);
   const cancelledRef = useRef(false);
-  const durationTimerRef = useRef<ReturnType<typeof setInterval>>();
-  const partialTimerRef = useRef<ReturnType<typeof setInterval>>();
+  const durationTimerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const partialTimerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const partialBusyRef = useRef(false);
   const recordingRef = useRef(false); // guard against double-start
 
@@ -510,7 +512,7 @@ export function InputBar({ connected, isRunning, onSend, onStop, onStartCall, ca
                 </div>
                 <span className={styles.voiceTimer}>{formatDur(recordDuration)}</span>
                 <span className={`${styles.voiceHint} ${cancelHint ? styles.voiceHintCancel : ''}`}>
-                  {cancelHint ? '松开取消' : '↑ 上滑取消'}
+                  {cancelHint ? t('voice.releaseToCancel') : t('voice.swipeUpToCancel')}
                 </span>
               </div>
             </div>
@@ -522,7 +524,7 @@ export function InputBar({ connected, isRunning, onSend, onStop, onStartCall, ca
               )}
               <div className={styles.voiceRecognizingBar}>
                 <div className={styles.voiceSpinner} />
-                <span>识别中...</span>
+                <span>{t('voice.recognizing')}</span>
               </div>
             </div>
           )}
@@ -530,10 +532,10 @@ export function InputBar({ connected, isRunning, onSend, onStop, onStartCall, ca
             <div className={styles.voicePreview}>
               <div className={styles.voiceBubble}>{transcript}</div>
               <div className={styles.voiceActions}>
-                <button className={styles.voiceActionCancel} onClick={handlePreviewCancel}>取消</button>
-                <button className={styles.voiceActionEdit} onClick={handlePreviewEdit}>编辑</button>
+                <button className={styles.voiceActionCancel} onClick={handlePreviewCancel}>{t('voice.cancel')}</button>
+                <button className={styles.voiceActionEdit} onClick={handlePreviewEdit}>{t('voice.edit')}</button>
                 <button className={styles.voiceActionSend} onClick={handlePreviewSend}>
-                  <IconSend /> 发送
+                  <IconSend /> {t('voice.send')}
                 </button>
               </div>
             </div>
@@ -570,10 +572,10 @@ export function InputBar({ connected, isRunning, onSend, onStop, onStartCall, ca
               disabled={!connected || voiceState === 'recognizing' || voiceState === 'preview'}
             >
               {voiceState === 'recording'
-                ? (cancelHint ? '松开 取消' : '松开 转文字')
+                ? (cancelHint ? t('voice.releaseCancel') : t('voice.releaseToTranscribe'))
                 : voiceState === 'recognizing'
-                  ? '识别中...'
-                  : '按住 说话'}
+                  ? t('voice.recognizing')
+                  : t('voice.holdToTalk')}
             </button>
           </div>
         ) : (

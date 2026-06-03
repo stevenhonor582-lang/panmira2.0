@@ -2,6 +2,8 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { App } from './App';
+import { ToastProvider } from './utils/toast';
+import './i18n';
 import './theme.css';
 
 // Apply persisted theme
@@ -16,7 +18,9 @@ document.documentElement.style.setProperty('--font-scale', fontScales[fontSize] 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter basename="/web">
-      <App />
+      <ToastProvider>
+        <App />
+      </ToastProvider>
     </BrowserRouter>
   </StrictMode>,
 );

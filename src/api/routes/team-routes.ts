@@ -10,7 +10,16 @@ export async function handleTeamRoutes(
   method: string,
   url: string,
 ): Promise<boolean> {
-  const { registry, peerManager, intentRouter, circuitBreaker, budgetManager, teamManager, meetingService, voiceIdentityStore } = ctx;
+  const {
+    registry,
+    peerManager,
+    intentRouter,
+    circuitBreaker,
+    budgetManager,
+    teamManager,
+    meetingService,
+    voiceIdentityStore,
+  } = ctx;
 
   // GET /api/activity/events — recent activity events
   if (method === 'GET' && url.startsWith('/api/activity/events')) {
@@ -22,7 +31,7 @@ export async function handleTeamRoutes(
     const botName = parsed.searchParams.get('botName') || undefined;
     const since = parsed.searchParams.get('since') ? Number(parsed.searchParams.get('since')) : undefined;
     const limit = parsed.searchParams.get('limit') ? Number(parsed.searchParams.get('limit')) : 50;
-    const events = ctx.activityStore.list({ botName, since, limit });
+    const events = await ctx.activityStore.list({ botName, since, limit });
     jsonResponse(res, 200, { events });
     return true;
   }
@@ -112,7 +121,7 @@ export async function handleTeamRoutes(
 
   // GET /api/teams
   if (method === 'GET' && url === '/api/teams') {
-    jsonResponse(res, 200, { teams: teamManager.list() });
+    jsonResponse(res, 200, { teams: await teamManager.list() });
     return true;
   }
 
@@ -127,7 +136,7 @@ export async function handleTeamRoutes(
       return true;
     }
     try {
-      const team = teamManager.create(name, members, budgetDailyUsd);
+      const team = await teamManager.create(name, members, budgetDailyUsd);
       jsonResponse(res, 201, team);
     } catch (err: any) {
       jsonResponse(res, 409, { error: err.message });
@@ -138,7 +147,7 @@ export async function handleTeamRoutes(
   // GET /api/teams/:id
   if (method === 'GET' && url.match(/^\/api\/teams\/[^/]+$/) && !url.endsWith('/teams/')) {
     const id = decodeURIComponent(url.split('/')[3]);
-    const team = teamManager.get(id) || teamManager.getByName(id);
+    const team = (await teamManager.get(id)) || (await teamManager.getByName(id));
     if (!team) {
       jsonResponse(res, 404, { error: 'Team not found' });
       return true;
@@ -151,7 +160,7 @@ export async function handleTeamRoutes(
   if (method === 'PUT' && url.match(/^\/api\/teams\/[^/]+$/)) {
     const id = decodeURIComponent(url.split('/')[3]);
     const body = await parseJsonBody(req);
-    const updated = teamManager.update(id, body as any);
+    const updated = await teamManager.update(id, body as any);
     if (!updated) {
       jsonResponse(res, 404, { error: 'Team not found' });
       return true;
@@ -163,7 +172,7 @@ export async function handleTeamRoutes(
   // DELETE /api/teams/:id
   if (method === 'DELETE' && url.match(/^\/api\/teams\/[^/]+$/)) {
     const id = decodeURIComponent(url.split('/')[3]);
-    const deleted = teamManager.delete(id);
+    const deleted = await teamManager.delete(id);
     jsonResponse(res, deleted ? 200 : 404, { deleted });
     return true;
   }
@@ -181,7 +190,10 @@ export async function handleTeamRoutes(
     }
 
     const meetingPromise = meetingService.startMeeting({
-      title, chatId, initiatedBy: 'api', participants,
+      title,
+      chatId,
+      initiatedBy: 'api',
+      participants,
     });
 
     if (body.async === true) {
@@ -211,6 +223,97 @@ export async function handleTeamRoutes(
       return true;
     }
     jsonResponse(res, 200, meeting);
+    return true;
+  }
+
+  // GET /api/coordinator/discovered-groups
+  if (method === 'GET' && url === '/api/coordinator/discovered-groups') {
+    if (!ctx.discoveredGroupsStore) {
+      jsonResponse(res, 200, { groups: [] });
+      return true;
+    }
+    const groups = await ctx.discoveredGroupsStore.list();
+    // Enrich names from Feishu API if available
+    if (ctx.feishuServiceClient && groups.some((g) => !g.chatName)) {
+      for (const g of groups.filter((g) => !g.chatName)) {
+        try {
+          const resp = await ctx.feishuServiceClient.im.v1.chat.get({ path: { chat_id: g.chatId } });
+          const name = resp?.data?.name;
+          if (name) {
+            g.chatName = name;
+            ctx.discoveredGroupsStore.updateName(g.chatId, name).catch(() => {});
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    jsonResponse(res, 200, { groups });
+    return true;
+  }
+
+  // GET /api/coordinator/discovered-groups/:chatId/bots
+  if (method === 'GET' && url.match(/^\/api\/coordinator\/discovered-groups\/[^/]+\/bots$/)) {
+    const chatId = decodeURIComponent(url.split('/')[4]);
+    if (!ctx.discoveredGroupsStore) {
+      jsonResponse(res, 200, { bots: [] });
+      return true;
+    }
+    const bots = await ctx.discoveredGroupsStore.listBotsForGroup(chatId);
+    jsonResponse(res, 200, { bots });
+    return true;
+  }
+
+  // GET /api/coordinator/configs
+  if (method === 'GET' && url === '/api/coordinator/configs') {
+    if (!ctx.coordinatorConfigStore) {
+      jsonResponse(res, 200, { configs: [] });
+      return true;
+    }
+    const configs = await ctx.coordinatorConfigStore.list();
+    jsonResponse(res, 200, { configs });
+    return true;
+  }
+
+  // GET /api/coordinator/configs/:groupId
+  if (method === 'GET' && url.startsWith('/api/coordinator/configs/') && !url.includes('/api/coordinator/configs/')) {
+    const groupId = decodeURIComponent(url.slice('/api/coordinator/configs/'.length));
+    if (!ctx.coordinatorConfigStore) {
+      jsonResponse(res, 404, { error: 'Not available' });
+      return true;
+    }
+    const config = await ctx.coordinatorConfigStore.findByGroupId(groupId);
+    jsonResponse(res, 200, { config });
+    return true;
+  }
+
+  // PUT /api/coordinator/configs/:groupId
+  if (method === 'PUT' && url.startsWith('/api/coordinator/configs/')) {
+    const groupId = decodeURIComponent(url.slice('/api/coordinator/configs/'.length));
+    if (!ctx.coordinatorConfigStore) {
+      jsonResponse(res, 400, { error: 'DB not available' });
+      return true;
+    }
+    const body = await parseJsonBody(req);
+    const config = await ctx.coordinatorConfigStore.upsert(
+      groupId,
+      body as { groupName?: string; coordinatorBot?: string; teamMembers?: string[] },
+    );
+    if (ctx.groupCoordinator) ctx.groupCoordinator.reloadFromDB().catch(() => {});
+    jsonResponse(res, 200, { config });
+    return true;
+  }
+
+  // DELETE /api/coordinator/configs/:groupId
+  if (method === 'DELETE' && url.startsWith('/api/coordinator/configs/')) {
+    const groupId = decodeURIComponent(url.slice('/api/coordinator/configs/'.length));
+    if (!ctx.coordinatorConfigStore) {
+      jsonResponse(res, 400, { error: 'DB not available' });
+      return true;
+    }
+    const deleted = await ctx.coordinatorConfigStore.delete(groupId);
+    if (deleted && ctx.groupCoordinator) ctx.groupCoordinator.reloadFromDB().catch(() => {});
+    jsonResponse(res, deleted ? 200 : 404, { deleted });
     return true;
   }
 

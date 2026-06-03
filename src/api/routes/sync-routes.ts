@@ -46,11 +46,13 @@ export async function handleSyncRoutes(
       return true;
     }
     const syncPromise = docSync.syncAll();
-    syncPromise.then((result) => {
-      logger.info({ result }, 'API-triggered wiki sync complete');
-    }).catch((err) => {
-      logger.error({ err }, 'API-triggered wiki sync failed');
-    });
+    syncPromise
+      .then((result) => {
+        logger.info({ result }, 'API-triggered wiki sync complete');
+      })
+      .catch((err) => {
+        logger.error({ err }, 'API-triggered wiki sync failed');
+      });
     jsonResponse(res, 202, { status: 'sync_started' });
     return true;
   }
@@ -61,7 +63,7 @@ export async function handleSyncRoutes(
       jsonResponse(res, 400, { error: 'Wiki sync is not configured' });
       return true;
     }
-    const stats = docSync.getStats();
+    const stats = await docSync.getStats();
     jsonResponse(res, 200, {
       syncing: docSync.isSyncing(),
       wikiSpaceId: stats.wikiSpaceId,

@@ -27,7 +27,11 @@ const MAX_AUDIO_SIZE = 100 * 1024 * 1024; // 100 MB (Doubao flash limit)
 // Per-chat voice conversation history (for Seed-ASR context)
 // ---------------------------------------------------------------------------
 
-interface VoiceTurn { role: 'user' | 'assistant'; text: string; ts: number }
+interface VoiceTurn {
+  role: 'user' | 'assistant';
+  text: string;
+  ts: number;
+}
 
 const voiceHistory = new Map<string, VoiceTurn[]>();
 const HISTORY_MAX_TURNS = 10;
@@ -36,7 +40,10 @@ const HISTORY_TTL_MS = 30 * 60 * 1000; // 30 min
 function pushVoiceHistory(chatId: string, role: 'user' | 'assistant', text: string): void {
   if (!text.trim()) return;
   let turns = voiceHistory.get(chatId);
-  if (!turns) { turns = []; voiceHistory.set(chatId, turns); }
+  if (!turns) {
+    turns = [];
+    voiceHistory.set(chatId, turns);
+  }
   turns.push({ role, text: text.slice(0, 500), ts: Date.now() });
   // Keep only the most recent turns
   if (turns.length > HISTORY_MAX_TURNS) turns.splice(0, turns.length - HISTORY_MAX_TURNS);
@@ -47,9 +54,9 @@ function getVoiceContext(chatId: string): string[] {
   if (!turns) return [];
   const now = Date.now();
   // Filter out expired turns
-  const valid = turns.filter(t => now - t.ts < HISTORY_TTL_MS);
+  const valid = turns.filter((t) => now - t.ts < HISTORY_TTL_MS);
   if (valid.length !== turns.length) voiceHistory.set(chatId, valid);
-  return valid.map(t => t.text);
+  return valid.map((t) => t.text);
 }
 
 export function clearVoiceHistory(chatId: string): void {
@@ -116,11 +123,18 @@ export interface SttContext {
   hotwords?: string[];
 }
 
-export async function doubaoTranscribe(audioBuffer: Buffer, ext: string, logger: Logger, context?: SttContext): Promise<string> {
+export async function doubaoTranscribe(
+  audioBuffer: Buffer,
+  ext: string,
+  logger: Logger,
+  context?: SttContext,
+): Promise<string> {
   const appKey = process.env.VOLCENGINE_TTS_APPID;
   const accessKey = process.env.VOLCENGINE_TTS_ACCESS_KEY;
   if (!appKey || !accessKey) {
-    throw Object.assign(new Error('VOLCENGINE_TTS_APPID and VOLCENGINE_TTS_ACCESS_KEY not configured'), { statusCode: 500 });
+    throw Object.assign(new Error('VOLCENGINE_TTS_APPID and VOLCENGINE_TTS_ACCESS_KEY not configured'), {
+      statusCode: 500,
+    });
   }
 
   const requestId = crypto.randomUUID();
@@ -135,10 +149,10 @@ export async function doubaoTranscribe(audioBuffer: Buffer, ext: string, logger:
     const ctxObj: Record<string, unknown> = {};
     if (hasDialog) {
       ctxObj.context_type = 'dialog_ctx';
-      ctxObj.context_data = context!.dialogHistory!.map(text => ({ text }));
+      ctxObj.context_data = context!.dialogHistory!.map((text) => ({ text }));
     }
     if (hasHotwords) {
-      ctxObj.hotwords = context!.hotwords!.map(word => ({ word }));
+      ctxObj.hotwords = context!.hotwords!.map((word) => ({ word }));
     }
     corpus.context = ctxObj;
   }
@@ -171,9 +185,12 @@ export async function doubaoTranscribe(audioBuffer: Buffer, ext: string, logger:
     throw new Error(`Doubao STT failed: ${response.status} ${err}`);
   }
 
-  const result = await response.json() as any;
+  const result = (await response.json()) as any;
   const text = result?.result?.text || '';
-  logger.info({ textLength: text.length, requestId, hasContext: hasDialog || hasHotwords }, 'Doubao STT transcription complete');
+  logger.info(
+    { textLength: text.length, requestId, hasContext: hasDialog || hasHotwords },
+    'Doubao STT transcription complete',
+  );
   return text;
 }
 
@@ -181,7 +198,12 @@ export async function doubaoTranscribe(audioBuffer: Buffer, ext: string, logger:
 // Whisper STT
 // ---------------------------------------------------------------------------
 
-export async function whisperTranscribe(audioBuffer: Buffer, ext: string, language: string, logger: Logger): Promise<string> {
+export async function whisperTranscribe(
+  audioBuffer: Buffer,
+  ext: string,
+  language: string,
+  logger: Logger,
+): Promise<string> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw Object.assign(new Error('OPENAI_API_KEY not configured'), { statusCode: 500 });
 
@@ -259,7 +281,9 @@ export async function doubaoTTS(text: string, speaker: string): Promise<Buffer> 
   const accessKey = process.env.VOLCENGINE_TTS_ACCESS_KEY;
   const resourceId = process.env.VOLCENGINE_TTS_RESOURCE_ID || 'volc.service_type.10029';
   if (!appId || !accessKey) {
-    throw Object.assign(new Error('VOLCENGINE_TTS_APPID and VOLCENGINE_TTS_ACCESS_KEY not configured'), { statusCode: 500 });
+    throw Object.assign(new Error('VOLCENGINE_TTS_APPID and VOLCENGINE_TTS_ACCESS_KEY not configured'), {
+      statusCode: 500,
+    });
   }
 
   const url = 'https://openspeech.bytedance.com/api/v3/tts/unidirectional';
@@ -342,7 +366,6 @@ export function resolveSTTProvider(explicit: string): string {
 
 export function resolveTTSProvider(explicit: string): string {
   if (explicit) return explicit;
-  // Default to doubao if Volcengine keys exist, otherwise edge (free, no key needed)
   if (process.env.VOLCENGINE_TTS_APPID && process.env.VOLCENGINE_TTS_ACCESS_KEY) return 'doubao';
   return 'edge';
 }
@@ -355,8 +378,8 @@ export function resolveTTSVoice(explicit: string, ttsProvider: string, text?: st
 
   if (ttsProvider === 'doubao') {
     return isChinese
-      ? 'zh_female_sajiaonvyou_moon_bigtts'   // Chinese female voice
-      : 'en_female_amanda_mars_bigtts';         // English female voice
+      ? 'zh_female_sajiaonvyou_moon_bigtts' // Chinese female voice
+      : 'en_female_amanda_mars_bigtts'; // English female voice
   }
   if (ttsProvider === 'elevenlabs') return 'EXAVITQu4vr4xnSDxMaL'; // Bella (multilingual)
   if (ttsProvider === 'edge') {
@@ -375,12 +398,13 @@ function detectChinese(text: string): boolean {
   let total = 0;
   for (const ch of text) {
     const code = ch.codePointAt(0) || 0;
-    if (code > 0x2f) { // skip whitespace/punctuation
+    if (code > 0x2f) {
+      // skip whitespace/punctuation
       total++;
       if (
-        (code >= 0x4e00 && code <= 0x9fff) ||   // CJK Unified
-        (code >= 0x3400 && code <= 0x4dbf) ||   // CJK Extension A
-        (code >= 0xf900 && code <= 0xfaff)      // CJK Compat
+        (code >= 0x4e00 && code <= 0x9fff) || // CJK Unified
+        (code >= 0x3400 && code <= 0x4dbf) || // CJK Extension A
+        (code >= 0xf900 && code <= 0xfaff) // CJK Compat
       ) {
         cjk++;
       }
@@ -431,7 +455,10 @@ export async function handleVoiceRequest(
   }
 
   const ext = detectAudioExt(req.headers['content-type'], audioBuffer);
-  logger.info({ botName: botName || '(sttOnly)', chatId, audioSize: audioBuffer.length, ext, sttProvider, sttOnly }, 'Voice request received');
+  logger.info(
+    { botName: botName || '(sttOnly)', chatId, audioSize: audioBuffer.length, ext, sttProvider, sttOnly },
+    'Voice request received',
+  );
 
   // Build Seed-ASR context from recent voice conversation history + hotwords
   const sttContext: SttContext = {};
@@ -444,7 +471,13 @@ export async function handleVoiceRequest(
   if (botName) hotwords.push(botName);
   if (bot?.config.name && bot.config.name !== botName) hotwords.push(bot.config.name);
   const envHotwords = process.env.VOICE_HOTWORDS;
-  if (envHotwords) hotwords.push(...envHotwords.split(',').map(w => w.trim()).filter(Boolean));
+  if (envHotwords)
+    hotwords.push(
+      ...envHotwords
+        .split(',')
+        .map((w) => w.trim())
+        .filter(Boolean),
+    );
   if (hotwords.length > 0) sttContext.hotwords = hotwords;
 
   // Step 1: STT
@@ -490,11 +523,7 @@ export async function handleVoiceRequest(
     chatId,
     userId: 'voice',
     sendCards,
-    ...(orchestratorMode
-      ? { maxTurns: 3, allowedTools: ['Bash'] }
-      : voiceMode
-        ? { maxTurns: 1 }
-        : {}),
+    ...(orchestratorMode ? { maxTurns: 3, allowedTools: ['Bash'] } : voiceMode ? { maxTurns: 1 } : {}),
   });
 
   const responseText = talkResult.responseText || '';
@@ -515,9 +544,8 @@ export async function handleVoiceRequest(
       const isCn = detectChinese(responseText);
       const maxChars = ttsProvider === 'doubao' ? 300 : 4000;
       const truncSuffix = isCn ? '... 内容过长，已截断。' : '... Content truncated.';
-      const ttsText = responseText.length > maxChars
-        ? responseText.slice(0, maxChars - 10) + truncSuffix
-        : responseText;
+      const ttsText =
+        responseText.length > maxChars ? responseText.slice(0, maxChars - 10) + truncSuffix : responseText;
 
       let audioOut: Buffer;
       if (ttsProvider === 'elevenlabs') {

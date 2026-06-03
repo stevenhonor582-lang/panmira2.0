@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import type { Logger } from '../utils/logger.js';
 import type { BotRegistry } from '../api/bot-registry.js';
 import type { WebSocketHandle } from '../web/ws-server.js';
+import type { ScheduledTaskStore } from '../db/scheduled-task-store.js';
 import type { CardState } from '../types.js';
 import { isValidCron, nextCronOccurrence, getDefaultTimezone } from './cron-utils.js';
 
@@ -102,12 +103,22 @@ export class TaskScheduler {
   private recurringTasks = new Map<string, RecurringTask>();
   private recurringTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private wsHandle?: WebSocketHandle;
+  private dbStore?: ScheduledTaskStore;
+  private dirty = false;
+  private flushTimer?: ReturnType<typeof setInterval>;
 
   constructor(
     private registry: BotRegistry,
     private logger: Logger,
+    dbStore?: ScheduledTaskStore,
   ) {
-    this.loadFromDisk();
+    this.dbStore = dbStore;
+    if (dbStore) {
+      this.loadFromDB();
+      this.flushTimer = setInterval(() => this.flushToDB(), 30_000);
+    } else {
+      this.loadFromDisk();
+    }
   }
 
   /** Set WebSocket handle for streaming task updates to connected clients. */
@@ -134,7 +145,7 @@ export class TaskScheduler {
 
     this.tasks.set(task.id, task);
     this.setTimer(task);
-    this.saveToDisk();
+    this.markDirty();
 
     this.logger.info({ taskId: task.id, botName: task.botName, chatId: task.chatId, delaySeconds: input.delaySeconds, label: task.label }, 'Scheduled task created');
     return task;
@@ -156,7 +167,7 @@ export class TaskScheduler {
       this.setTimer(task);
     }
 
-    this.saveToDisk();
+    this.markDirty();
     this.logger.info({ taskId: id, updates: input }, 'Scheduled task updated');
     return task;
   }
@@ -171,7 +182,7 @@ export class TaskScheduler {
       clearTimeout(timer);
       this.timers.delete(id);
     }
-    this.saveToDisk();
+    this.markDirty();
 
     this.logger.info({ taskId: id }, 'Scheduled task cancelled');
     return true;
@@ -212,7 +223,7 @@ export class TaskScheduler {
 
     this.recurringTasks.set(recurring.id, recurring);
     this.setRecurringTimer(recurring);
-    this.saveToDisk();
+    this.markDirty();
 
     this.logger.info(
       { taskId: recurring.id, botName: recurring.botName, chatId: recurring.chatId, cronExpr: recurring.cronExpr, timezone: tz, nextExecuteAt: new Date(nextMs).toISOString(), label: recurring.label },
@@ -249,7 +260,7 @@ export class TaskScheduler {
       this.setRecurringTimer(recurring);
     }
 
-    this.saveToDisk();
+    this.markDirty();
     this.logger.info({ taskId: id, updates: input }, 'Recurring task updated');
     return recurring;
   }
@@ -264,7 +275,7 @@ export class TaskScheduler {
       clearTimeout(timer);
       this.recurringTimers.delete(id);
     }
-    this.saveToDisk();
+    this.markDirty();
 
     this.logger.info({ taskId: id }, 'Recurring task paused');
     return true;
@@ -277,7 +288,7 @@ export class TaskScheduler {
     recurring.status = 'active';
     recurring.nextExecuteAt = nextCronOccurrence(recurring.cronExpr, recurring.timezone);
     this.setRecurringTimer(recurring);
-    this.saveToDisk();
+    this.markDirty();
 
     this.logger.info({ taskId: id, nextExecuteAt: new Date(recurring.nextExecuteAt).toISOString() }, 'Recurring task resumed');
     return true;
@@ -300,7 +311,7 @@ export class TaskScheduler {
       recurring.currentChildId = undefined;
     }
 
-    this.saveToDisk();
+    this.markDirty();
     this.logger.info({ taskId: id }, 'Recurring task cancelled');
     return true;
   }
@@ -328,7 +339,7 @@ export class TaskScheduler {
       clearTimeout(timer);
     }
     this.recurringTimers.clear();
-    this.saveToDisk();
+    this.markDirty();
   }
 
   // ===== One-time timer internals =====
@@ -349,7 +360,7 @@ export class TaskScheduler {
     if (!bot) {
       this.logger.error({ taskId: id, botName: task.botName }, 'Scheduled task: bot not found');
       task.status = 'failed';
-      this.saveToDisk();
+      this.markDirty();
       return;
     }
 
@@ -360,14 +371,14 @@ export class TaskScheduler {
         this.logger.info({ taskId: id, retryCount: task.retryCount }, 'Chat busy, retrying scheduled task');
         const timer = setTimeout(() => this.fireTask(id), RETRY_DELAY_MS);
         this.timers.set(id, timer);
-        this.saveToDisk();
+        this.markDirty();
         return;
       }
 
       // Max retries exceeded — notify user and mark failed
       this.logger.warn({ taskId: id }, 'Scheduled task failed after max retries (chat busy)');
       task.status = 'failed';
-      this.saveToDisk();
+      this.markDirty();
       try {
         await bot.sender.sendTextNotice(
           task.chatId,
@@ -383,7 +394,7 @@ export class TaskScheduler {
 
     // Execute the task
     task.status = 'executing';
-    this.saveToDisk();
+    this.markDirty();
     this.logger.info({ taskId: id, botName: task.botName, chatId: task.chatId }, 'Firing scheduled task');
 
     // Generate a messageId for WebSocket streaming
@@ -415,7 +426,7 @@ export class TaskScheduler {
       task.status = 'failed';
     }
 
-    this.saveToDisk();
+    this.markDirty();
   }
 
   // ===== Recurring timer internals =====
@@ -462,7 +473,7 @@ export class TaskScheduler {
 
     this.tasks.set(child.id, child);
     recurring.currentChildId = child.id;
-    this.saveToDisk();
+    this.markDirty();
 
     this.logger.info(
       { recurringId, childId: child.id, botName: recurring.botName, chatId: recurring.chatId },
@@ -485,7 +496,78 @@ export class TaskScheduler {
       );
     }
 
-    this.saveToDisk();
+    this.markDirty();
+  }
+
+
+  private markDirty(): void {
+    this.dirty = true;
+    if (!this.dbStore) {
+      this.saveToDisk();
+    }
+  }
+
+  private async loadFromDB(): Promise<void> {
+    if (!this.dbStore) return;
+    try {
+      const now = Date.now();
+      const pending = await this.dbStore.getPendingTasks();
+      for (const t of pending) {
+        if (t.executeAt < now - 7 * 24 * 60 * 60 * 1000) continue;
+        const task: ScheduledTask = {
+          id: t.id, botName: t.botName, chatId: t.chatId, prompt: t.prompt,
+          executeAt: t.executeAt, status: 'pending' as const,
+          sendCards: true, label: undefined, createdAt: t.createdAt,
+          parentRecurringId: t.parentRecurringId ?? undefined,
+          retryCount: 0,
+        };
+        this.tasks.set(task.id, task);
+        this.setTimer(task);
+      }
+      const active = await this.dbStore.getActiveRecurring();
+      for (const r of active) {
+        const rec: RecurringTask = {
+          id: r.id, botName: r.botName, chatId: r.chatId, prompt: r.prompt,
+          cronExpr: r.cronExpr, timezone: r.timezone,
+          sendCards: true, label: undefined, status: 'active' as const,
+          createdAt: r.createdAt, nextExecuteAt: r.nextExecuteAt,
+        };
+        this.recurringTasks.set(rec.id, rec);
+        this.setRecurringTimer(rec);
+      }
+      this.logger.info({ tasks: pending.length, recurring: active.length }, 'Scheduler restored from DB');
+    } catch (err) {
+      this.logger.warn({ err }, 'Failed to load scheduler from DB, falling back to disk');
+      this.loadFromDisk();
+    }
+  }
+
+  private async flushToDB(): Promise<void> {
+    if (!this.dirty || !this.dbStore) return;
+    this.dirty = false;
+    try {
+      for (const task of this.tasks.values()) {
+        if (task.status === 'pending') {
+          await this.dbStore.createTask({
+            botName: task.botName, chatId: task.chatId, prompt: task.prompt,
+            executeAt: task.executeAt, status: task.status,
+            parentRecurringId: task.parentRecurringId ?? null, createdAt: task.createdAt,
+          }).catch(() => {});
+        } else {
+          await this.dbStore.updateTaskStatus(task.id, task.status).catch(() => {});
+        }
+      }
+      for (const rec of this.recurringTasks.values()) {
+        await this.dbStore.createRecurring({
+          botName: rec.botName, chatId: rec.chatId, prompt: rec.prompt,
+          cronExpr: rec.cronExpr, timezone: rec.timezone, status: rec.status,
+          nextExecuteAt: rec.nextExecuteAt, createdAt: rec.createdAt,
+        }).catch(() => {});
+      }
+    } catch (err) {
+      this.logger.warn({ err }, 'Failed to flush scheduler to DB');
+      this.dirty = true;
+    }
   }
 
   // ===== Persistence =====

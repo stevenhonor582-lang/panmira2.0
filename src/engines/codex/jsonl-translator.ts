@@ -136,6 +136,7 @@ function buildResultMessage(
         [state.model]: {
           inputTokens: usage?.input_tokens ?? 0,
           outputTokens: usage?.output_tokens ?? 0,
+          cacheReadTokens: usage?.cached_input_tokens ?? 0,
           contextWindow: state.contextWindow ?? 0,
           costUSD: 0,
         },

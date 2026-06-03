@@ -81,13 +81,13 @@ export class DocSync {
   }
 
   /** Get sync statistics. */
-  getStats() {
-    return this.store.getStats();
+  async getStats() {
+    return await this.store.getStats();
   }
 
   /** Get the wiki space ID (if configured). */
-  getWikiSpaceId(): string | undefined {
-    return this.store.getWikiSpaceId();
+  async getWikiSpaceId(): Promise<string | undefined> {
+    return await this.store.getWikiSpaceId();
   }
 
   /**
@@ -107,7 +107,9 @@ export class DocSync {
       // Step 1: Ensure wiki space exists
       const spaceId = await this.ensureWikiSpace();
       if (!spaceId) {
-        result.errors.push('Failed to create or find wiki space. Check that the Feishu app has wiki:wiki and docx:document permissions.');
+        result.errors.push(
+          'Failed to create or find wiki space. Check that the Feishu app has wiki:wiki and docx:document permissions.',
+        );
         return result;
       }
 
@@ -123,7 +125,7 @@ export class DocSync {
       // Step 5: Clean up deleted documents
       await this.cleanupDeleted(result);
 
-      this.store.setConfig('last_full_sync_at', new Date().toISOString());
+      await this.store.setConfig('last_full_sync_at', new Date().toISOString());
     } catch (err: any) {
       this.logger.error({ err }, 'Sync failed');
       result.errors.push(err.message || 'Unknown sync error');
@@ -167,7 +169,7 @@ export class DocSync {
 
   private async ensureWikiSpace(): Promise<string | undefined> {
     // Check stored space ID first
-    let spaceId = this.store.getWikiSpaceId();
+    let spaceId = await this.store.getWikiSpaceId();
     if (spaceId) {
       // Verify it still exists
       try {
@@ -175,7 +177,7 @@ export class DocSync {
         return spaceId;
       } catch {
         this.logger.warn({ spaceId }, 'Stored wiki space not found, will search for one');
-        this.store.setConfig('wiki_space_id', '');
+        await this.store.setConfig('wiki_space_id', '');
       }
     }
 
@@ -184,11 +186,14 @@ export class DocSync {
       spaceId = this.config.wikiSpaceId;
       try {
         await this.client.wiki.v2.space.get({ path: { space_id: spaceId } });
-        this.store.setWikiSpaceId(spaceId);
+        await this.store.setWikiSpaceId(spaceId);
         this.logger.info({ spaceId }, 'Using configured wiki space');
         return spaceId;
       } catch (err: any) {
-        this.logger.error({ spaceId, err: err.msg || err.message }, 'Configured WIKI_SPACE_ID is invalid or bot is not a member');
+        this.logger.error(
+          { spaceId, err: err.msg || err.message },
+          'Configured WIKI_SPACE_ID is invalid or bot is not a member',
+        );
       }
     }
 
@@ -199,14 +204,14 @@ export class DocSync {
       const existing = spaces.find((s: any) => s.name === this.wikiSpaceName);
       if (existing) {
         spaceId = existing.space_id;
-        this.store.setWikiSpaceId(spaceId!);
+        await this.store.setWikiSpaceId(spaceId!);
         this.logger.info({ spaceId }, 'Found existing wiki space');
         return spaceId;
       }
       // If spaces exist but none match, use the first one
       if (spaces.length > 0) {
         spaceId = spaces[0].space_id;
-        this.store.setWikiSpaceId(spaceId!);
+        await this.store.setWikiSpaceId(spaceId!);
         this.logger.info({ spaceId, name: spaces[0].name }, 'Using first available wiki space');
         return spaceId;
       }
@@ -224,7 +229,7 @@ export class DocSync {
       });
       spaceId = (resp.data as any)?.space?.space_id;
       if (spaceId) {
-        this.store.setWikiSpaceId(spaceId);
+        await this.store.setWikiSpaceId(spaceId);
         this.logger.info({ spaceId }, 'Created new wiki space');
         return spaceId;
       }
@@ -255,7 +260,7 @@ export class DocSync {
     }
 
     // Check if folder already has a mapping
-    let folderMapping = this.store.getFolderMapping(node.id);
+    let folderMapping = await this.store.getFolderMapping(node.id);
 
     if (!folderMapping) {
       // Create wiki node for this folder (as a shortcut page)
@@ -275,7 +280,7 @@ export class DocSync {
             memoryPath: node.path,
             feishuNodeToken: nodeToken,
           };
-          this.store.upsertFolderMapping(folderMapping);
+          await this.store.upsertFolderMapping(folderMapping);
           this.logger.info({ folder: node.name, nodeToken }, 'Created wiki folder node');
         }
         await this.throttle();
@@ -298,7 +303,7 @@ export class DocSync {
               memoryPath: node.path,
               feishuNodeToken: nodeToken,
             };
-            this.store.upsertFolderMapping(folderMapping);
+            await this.store.upsertFolderMapping(folderMapping);
             this.logger.info({ folder: node.name, nodeToken }, 'Created wiki folder node (as docx)');
           }
           await this.throttle();
@@ -318,18 +323,14 @@ export class DocSync {
 
   // --- Document sync ---
 
-  private async syncDocumentsInTree(
-    spaceId: string,
-    node: FolderTreeNode,
-    result: SyncResult,
-  ): Promise<void> {
+  private async syncDocumentsInTree(spaceId: string, node: FolderTreeNode, result: SyncResult): Promise<void> {
     const isRoot = node.id === 'root' || node.path === '/';
     // For root: listDocuments(undefined) returns ALL docs globally.
     // Filter to only root-folder docs to avoid double-traversal with child folders.
     const folderId = isRoot ? undefined : node.id;
     try {
       const docs = await this.memoryClient.listDocuments(folderId, 200);
-      const parentNodeToken = this.resolveFolderNodeToken(node.id);
+      const parentNodeToken = await this.resolveFolderNodeToken(node.id);
 
       for (const docSummary of docs) {
         // When listing from root, skip docs that belong to subfolders
@@ -368,7 +369,7 @@ export class DocSync {
     result?: SyncResult,
   ): Promise<void> {
     const hash = contentHash(doc.content + doc.title);
-    const existing = this.store.getDocMapping(doc.id);
+    const existing = await this.store.getDocMapping(doc.id);
 
     // Skip if content hasn't changed
     if (existing && existing.contentHash === hash) {
@@ -379,7 +380,7 @@ export class DocSync {
     if (existing) {
       // Update existing document
       await this.updateDocumentContent(existing.feishuDocId, doc);
-      this.store.upsertDocMapping({
+      await this.store.upsertDocMapping({
         ...existing,
         memoryPath: doc.path,
         contentHash: hash,
@@ -407,7 +408,7 @@ export class DocSync {
           await this.throttle();
           await this.writeDocumentContent(docId, doc);
 
-          this.store.upsertDocMapping({
+          await this.store.upsertDocMapping({
             memoryDocId: doc.id,
             memoryPath: doc.path,
             feishuNodeToken: nodeToken,
@@ -422,7 +423,8 @@ export class DocSync {
       } catch (err: any) {
         const detail = err.response?.data || err.data || err.msg || err.message;
         this.logger.error({ err: detail, doc: doc.title, parentNodeToken }, 'Failed to create wiki document');
-        if (result) result.errors.push(`Create "${doc.title}": ${typeof detail === 'object' ? JSON.stringify(detail) : detail}`);
+        if (result)
+          result.errors.push(`Create "${doc.title}": ${typeof detail === 'object' ? JSON.stringify(detail) : detail}`);
       }
     }
   }
@@ -480,7 +482,10 @@ export class DocSync {
         }
       }
     } catch (err: any) {
-      this.logger.warn({ err: err.msg || err.message, docId: feishuDocId }, 'Failed to clear old blocks, will try writing anyway');
+      this.logger.warn(
+        { err: err.msg || err.message, docId: feishuDocId },
+        'Failed to clear old blocks, will try writing anyway',
+      );
     }
 
     // Write new content
@@ -510,22 +515,18 @@ export class DocSync {
   // --- Cleanup ---
 
   private async cleanupDeleted(result: SyncResult): Promise<void> {
-    const allMappings = this.store.getAllDocMappings();
+    const allMappings = await this.store.getAllDocMappings();
 
     for (const mapping of allMappings) {
       try {
         const doc = await this.fetchDocument(mapping.memoryDocId);
         if (!doc) {
-          // Document deleted from MetaMemory, remove from wiki
-          this.store.deleteDocMapping(mapping.memoryDocId);
+          await this.store.deleteDocMapping(mapping.memoryDocId);
           if (result) result.deleted++;
           this.logger.info({ doc: mapping.memoryPath }, 'Removed mapping for deleted document');
-          // Note: We don't delete the wiki page itself to avoid data loss.
-          // The orphaned page can be manually cleaned up.
         }
       } catch {
-        // If we can't fetch, assume it's deleted
-        this.store.deleteDocMapping(mapping.memoryDocId);
+        await this.store.deleteDocMapping(mapping.memoryDocId);
         if (result) result.deleted++;
       }
     }
@@ -533,20 +534,16 @@ export class DocSync {
 
   // --- Helpers ---
 
-  private resolveFolderNodeToken(folderId: string): string {
+  private async resolveFolderNodeToken(folderId: string): Promise<string> {
     if (folderId === 'root' || !folderId) return '';
-    const mapping = this.store.getFolderMapping(folderId);
+    const mapping = await this.store.getFolderMapping(folderId);
     return mapping?.feishuNodeToken || '';
   }
 
-  private async resolveParentNodeToken(
-    spaceId: string,
-    folderId: string,
-    folderTree: FolderTreeNode,
-  ): Promise<string> {
+  private async resolveParentNodeToken(spaceId: string, folderId: string, folderTree: FolderTreeNode): Promise<string> {
     if (!folderId || folderId === 'root') return '';
 
-    const existing = this.store.getFolderMapping(folderId);
+    const existing = await this.store.getFolderMapping(folderId);
     if (existing) return existing.feishuNodeToken;
 
     // Need to sync the folder first
@@ -556,7 +553,7 @@ export class DocSync {
       await this.syncFolders(spaceId, folderNode, '', dummyResult);
     }
 
-    const afterSync = this.store.getFolderMapping(folderId);
+    const afterSync = await this.store.getFolderMapping(folderId);
     return afterSync?.feishuNodeToken || '';
   }
 
@@ -580,7 +577,7 @@ export class DocSync {
       }
       const res = await proxyFetch(url, { headers });
       if (!res.ok) return null;
-      const data = await res.json() as any;
+      const data = (await res.json()) as any;
       // Unwrap if nested
       const doc = data.document || data;
       return {
@@ -621,7 +618,7 @@ export class DocSync {
       if (event.documentId) {
         if (event.type === 'document_deleted') {
           // For deletions, just remove the mapping immediately (cheap, no API call)
-          this.store.deleteDocMapping(event.documentId);
+          void this.store.deleteDocMapping(event.documentId);
           this.logger.info({ docId: event.documentId }, 'Auto-sync: removed mapping for deleted document');
           return;
         }
@@ -640,7 +637,10 @@ export class DocSync {
           const count = pendingDocIds.size;
           pendingDocIds.clear();
           pendingFolderChange = false;
-          this.logger.info({ pendingChanges: count, folderChange: pendingFolderChange }, 'Auto-sync: triggering full sync');
+          this.logger.info(
+            { pendingChanges: count, folderChange: pendingFolderChange },
+            'Auto-sync: triggering full sync',
+          );
           this.syncAll().catch((err) => this.logger.error({ err }, 'Auto-sync full sync failed'));
           return;
         }

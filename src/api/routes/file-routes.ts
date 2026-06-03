@@ -138,16 +138,33 @@ export async function handleFileRoutes(
       if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) {
         const ext = path.extname(fullPath).toLowerCase();
         const mimeMap: Record<string, string> = {
-          '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
-          '.webp': 'image/webp', '.svg': 'image/svg+xml', '.bmp': 'image/bmp',
-          '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.avi': 'video/x-msvideo',
-          '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4', '.flac': 'audio/flac',
-          '.pdf': 'application/pdf', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          '.png': 'image/png',
+          '.jpg': 'image/jpeg',
+          '.jpeg': 'image/jpeg',
+          '.gif': 'image/gif',
+          '.webp': 'image/webp',
+          '.svg': 'image/svg+xml',
+          '.bmp': 'image/bmp',
+          '.mp4': 'video/mp4',
+          '.webm': 'video/webm',
+          '.mov': 'video/quicktime',
+          '.avi': 'video/x-msvideo',
+          '.mp3': 'audio/mpeg',
+          '.wav': 'audio/wav',
+          '.ogg': 'audio/ogg',
+          '.m4a': 'audio/mp4',
+          '.flac': 'audio/flac',
+          '.pdf': 'application/pdf',
+          '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
           '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
           '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-          '.zip': 'application/zip', '.txt': 'text/plain; charset=utf-8',
-          '.json': 'application/json; charset=utf-8', '.csv': 'text/csv; charset=utf-8',
-          '.md': 'text/markdown; charset=utf-8', '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8',
+          '.zip': 'application/zip',
+          '.txt': 'text/plain; charset=utf-8',
+          '.json': 'application/json; charset=utf-8',
+          '.csv': 'text/csv; charset=utf-8',
+          '.md': 'text/markdown; charset=utf-8',
+          '.html': 'text/html; charset=utf-8',
+          '.htm': 'text/html; charset=utf-8',
         };
         const contentType = mimeMap[ext] || 'application/octet-stream';
         const content = fs.readFileSync(fullPath);
@@ -161,10 +178,37 @@ export async function handleFileRoutes(
         res.end(content);
         return true;
       }
-    } catch { /* fall through */ }
+    } catch {
+      /* fall through */
+    }
 
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('File not found');
+    return true;
+  }
+
+  // GET /api/reports/:filename — serve HTML reports
+  if (method === 'GET' && url.startsWith('/api/reports/')) {
+    const filename = decodeURIComponent(url.slice('/api/reports/'.length).split('?')[0]);
+    if (filename.includes('..') || filename.includes('/')) {
+      res.writeHead(403, { 'Content-Type': 'text/plain' });
+      res.end('Forbidden');
+      return true;
+    }
+    const reportsDir = path.join(os.homedir(), 'reports');
+    const fullPath = path.join(reportsDir, filename);
+    if (!fs.existsSync(fullPath)) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Report not found');
+      return true;
+    }
+    const buf = fs.readFileSync(fullPath);
+    res.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Content-Length': buf.length.toString(),
+      'Cache-Control': 'private, max-age=300',
+    });
+    res.end(buf);
     return true;
   }
 

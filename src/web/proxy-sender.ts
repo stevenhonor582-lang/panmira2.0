@@ -36,6 +36,10 @@ export class ProxySender implements IMessageSender {
     this.sendToGateway('proxy_text_notice', { chatId, title, content, color });
   }
 
+  async sendRawCard(chatId: string, cardJson: string): Promise<void> {
+    this.sendToGateway('proxy_raw_card', { chatId, cardJson });
+  }
+
   async sendText(chatId: string, text: string): Promise<void> {
     this.sendToGateway('proxy_send_text', { chatId, text });
   }

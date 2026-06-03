@@ -39,12 +39,15 @@ export class StreamProcessor {
   // Track per-API-call usage from stream events for accurate context window display
   private _lastInputTokens: number | undefined;
   private _lastOutputTokens: number | undefined;
+  private _lastCacheReadTokens: number | undefined;
+  private _lastCacheCreationTokens: number | undefined;
   // Live background tasks (Monitor, etc.) — task_id → latest rollup.
   private _backgroundEvents: Map<string, BackgroundEvent> = new Map();
 
   constructor(
     private userPrompt: string,
     private _overrideContextWindow?: number,
+    private _fallbackModel?: string,
   ) {}
 
   processMessage(message: SDKMessage): CardState {
@@ -209,8 +212,10 @@ export class StreamProcessor {
     if (event.type === 'message_start') {
       const usage = (event as any).message?.usage;
       if (usage) {
-        this._lastInputTokens =
-          (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
+        this._lastInputTokens = usage.input_tokens ?? 0;
+        this._lastCacheReadTokens = usage.cache_read_input_tokens ?? 0;
+        this._lastCacheCreationTokens = usage.cache_creation_input_tokens ?? 0;
+      } else {
       }
     } else if (event.type === 'message_delta') {
       const usage = (event as any).usage;
@@ -257,20 +262,46 @@ export class StreamProcessor {
         );
         const mu = message.modelUsage[primaryModel];
         this._model = primaryModel;
-        this._contextWindow = mu.contextWindow;
+        // Use inferred context window if available (more accurate for 3rd-party providers like DeepSeek)
+        // otherwise fall back to what the API reports
+        this._contextWindow = this.inferContextWindow(primaryModel) || mu.contextWindow;
         // Use last API call's tokens from stream events (accurate context window occupation)
         // Falls back to cumulative modelUsage input+output if stream events weren't captured
         if (this._lastInputTokens != null) {
-          this._totalTokens = this._lastInputTokens + (this._lastOutputTokens ?? 0);
+          this._totalTokens =
+            this._lastInputTokens +
+            (this._lastCacheReadTokens ?? 0) +
+            (this._lastCacheCreationTokens ?? 0) +
+            (this._lastOutputTokens ?? 0);
         } else {
           let totalTokens = 0;
+          let totalInput = 0;
+          let totalOutput = 0;
           for (const m of models) {
-            totalTokens += message.modelUsage![m].inputTokens ?? 0;
-            totalTokens += message.modelUsage![m].outputTokens ?? 0;
+            const inTk = message.modelUsage![m].inputTokens ?? 0;
+            const outTk = message.modelUsage![m].outputTokens ?? 0;
+            totalTokens += inTk + outTk;
+            totalInput += inTk;
+            totalOutput += outTk;
           }
           this._totalTokens = totalTokens;
+          this._lastInputTokens = totalInput;
+          this._lastOutputTokens = totalOutput;
         }
       }
+    }
+
+    // Fallback: if modelUsage was empty (third-party proxy), infer from env/config
+    if (!this._contextWindow) {
+      const fallbackModel = this._fallbackModel || process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
+      this._contextWindow = this.inferContextWindow(fallbackModel);
+      this._model = fallbackModel;
+
+    } else {
+
+    }
+    if (!this._totalTokens && (this._lastInputTokens || this._lastOutputTokens)) {
+      this._totalTokens = (this._lastInputTokens ?? 0) + (this._lastOutputTokens ?? 0);
     }
 
     // Mark all tools as done
@@ -297,6 +328,10 @@ export class StreamProcessor {
           : undefined,
       model: this._model,
       totalTokens: this._totalTokens,
+      inputTokens: this._lastInputTokens,
+      outputTokens: this._lastOutputTokens,
+      cacheReadTokens: this._lastCacheReadTokens,
+      cacheCreationTokens: this._lastCacheCreationTokens,
       contextWindow: this._overrideContextWindow ?? this._contextWindow,
       backgroundEvents: this._backgroundEvents.size > 0 ? [...this._backgroundEvents.values()] : undefined,
     };
@@ -410,6 +445,16 @@ export class StreamProcessor {
 
   getPlanFilePath(): string | null {
     return this._planFilePath;
+  }
+
+  private inferContextWindow(model: string): number | undefined {
+    if (model.includes("opus-4")) return 200000;
+    if (model.includes("sonnet-4")) return 200000;
+    if (model.includes("haiku")) return 200000;
+    if (model.includes("gpt-4") || model.includes("o1") || model.includes("o3")) return 128000;
+    if (model.includes("GLM")) return 200000;
+    if (model.includes("deepseek")) return 1000000;
+    return undefined;
   }
 }
 

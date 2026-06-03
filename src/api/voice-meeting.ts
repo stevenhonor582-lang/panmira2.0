@@ -132,7 +132,7 @@ export class VoiceMeetingService {
     for (const p of meeting.participants) {
       lines.push(`### ${p.botName}`);
       lines.push(p.responseText || '(No response)');
-      if (p.costUsd) lines.push(`Cost: $${p.costUsd.toFixed(4)}`);
+      if (p.costUsd) lines.push(`Cost: ¥${p.costUsd.toFixed(4)}`);
       lines.push('');
     }
 

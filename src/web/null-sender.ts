@@ -13,6 +13,7 @@ export class NullSender implements IMessageSender {
     return true;
   }
   async sendTextNotice(_chatId: string, _title: string, _content: string, _color?: string): Promise<void> {}
+  async sendRawCard(_chatId: string, _cardJson: string): Promise<void> {}
   async sendText(_chatId: string, _text: string): Promise<void> {}
   async sendImageFile(_chatId: string, _filePath: string): Promise<boolean> {
     return false;

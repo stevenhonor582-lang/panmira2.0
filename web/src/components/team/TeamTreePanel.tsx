@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import type { BotStatus, AgentMetadata } from '../../store';
+import { hash, AVATAR_COLORS as COLORS } from '../../utils/helpers';
 import s from './TeamTreePanel.module.css';
 
 /* ── Icons ── */
@@ -33,14 +34,6 @@ function StatusDot({ status, size = 8 }: { status: 'idle' | 'busy' | 'error'; si
 }
 
 /* ── Mini avatar ── */
-
-const COLORS = ['#00d68f', '#00b4d8', '#22c55e', '#14b8a6', '#06b6d4', '#10b981', '#f59e0b', '#3b82f6', '#8b5cf6', '#ec4899'];
-
-function hash(str: string): number {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
-  return Math.abs(h);
-}
 
 function MiniAvatar({ name, size = 24 }: { name: string; size?: number }) {
   const color = COLORS[hash(name) % COLORS.length];
@@ -90,7 +83,7 @@ export function TeamTreePanel({ bots, selectedKey, onSelect }: TeamTreePanelProp
     <div className={s.panel}>
       {/* Header */}
       <div className={s.header}>
-        <span className={s.headerLabel}>agents</span>
+        <span className={s.headerLabel}>智能体</span>
         <span className={s.headerCount}>{totalAgents}</span>
       </div>
 
@@ -99,7 +92,7 @@ export function TeamTreePanel({ bots, selectedKey, onSelect }: TeamTreePanelProp
         <span className={s.searchIcon}><IconSearch /></span>
         <input
           className={s.searchInput}
-          placeholder="Filter agents..."
+          placeholder="搜索智能体..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -159,15 +152,15 @@ export function TeamTreePanel({ bots, selectedKey, onSelect }: TeamTreePanelProp
         })}
 
         {filteredBots.length === 0 && (
-          <div className={s.emptyTree}>No agents match "{search}"</div>
+          <div className={s.emptyTree}>未找到匹配 "{search}" 的智能体</div>
         )}
       </div>
 
       {/* Footer */}
       <div className={s.footer}>
-        <span>{totalAgents} agents</span>
+        <span>{totalAgents} 智能体</span>
         <span className={s.footerDivider} />
-        <span>${totalCost.toFixed(2)}</span>
+        <span>¥{totalCost.toFixed(2)}</span>
       </div>
     </div>
   );

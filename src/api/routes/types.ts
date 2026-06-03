@@ -18,6 +18,16 @@ import type { WebSocketHandle } from '../../web/ws-server.js';
 import type { SessionRegistry } from '../../session/session-registry.js';
 import type { ActivityStore } from '../activity-store.js';
 import type { SkillHubStore } from '../skill-hub-store.js';
+import type { AgentBus } from '../agent-bus.js';
+import type { GroupSessionManager } from '../group-session.js';
+import type { BindingEngine } from '../routing-bindings.js';
+import type { BotConfigStore } from '../../db/bot-config-store.js';
+import type { ChatSessionStore } from '../../db/chat-session-store.js';
+import type { ProviderConfigStore } from '../../db/provider-config-store.js';
+import type { CoordinatorConfigStore } from '../../db/coordinator-config-store.js';
+import type { GroupCoordinator } from '../group-coordinator.js';
+import type { DiscoveredGroupStore } from '../../db/discovered-group-store.js';
+import type { WorkspaceManager } from '../../memory/workspace-manager.js';
 
 export interface RouteContext {
   registry: BotRegistry;
@@ -40,7 +50,17 @@ export interface RouteContext {
   ws: { handle?: WebSocketHandle };
   sessionRegistry?: SessionRegistry;
   activityStore?: ActivityStore;
+  botConfigStore?: BotConfigStore;
+  chatSessionStore?: ChatSessionStore;
   skillHubStore?: SkillHubStore;
+  agentBus?: AgentBus;
+  groupSessionManager?: GroupSessionManager;
+  bindingEngine?: BindingEngine;
+  providerConfigStore?: ProviderConfigStore;
+  coordinatorConfigStore?: CoordinatorConfigStore;
+  groupCoordinator?: GroupCoordinator;
+  discoveredGroupsStore?: DiscoveredGroupStore;
+  workspaceManager?: WorkspaceManager;
 }
 
 /**

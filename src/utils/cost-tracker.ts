@@ -10,6 +10,10 @@ export interface UsageRecord {
   totalCostUsd: number;
   totalDurationMs: number;
   lastTaskAt: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheReadTokens: number;
+  totalCacheCreationTokens: number;
 }
 
 export interface CostStats {
@@ -26,6 +30,10 @@ function emptyRecord(): UsageRecord {
     totalCostUsd: 0,
     totalDurationMs: 0,
     lastTaskAt: 0,
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    totalCacheReadTokens: 0,
+    totalCacheCreationTokens: 0,
   };
 }
 
@@ -40,8 +48,12 @@ export class CostTracker {
     success: boolean;
     costUsd?: number;
     durationMs?: number;
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheReadTokens?: number;
+    cacheCreationTokens?: number;
   }): void {
-    const { botName, userId, success, costUsd = 0, durationMs = 0 } = opts;
+    const { botName, userId, success, costUsd = 0, durationMs = 0, inputTokens = 0, outputTokens = 0, cacheReadTokens = 0, cacheCreationTokens = 0 } = opts;
     const now = Date.now();
 
     const update = (rec: UsageRecord) => {
@@ -50,6 +62,10 @@ export class CostTracker {
       else rec.failedTasks++;
       rec.totalCostUsd += costUsd;
       rec.totalDurationMs += durationMs;
+      rec.totalInputTokens += inputTokens;
+      rec.totalOutputTokens += outputTokens;
+      rec.totalCacheReadTokens += cacheReadTokens;
+      rec.totalCacheCreationTokens += cacheCreationTokens;
       rec.lastTaskAt = now;
     };
 

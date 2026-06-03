@@ -3,6 +3,7 @@
 /* The @volcengine/rtc SDK is dynamically imported to avoid bloating the main bundle */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { IconMic, IconPhoneOff } from './icons';
 import type { ChatMessage } from '../../types';
 import styles from '../ChatView.module.css';
@@ -120,6 +121,7 @@ function buildChatContext(messages: ChatMessage[], botName: string | null, maxRo
 }
 
 export function useRtcCallMode({ activeBotName, activeSessionId, token, messages, onTranscript }: RtcCallOverlayProps) {
+  const { t } = useTranslation();
   const [callActive, setCallActive] = useState(false);
   const [callPhase, setCallPhase] = useState<RtcCallPhase>('connecting');
   const [callStartTime, setCallStartTime] = useState(0);
@@ -180,7 +182,7 @@ export function useRtcCallMode({ activeBotName, activeSessionId, token, messages
 
     // Notify parent to send as chat message (this triggers Claude processing via WebSocket)
     if (onTranscript && transcriptText) {
-      const chatMsg = `[语音通话记录]\n\n${transcriptText}\n\n请根据以上语音对话内容，判断是否有需要执行的后续任务。如果对话中提到了具体的工作请求，请直接执行。如果只是闲聊，简单确认即可。`;
+      const chatMsg = `${t('rtc.transcriptPrefix')}\n\n${transcriptText}\n\n${t('rtc.transcriptInstruction')}`;
       onTranscript(chatMsg);
     }
 
@@ -275,12 +277,12 @@ export function useRtcCallMode({ activeBotName, activeSessionId, token, messages
           isAutoPublish: true,
           isAutoSubscribeAudio: true,
           isAutoSubscribeVideo: false,
-          roomProfileType: VERTC.RoomProfileType?.chat ?? 0,
+          roomProfileType: (VERTC as any).RoomProfileType?.chat ?? 0,
         },
       );
       await engine.startAudioCapture();
       // Explicitly publish audio as belt-and-suspenders (official demo does this)
-      await engine.publishStream(VERTC.MediaType?.AUDIO ?? 1);
+      await engine.publishStream((VERTC as any).MediaType?.AUDIO ?? 1);
 
       setCallPhase('connected');
       setCallStartTime(Date.now());
@@ -312,14 +314,14 @@ export function useRtcCallMode({ activeBotName, activeSessionId, token, messages
 
       // Call server to create RTC room + AI agent
       const params: Record<string, string> = {};
-      params.welcomeMessage = '你好，有什么可以帮你的吗？';
+      params.welcomeMessage = t('rtc.welcomeMessage');
       if (activeSessionId) params.chatId = activeSessionId;
       if (activeBotName) params.botName = activeBotName;
 
       // Build system prompt with chat context from current session
       const chatContext = messages ? buildChatContext(messages, activeBotName) : '';
       if (chatContext) {
-        const botLabel = activeBotName || 'AI 助手';
+        const botLabel = activeBotName || t('rtc.aiAssistant');
         params.systemPrompt = `你是 ${botLabel}。用用户说的语言回答。简洁、自然地对话。\n\n以下是你和用户之前的文字聊天记录，请基于这些上下文继续对话：\n\n${chatContext}`;
       }
 
@@ -364,12 +366,12 @@ export function useRtcCallMode({ activeBotName, activeSessionId, token, messages
           isAutoPublish: true,
           isAutoSubscribeAudio: true,
           isAutoSubscribeVideo: false,
-          roomProfileType: VERTC.RoomProfileType?.chat ?? 0,
+          roomProfileType: (VERTC as any).RoomProfileType?.chat ?? 0,
         },
       );
       await engine.startAudioCapture();
       // Explicitly publish audio as belt-and-suspenders (official demo does this)
-      await engine.publishStream(VERTC.MediaType?.AUDIO ?? 1);
+      await engine.publishStream((VERTC as any).MediaType?.AUDIO ?? 1);
 
       setCallPhase('connected');
       setCallStartTime(Date.now());
@@ -458,6 +460,7 @@ export function RtcCallOverlayUI({
   activeBotName, callElapsed, callPhase, callStatusText,
   isMuted, errorMessage, subtitleText, onToggleMute, onHangup,
 }: RtcCallOverlayUIProps) {
+  const { t } = useTranslation();
   return (
     <div className={styles.callOverlay}>
       <div className={styles.callContent}>

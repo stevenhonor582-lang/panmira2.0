@@ -234,11 +234,31 @@
 /* Stats tab */
 .statsTab { animation: v2-fadeIn 200ms ease; }
 
+.statsSection {
+  margin-bottom: 20px;
+}
+
+.statsSectionTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-bottom: 10px;
+  padding-left: 2px;
+}
+
 .statsGrid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 12px;
   margin-bottom: 24px;
+}
+
+.statsRow3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
 }
 
 .statCard {
@@ -251,12 +271,36 @@
   gap: 4px;
 }
 
+.statCardHighlight {
+  border-color: rgba(99, 102, 241, 0.3);
+  background: linear-gradient(135deg, var(--surface-1), rgba(99, 102, 241, 0.06));
+}
+
+.statCardSuccess {
+  border-color: rgba(0, 214, 143, 0.3);
+  background: linear-gradient(135deg, var(--surface-1), rgba(0, 214, 143, 0.06));
+}
+
+.statCardFail {
+  border-color: rgba(248, 113, 113, 0.3);
+  background: linear-gradient(135deg, var(--surface-1), rgba(248, 113, 113, 0.06));
+}
+
 .statValue {
   font-size: 24px;
   font-weight: 700;
   color: var(--text-0);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.5px;
+}
+
+.statBigValue {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--text-0);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.5px;
+  line-height: 1.2;
 }
 
 .statGreen { color: var(--green); }
@@ -269,6 +313,59 @@
   text-transform: uppercase;
   letter-spacing: 1px;
   font-family: var(--font-mono);
+}
+
+/* Token breakdown bars */
+.tokenBreakdown {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tokenRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tokenDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.tokenName {
+  font-size: 12px;
+  color: var(--text-2);
+  width: 40px;
+  flex-shrink: 0;
+}
+
+.tokenBarWrap {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.tokenBar {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+  min-width: 2px;
+}
+
+.tokenNum {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+  min-width: 60px;
+  text-align: right;
 }
 
 .progressSection {

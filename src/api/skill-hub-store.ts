@@ -1,11 +1,5 @@
-/**
- * Skill Hub Store: SQLite-backed registry for shared skills.
- * Skills can be published, discovered, and installed across bot instances.
- */
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import * as crypto from 'node:crypto';
-import Database from 'better-sqlite3';
+import { pool } from '../db/index.js';
 import type { Logger } from '../utils/logger.js';
 
 export interface SkillRecord {
@@ -46,10 +40,6 @@ export interface SkillPublishInput {
   author?: string;
 }
 
-/**
- * Parse YAML-like frontmatter from SKILL.md content.
- * Extracts key: value pairs between --- delimiters.
- */
 function parseFrontmatter(content: string): Record<string, string> {
   const meta: Record<string, string> = {};
   const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
@@ -59,7 +49,6 @@ function parseFrontmatter(content: string): Record<string, string> {
     if (idx > 0) {
       const key = line.slice(0, idx).trim();
       let value = line.slice(idx + 1).trim();
-      // Strip surrounding quotes
       if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
         value = value.slice(1, -1);
       }
@@ -70,74 +59,14 @@ function parseFrontmatter(content: string): Record<string, string> {
 }
 
 export class SkillHubStore {
-  private db: Database.Database;
   private logger: Logger;
 
   constructor(databaseDir: string, logger: Logger) {
     this.logger = logger.child({ module: 'skill-hub' });
-    fs.mkdirSync(databaseDir, { recursive: true });
-    const dbPath = path.join(databaseDir, 'skill-hub.db');
-    this.db = new Database(dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.initSchema();
-    this.logger.info({ dbPath }, 'Skill Hub store initialized');
+    this.logger.info('Skill Hub store initialized');
   }
 
-  private initSchema(): void {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS skills (
-        id              TEXT PRIMARY KEY,
-        name            TEXT NOT NULL UNIQUE,
-        description     TEXT NOT NULL DEFAULT '',
-        version         INTEGER NOT NULL DEFAULT 1,
-        author          TEXT NOT NULL DEFAULT '',
-        tags            TEXT NOT NULL DEFAULT '[]',
-        user_invocable  INTEGER NOT NULL DEFAULT 1,
-        context         TEXT,
-        allowed_tools   TEXT,
-        skill_md        TEXT NOT NULL,
-        references_tar  BLOB,
-        published_at    TEXT NOT NULL,
-        updated_at      TEXT NOT NULL
-      );
-    `);
-
-    // Create FTS5 virtual table if not exists
-    // Check if table already exists to avoid errors on restart
-    const ftsExists = this.db.prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='skills_fts'",
-    ).get();
-
-    if (!ftsExists) {
-      this.db.exec(`
-        CREATE VIRTUAL TABLE skills_fts USING fts5(
-          name, description, tags, skill_md,
-          content='skills',
-          content_rowid='rowid'
-        );
-
-        CREATE TRIGGER skills_ai AFTER INSERT ON skills BEGIN
-          INSERT INTO skills_fts(rowid, name, description, tags, skill_md)
-          VALUES (new.rowid, new.name, new.description, new.tags, new.skill_md);
-        END;
-
-        CREATE TRIGGER skills_au AFTER UPDATE ON skills BEGIN
-          INSERT INTO skills_fts(skills_fts, rowid, name, description, tags, skill_md)
-          VALUES ('delete', old.rowid, old.name, old.description, old.tags, old.skill_md);
-          INSERT INTO skills_fts(rowid, name, description, tags, skill_md)
-          VALUES (new.rowid, new.name, new.description, new.tags, new.skill_md);
-        END;
-
-        CREATE TRIGGER skills_ad AFTER DELETE ON skills BEGIN
-          INSERT INTO skills_fts(skills_fts, rowid, name, description, tags, skill_md)
-          VALUES ('delete', old.rowid, old.name, old.description, old.tags, old.skill_md);
-        END;
-      `);
-    }
-  }
-
-  /** Publish or update a skill. Returns the skill record. */
-  publish(input: SkillPublishInput): SkillRecord {
+  async publish(input: SkillPublishInput): Promise<SkillRecord> {
     const meta = parseFrontmatter(input.skillMd);
     const name = input.name || meta['name'] || 'unnamed-skill';
     const description = meta['description'] || '';
@@ -147,54 +76,70 @@ export class SkillHubStore {
     const allowedTools = meta['allowed-tools'] || undefined;
     const now = new Date().toISOString();
 
-    // Check if skill already exists (upsert)
-    const existing = this.db.prepare('SELECT id, version FROM skills WHERE name = ?').get(name) as
+    const existing = (await pool.query('SELECT id, version FROM skills WHERE name = $1', [name])).rows[0] as
       | { id: string; version: number }
       | undefined;
 
     if (existing) {
-      this.db.prepare(`
-        UPDATE skills SET
-          description = ?, version = ?, author = ?, tags = ?,
-          user_invocable = ?, context = ?, allowed_tools = ?,
-          skill_md = ?, references_tar = ?, updated_at = ?
-        WHERE name = ?
-      `).run(
-        description, existing.version + 1, input.author || '', JSON.stringify(tags),
-        userInvocable ? 1 : 0, context || null, allowedTools || null,
-        input.skillMd, input.referencesTar || null, now, name,
+      await pool.query(
+        `UPDATE skills SET
+          description = $1, version = $2, author = $3, tags = $4,
+          user_invocable = $5, context = $6, allowed_tools = $7,
+          skill_md = $8, references_tar = $9, updated_at = $10
+        WHERE name = $11`,
+        [
+          description,
+          existing.version + 1,
+          input.author || '',
+          JSON.stringify(tags),
+          userInvocable ? 1 : 0,
+          context || null,
+          allowedTools || null,
+          input.skillMd,
+          input.referencesTar || null,
+          now,
+          name,
+        ],
       );
 
       this.logger.info({ name, version: existing.version + 1 }, 'Skill updated');
-      return this.get(name)!;
+      return (await this.get(name))!;
     }
 
     const id = crypto.randomUUID();
-    this.db.prepare(`
-      INSERT INTO skills (id, name, description, version, author, tags,
+    await pool.query(
+      `INSERT INTO skills (id, name, description, version, author, tags,
         user_invocable, context, allowed_tools, skill_md, references_tar,
         published_at, updated_at)
-      VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id, name, description, input.author || '', JSON.stringify(tags),
-      userInvocable ? 1 : 0, context || null, allowedTools || null,
-      input.skillMd, input.referencesTar || null, now, now,
+      VALUES ($1, $2, $3, 1, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      [
+        id,
+        name,
+        description,
+        input.author || '',
+        JSON.stringify(tags),
+        userInvocable ? 1 : 0,
+        context || null,
+        allowedTools || null,
+        input.skillMd,
+        input.referencesTar || null,
+        now,
+        now,
+      ],
     );
 
     this.logger.info({ name, id }, 'Skill published');
-    return this.get(name)!;
+    return (await this.get(name))!;
   }
 
-  /** Get a skill by name (full record including SKILL.md content). */
-  get(name: string): SkillRecord | undefined {
-    const row = this.db.prepare('SELECT * FROM skills WHERE name = ?').get(name) as any;
+  async get(name: string): Promise<SkillRecord | undefined> {
+    const row = (await pool.query('SELECT * FROM skills WHERE name = $1', [name])).rows[0];
     if (!row) return undefined;
     return this.rowToRecord(row);
   }
 
-  /** Get skill content for installation (SKILL.md + optional references tar). */
-  getContent(name: string): { skillMd: string; referencesTar?: Buffer } | undefined {
-    const row = this.db.prepare('SELECT skill_md, references_tar FROM skills WHERE name = ?').get(name) as any;
+  async getContent(name: string): Promise<{ skillMd: string; referencesTar?: Buffer } | undefined> {
+    const row = (await pool.query('SELECT skill_md, references_tar FROM skills WHERE name = $1', [name])).rows[0];
     if (!row) return undefined;
     return {
       skillMd: row.skill_md,
@@ -202,12 +147,13 @@ export class SkillHubStore {
     };
   }
 
-  /** List all skills (summary only, no SKILL.md content). */
-  list(): SkillSummary[] {
-    const rows = this.db.prepare(
-      'SELECT id, name, description, version, author, tags, published_at, updated_at FROM skills ORDER BY updated_at DESC',
-    ).all() as any[];
-    return rows.map((row) => ({
+  async list(): Promise<SkillSummary[]> {
+    const rows = (
+      await pool.query(
+        'SELECT id, name, description, version, author, tags, published_at, updated_at FROM skills ORDER BY updated_at DESC',
+      )
+    ).rows;
+    return rows.map((row: any) => ({
       id: row.id,
       name: row.name,
       description: row.description,
@@ -219,22 +165,26 @@ export class SkillHubStore {
     }));
   }
 
-  /** Full-text search across skill name, description, tags, and content. */
-  search(query: string): SkillSearchResult[] {
+  async search(query: string): Promise<SkillSearchResult[]> {
     const escaped = this.escapeFts5Query(query);
-    if (!escaped) return this.list().map((s) => ({ ...s, snippet: '' }));
+    if (!escaped) {
+      return (await this.list()).map((s) => ({ ...s, snippet: '' }));
+    }
 
-    const rows = this.db.prepare(`
-      SELECT s.id, s.name, s.description, s.version, s.author, s.tags,
-             s.published_at, s.updated_at,
-             snippet(skills_fts, 3, '<b>', '</b>', '...', 32) AS snippet
-      FROM skills_fts f
-      JOIN skills s ON s.rowid = f.rowid
-      WHERE skills_fts MATCH ?
-      ORDER BY rank
-    `).all(escaped) as any[];
+    const rows = (
+      await pool.query(
+        `SELECT s.id, s.name, s.description, s.version, s.author, s.tags,
+              s.published_at, s.updated_at,
+              ts_headline('simple', s.skill_md, plainto_ts_query('simple', $1), '<b>', '</b>') as snippet
+       FROM skills s
+       WHERE to_tsvector('simple', coalesce(s.name,'') || ' ' || coalesce(s.description,'') || ' ' || coalesce(s.tags,'') || ' ' || coalesce(s.skill_md,'')) @@ plainto_ts_query('simple', $1)
+       ORDER BY ts_rank(to_tsvector('simple', coalesce(s.name,'') || ' ' || coalesce(s.description,'') || ' ' || coalesce(s.tags,'') || ' ' || coalesce(s.skill_md,'')), plainto_ts_query('simple', $1)) DESC
+       LIMIT $2`,
+        [escaped, 50],
+      )
+    ).rows;
 
-    return rows.map((row) => ({
+    return rows.map((row: any) => ({
       id: row.id,
       name: row.name,
       description: row.description,
@@ -247,10 +197,9 @@ export class SkillHubStore {
     }));
   }
 
-  /** Remove a skill by name. Returns true if removed. */
-  remove(name: string): boolean {
-    const result = this.db.prepare('DELETE FROM skills WHERE name = ?').run(name);
-    if (result.changes > 0) {
+  async remove(name: string): Promise<boolean> {
+    const result = await pool.query('DELETE FROM skills WHERE name = $1', [name]);
+    if ((result.rowCount ?? 0) > 0) {
       this.logger.info({ name }, 'Skill removed');
       return true;
     }
@@ -275,7 +224,6 @@ export class SkillHubStore {
     };
   }
 
-  /** Escape a user query for FTS5 — wrap each token in double-quotes. */
   private escapeFts5Query(query: string): string {
     return query
       .split(/\s+/)

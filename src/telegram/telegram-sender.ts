@@ -419,6 +419,10 @@ export class TelegramSender implements IMessageSender {
     }
   }
 
+  async sendRawCard(chatId: string, cardJson: string): Promise<void> {
+    await this.sendText(chatId, cardJson);
+  }
+
   async sendText(chatId: string, text: string): Promise<void> {
     try {
       const truncated = truncateMessage(text);

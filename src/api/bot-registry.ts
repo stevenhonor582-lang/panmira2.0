@@ -10,8 +10,8 @@ export interface RegisteredBot {
   config: BotConfigBase;
   bridge: MessageBridge;
   sender: IMessageSender;
-  /** Feishu SDK client (only for feishu platform bots). */
   feishuClient?: lark.Client;
+  feishuWsClient?: any;
 }
 
 /** Public DTO returned by list() — no secrets or internal refs. */
@@ -25,34 +25,30 @@ export interface BotInfo {
   model?: string;
   workingDirectory: string;
   ttsVoice?: string;
-  /** Set when the bot comes from a peer instance. */
+  systemPrompt?: string;
+  agentId?: string;
+  maxConcurrentTasks?: number;
+  budgetLimitDaily?: number;
   peerUrl?: string;
-  /** Human-readable peer identifier. */
   peerName?: string;
+
+  // Edit form — masked/non-sensitive credential fields
+  maxTurns?: number;
+  feishuAppIdMasked?: string;
+  hasFeishuSecret?: boolean;
+  openaiCompatBaseUrl?: string;
+  hasOpenaiCompatApiKey?: boolean;
+  apiKeyMasked?: string;
 }
 
-/**
- * In-memory registry of all running bots.
- * Populated at startup; used by the HTTP API and task scheduler.
- *
- * Keys are `platform:name` to avoid collisions when a Feishu bot and
- * Telegram bot share the same name (e.g. both called "metabot").
- */
 export class BotRegistry {
   private bots = new Map<string, RegisteredBot>();
-
-  private key(name: string, platform?: string): string {
-    if (platform) return `${platform}:${name}`;
-    // Legacy lookup: try exact key first, then search by name
-    return name;
-  }
 
   register(bot: RegisteredBot): void {
     this.bots.set(`${bot.platform}:${bot.name}`, bot);
   }
 
   get(name: string): RegisteredBot | undefined {
-    // Try platform-qualified keys first
     for (const prefix of ['feishu', 'telegram', 'web', 'wechat']) {
       const bot = this.bots.get(`${prefix}:${name}`);
       if (bot) return bot;
@@ -60,41 +56,77 @@ export class BotRegistry {
     return undefined;
   }
 
-  /** Get a bot by name and platform. */
   getByPlatform(name: string, platform: string): RegisteredBot | undefined {
     return this.bots.get(`${platform}:${name}`);
   }
 
-  /** Get all bots of a specific platform. */
   listByPlatform(platform: string): RegisteredBot[] {
     return Array.from(this.bots.values()).filter((b) => b.platform === platform);
   }
 
   deregister(name: string): boolean {
-    // Try all platform-qualified keys
     for (const prefix of ['feishu', 'telegram', 'web', 'wechat']) {
-      if (this.bots.delete(`${prefix}:${name}`)) return true;
+      const key = `${prefix}:${name}`;
+      const bot = this.bots.get(key);
+      if (bot) {
+        this.bots.delete(key);
+        bot.bridge.destroy();
+        if (bot.feishuWsClient && typeof bot.feishuWsClient.close === 'function') {
+          try {
+            bot.feishuWsClient.close();
+          } catch {
+            /* ignore */
+          }
+        }
+        return true;
+      }
     }
     return false;
   }
 
-  /** Return all registered bots with full internal info (bridge, sender, etc.) */
   listRegistered(): RegisteredBot[] {
     return Array.from(this.bots.values());
   }
 
   list(): BotInfo[] {
-    return Array.from(this.bots.values()).map((b) => ({
-      name: b.name,
-      ...(b.config.description ? { description: b.config.description } : {}),
-      ...(b.config.specialties?.length ? { specialties: b.config.specialties } : {}),
-      ...(b.config.icon ? { icon: b.config.icon } : {}),
-      platform: b.platform,
-      engine: resolveEngineName(b.config),
-      ...(defaultModelForEngine(b.config) ? { model: defaultModelForEngine(b.config) } : {}),
-      workingDirectory: b.config.claude.defaultWorkingDirectory,
-      ...(b.config.ttsVoice ? { ttsVoice: b.config.ttsVoice } : {}),
-    }));
+    return Array.from(this.bots.values()).map((b) => {
+      const feishuConfig = (b.config as any).feishu as { appId: string; appSecret: string } | undefined;
+      return {
+        name: b.name,
+        ...(b.config.description ? { description: b.config.description } : {}),
+        ...(b.config.specialties?.length ? { specialties: b.config.specialties } : {}),
+        ...(b.config.icon ? { icon: b.config.icon } : {}),
+        platform: b.platform,
+        engine: resolveEngineName(b.config),
+        ...(defaultModelForEngine(b.config) ? { model: defaultModelForEngine(b.config) } : {}),
+        workingDirectory: b.config.claude.defaultWorkingDirectory,
+        ...(b.config.systemPrompt ? { systemPrompt: b.config.systemPrompt } : {}),
+        ...(b.config.agentId ? { agentId: b.config.agentId } : {}),
+        ...(b.config.ttsVoice ? { ttsVoice: b.config.ttsVoice } : {}),
+        ...(b.config.maxConcurrentTasks != null ? { maxConcurrentTasks: b.config.maxConcurrentTasks } : {}),
+        ...(b.config.budgetLimitDaily != null ? { budgetLimitDaily: b.config.budgetLimitDaily } : {}),
+        // Credential masking for edit form
+        ...(b.config.claude.maxTurns != null ? { maxTurns: b.config.claude.maxTurns } : {}),
+        ...(feishuConfig?.appId ? { feishuAppIdMasked: maskString(feishuConfig.appId) } : {}),
+        ...(feishuConfig?.appSecret ? { hasFeishuSecret: true } : {}),
+        ...(b.config.openaiCompat?.baseUrl ? { openaiCompatBaseUrl: b.config.openaiCompat.baseUrl } : {}),
+        ...(b.config.openaiCompat?.apiKey ? { hasOpenaiCompatApiKey: true } : {}),
+        ...(b.config.claude.apiKey ? { apiKeyMasked: maskString(b.config.claude.apiKey) } : {}),
+        ...(b.config.claude.baseUrl ? { claudeBaseUrl: b.config.claude.baseUrl } : {}),
+      };
+    });
+  }
+
+  updateConfig(name: string, newConfig: BotConfigBase): boolean {
+    for (const prefix of ['feishu', 'telegram', 'web', 'wechat']) {
+      const bot = this.bots.get(`${prefix}:${name}`);
+      if (bot) {
+        bot.config = newConfig;
+        bot.bridge.updateConfig(newConfig);
+        return true;
+      }
+    }
+    return false;
   }
 }
 
@@ -106,5 +138,12 @@ function defaultModelForEngine(config: BotConfigBase): string | undefined {
       return config.kimi?.model;
     case 'codex':
       return config.codex?.model || config.codex?.displayModel;
+    case 'openai-compat':
+      return config.openaiCompat?.model;
   }
+}
+
+function maskString(value: string): string {
+  if (value.length <= 8) return '****';
+  return value.slice(0, 4) + '****' + value.slice(-4);
 }

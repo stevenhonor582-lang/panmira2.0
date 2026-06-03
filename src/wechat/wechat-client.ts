@@ -122,9 +122,7 @@ export class WechatClient {
     this.logger.info({ qrUrl, qrId }, 'QR code generated — scan with WeChat');
 
     // Print QR URL for terminal access
-    console.log('\n=== WeChat QR Login ===');
-    console.log(`Open this URL or scan the QR code: ${qrUrl}`);
-    console.log('Waiting for scan...\n');
+    this.logger.info({ qrUrl }, 'WeChat QR Login — scan with WeChat, waiting...');
 
     // Poll for scan status (API may long-poll ~30s or return immediately)
     let token: string | undefined;

@@ -1,13 +1,5 @@
-/**
- * Cross-platform session registry: tracks sessions across Feishu, Telegram, iOS, and Web.
- * Stores lightweight message transcripts so any client can discover and continue sessions.
- * Uses SQLite for persistence.
- */
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import * as os from 'node:os';
 import * as crypto from 'node:crypto';
-import Database from 'better-sqlite3';
+import { pool } from '../db/index.js';
 import type { Logger } from '../utils/logger.js';
 
 export interface SessionRecord {
@@ -41,62 +33,10 @@ export interface SessionLink {
 const MAX_MESSAGES_PER_SESSION = 200;
 
 export class SessionRegistry {
-  private db: Database.Database;
-
   constructor(private logger: Logger) {
-    const dataDir = process.env.SESSION_STORE_DIR || path.join(os.homedir(), '.metabot');
-    fs.mkdirSync(dataDir, { recursive: true });
-    const dbPath = path.join(dataDir, 'sessions.db');
-    this.db = new Database(dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.initSchema();
-    this.logger.info({ dbPath }, 'Session registry initialized');
+    this.logger.info('Session registry initialized');
   }
 
-  private initSchema(): void {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS sessions (
-        id TEXT PRIMARY KEY,
-        bot_name TEXT NOT NULL,
-        claude_session_id TEXT,
-        working_directory TEXT NOT NULL,
-        title TEXT NOT NULL DEFAULT '',
-        platform TEXT NOT NULL,
-        chat_id TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_sessions_bot_name ON sessions(bot_name);
-      CREATE INDEX IF NOT EXISTS idx_sessions_chat_id ON sessions(chat_id);
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_chat_id_unique ON sessions(chat_id);
-      CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON sessions(updated_at DESC);
-
-      CREATE TABLE IF NOT EXISTS session_links (
-        session_id TEXT NOT NULL,
-        chat_id TEXT NOT NULL,
-        platform TEXT NOT NULL,
-        linked_at INTEGER NOT NULL,
-        PRIMARY KEY (session_id, chat_id),
-        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-      );
-      CREATE INDEX IF NOT EXISTS idx_session_links_chat_id ON session_links(chat_id);
-
-      CREATE TABLE IF NOT EXISTS session_messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        session_id TEXT NOT NULL,
-        role TEXT NOT NULL,
-        text TEXT NOT NULL,
-        platform TEXT NOT NULL,
-        cost_usd REAL,
-        duration_ms REAL,
-        timestamp INTEGER NOT NULL,
-        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-      );
-      CREATE INDEX IF NOT EXISTS idx_session_messages_session_id ON session_messages(session_id);
-    `);
-  }
-
-  /** Detect platform from chatId pattern. */
   static detectPlatform(chatId: string): string {
     if (chatId.startsWith('oc_') || chatId.startsWith('ou_')) return 'feishu';
     if (/^\d+$/.test(chatId)) return 'telegram';
@@ -104,11 +44,7 @@ export class SessionRegistry {
     return 'web';
   }
 
-  /**
-   * Create or update a session record after execution completes.
-   * Called by MessageBridge after each task.
-   */
-  createOrUpdate(opts: {
+  async createOrUpdate(opts: {
     chatId: string;
     botName: string;
     claudeSessionId?: string;
@@ -117,136 +53,145 @@ export class SessionRegistry {
     responseText?: string;
     costUsd?: number;
     durationMs?: number;
-  }): string {
+  }): Promise<string> {
     const { chatId, botName, claudeSessionId, workingDirectory, prompt, responseText, costUsd, durationMs } = opts;
     const platform = SessionRegistry.detectPlatform(chatId);
     const now = Date.now();
 
-    // Check if session exists for this chatId
-    let session = this.findByChatId(chatId);
+    let session: SessionRecord | null = await this.findByChatId(chatId);
 
     if (session) {
-      // Update existing session
-      const updates: string[] = ['updated_at = ?'];
+      const updates: string[] = ['updated_at = $1'];
       const params: any[] = [now];
+      let paramIdx = 2;
 
       if (claudeSessionId) {
-        updates.push('claude_session_id = ?');
+        updates.push(`claude_session_id = $${paramIdx++}`);
         params.push(claudeSessionId);
       }
 
       params.push(chatId);
-      this.db.prepare(`UPDATE sessions SET ${updates.join(', ')} WHERE chat_id = ?`).run(...params);
+      await pool.query(`UPDATE sessions SET ${updates.join(', ')} WHERE chat_id = $${paramIdx}`, params);
 
-      // Also check session_links for linked chatIds
-      const linkRow = this.db.prepare('SELECT session_id FROM session_links WHERE chat_id = ?').get(chatId) as any;
-      if (linkRow) {
-        this.db.prepare('UPDATE sessions SET updated_at = ?, claude_session_id = COALESCE(?, claude_session_id) WHERE id = ?')
-          .run(now, claudeSessionId || null, linkRow.session_id);
-        session = this.getSession(linkRow.session_id)!;
+      const linkResult = await pool.query('SELECT session_id FROM session_links WHERE chat_id = $1', [chatId]);
+      if (linkResult.rows.length > 0) {
+        await pool.query(
+          'UPDATE sessions SET updated_at = $1, claude_session_id = COALESCE($2, claude_session_id) WHERE id = $3',
+          [now, claudeSessionId || null, linkResult.rows[0].session_id],
+        );
+        session = await this.getSession(linkResult.rows[0].session_id);
       }
     } else {
-      // Check if this chatId is a linked chatId
-      const linkRow = this.db.prepare('SELECT session_id FROM session_links WHERE chat_id = ?').get(chatId) as any;
-      if (linkRow) {
-        this.db.prepare('UPDATE sessions SET updated_at = ?, claude_session_id = COALESCE(?, claude_session_id) WHERE id = ?')
-          .run(now, claudeSessionId || null, linkRow.session_id);
-        session = this.getSession(linkRow.session_id)!;
+      const linkResult = await pool.query('SELECT session_id FROM session_links WHERE chat_id = $1', [chatId]);
+      if (linkResult.rows.length > 0) {
+        await pool.query(
+          'UPDATE sessions SET updated_at = $1, claude_session_id = COALESCE($2, claude_session_id) WHERE id = $3',
+          [now, claudeSessionId || null, linkResult.rows[0].session_id],
+        );
+        session = await this.getSession(linkResult.rows[0].session_id);
       } else {
-        // Create new session
         const id = crypto.randomUUID();
         const title = prompt.slice(0, 60).replace(/\n/g, ' ');
-        this.db.prepare(`
-          INSERT INTO sessions (id, bot_name, claude_session_id, working_directory, title, platform, chat_id, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(id, botName, claudeSessionId || null, workingDirectory, title, platform, chatId, now, now);
-        session = { id, botName, claudeSessionId, workingDirectory, title, platform, chatId, createdAt: now, updatedAt: now };
+        await pool.query(
+          `INSERT INTO sessions (id, bot_name, claude_session_id, working_directory, title, platform, chat_id, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [id, botName, claudeSessionId || null, workingDirectory, title, platform, chatId, now, now],
+        );
+        session = {
+          id,
+          botName,
+          claudeSessionId,
+          workingDirectory,
+          title,
+          platform,
+          chatId,
+          createdAt: now,
+          updatedAt: now,
+        };
       }
     }
 
-    // Add messages
     if (prompt) {
-      this.addMessage(session!.id, 'user', prompt, platform);
+      await this.addMessage(session!.id, 'user', prompt, platform);
     }
     if (responseText) {
-      this.addMessage(session!.id, 'assistant', responseText, platform, costUsd, durationMs);
+      await this.addMessage(session!.id, 'assistant', responseText, platform, costUsd, durationMs);
     }
 
     return session!.id;
   }
 
-  /** Add a message to a session's transcript. */
-  private addMessage(
+  private async addMessage(
     sessionId: string,
     role: 'user' | 'assistant',
     text: string,
     platform: string,
     costUsd?: number,
     durationMs?: number,
-  ): void {
+  ): Promise<void> {
     const now = Date.now();
-    this.db.prepare(`
-      INSERT INTO session_messages (session_id, role, text, platform, cost_usd, duration_ms, timestamp)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(sessionId, role, text, platform, costUsd || null, durationMs || null, now);
+    await pool.query(
+      `INSERT INTO session_messages (session_id, role, text, platform, cost_usd, duration_ms, timestamp)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [sessionId, role, text, platform, costUsd || null, durationMs || null, now],
+    );
 
-    // Trim old messages if over limit
-    const count = (this.db.prepare('SELECT COUNT(*) as count FROM session_messages WHERE session_id = ?').get(sessionId) as any).count;
+    const countResult = await pool.query('SELECT COUNT(*) as count FROM session_messages WHERE session_id = $1', [
+      sessionId,
+    ]);
+    const count = parseInt(countResult.rows[0].count, 10);
     if (count > MAX_MESSAGES_PER_SESSION) {
       const excess = count - MAX_MESSAGES_PER_SESSION;
-      this.db.prepare(`
-        DELETE FROM session_messages WHERE id IN (
-          SELECT id FROM session_messages WHERE session_id = ? ORDER BY timestamp ASC LIMIT ?
-        )
-      `).run(sessionId, excess);
+      await pool.query(
+        `DELETE FROM session_messages WHERE id IN (
+          SELECT id FROM session_messages WHERE session_id = $1 ORDER BY timestamp ASC LIMIT $2
+        )`,
+        [sessionId, excess],
+      );
     }
   }
 
-  /** List sessions for a bot, ordered by most recent first. */
-  listSessions(botName: string): SessionRecord[] {
-    const rows = this.db.prepare(`
-      SELECT s.*,
+  async listSessions(botName: string): Promise<SessionRecord[]> {
+    const result = await pool.query(
+      `SELECT s.*,
         (SELECT text FROM session_messages WHERE session_id = s.id ORDER BY timestamp DESC LIMIT 1) as last_message_preview
-      FROM sessions s
-      WHERE s.bot_name = ?
-      ORDER BY s.updated_at DESC
-      LIMIT 100
-    `).all(botName) as any[];
+       FROM sessions s
+       WHERE s.bot_name = $1
+       ORDER BY s.updated_at DESC
+       LIMIT 100`,
+      [botName],
+    );
 
-    return rows.map(this.mapRow);
+    return result.rows.map((row: any) => this.mapRow(row));
   }
 
-  /** Get a single session by its registry ID. */
-  getSession(id: string): SessionRecord | null {
-    const row = this.db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as any;
-    return row ? this.mapRow(row) : null;
+  async getSession(id: string): Promise<SessionRecord | null> {
+    const result = await pool.query('SELECT * FROM sessions WHERE id = $1', [id]);
+    if (result.rows.length === 0) return null;
+    return this.mapRow(result.rows[0]);
   }
 
-  /** Find a session by its chatId (primary or linked). */
-  findByChatId(chatId: string): SessionRecord | null {
-    // Check primary chatId
-    const row = this.db.prepare('SELECT * FROM sessions WHERE chat_id = ?').get(chatId) as any;
-    if (row) return this.mapRow(row);
+  async findByChatId(chatId: string): Promise<SessionRecord | null> {
+    const result = await pool.query('SELECT * FROM sessions WHERE chat_id = $1', [chatId]);
+    if (result.rows.length > 0) return this.mapRow(result.rows[0]);
 
-    // Check linked chatIds
-    const link = this.db.prepare('SELECT session_id FROM session_links WHERE chat_id = ?').get(chatId) as any;
-    if (link) return this.getSession(link.session_id);
+    const linkResult = await pool.query('SELECT session_id FROM session_links WHERE chat_id = $1', [chatId]);
+    if (linkResult.rows.length > 0) return this.getSession(linkResult.rows[0].session_id);
 
     return null;
   }
 
-  /** Get message history for a session. */
-  getMessages(sessionId: string, since?: number): SessionMessage[] {
-    let sql = 'SELECT * FROM session_messages WHERE session_id = ?';
+  async getMessages(sessionId: string, since?: number): Promise<SessionMessage[]> {
+    let sql = 'SELECT * FROM session_messages WHERE session_id = $1';
     const params: any[] = [sessionId];
     if (since) {
-      sql += ' AND timestamp > ?';
       params.push(since);
+      sql += ` AND timestamp > $${params.length}`;
     }
     sql += ' ORDER BY timestamp ASC LIMIT 200';
 
-    const rows = this.db.prepare(sql).all(...params) as any[];
-    return rows.map((r) => ({
+    const result = await pool.query(sql, params);
+    return result.rows.map((r: any) => ({
       role: r.role as 'user' | 'assistant',
       text: r.text,
       timestamp: r.timestamp,
@@ -256,54 +201,51 @@ export class SessionRegistry {
     }));
   }
 
-  /** Get all linked chatIds for a session. */
-  getLinks(sessionId: string): SessionLink[] {
-    const rows = this.db.prepare('SELECT * FROM session_links WHERE session_id = ?').all(sessionId) as any[];
-    return rows.map((r) => ({
+  async getLinks(sessionId: string): Promise<SessionLink[]> {
+    const result = await pool.query('SELECT * FROM session_links WHERE session_id = $1', [sessionId]);
+    return result.rows.map((r: any) => ({
       chatId: r.chat_id,
       platform: r.platform,
       linkedAt: r.linked_at,
     }));
   }
 
-  /**
-   * Link a new chatId to an existing session.
-   * Returns the Claude session ID so the caller can set it in SessionManager.
-   */
-  linkChatId(sessionId: string, chatId: string, platform?: string): string | undefined {
-    const session = this.getSession(sessionId);
+  async linkChatId(sessionId: string, chatId: string, platform?: string): Promise<string | undefined> {
+    const session = await this.getSession(sessionId);
     if (!session) return undefined;
 
     const resolvedPlatform = platform || SessionRegistry.detectPlatform(chatId);
     const now = Date.now();
 
-    this.db.prepare(`
-      INSERT OR IGNORE INTO session_links (session_id, chat_id, platform, linked_at)
-      VALUES (?, ?, ?, ?)
-    `).run(sessionId, chatId, resolvedPlatform, now);
+    await pool.query(
+      `INSERT INTO session_links (session_id, chat_id, platform, linked_at)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT DO NOTHING`,
+      [sessionId, chatId, resolvedPlatform, now],
+    );
 
-    this.db.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?').run(now, sessionId);
+    await pool.query('UPDATE sessions SET updated_at = $1 WHERE id = $2', [now, sessionId]);
 
     this.logger.info({ sessionId, chatId, platform: resolvedPlatform }, 'Session linked to new chatId');
     return session.claudeSessionId;
   }
 
-  /** Rename a session. */
-  renameSession(id: string, newTitle: string): boolean {
-    const result = this.db.prepare('UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?')
-      .run(newTitle, Date.now(), id);
-    return result.changes > 0;
+  async renameSession(id: string, newTitle: string): Promise<boolean> {
+    const result = await pool.query('UPDATE sessions SET title = $1, updated_at = $2 WHERE id = $3', [
+      newTitle,
+      Date.now(),
+      id,
+    ]);
+    return (result.rowCount ?? 0) > 0;
   }
 
-  /** Delete a session and all its messages/links. */
-  deleteSession(id: string): void {
-    this.db.prepare('DELETE FROM session_messages WHERE session_id = ?').run(id);
-    this.db.prepare('DELETE FROM session_links WHERE session_id = ?').run(id);
-    this.db.prepare('DELETE FROM sessions WHERE id = ?').run(id);
+  async deleteSession(id: string): Promise<void> {
+    await pool.query('DELETE FROM session_messages WHERE session_id = $1', [id]);
+    await pool.query('DELETE FROM session_links WHERE session_id = $1', [id]);
+    await pool.query('DELETE FROM sessions WHERE id = $1', [id]);
   }
 
   close(): void {
-    this.db.close();
     this.logger.info('Session registry closed');
   }
 

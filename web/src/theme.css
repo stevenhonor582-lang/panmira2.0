@@ -25,8 +25,8 @@
 
   /* Text — crisp hierarchy */
   --text-0: #f0f0f2;
-  --text-1: #9d9da8;
-  --text-2: #56566a;
+  --text-1: #b0b0bc;
+  --text-2: #63637a;
   --text-3: #3a3a4a;
   --text-on-accent: #ffffff;
   --text-on-void: #6a6a7a;
@@ -93,6 +93,7 @@
   /* Typography — geometric sans + mono */
   --font-sans: 'Space Grotesk', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  --font-display: 'Space Grotesk', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
 
   /* Font scale (overridden by JS) */
   --font-scale: 1;
@@ -116,7 +117,7 @@
   --glass-border-hover: rgba(0, 0, 0, 0.16);
 
   --text-0: #111114;
-  --text-1: #44444d;
+  --text-1: #555560;
   --text-2: #8a8a96;
   --text-3: #c0c0c8;
   --text-on-accent: #ffffff;
