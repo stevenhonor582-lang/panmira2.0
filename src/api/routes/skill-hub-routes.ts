@@ -4,7 +4,7 @@ import type * as http from 'node:http';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import type { RouteContext } from './types.js';
 import { SKILL_REGISTRY, refreshSkillRegistry } from '../../skills/skill-registry.js';
-import { installSkillFromHub, installFromGithub, syncSkillToBotStaging } from '../skills-installer.js';
+import { installSkillFromHub, installFromGithub, syncSkillToBotStaging, isAdminBot, installSkillWithBinding } from '../skills-installer.js';
 
 export async function handleSkillHubRoutes(
   ctx: RouteContext,
@@ -157,6 +157,7 @@ export async function handleSkillHubRoutes(
 
     const workDir = bot.config.claude.defaultWorkingDirectory;
     installSkillFromHub(workDir, skillName, skillMd, referencesTar, logger);
+    await installSkillWithBinding(skillName, botName, 'global', logger);
     jsonResponse(res, 200, { installed: true, botName, skillName });
     return true;
   }
@@ -207,7 +208,29 @@ export async function handleSkillHubRoutes(
     return true;
   }
 
-  // POST /api/skills — publish a skill directly
+  // PUT /api/bot-skills/:botName/:skillName — enable/disable a skill for a bot
+  if (method === 'PUT' && /^\/api\/bot-skills\/[^/]+\/[^/]+$/.test(url)) {
+    const parts = url.split('/');
+    const botName = decodeURIComponent(parts[3]);
+    const skillName = decodeURIComponent(parts[4]);
+    const body = await parseJsonBody(req);
+    const enabled = body.enabled !== false; // default true
+
+    try {
+      const { pool } = await import('../../db/index.js');
+      await pool.query(
+        `UPDATE bot_skill_bindings SET enabled = $1, installed_at = now()
+         WHERE bot_name = $2 AND skill_name = $3`,
+        [enabled, botName, skillName],
+      );
+      jsonResponse(res, 200, { botName, skillName, enabled });
+    } catch (err: any) {
+      jsonResponse(res, 500, { error: err?.message || 'Failed to update skill binding' });
+    }
+    return true;
+  }
+
+  // POST /api/skills — publish a skill (admin-only for global scope)
   if (method === 'POST' && url === '/api/skills') {
     if (!store) {
       jsonResponse(res, 503, { error: 'Skill Hub not available' });
@@ -219,6 +242,17 @@ export async function handleSkillHubRoutes(
       jsonResponse(res, 400, { error: 'Missing skillMd' });
       return true;
     }
+    const scope = (body.scope as string) || 'global';
+    const botName = body.botName as string;
+
+    // Admin check for global skills
+    if (scope === 'global') {
+      if (!botName || !(await isAdminBot(botName))) {
+        jsonResponse(res, 403, { error: 'Only admin bots can create global skills. Set scope: "bot" for private skills.' });
+        return true;
+      }
+    }
+
     const referencesTar = body.referencesTar ? Buffer.from(body.referencesTar as string, 'base64') : undefined;
 
     const record = await store.publish({
@@ -238,6 +272,12 @@ export async function handleSkillHubRoutes(
       return true;
     }
     const skillName = decodeURIComponent(url.split('/')[3]);
+    const body = await parseJsonBody(req);
+    const botName = body.botName as string;
+    if (!botName || !(await isAdminBot(botName))) {
+      jsonResponse(res, 403, { error: 'Only admin bots can delete skills' });
+      return true;
+    }
     const removed = await store.remove(skillName);
     if (removed) {
       jsonResponse(res, 200, { name: skillName, removed: true });

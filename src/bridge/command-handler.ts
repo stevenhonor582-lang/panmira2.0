@@ -6,6 +6,8 @@ import { resolveEngineName, SessionManager } from '../engines/index.js';
 import type { EngineName } from '../engines/index.js';
 import { MemoryClient } from '../memory/memory-client.js';
 import { AuditLogger } from '../utils/audit-logger.js';
+import { pool } from '../db/index.js';
+import { isAdminBot } from '../api/skills-installer.js';
 import type { DocSync } from '../sync/doc-sync.js';
 
 export class CommandHandler {
@@ -51,6 +53,7 @@ export class CommandHandler {
             '`/model claude`, `/model kimi`, or `/model codex` - Switch engine (resets session)',
             '`/model <name>` - Set model for current engine',
             '`/memory` - Memory document commands',
+            '`/skill` - Manage skills (list/enable/disable/create)',
             '`/help` - Show this help message',
             '',
             '**Usage:**',
@@ -116,6 +119,11 @@ export class CommandHandler {
             `**Running:** ${isRunning ? 'Yes ⏳' : 'No'}`,
           ].join('\n'),
         );
+        return true;
+      }
+
+      case '/skill': {
+        await this.handleSkillCommand(chatId, text, this.config.name);
         return true;
       }
 
@@ -200,6 +208,95 @@ export class CommandHandler {
         `Failed to connect to memory server: ${err.message}`,
         'red',
       );
+    }
+  }
+
+  private async handleSkillCommand(chatId: string, text: string, botName: string): Promise<void> {
+    const args = text.slice('/skill'.length).trim();
+    const [subCmd, ...rest] = args.split(/\s+/);
+    const skillName = rest.join(' ');
+
+    switch (subCmd) {
+      case 'list':
+      case '': {
+        try {
+          const { rows } = await pool.query(
+            `SELECT skill_name, enabled FROM bot_skill_bindings WHERE bot_name = $1 ORDER BY skill_name`,
+            [botName],
+          );
+          if (rows.length === 0) {
+            await this.sender.sendTextNotice(chatId, '🛠️ Skills', '没有已绑定的 skill。\n全局 skill 默认可用。\n使用 `/skill create <名称>` 创建私有 skill。');
+            return;
+          }
+          const lines = rows.map((r: any) => `${r.enabled ? '✅' : '⛔'} ${r.skill_name}`);
+          await this.sender.sendTextNotice(chatId, '🛠️ Skills', lines.join('\n'));
+        } catch (err: any) {
+          await this.sender.sendTextNotice(chatId, '❌ Skill Error', err.message, 'red');
+        }
+        break;
+      }
+      case 'enable':
+      case 'disable': {
+        if (!skillName) {
+          await this.sender.sendTextNotice(chatId, '📝 Skill', 'Usage: `/skill enable <名称>` or `/skill disable <名称>`');
+          return;
+        }
+        const enabled = subCmd === 'enable';
+        try {
+          await pool.query(
+            `INSERT INTO bot_skill_bindings (bot_name, skill_name, enabled) VALUES ($1, $2, $3)
+             ON CONFLICT (bot_name, skill_name) DO UPDATE SET enabled = $3`,
+            [botName, skillName, enabled],
+          );
+          await this.sender.sendTextNotice(chatId, '🛠️ Skill', `${enabled ? '✅ 已启用' : '⛔ 已禁用'}: ${skillName}`);
+        } catch (err: any) {
+          await this.sender.sendTextNotice(chatId, '❌ Skill Error', err.message, 'red');
+        }
+        break;
+      }
+      case 'create': {
+        if (!skillName) {
+          await this.sender.sendTextNotice(chatId, '📝 Skill', 'Usage: `/skill create <名称>` — 在当前 workspace 创建私有 skill');
+          return;
+        }
+        await this.sender.sendTextNotice(
+          chatId,
+          '🛠️ Skill',
+          `要创建私有 skill **${skillName}**，请用自然语言描述这个 skill 的功能，我会帮你生成 SKILL.md。\n\n例如：\n"帮我创建一个 ${skillName} 的 skill，用于..."`,
+        );
+        break;
+      }
+      case 'global': {
+        // Admin-only: create a global skill
+        if (!skillName) {
+          await this.sender.sendTextNotice(chatId, '📝 Global Skill', 'Usage: `/skill global <名称>` — 创建全局 skill（仅管理员）');
+          return;
+        }
+        const isAdmin = await isAdminBot(botName);
+        if (!isAdmin) {
+          await this.sender.sendTextNotice(chatId, '⛔ 权限不足', '只有管理员 bot 才能创建全局 skill。\n使用 `/skill create <名称>` 创建私有 skill。', 'red');
+          return;
+        }
+        await this.sender.sendTextNotice(
+          chatId,
+          '🛠️ Global Skill',
+          `要创建全局 skill **${skillName}**，请描述功能，我会生成 SKILL.md 并安装到所有 bot。`,
+        );
+        break;
+      }
+      default:
+        await this.sender.sendTextNotice(
+          chatId,
+          '📝 Skill',
+          [
+            '**Skill 命令:**',
+            '`/skill list` — 查看已绑定的 skill',
+            '`/skill enable <名称>` — 启用 skill',
+            '`/skill disable <名称>` — 禁用 skill',
+            '`/skill create <名称>` — 创建私有 skill',
+            '`/skill global <名称>` — 创建全局 skill（管理员）',
+          ].join('\n'),
+        );
     }
   }
 
