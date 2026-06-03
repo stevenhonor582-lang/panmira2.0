@@ -52,6 +52,7 @@ import {
   handleMemoryRoutes,
   handleGenerateRoutes,
   handleWorkspaceRoutes,
+  handleTemplateRoutes,
   handleKnowledgeRoutes,
 } from './routes/index.js';
 import type { RouteContext } from './routes/index.js';
@@ -186,6 +187,8 @@ export async function startApiServer(options: ApiServerOptions): Promise<http.Se
     handleMemoryRoutes,
     handleGenerateRoutes,
     handleWorkspaceRoutes,
+  handleTemplateRoutes,
+    handleTemplateRoutes,
     handleKnowledgeRoutes,
   ];
 
