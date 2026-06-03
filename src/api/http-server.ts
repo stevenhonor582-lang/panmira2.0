@@ -1,6 +1,7 @@
 import * as crypto from 'node:crypto';
 import * as http from 'node:http';
 import * as net from 'node:net';
+import { RateLimiter } from './rate-limiter.js';
 import * as path from 'node:path';
 import type * as lark from '@larksuiteoapi/node-sdk';
 import type { Logger } from '../utils/logger.js';
@@ -83,6 +84,7 @@ interface ApiServerOptions {
 }
 
 const startTime = Date.now();
+const rateLimiter = new RateLimiter(60000, 100); // 100 req/min per IP
 // Expose start time for metrics route
 (globalThis as any).__metabot_start_time = startTime;
 
@@ -231,6 +233,20 @@ export async function startApiServer(options: ApiServerOptions): Promise<http.Se
       res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4; charset=utf-8' });
       res.end(body);
       return;
+    }
+
+    // Rate limiting (by IP, exempt health/metrics)
+    if (url !== '/api/health' && url !== '/metrics') {
+      const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
+        || req.socket.remoteAddress
+        || 'unknown';
+      const { allowed, remaining, resetIn } = rateLimiter.check(clientIp);
+      res.setHeader('X-RateLimit-Remaining', String(remaining));
+      res.setHeader('X-RateLimit-Reset', String(Math.ceil(resetIn / 1000)));
+      if (!allowed) {
+        jsonResponse(res, 429, { error: 'Too many requests', retryAfter: Math.ceil(resetIn / 1000) });
+        return;
+      }
     }
 
     // Auth check (exempt /web/, /memory/, /admin/, /api/admin, /api/auth, /api/v1/memory)
