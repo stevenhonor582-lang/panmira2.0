@@ -812,11 +812,17 @@ export class MessageBridge {
         this.logger.info({ chatId, sources: ragContext.sourceCount }, 'RAG context retrieved');
       }
 
-      // ── Step 3: Skill selection — match skills to intent ──
-      const selectedSkills = this.skillRouter.selectSkills(text || '');
-      const selectedNames = selectedSkills.map((s) => s.name);
+      // ── Step 3: Skill selection — from agent intent chain ──
+      // Read skills from the matched intent's chain, not message keywords
+      const intent = agentRuntimeConfig.orchestration.intents[0];
+      const chainSkillNames = (intent.chain || [])
+        .map((s: any) => s.skill)
+        .filter((s: string) => s && s.length > 0);
+      // Also include agent-level skills and always-load system skills
+      const agentSkills = agentRuntimeConfig.skills || [];
+      const selectedNames = [...new Set([...chainSkillNames, ...agentSkills])];
       if (selectedNames.length > 0) {
-        this.logger.info({ chatId, skills: selectedNames }, 'Skills selected for orchestration');
+        this.logger.info({ chatId, skills: selectedNames, source: 'agent-intent-chain' }, 'Skills selected for orchestration');
         try {
           const { deploySelectedSkills } = await import('../api/skills-installer.js');
           deploySelectedSkills(cwd, selectedNames, this.logger);

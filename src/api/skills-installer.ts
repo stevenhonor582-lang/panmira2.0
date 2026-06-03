@@ -250,7 +250,7 @@ export function deploySelectedSkills(workDir: string, selectedSkillNames: string
 
     const activeDest = path.join(activeDir, name);
     fs.mkdirSync(activeDest, { recursive: true });
-    fs.cpSync(src, activeDest, { recursive: true });
+    try { fs.cpSync(src, activeDest, { recursive: true, force: true }); } catch (e: any) { if (e.code !== "EEXIST") throw e; }
     deployed++;
   }
   logger.info({ selected: selectedSkillNames.length, deployed }, 'Dynamic skills deployed');
