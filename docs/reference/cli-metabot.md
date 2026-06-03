@@ -1,10 +1,10 @@
 # metabot CLI
 
-The `metabot` command manages the MetaBot service lifecycle.
+The `metabot` command manages the Panmira service lifecycle.
 
 ## Installation
 
-Installed automatically by the MetaBot installer to `~/.local/bin/metabot`.
+Installed automatically by the Panmira installer to `~/.local/bin/metabot`.
 
 ## Commands
 

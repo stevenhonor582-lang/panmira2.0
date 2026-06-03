@@ -1,10 +1,10 @@
 # mb CLI（Agent 总线）
 
-`mb` 命令提供终端访问 MetaBot Agent 总线 API。
+`mb` 命令提供终端访问 Panmira Agent 总线 API。
 
 ## 安装
 
-MetaBot 安装器自动安装到 `~/.local/bin/mb`。
+Panmira 安装器自动安装到 `~/.local/bin/mb`。
 
 ## 命令
 
@@ -78,7 +78,7 @@ mb help                             # 显示帮助
 默认连接 `http://localhost:9100`。配置远程访问：
 
 ```bash
-# 在 ~/.metabot/.env 或 ~/metabot/.env 中
+# 在 ~/.panmira/.env 或 ~/metabot/.env 中
 METABOT_URL=http://your-server:9100
 API_SECRET=your-secret
 ```

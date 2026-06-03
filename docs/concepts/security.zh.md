@@ -1,6 +1,6 @@
 # 安全
 
-MetaBot 以 `bypassPermissions` 模式运行 Claude Code — 无交互式确认。请了解其影响。
+Panmira 以 `bypassPermissions` 模式运行 Claude Code — 无交互式确认。请了解其影响。
 
 ## 权限模型
 

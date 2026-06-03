@@ -1,6 +1,6 @@
 # 示例提示词
 
-直接在飞书/Telegram 中发送这些 prompt，解锁 MetaBot 高级功能。
+直接在飞书/Telegram 中发送这些 prompt，解锁 Panmira 高级功能。
 
 ## MetaMemory — 持久化知识库
 

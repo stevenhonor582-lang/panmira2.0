@@ -10,7 +10,7 @@
 
 Claude Code and Kimi Code are the most capable AI coding agents — but they're both trapped in your laptop terminal.
 
-MetaBot sets them free. It gives every agent a **Claude Code or Kimi Code brain** (native subscriptions work directly — no API key required), persistent shared memory, the ability to create new agents, and a communication bus. All accessible from Feishu or Telegram on your phone.
+Panmira sets them free. It gives every agent a **Claude Code or Kimi Code brain** (native subscriptions work directly — no API key required), persistent shared memory, the ability to create new agents, and a communication bus. All accessible from Feishu or Telegram on your phone.
 
 ## Dual Engine: Claude Code ✕ Kimi Code
 

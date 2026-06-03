@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MetaBot — A bridge service that connects IM bots (Feishu/Lark) to the Claude Code Agent SDK. Users chat with Claude Code from Feishu (including mobile), with real-time streaming updates via interactive cards. Runs Claude in `bypassPermissions` mode since there's no terminal for interactive approval.
+Panmira — A bridge service that connects IM bots (Feishu/Lark) to the Claude Code Agent SDK. Users chat with Claude Code from Feishu (including mobile), with real-time streaming updates via interactive cards. Runs Claude in `bypassPermissions` mode since there's no terminal for interactive approval.
 
 ## Commands
 
@@ -46,14 +46,14 @@ Web Browser → WebSocket (/ws) → ws-server.ts → MessageBridge.executeApiTas
 - **`src/feishu/card-builder.ts`** — Builds Feishu interactive card JSON. Cards have color-coded headers (blue=thinking/running, green=complete, red=error), tool call lists, markdown response content, and stats (cost/duration). Content truncated at 28KB.
 - **`src/feishu/message-sender.ts`** — Feishu API wrapper for sending/updating cards, uploading/downloading images, sending text.
 - **`src/bridge/rate-limiter.ts`** — Throttles card updates to avoid Feishu API rate limits (default 1.5s interval). Keeps only the latest pending update.
-- **`src/api/peer-manager.ts`** — Manages cross-instance bot discovery and task forwarding. Polls peer MetaBot instances every 30s, caches their bot lists, supports qualified name routing (`peerName/botName`). Anti-loop via `X-MetaBot-Origin` header.
+- **`src/api/peer-manager.ts`** — Manages cross-instance bot discovery and task forwarding. Polls peer Panmira instances every 30s, caches their bot lists, supports qualified name routing (`peerName/botName`). Anti-loop via `X-Panmira-Origin` header.
 - **`src/web/ws-server.ts`** — WebSocket server for the Web UI. Handles upgrade on `/ws`, token auth via `?token=`, heartbeat, and routes `chat`/`stop`/`answer` messages. Also serves static files from `dist/web/` for the SPA.
 
 ### Outputs Directory Pattern
 
 When Claude produces output files (images, PDFs, documents, etc.), they are automatically sent to the user in Feishu:
 
-1. **Per-chat outputs directory** — Before each execution, a fresh directory is created at `/tmp/metabot-outputs/<chatId>/`.
+1. **Per-chat outputs directory** — Before each execution, a fresh directory is created at `/tmp/panmira-outputs/<chatId>/`.
 2. **System prompt injection** — Claude is told about the directory via `systemPrompt.append`, instructing it to `cp` output files there.
 3. **Post-execution scan** — After execution completes, the bridge scans the directory and sends all files found.
 4. **File type routing** — Images (png/jpg/gif/etc.) are sent via `im.v1.image.create`, other files (pdf/docx/zip/etc.) via `im.v1.file.create`.
@@ -116,7 +116,7 @@ When Claude enters plan mode and writes a plan to `.claude/plans/*.md`, the plan
 
 ### Skill Hub (Cross-Bot Skill Sharing)
 
-A centralized skill registry that allows bots to publish, discover, and install skills across MetaBot instances.
+A centralized skill registry that allows bots to publish, discover, and install skills across Panmira instances.
 
 **Architecture**: SQLite + FTS5 store (same pattern as MetaMemory/SyncStore). Skills are stored with SKILL.md content + optional `references/` tar bundle. Cross-instance discovery via PeerManager polling.
 
@@ -211,7 +211,7 @@ Knowledge persistence is handled by an external **MetaMemory server** (FastAPI +
 Before running the service, ensure:
 
 1. **Node.js 20+** is installed.
-2. **At least one engine CLI is installed and authenticated** — MetaBot spawns the selected engine's CLI as a subprocess. Install only the engine(s) you intend to use; each bot picks one via `engine` in its config.
+2. **At least one engine CLI is installed and authenticated** — Panmira spawns the selected engine's CLI as a subprocess. Install only the engine(s) you intend to use; each bot picks one via `engine` in its config.
 
    **Claude Code (default)** — `engine: "claude"`
    - Install: `npm install -g @anthropic-ai/claude-code`
@@ -231,7 +231,7 @@ Before running the service, ensure:
    - Authenticate: `codex login` in a standalone terminal, or configure a profile / API key in `~/.codex/config.toml`.
    - Verify: `codex exec --help`.
    - Optional per-bot overrides: `codex.model`, `codex.profile`, `codex.approvalPolicy` (`untrusted` | `on-failure` | `on-request` | `never`), `codex.sandbox` (`read-only` | `workspace-write` | `danger-full-access`), `codex.extraArgs` (extra argv passed verbatim to `codex exec`), `codex.env` (extra env vars for the subprocess). `CODEX_EXECUTABLE_PATH` env var overrides auto-detection; `CODEX_APPROVAL_POLICY` / `CODEX_SANDBOX` provide global defaults.
-   - Session continuity uses `codex exec resume <thread_id>` — MetaBot stores the Codex thread id per `chatId` just like Claude sessions.
+   - Session continuity uses `codex exec resume <thread_id>` — Panmira stores the Codex thread id per `chatId` just like Claude sessions.
    - Interactive tool approvals (`sendAnswer` / `resolveQuestion`) are **not** supported under Codex — use `approvalPolicy: "never"` and a sandbox level you trust, since the bridge cannot surface approval prompts back to Feishu.
 
 3. **Feishu app is configured** — See the setup guide below.

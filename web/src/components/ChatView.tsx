@@ -1,5 +1,5 @@
 /* ============================================================
-   MetaBot Web — ChatView (orchestrator)
+   Panmira Web — ChatView (orchestrator)
 
    Sub-components live in ./chat/:
      MessageList, InputBar, CallOverlay, FilePanel,

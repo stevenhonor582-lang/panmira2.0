@@ -41,10 +41,10 @@ npm start                            # 运行编译后的 dist/index.js
 
 ## 远程 CLI 访问
 
-配置 CLI 工具连接远程 MetaBot 实例：
+配置 CLI 工具连接远程 Panmira 实例：
 
 ```bash
-# 在 ~/.metabot/.env 中
+# 在 ~/.panmira/.env 中
 METABOT_URL=http://your-server:9100
 META_MEMORY_URL=http://your-server:8100
 API_SECRET=your-secret

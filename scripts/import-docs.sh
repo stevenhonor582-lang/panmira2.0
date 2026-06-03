@@ -1,7 +1,7 @@
 #!/bin/bash
 # Import .md/.txt files from a directory into MetaMemory
 # Usage: ./import-docs.sh <directory> [folder_name]
-# Example: ./import-docs.sh /home/ubuntu/metabot/docs "PanMira 文档"
+# Example: ./import-docs.sh /home/ubuntu/panmira/docs "PanMira 文档"
 
 set -euo pipefail
 

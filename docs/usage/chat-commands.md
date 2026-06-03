@@ -1,6 +1,6 @@
 # Chat Commands
 
-Commands you can send to MetaBot in Feishu or Telegram.
+Commands you can send to Panmira in Feishu or Telegram.
 
 ## Available Commands
 
@@ -39,7 +39,7 @@ Commands you can send to MetaBot in Feishu or Telegram.
 
 ### Sending Files & Images in Groups
 
-Feishu doesn't allow @mentioning while uploading files or images (especially on mobile). MetaBot supports **upload first, @mention later**:
+Feishu doesn't allow @mentioning while uploading files or images (especially on mobile). Panmira supports **upload first, @mention later**:
 
 1. Upload files/images in the group (no @mention needed)
 2. Within **5 minutes**, @Bot with your instruction
@@ -48,7 +48,7 @@ Feishu doesn't allow @mentioning while uploading files or images (especially on 
 ```
 [upload report.pdf]            ← upload first
 [upload screenshot.png]        ← multiple files ok
-@MetaBot analyze these files   ← then @Bot, files auto-attached
+@Panmira analyze these files   ← then @Bot, files auto-attached
 ```
 
 In DMs and 2-person groups, just send files directly — no workaround needed.

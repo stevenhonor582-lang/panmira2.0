@@ -64,20 +64,17 @@ export async function runPreflight(logger: Logger): Promise<PreflightResult> {
     checks.push({ name: 'Cache:Redis', status: 'warn', message: `Not reachable: ${err.message}` });
   }
 
-  // 4. Check bots config file
-  const botsConfigPath = process.env.BOTS_CONFIG || './bots.json';
+  // 4. Check bot count from database
   try {
-    const fs = await import('node:fs');
-    if (fs.existsSync(botsConfigPath)) {
-      const raw = fs.readFileSync(botsConfigPath, 'utf-8');
-      const parsed = JSON.parse(raw);
-      const botCount = parsed.feishuBots?.length || 0;
-      checks.push({ name: 'Config:BotsJSON', status: 'ok', message: `${botCount} bots configured` });
+    const { rows } = await pool.query('SELECT count(*) as count FROM bot_configs WHERE is_active = true');
+    const botCount = parseInt(rows[0]?.count || '0');
+    if (botCount > 0) {
+      checks.push({ name: 'Config:Bots', status: 'ok', message: `${botCount} bots in database` });
     } else {
-      checks.push({ name: 'Config:BotsJSON', status: 'fail', message: `File not found: ${botsConfigPath}` });
+      checks.push({ name: 'Config:Bots', status: 'fail', message: 'No bots configured. Use Web UI: /web/settings' });
     }
   } catch (err: any) {
-    checks.push({ name: 'Config:BotsJSON', status: 'fail', message: `Parse error: ${err.message}` });
+    checks.push({ name: 'Config:Bots', status: 'fail', message: `DB query failed: ${err.message}` });
   }
 
   // 5. Check MetaMemory connectivity

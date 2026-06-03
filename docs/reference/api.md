@@ -1,6 +1,6 @@
 # REST API Reference
 
-MetaBot exposes a REST API on port `9100` (configurable via `API_PORT`).
+Panmira exposes a REST API on port `9100` (configurable via `API_PORT`).
 
 ## Authentication
 

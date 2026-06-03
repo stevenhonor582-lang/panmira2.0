@@ -1,12 +1,12 @@
 # Architecture
 
-MetaBot is a TypeScript ESM project that connects IM platforms (Feishu, Telegram) to the Claude Code Agent SDK.
+Panmira is a TypeScript ESM project that connects IM platforms (Feishu, Telegram) to the Claude Code Agent SDK.
 
 ## System Overview
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│                       MetaBot                            │
+│                       Panmira                            │
 │                                                          │
 │  ┌──────────┐ ┌───────────┐ ┌──────────┐ ┌───────────┐  │
 │  │ MetaSkill│ │MetaMemory │ │IM Bridge │ │ Scheduler │  │

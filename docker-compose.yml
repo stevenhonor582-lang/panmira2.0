@@ -33,7 +33,7 @@ services:
       timeout: 3s
       retries: 5
 
-  # ── MetaBot ──
+  # ── Panmira ──
   metabot:
     build: .
     restart: unless-stopped

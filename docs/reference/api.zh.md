@@ -1,6 +1,6 @@
 # REST API 参考
 
-MetaBot 在端口 `9100`（通过 `API_PORT` 配置）暴露 REST API。
+Panmira 在端口 `9100`（通过 `API_PORT` 配置）暴露 REST API。
 
 ## 认证
 

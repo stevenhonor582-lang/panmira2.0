@@ -34,7 +34,7 @@
 
 > **Claude Code**, **Kimi Code**, and **Codex CLI** — three first-class engines. Subscription or API key, your choice. Each bot picks its own engine.
 
-![MetaBot Demo](resources/metabot-demo.gif)
+![Panmira Demo](resources/metabot-demo.gif)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh | bash
@@ -48,7 +48,7 @@ The installer walks you through everything: working directory → **engine choic
 
 ## Multi-Engine: Claude Code, Kimi Code, and Codex CLI
 
-MetaBot isn't locked to one vendor — all three top AI coding agents ship with native support, and **your subscription works directly**.
+Panmira isn't locked to one vendor — all three top AI coding agents ship with native support, and **your subscription works directly**.
 
 | | **Claude Code** (Anthropic) | **Kimi Code** (Moonshot) | **Codex CLI** (OpenAI) |
 |---|---|---|---|
@@ -84,7 +84,7 @@ Run your frontend bot on Claude and your backend bot on Kimi? Totally fine. The 
 
 ## Why MetaBot
 
-| | MetaBot | Claude / Kimi / Codex CLI (terminal) | Dify / Coze |
+| | Panmira | Claude / Kimi / Codex CLI (terminal) | Dify / Coze |
 |---|---|---|---|
 | **Mobile access** | Feishu/TG/WeChat anywhere | Terminal only | Yes, but can't run code |
 | **Engine choice** | Claude ✕ Kimi ✕ Codex, three engines | One at a time | None, API calls only |
@@ -98,7 +98,7 @@ Run your frontend bot on Claude and your backend bot on Kimi? Totally fine. The 
 
 ## Multi-Platform Access
 
-![MetaBot Architecture](resources/metabot.png)
+![Panmira Architecture](resources/metabot.png)
 
 ```
 Feishu/TG/WeChat → IM Bridge → Engine Router ──┬─→ Claude Code Agent SDK
@@ -129,7 +129,7 @@ The engine layer is abstracted — Kimi's event stream and Codex's JSONL stream 
 
 Full-featured browser-based chat interface. Access at `https://your-server/web/` after starting MetaBot.
 
-![MetaBot Web UI](resources/web-ui.png)
+![Panmira Web UI](resources/web-ui.png)
 
 - **Real-time streaming** -- WebSocket, Markdown rendering, tool call display
 - **Phone call mode** -- Tap phone icon for fullscreen hands-free voice conversation with VAD
@@ -280,7 +280,7 @@ Supported: text, images (Claude multimodal), files (PDF/code/docs), rich text (P
 ```json
 {
   "feishuBots": [{
-    "name": "metabot",
+    "name": "panmira",
     "feishuAppId": "cli_xxx",
     "feishuAppSecret": "...",
     "defaultWorkingDirectory": "/home/user/project"
@@ -325,9 +325,9 @@ Supported: text, images (Claude multimodal), files (PDF/code/docs), rich text (P
 | `WIKI_AUTO_SYNC` | true | Auto-sync on changes |
 | `VOLCENGINE_TTS_APPID` | — | Doubao voice (TTS + STT) |
 | `VOLCENGINE_TTS_ACCESS_KEY` | — | Doubao voice key |
-| `METABOT_URL` | `http://localhost:9100` | MetaBot API URL. Default is local HTTP; for remote access prefer HTTPS or a private-network address |
+| `METABOT_URL` | `http://localhost:9100` | Panmira API URL. Default is local HTTP; for remote access prefer HTTPS or a private-network address |
 | `META_MEMORY_URL` | `http://localhost:8100` | MetaMemory server URL. Default is local HTTP; for remote access prefer HTTPS or a private-network address |
-| `METABOT_PEERS` | — | Peer MetaBot URLs (comma-separated). Prefer HTTPS for internet-reachable peers |
+| `METABOT_PEERS` | — | Peer Panmira URLs (comma-separated). Prefer HTTPS for internet-reachable peers |
 | `LOG_LEVEL` | info | Log level |
 
 </details>
@@ -358,7 +358,7 @@ To pin a specific API key, set the `apiKey` field in `bots.json`.
 <details>
 <summary><strong>Security</strong></summary>
 
-MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval:
+Panmira runs Claude Code in `bypassPermissions` mode — no interactive approval:
 
 - Claude has full read/write/execute access to the working directory
 - Control access via IM platform settings (app visibility, group membership)
@@ -418,7 +418,7 @@ MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval
 The installer places `metabot`, `mm`, `mb` in `~/.local/bin/` — available immediately.
 
 ```bash
-# MetaBot management
+# Panmira management
 metabot update                      # pull latest, rebuild, restart
 metabot start / stop / restart      # PM2 management
 metabot logs                        # view live logs
@@ -450,7 +450,7 @@ mb skills install <skill> <bot>       # install skill to a bot
 mb voice "Hello world" --play
 ```
 
-CLI supports connecting to remote MetaBot/MetaMemory servers — configure `METABOT_URL` and `META_MEMORY_URL` in `~/.metabot/.env`.
+CLI supports connecting to remote MetaBot/MetaMemory servers — configure `METABOT_URL` and `META_MEMORY_URL` in `~/.panmira/.env`.
 
 </details>
 
@@ -487,7 +487,7 @@ npm run build        # TypeScript compile
 
 ## About
 
-MetaBot is built by [XVI Robotics](https://xvirobotics.com) (humanoid robot brains). We use MetaBot internally to run our company as an **agent-native organization** — a small team of humans supervising self-improving AI agents.
+Panmira is built by [XVI Robotics](https://xvirobotics.com) (humanoid robot brains). We use Panmira internally to run our company as an **agent-native organization** — a small team of humans supervising self-improving AI agents.
 
 We open-sourced it because we believe this is how companies will work in the future.
 

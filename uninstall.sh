@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# MetaBot Uninstaller
+# Panmira Uninstaller
 # Usage: bash uninstall.sh
 #   or:  curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/uninstall.sh | bash
 set -euo pipefail
@@ -62,12 +62,12 @@ prompt_yn() {
 echo ""
 echo -e "${RED}${BOLD}"
 echo "  ╔══════════════════════════════════════════╗"
-echo "  ║           MetaBot Uninstaller            ║"
+echo "  ║           Panmira Uninstaller            ║"
 echo "  ╚══════════════════════════════════════════╝"
 echo -e "${NC}"
 echo ""
 
-echo -e "  This will remove MetaBot from: ${BOLD}${METABOT_HOME}${NC}"
+echo -e "  This will remove Panmira from: ${BOLD}${METABOT_HOME}${NC}"
 echo ""
 if ! prompt_yn "Are you sure you want to uninstall MetaBot?"; then
   info "Uninstall cancelled."
@@ -77,15 +77,15 @@ fi
 # ============================================================================
 # Phase 1: Stop PM2 processes
 # ============================================================================
-step "Phase 1: Stopping MetaBot services"
+step "Phase 1: Stopping Panmira services"
 
 if command -v pm2 &>/dev/null; then
   if pm2 describe metabot &>/dev/null 2>&1; then
-    info "Stopping MetaBot PM2 process..."
+    info "Stopping Panmira PM2 process..."
     pm2 delete metabot 2>/dev/null || true
-    success "MetaBot PM2 process removed"
+    success "Panmira PM2 process removed"
   else
-    info "No MetaBot PM2 process found"
+    info "No Panmira PM2 process found"
   fi
   if pm2 describe metamemory &>/dev/null 2>&1; then
     info "Stopping MetaMemory PM2 process..."
@@ -97,7 +97,7 @@ else
   info "PM2 not installed, skipping"
 fi
 
-# Kill any process on MetaBot port (default 9100)
+# Kill any process on Panmira port (default 9100)
 if command -v lsof &>/dev/null; then
   for port in 9100 8100; do
     PID=$(lsof -ti :"$port" 2>/dev/null || true)
@@ -141,10 +141,10 @@ if [[ -f "$BASH_ALIASES" ]]; then
     success "Removed mm() shortcut from ~/.bash_aliases"
   fi
 
-  # Remove mb() block (from "# MetaBot API shortcuts" to closing "}")
+  # Remove mb() block (from "# Panmira API shortcuts" to closing "}")
   if grep -q 'mb()' "$BASH_ALIASES" 2>/dev/null; then
     awk '
-      /^# MetaBot API shortcuts/ { skip=1; next }
+      /^# Panmira API shortcuts/ { skip=1; next }
       skip && /^[^ \t]/ && !/^(export METABOT|mb\(\))/ { skip=0 }
       skip { next }
       { print }
@@ -154,7 +154,7 @@ if [[ -f "$BASH_ALIASES" ]]; then
   fi
 
   if [[ "$CLEANED" == "false" ]]; then
-    info "No MetaBot shortcuts found in ~/.bash_aliases"
+    info "No Panmira shortcuts found in ~/.bash_aliases"
   fi
 
   # Remove empty file if nothing left
@@ -199,9 +199,9 @@ if [[ -d "$HOME/.lark-cli" ]]; then
 fi
 
 # ============================================================================
-# Phase 5: Remove MetaBot directory
+# Phase 5: Remove Panmira directory
 # ============================================================================
-step "Phase 5: Removing MetaBot installation"
+step "Phase 5: Removing Panmira installation"
 
 if [[ -d "$METABOT_HOME" ]]; then
   # Check for data that might be worth keeping
@@ -226,7 +226,7 @@ if [[ -d "$METABOT_HOME" ]]; then
   rm -rf "$METABOT_HOME"
   success "Removed $METABOT_HOME"
 else
-  info "MetaBot directory not found at $METABOT_HOME"
+  info "Panmira directory not found at $METABOT_HOME"
 fi
 
 # ============================================================================
@@ -246,7 +246,7 @@ done
 if [[ ${#WORKSPACE_DIRS[@]} -gt 0 ]]; then
   for ws in "${WORKSPACE_DIRS[@]}"; do
     echo ""
-    info "Found deployed MetaBot skills in: $ws"
+    info "Found deployed Panmira skills in: $ws"
     if prompt_yn "Remove deployed skills from $ws?"; then
       for skill in metaskill metamemory metabot voice; do
         rm -rf "$ws/.claude/skills/$skill" 2>/dev/null || true
@@ -264,7 +264,7 @@ fi
 echo ""
 echo -e "${GREEN}${BOLD}"
 echo "  ╔══════════════════════════════════════════╗"
-echo "  ║        MetaBot — Uninstalled             ║"
+echo "  ║        Panmira — Uninstalled             ║"
 echo "  ╚══════════════════════════════════════════╝"
 echo -e "${NC}"
 echo ""
@@ -274,7 +274,7 @@ echo "    - CLI tools (mm, mb, metabot)"
 echo "    - Shell shortcuts from ~/.bash_aliases"
 echo "    - Claude skills (metaskill, metamemory, metabot, lark-cli skills)"
 echo "    - lark-cli config (~/.lark-cli)"
-echo "    - MetaBot directory ($METABOT_HOME)"
+echo "    - Panmira directory ($METABOT_HOME)"
 if [[ -d "$HOME/metabot-backup" ]]; then
   echo ""
   echo -e "  ${BOLD}Backup:${NC} ~/metabot-backup/"

@@ -24,7 +24,7 @@ sed_i() {
 
 echo ""
 echo "========================================="
-echo "  MetaBot Setup"
+echo "  Panmira Setup"
 echo "========================================="
 echo ""
 

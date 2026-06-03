@@ -15,7 +15,7 @@ Enable auto-start on boot:
 pm2 startup && pm2 save
 ```
 
-This registers MetaBot as a system service that starts automatically after reboot.
+This registers Panmira as a system service that starts automatically after reboot.
 
 ## Manual PM2 Commands
 
@@ -52,7 +52,7 @@ openssl rand -hex 32
 Then configure CLI tools to connect through your HTTPS reverse proxy for internet-reachable deployments:
 
 ```bash
-# In ~/.metabot/.env
+# In ~/.panmira/.env
 METABOT_URL=https://metabot.yourdomain.com
 META_MEMORY_URL=https://memory.yourdomain.com
 API_SECRET=your-secret

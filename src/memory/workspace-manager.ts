@@ -208,7 +208,7 @@ export class WorkspaceManager {
     if (cached) return cached;
 
     let resolvedName = groupName;
-    // Priority 1: coordinator_configs (user-configured group name in metabot settings)
+    // Priority 1: coordinator_configs (user-configured group name in Panmira settings)
     if (!resolvedName) {
       try {
         const { rows } = await pool.query('SELECT group_name FROM coordinator_configs WHERE group_id = $1', [groupId]);

@@ -1,6 +1,6 @@
 # WeChat Integration
 
-MetaBot supports WeChat personal accounts via the ClawBot plugin (iLink Bot API), allowing you to chat with Claude Code agents directly in WeChat.
+Panmira supports WeChat personal accounts via the ClawBot plugin (iLink Bot API), allowing you to chat with Claude Code agents directly in WeChat.
 
 !!! info "Gray Testing"
     WeChat ClawBot is currently in gray testing. Requires iPhone WeChat 8.0.70+. Android support coming soon.
@@ -9,7 +9,7 @@ MetaBot supports WeChat personal accounts via the ClawBot plugin (iLink Bot API)
 
 - **iPhone WeChat 8.0.70+**
 - Gray test access: WeChat → Me → Settings → Plugins → **ClawBot**
-- MetaBot installed and ready to run
+- Panmira installed and ready to run
 
 ## Setup
 
@@ -24,7 +24,7 @@ curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh
 The installer will:
 
 1. Generate `wechatBots` config in `bots.json`
-2. Start MetaBot and wait for QR login
+2. Start Panmira and wait for QR login
 3. **Display the QR login URL directly in the terminal** — open it and scan to bind
 
 ```
@@ -81,7 +81,7 @@ Scan with WeChat and confirm authorization. After confirmation:
 
 ### Start Chatting
 
-Send a message to ClawBot in WeChat — MetaBot handles it and replies.
+Send a message to ClawBot in WeChat — Panmira handles it and replies.
 
 ## Config Fields
 
@@ -126,7 +126,7 @@ CLAUDE_DEFAULT_WORKING_DIRECTORY=/home/user/project
 | Public IP | Not needed | Not needed | Not needed |
 
 !!! note "Message Updates"
-    WeChat doesn't support editing sent messages. MetaBot sends tool progress updates every 5 seconds (e.g. `🔧 Running... ✓ Read file.ts`), then sends the final result as a new message.
+    WeChat doesn't support editing sent messages. Panmira sends tool progress updates every 5 seconds (e.g. `🔧 Running... ✓ Read file.ts`), then sends the final result as a new message.
 
 ## Troubleshooting
 
@@ -134,7 +134,7 @@ CLAUDE_DEFAULT_WORKING_DIRECTORY=/home/user/project
 Ensure ClawBot plugin is enabled in WeChat settings and you have gray test access.
 
 **Q: Token expired?**
-Delete the entry from `data/wechat-tokens.json` and restart MetaBot to re-scan.
+Delete the entry from `data/wechat-tokens.json` and restart Panmira to re-scan.
 
 **Q: Can't send messages?**
 WeChat requires the user to message first — the bot cannot initiate conversations (context_token required).

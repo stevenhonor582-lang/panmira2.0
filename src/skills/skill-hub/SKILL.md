@@ -9,7 +9,7 @@ argument-hint: "[list|search|publish|install] [args]"
 
 # Skill Hub — Shared Skill Registry
 
-Discover and install skills shared across MetaBot instances and bots.
+Discover and install skills shared across Panmira instances and bots.
 
 ## Quick Commands (mb shortcut)
 

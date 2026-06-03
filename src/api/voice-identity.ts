@@ -22,7 +22,7 @@ export class VoiceIdentityStore {
   constructor(logger: Logger, dbStore?: VoiceIdentityDBStore) {
     this.logger = logger.child({ module: 'voice-identity' });
     this.dbStore = dbStore;
-    this.dataPath = path.join(os.homedir(), '.metabot', 'voice-identities.json');
+    this.dataPath = path.join(os.homedir(), '.panmira', 'voice-identities.json');
     if (dbStore) {
       this.loadFromDB();
     } else {

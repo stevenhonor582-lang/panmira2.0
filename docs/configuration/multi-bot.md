@@ -1,6 +1,6 @@
 # Multi-Bot Mode
 
-Run multiple Feishu and Telegram bots in a single MetaBot process.
+Run multiple Feishu and Telegram bots in a single Panmira process.
 
 ## Setup
 
@@ -10,7 +10,7 @@ Set `BOTS_CONFIG=./bots.json` in `.env` to enable multi-bot mode:
 {
   "feishuBots": [
     {
-      "name": "metabot",
+      "name": "panmira",
       "feishuAppId": "cli_xxx",
       "feishuAppSecret": "...",
       "defaultWorkingDirectory": "/home/user/project-a"
@@ -45,7 +45,7 @@ Set `BOTS_CONFIG=./bots.json` in `.env` to enable multi-bot mode:
 | `maxBudgetUsd` | No | unlimited | Max cost per request (Claude only — Kimi runs on subscription) |
 | `model` | No | SDK default | Default model ID (engine-specific) |
 | `allowedTools` | No | `Read,Edit,Write,Glob,Grep,Bash` | Tool whitelist (Claude only) |
-| `outputsBaseDir` | No | `/tmp/metabot-outputs` | Output files directory |
+| `outputsBaseDir` | No | `/tmp/panmira-outputs` | Output files directory |
 | `kimi` | No | — | Kimi-specific options (only when `engine: "kimi"`) — see below |
 
 ### Kimi engine options
@@ -102,7 +102,7 @@ You can also configure [Peers](../features/peers.md) in `bots.json`:
 
 ## Single-Bot Mode
 
-Without `BOTS_CONFIG`, MetaBot runs in single-bot mode using environment variables:
+Without `BOTS_CONFIG`, Panmira runs in single-bot mode using environment variables:
 
 ```bash
 FEISHU_APP_ID=cli_xxx

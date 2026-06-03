@@ -18,7 +18,7 @@ if (fs.existsSync(envPath)) {
 module.exports = {
   apps: [
     {
-      name: 'metabot',
+      name: 'panmira',
       script: 'src/index.ts',
       interpreter: path.join(__dirname, 'node_modules/.bin/tsx'),
       cwd: __dirname,

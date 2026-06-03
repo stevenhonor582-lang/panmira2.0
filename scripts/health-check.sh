@@ -4,7 +4,7 @@
 
 STALE_FILE="/tmp/metabot-health-failures"
 MAX_FAILURES=3
-API_SECRET=$(grep API_SECRET /home/ubuntu/metabot/.env | cut -d= -f2)
+API_SECRET=$(grep API_SECRET /home/ubuntu/panmira/.env | cut -d= -f2)
 HEALTH_URL="http://localhost:9100/api/health"
 
 RESPONSE=$(curl -s -H "Authorization: Bearer ${API_SECRET}" "$HEALTH_URL" 2>/dev/null)
@@ -27,7 +27,7 @@ echo "$COUNT" > "$STALE_FILE"
 
 if [ "$COUNT" -ge "$MAX_FAILURES" ]; then
   # Alert via PM2 alert script
-  /home/ubuntu/metabot/scripts/pm2-alert.sh "metabot" "health_check_fail" 1 "$COUNT"
+  /home/ubuntu/panmira/scripts/pm2-alert.sh "metabot" "health_check_fail" 1 "$COUNT"
   # Log to system
   logger -t metabot-health "CRITICAL: Health check failed $COUNT times. Status: $STATUS"
   rm -f "$STALE_FILE"

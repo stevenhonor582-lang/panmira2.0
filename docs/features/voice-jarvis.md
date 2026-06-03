@@ -1,6 +1,6 @@
 # Voice Assistant (Jarvis Mode)
 
-Talk to any MetaBot agent hands-free using AirPods and Siri. No app needed — just an iOS Shortcut.
+Talk to any Panmira agent hands-free using AirPods and Siri. No app needed — just an iOS Shortcut.
 
 ## Three Modes
 
@@ -23,7 +23,7 @@ Talk to any MetaBot agent hands-free using AirPods and Siri. No app needed — j
         ↓
   Siri dictates your voice → text
         ↓
-  HTTP POST to MetaBot /api/talk
+  HTTP POST to Panmira /api/talk
         ↓
   Agent executes (Claude Code)
         ↓
@@ -37,7 +37,7 @@ Talk to any MetaBot agent hands-free using AirPods and Siri. No app needed — j
         ↓
   Record Audio (raw audio capture)
         ↓
-  HTTP POST audio to MetaBot /api/voice
+  HTTP POST audio to Panmira /api/voice
         ↓
   Doubao/Whisper STT → Agent → optional TTS
         ↓
@@ -54,7 +54,7 @@ Zero screen interaction. Works while walking, hiking, driving.
 
 - iPhone with Siri enabled
 - AirPods (or any earphones with Siri support)
-- MetaBot server accessible from the internet (public IP + port 9100 open)
+- Panmira server accessible from the internet (public IP + port 9100 open)
 - Your `API_SECRET` from MetaBot's `.env`
 - `VOLCENGINE_TTS_APPID` + `VOLCENGINE_TTS_ACCESS_KEY` set in `.env` (for Doubao STT+TTS, recommended), or `OPENAI_API_KEY` (for Whisper STT fallback)
 
@@ -123,7 +123,7 @@ Search and add **Play Sound**:
 
 - iPhone with Siri enabled
 - AirPods (or any earphones with Siri support)
-- MetaBot server accessible from the internet (public IP + port 9100 open)
+- Panmira server accessible from the internet (public IP + port 9100 open)
 - Your `API_SECRET` from MetaBot's `.env`
 
 ### Step 1: Create the Shortcut
@@ -276,7 +276,7 @@ See [mb CLI — Voice](../reference/cli-mb.md#voice) for full CLI reference.
 - Each interaction requires saying "Hey Siri, Jarvis" again (no continuous conversation loop)
 - Siri's dictation may truncate very long voice input (Simple mode only)
 - Long agent responses (code, detailed analysis) are better consumed as text in Feishu
-- Requires internet connectivity for Siri, Whisper STT, and MetaBot API
+- Requires internet connectivity for Siri, Whisper STT, and Panmira API
 - Audio files must be under 100 MB (Doubao) / 25 MB (Whisper)
 
 ## Security

@@ -33,7 +33,6 @@ export interface RouteContext {
   registry: BotRegistry;
   scheduler: TaskScheduler;
   logger: Logger;
-  botsConfigPath?: string;
   docSync?: DocSync;
   feishuServiceClient?: lark.Client;
   peerManager?: PeerManager;

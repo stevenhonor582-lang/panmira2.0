@@ -1,10 +1,10 @@
 # Web UI
 
-A full-featured browser-based chat interface for MetaBot with real-time streaming, voice call mode, and MetaMemory browsing.
+A full-featured browser-based chat interface for Panmira with real-time streaming, voice call mode, and MetaMemory browsing.
 
 ## Overview
 
-The Web UI is a React SPA served at `/web/` on your MetaBot server. It connects to any configured bot via WebSocket and provides the same functionality as the Feishu/Telegram chat — plus phone call voice mode.
+The Web UI is a React SPA served at `/web/` on your Panmira server. It connects to any configured bot via WebSocket and provides the same functionality as the Feishu/Telegram chat — plus phone call voice mode.
 
 **URL**: `http://server:9100/web/` (use HTTPS for voice features — see [HTTPS Setup](#https-setup))
 
@@ -25,7 +25,7 @@ The Web UI is a React SPA served at `/web/` on your MetaBot server. It connects 
 
 ## Quick Start
 
-1. Start MetaBot: `npm run dev` or `metabot start`
+1. Start Panmira: `npm run dev` or `metabot start`
 2. Open `http://localhost:9100/web/` in your browser
 3. Enter your `API_SECRET` as the token
 4. Select a bot and start chatting
@@ -164,7 +164,7 @@ Run the Vite dev server with API/WS proxy:
 cd web && npm run dev
 ```
 
-This starts Vite on port 5173 with proxy to MetaBot on port 9100.
+This starts Vite on port 5173 with proxy to Panmira on port 9100.
 
 For production builds:
 

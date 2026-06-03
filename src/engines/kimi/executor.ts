@@ -68,7 +68,7 @@ export class KimiExecutor {
     const session = this.createKimiSession(cwd, sessionId, options);
 
     // The Kimi SDK has no `systemPrompt.append` equivalent. We prepend the
-    // MetaBot context (outputs directory, bot identity, group membership)
+    // Panmira context (outputs directory, bot identity, group membership)
     // to the user's message so Kimi bots receive the same instructions
     // Claude bots do.
     const fullPrompt = this.buildPromptWithContext(prompt, outputsDir, apiContext);
@@ -261,7 +261,7 @@ export class KimiExecutor {
 
     if (apiContext) {
       sections.push(
-        `## MetaBot API\nYou are running as bot "${apiContext.botName}" in chat "${apiContext.chatId}".\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`,
+        `## Panmira API\nYou are running as bot "${apiContext.botName}" in chat "${apiContext.chatId}".\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`,
       );
 
       if (apiContext.groupMembers && apiContext.groupMembers.length > 0) {

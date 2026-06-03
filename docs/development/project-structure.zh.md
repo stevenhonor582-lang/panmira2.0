@@ -1,6 +1,6 @@
 # 项目结构
 
-MetaBot 是 TypeScript ESM 项目（`"type": "module"`，所有导入使用 `.js` 扩展名）。
+Panmira 是 TypeScript ESM 项目（`"type": "module"`，所有导入使用 `.js` 扩展名）。
 
 ## 目录布局
 

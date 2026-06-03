@@ -1,6 +1,6 @@
 # Security
 
-MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval. Understand the implications.
+Panmira runs Claude Code in `bypassPermissions` mode — no interactive approval. Understand the implications.
 
 ## Permission Model
 

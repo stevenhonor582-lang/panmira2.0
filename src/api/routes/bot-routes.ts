@@ -16,7 +16,7 @@ export async function handleBotRoutes(
   method: string,
   url: string,
 ): Promise<boolean> {
-  const { registry, logger, botsConfigPath, peerManager, memoryServerUrl, memoryAuthToken, ws, botConfigStore } = ctx;
+  const { registry, logger, peerManager, memoryServerUrl, memoryAuthToken, ws, botConfigStore } = ctx;
 
   // GET /api/bots/:name/profile — detailed bot profile with stats
   if (method === 'GET' && /^\/api\/bots\/[^/]+\/profile$/.test(url)) {

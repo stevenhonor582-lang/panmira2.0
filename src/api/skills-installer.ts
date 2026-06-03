@@ -7,7 +7,7 @@ import type { Logger } from '../utils/logger.js';
 import { SKILL_REGISTRY } from '../skills/skill-registry.js';
 
 /** Skills installed for all platforms. */
-const COMMON_SKILLS = ['metaskill', 'metamemory', 'metabot', 'phone-call', 'skill-hub'];
+const COMMON_SKILLS = ['metaskill', 'metamemory', 'panmira', 'phone-call', 'skill-hub'];
 
 /** Lark CLI AI Agent skills — installed via `npx skills add larksuite/cli` and
  *  symlinked into ~/.claude/skills/ automatically. We copy them to the bot
@@ -282,7 +282,7 @@ export function installFromGithub(
     return { name: resolvedName, path: destDir, alreadyInstalled: true };
   }
 
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'metabot-skill-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'panmira-skill-'));
   try {
     const cloneUrl = `https://github.com/${parsed.owner}/${parsed.repo}.git`;
     const cloneArgs = ['clone', '--depth', '1'];

@@ -4,7 +4,7 @@ The `mm` command provides terminal access to MetaMemory.
 
 ## Installation
 
-Installed automatically by the MetaBot installer to `~/.local/bin/mm`.
+Installed automatically by the Panmira installer to `~/.local/bin/mm`.
 
 ## Read Commands
 
@@ -30,7 +30,7 @@ By default, `mm` connects to `http://localhost:8100`. For internet-reachable dep
 
 ```bash
 # Generate a secret once: openssl rand -hex 32
-# In ~/.metabot/.env or ~/metabot/.env
+# In ~/.panmira/.env or ~/metabot/.env
 META_MEMORY_URL=http://your-server:8100
 API_SECRET=your-secret
 ```

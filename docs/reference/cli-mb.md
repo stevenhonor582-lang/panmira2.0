@@ -1,10 +1,10 @@
 # mb CLI (Agent Bus)
 
-The `mb` command provides terminal access to the MetaBot Agent Bus API.
+The `mb` command provides terminal access to the Panmira Agent Bus API.
 
 ## Installation
 
-Installed automatically by the MetaBot installer to `~/.local/bin/mb`.
+Installed automatically by the Panmira installer to `~/.local/bin/mb`.
 
 ## Commands
 
@@ -79,7 +79,7 @@ By default, `mb` connects to `http://localhost:9100`. For internet-reachable dep
 
 ```bash
 # Generate a secret once: openssl rand -hex 32
-# In ~/.metabot/.env or ~/metabot/.env
+# In ~/.panmira/.env or ~/metabot/.env
 METABOT_URL=http://your-server:9100
 API_SECRET=your-secret
 ```

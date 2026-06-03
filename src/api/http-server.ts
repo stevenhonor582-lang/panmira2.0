@@ -62,7 +62,6 @@ interface ApiServerOptions {
   registry: BotRegistry;
   scheduler: TaskScheduler;
   logger: Logger;
-  botsConfigPath?: string;
   docSync?: DocSync;
   feishuServiceClient?: lark.Client;
   peerManager?: PeerManager;
@@ -86,7 +85,7 @@ interface ApiServerOptions {
 const startTime = Date.now();
 const rateLimiter = new RateLimiter(60000, 100); // 100 req/min per IP
 // Expose start time for metrics route
-(globalThis as any).__metabot_start_time = startTime;
+(globalThis as any).__panmira_start_time = startTime;
 
 export async function startApiServer(options: ApiServerOptions): Promise<http.Server> {
   const {
@@ -95,7 +94,6 @@ export async function startApiServer(options: ApiServerOptions): Promise<http.Se
     registry,
     scheduler,
     logger,
-    botsConfigPath,
     docSync,
     feishuServiceClient,
     peerManager,
@@ -141,7 +139,6 @@ export async function startApiServer(options: ApiServerOptions): Promise<http.Se
     registry,
     scheduler,
     logger,
-    botsConfigPath,
     docSync,
     feishuServiceClient,
     peerManager,
@@ -228,7 +225,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<http.Se
 
     // Prometheus metrics endpoint
     if (method === 'GET' && url === '/metrics') {
-      _metrics.setGauge('metabot_uptime_seconds', process.uptime());
+      _metrics.setGauge('panmira_uptime_seconds', process.uptime());
       const body = _metrics.serialize();
       res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4; charset=utf-8' });
       res.end(body);

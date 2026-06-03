@@ -20,8 +20,8 @@ export interface SkillMeta {
 const HARDCODED_REGISTRY: SkillMeta[] = [
   // ── System skills (always loaded) ──
   {
-    name: 'metabot',
-    summary: 'MetaBot API 调用能力，查看机器人信息和管理',
+    name: 'panmira',
+    summary: 'Panmira API 调用能力，查看机器人信息和管理',
     triggers: [],
     category: 'system',
     platform: 'all',

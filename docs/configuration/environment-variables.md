@@ -2,7 +2,7 @@
 
 All configuration is via `.env` file or system environment variables. Copy `.env.example` to `.env` to get started.
 
-## MetaBot Core
+## Panmira Core
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -61,13 +61,13 @@ Falls back to the first Feishu bot's credentials if not set.
 | `METABOT_PEERS` | — | Comma-separated peer URLs. Prefer HTTPS for internet-reachable peers; use plain HTTP only for localhost or a private overlay network |
 | `METABOT_PEER_SECRETS` | — | Comma-separated peer secrets (positional match) |
 | `METABOT_PEER_NAMES` | auto | Comma-separated peer names |
-| `METABOT_PEER_POLL_INTERVAL_MS` | `30000` | Peer poll interval |
+| `PANMIRA_PEER_POLL_INTERVAL_MS` | `30000` | Peer poll interval |
 
 ## Remote Access
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `METABOT_URL` | `http://localhost:9100` | MetaBot API URL for CLI. The default is local HTTP; for remote access prefer an HTTPS reverse proxy or a private-network address |
+| `METABOT_URL` | `http://localhost:9100` | Panmira API URL for CLI. The default is local HTTP; for remote access prefer an HTTPS reverse proxy or a private-network address |
 | `META_MEMORY_URL` | `http://localhost:8100` | MetaMemory URL for CLI. The default is local HTTP; for remote access prefer an HTTPS reverse proxy or a private-network address |
 
 ## Voice
@@ -83,7 +83,7 @@ Falls back to the first Feishu bot's credentials if not set.
 
 ## Third-Party AI Providers
 
-MetaBot supports any Anthropic-compatible API:
+Panmira supports any Anthropic-compatible API:
 
 ```bash
 # Kimi/Moonshot

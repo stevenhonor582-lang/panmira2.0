@@ -31,7 +31,7 @@ export class BudgetManager {
   constructor(logger: Logger, dbStore?: BudgetStore) {
     this.logger = logger.child({ module: 'budget' });
     this.dbStore = dbStore;
-    this.dataPath = path.join(os.homedir(), '.metabot', 'budgets.json');
+    this.dataPath = path.join(os.homedir(), '.panmira', 'budgets.json');
 
     if (dbStore) {
       this.loadFromDB();

@@ -6,7 +6,7 @@ import type { RouteContext } from './types.js';
 
 const ROOT_DIR = process.env.PROJECT_ROOT || '/home/ubuntu';
 
-const ALLOWED_DIRS = new Set(['/home/ubuntu/workspace', '/home/ubuntu/dev', '/home/ubuntu/metabot']);
+const ALLOWED_DIRS = new Set(['/home/ubuntu/workspace', '/home/ubuntu/dev', '/home/ubuntu/panmira']);
 
 const TEXT_EXTENSIONS = new Set([
   '.ts',

@@ -1,6 +1,6 @@
 # Project Structure
 
-MetaBot is a TypeScript ESM project (`"type": "module"`, all imports use `.js` extensions).
+Panmira is a TypeScript ESM project (`"type": "module"`, all imports use `.js` extensions).
 
 ## Directory Layout
 

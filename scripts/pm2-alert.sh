@@ -18,7 +18,7 @@ if [ "$EVENT" = "stopped" ] || [ "$EXIT_CODE" = "0" ]; then
 fi
 
 # Get last 10 lines of error log for context
-ERROR_TAIL=$(tail -10 /home/ubuntu/metabot/logs/error.log 2>/dev/null | sed 's/"/\\"/g' | tr '\n' '\\n')
+ERROR_TAIL=$(tail -10 /home/ubuntu/panmira/logs/error.log 2>/dev/null | sed 's/"/\\"/g' | tr '\n' '\\n')
 
 # Feishu webhook - use first bot's credentials
 TIMESTAMP=$(date -Iseconds)
@@ -30,7 +30,7 @@ MESSAGE=$(cat << EOF
   "msg_type": "interactive",
   "card": {
     "header": {
-      "title": {"tag": "plain_text", "content": "🔴 MetaBot 崩溃告警"},
+      "title": {"tag": "plain_text", "content": "🔴 Panmira 崩溃告警"},
       "template": "red"
     },
     "elements": [
@@ -45,7 +45,7 @@ EOF
 )
 
 # Read credentials from .env
-source <(grep -E "^(ANTHROPIC_AUTH_TOKEN|API_SECRET)=" /home/ubuntu/metabot/.env)
+source <(grep -E "^(ANTHROPIC_AUTH_TOKEN|API_SECRET)=" /home/ubuntu/panmira/.env)
 
 # Send to metabot's own API health endpoint for logging
 curl -s -X POST "http://localhost:9100/api/internal/alert" \

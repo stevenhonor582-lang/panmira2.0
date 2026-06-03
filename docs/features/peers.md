@@ -1,13 +1,13 @@
 # Peers Federation
 
-Cross-instance bot discovery and task routing. Connect multiple MetaBot instances — on the same machine or across remote servers.
+Cross-instance bot discovery and task routing. Connect multiple Panmira instances — on the same machine or across remote servers.
 
 ## Overview
 
-Peers enables a **federated architecture** where multiple MetaBot instances discover each other's bots and route tasks automatically. This is useful when:
+Peers enables a **federated architecture** where multiple Panmira instances discover each other's bots and route tasks automatically. This is useful when:
 
-- Multiple users on the same machine run separate MetaBot instances
-- Teams deploy MetaBot on different servers
+- Multiple users on the same machine run separate Panmira instances
+- Teams deploy Panmira on different servers
 - You want to share specialized bots across environments
 
 ## How It Works
@@ -15,7 +15,7 @@ Peers enables a **federated architecture** where multiple MetaBot instances disc
 1. **Discovery** — Each instance periodically polls its peers' `GET /api/bots` endpoint (every 30 seconds)
 2. **Caching** — Bot lists are cached locally for fast lookups
 3. **Routing** — When a bot name isn't found locally, the request is forwarded to the peer that has it
-4. **Anti-loop** — Forwarded requests carry `X-MetaBot-Origin` header to prevent circular delegation
+4. **Anti-loop** — Forwarded requests carry `X-Panmira-Origin` header to prevent circular delegation
 5. **Anti-transitive** — Bots that are themselves from a peer are filtered out (no transitive forwarding)
 
 ## Configuration

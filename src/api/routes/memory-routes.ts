@@ -19,8 +19,8 @@ function getManager(): MemoryManager {
 export const handleMemoryRoutes: RouteHandler = async (_ctx, req, res, method, url) => {
   if (!url.startsWith('/api/v1/memory')) return false;
 
-  // Internal API key check — requests must come from within the metabot process
-  const internalKey = process.env.MEMORY_INTERNAL_KEY || 'metabot-internal';
+  // Internal API key check — requests must come from within the Panmira process
+  const internalKey = process.env.MEMORY_INTERNAL_KEY || 'panmira-internal';
   const reqKey = req.headers['x-internal-key'] as string;
   if (reqKey !== internalKey) {
     jsonResponse(res, 403, { error: 'Forbidden' });

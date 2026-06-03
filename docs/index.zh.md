@@ -10,7 +10,7 @@
 
 Claude Code 和 Kimi Code 是最强的 AI 编码 Agent —— 但它们都被锁在笔记本终端里。
 
-MetaBot 把它们都解放出来。给每个 Agent 一个 **Claude Code 或 Kimi Code 大脑**（订阅直连，无需 API Key）、持久化的共享记忆、创建新 Agent 的能力、以及通信总线。全部可以从飞书或 Telegram 手机端控制。
+Panmira 把它们都解放出来。给每个 Agent 一个 **Claude Code 或 Kimi Code 大脑**（订阅直连，无需 API Key）、持久化的共享记忆、创建新 Agent 的能力、以及通信总线。全部可以从飞书或 Telegram 手机端控制。
 
 ## 双引擎：Claude Code ✕ Kimi Code
 

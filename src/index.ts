@@ -84,7 +84,7 @@ async function main() {
       wechatBots: wechatCount,
       memoryServerUrl: appConfig.memoryServerUrl,
     },
-    'Starting MetaBot bridge...',
+    'Starting Panmira gateway...',
   );
 
   // Create bot registry
@@ -122,7 +122,7 @@ async function main() {
   }
 
   // Start bots independently so a single platform/API timeout does not
-  // take down the whole MetaBot process.
+  // take down the whole Panmira process.
   const feishuHandles =
     normalFeishuBots.length > 0
       ? await startBotsSafely(
@@ -393,7 +393,7 @@ async function main() {
   }
 
   // Resolve bots config path for API-driven bot CRUD
-  const botsConfigPath = process.env.BOTS_CONFIG ? path.resolve(process.env.BOTS_CONFIG) : undefined;
+  // botsConfigPath removed — Panmira uses DB-only configuration
 
   // Start API server
   const apiServer = await startApiServer({
@@ -402,7 +402,6 @@ async function main() {
     registry,
     scheduler,
     logger,
-    botsConfigPath,
     docSync,
     feishuServiceClient,
     peerManager,

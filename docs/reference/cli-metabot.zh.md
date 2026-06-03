@@ -1,10 +1,10 @@
 # metabot CLI
 
-`metabot` 命令管理 MetaBot 服务生命周期。
+`metabot` 命令管理 Panmira 服务生命周期。
 
 ## 安装
 
-MetaBot 安装器自动安装到 `~/.local/bin/metabot`。
+Panmira 安装器自动安装到 `~/.local/bin/metabot`。
 
 ## 命令
 

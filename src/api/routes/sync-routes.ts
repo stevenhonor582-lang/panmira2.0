@@ -27,8 +27,8 @@ export async function handleSyncRoutes(
   // GET /api/metrics — Prometheus exposition format
   if (method === 'GET' && url === '/api/metrics') {
     const { metrics } = await import('../../utils/metrics.js');
-    const startTime = (globalThis as any).__metabot_start_time || Date.now();
-    metrics.setGauge('metabot_uptime_seconds', Math.floor((Date.now() - startTime) / 1000));
+    const startTime = (globalThis as any).__panmira_start_time || Date.now();
+    metrics.setGauge('panmira_uptime_seconds', Math.floor((Date.now() - startTime) / 1000));
     const body = metrics.serialize();
     res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4' });
     res.end(body);

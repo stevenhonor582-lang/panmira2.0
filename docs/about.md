@@ -1,8 +1,8 @@
 # About
 
-MetaBot is built by [XVI Robotics](https://xvirobotics.com), where we develop humanoid robot brains.
+Panmira is built by [XVI Robotics](https://xvirobotics.com), where we develop humanoid robot brains.
 
-We use MetaBot internally to run our company as an **agent-native organization** — a small team of humans supervising self-improving AI agents.
+We use Panmira internally to run our company as an **agent-native organization** — a small team of humans supervising self-improving AI agents.
 
 We open-sourced it because we believe this is how companies will work in the future.
 

@@ -141,7 +141,7 @@
 
 ## 工具路径
 
-分析引擎: `/home/ubuntu/metabot/src/skills/website-analyzer/analyze.py`
+分析引擎: `/home/ubuntu/panmira/src/skills/website-analyzer/analyze.py`
 
 ---
 

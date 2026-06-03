@@ -1,12 +1,12 @@
 # 架构
 
-MetaBot 是一个 TypeScript ESM 项目，连接 IM 平台（飞书、Telegram）与 Claude Code Agent SDK。
+Panmira 是一个 TypeScript ESM 项目，连接 IM 平台（飞书、Telegram）与 Claude Code Agent SDK。
 
 ## 系统概览
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│                       MetaBot                            │
+│                       Panmira                            │
 │                                                          │
 │  ┌──────────┐ ┌───────────┐ ┌──────────┐ ┌───────────┐  │
 │  │ MetaSkill│ │MetaMemory │ │IM Bridge │ │  定时任务  │  │

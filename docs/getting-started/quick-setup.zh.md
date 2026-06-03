@@ -25,7 +25,7 @@
 ```json
 {
   "feishuBots": [{
-    "name": "metabot",
+    "name": "panmira",
     "feishuAppId": "cli_xxx",
     "feishuAppSecret": "...",
     "defaultWorkingDirectory": "/home/user/project"

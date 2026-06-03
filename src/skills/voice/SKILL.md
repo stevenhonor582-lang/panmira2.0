@@ -64,4 +64,4 @@ echo "Long text" | mb voice -o output.mp3
 - Use `--play` only when the user explicitly wants to hear the audio (it blocks until playback completes)
 - When saving files for the user, use `-o` with a descriptive filename
 - To send the audio to the user in Feishu, copy the file to the outputs directory:
-  `cp /tmp/mb-voice-xxx.mp3 /tmp/metabot-outputs/<chatId>/`
+  `cp /tmp/mb-voice-xxx.mp3 /tmp/panmira-outputs/<chatId>/`

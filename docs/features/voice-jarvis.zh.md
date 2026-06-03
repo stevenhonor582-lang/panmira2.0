@@ -1,6 +1,6 @@
 # 语音助手（Jarvis 模式）
 
-通过 AirPods 和 Siri 免手免屏与任意 MetaBot Agent 语音交流。无需安装 App，只用 iOS 快捷指令。
+通过 AirPods 和 Siri 免手免屏与任意 Panmira Agent 语音交流。无需安装 App，只用 iOS 快捷指令。
 
 ## 三种模式
 
@@ -23,7 +23,7 @@
         ↓
   Siri 听写语音 → 文字
         ↓
-  HTTP POST 到 MetaBot /api/talk
+  HTTP POST 到 Panmira /api/talk
         ↓
   Agent 执行任务（Claude Code）
         ↓
@@ -37,7 +37,7 @@
         ↓
   录制音频（原始音频捕获）
         ↓
-  HTTP POST 音频到 MetaBot /api/voice
+  HTTP POST 音频到 Panmira /api/voice
         ↓
   豆包/Whisper STT → Agent → 可选 TTS
         ↓
@@ -54,9 +54,9 @@
 
 - 开启 Siri 的 iPhone
 - AirPods（或任何支持 Siri 的耳机）
-- MetaBot 服务器可从外网访问（公网 IP + 9100 端口开放）
-- MetaBot `.env` 中的 `API_SECRET`
-- MetaBot `.env` 中设置 `VOLCENGINE_TTS_APPID` + `VOLCENGINE_TTS_ACCESS_KEY`（推荐，用于豆包 STT+TTS），或 `OPENAI_API_KEY`（用于 Whisper STT 备选）
+- Panmira 服务器可从外网访问（公网 IP + 9100 端口开放）
+- Panmira `.env` 中的 `API_SECRET`
+- Panmira `.env` 中设置 `VOLCENGINE_TTS_APPID` + `VOLCENGINE_TTS_ACCESS_KEY`（推荐，用于豆包 STT+TTS），或 `OPENAI_API_KEY`（用于 Whisper STT 备选）
 
 ### 第 1 步：创建快捷指令
 
@@ -125,8 +125,8 @@
 
 - 开启 Siri 的 iPhone
 - AirPods（或任何支持 Siri 的耳机）
-- MetaBot 服务器可从外网访问（公网 IP + 9100 端口开放）
-- MetaBot `.env` 中的 `API_SECRET`
+- Panmira 服务器可从外网访问（公网 IP + 9100 端口开放）
+- Panmira `.env` 中的 `API_SECRET`
 
 ### 第 1 步：创建快捷指令
 
@@ -280,7 +280,7 @@ mb voice "你好" --provider openai --voice nova  # 指定服务商/声音
 - 每次交互需要重新说 "Hey Siri, Jarvis"（无法持续对话循环）
 - Siri 听写对很长的语音输入可能截断（仅简单模式）
 - 长回复（代码、详细分析）更适合在飞书中阅读
-- 需要网络连接（Siri + Whisper STT + MetaBot API）
+- 需要网络连接（Siri + Whisper STT + Panmira API）
 - 音频文件需小于 100 MB（豆包）/ 25 MB（Whisper）
 
 ## 安全

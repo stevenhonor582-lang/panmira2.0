@@ -169,7 +169,7 @@ export interface AppConfig {
     adminToken?: string;
     readerToken?: string;
   };
-  /** Peer MetaBot instances for cross-instance bot discovery and task delegation. */
+  /** Peer Panmira instances for cross-instance bot discovery and task delegation. */
   peers: PeerConfig[];
 }
 
@@ -486,7 +486,7 @@ function buildClaudeConfig(entry: {
     outputsBaseDir:
       entry.outputsBaseDir ||
       process.env.OUTPUTS_BASE_DIR ||
-      path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
+      path.join(os.tmpdir(), `panmira-outputs-${os.userInfo().username}`),
     downloadsDir:
       entry.downloadsDir ||
       process.env.DOWNLOADS_DIR ||
@@ -548,7 +548,7 @@ function feishuBotFromEnv(): BotConfig {
       apiKey: undefined,
       baseUrl: undefined,
       outputsBaseDir:
-        process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
+        process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `panmira-outputs-${os.userInfo().username}`),
       downloadsDir: process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`),
     },
   };
@@ -571,7 +571,7 @@ function telegramBotFromEnv(): TelegramBotConfig {
       apiKey: undefined,
       baseUrl: undefined,
       outputsBaseDir:
-        process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
+        process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `panmira-outputs-${os.userInfo().username}`),
       downloadsDir: process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`),
     },
   };
@@ -594,7 +594,7 @@ function wechatBotFromEnv(): WechatBotConfig {
       apiKey: undefined,
       baseUrl: undefined,
       outputsBaseDir: expandUserPath(
-        process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
+        process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `panmira-outputs-${os.userInfo().username}`),
       ),
       downloadsDir: expandUserPath(
         process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`),
@@ -619,154 +619,16 @@ export interface BotsJsonNewFormat {
   peers?: PeerJsonEntry[];
 }
 
+// loadAppConfig removed — Panmira uses DB-only configuration.
+// Use loadAppConfigFromDB() instead.
 export function loadAppConfig(): AppConfig {
-  const botsConfigPath = process.env.BOTS_CONFIG;
-
-  let feishuBots: BotConfig[] = [];
-  let telegramBots: TelegramBotConfig[] = [];
-  let webBots: BotConfigBase[] = [];
-  let wechatBots: WechatBotConfig[] = [];
-  let parsedConfig: unknown;
-
-  if (botsConfigPath) {
-    const resolved = path.resolve(botsConfigPath);
-    const raw = fs.readFileSync(resolved, 'utf-8');
-    const parsed = JSON.parse(raw);
-    parsedConfig = parsed;
-
-    if (Array.isArray(parsed)) {
-      // Old format: array of feishu bot entries (backward compatible)
-      if (parsed.length === 0) {
-        throw new Error(`BOTS_CONFIG file must contain a non-empty array or object: ${resolved}`);
-      }
-      feishuBots = (parsed as FeishuBotJsonEntry[]).map(feishuBotFromJson);
-    } else if (parsed && typeof parsed === 'object') {
-      // New format: { feishuBots: [...], telegramBots: [...], webBots: [...] }
-      const cfg = parsed as BotsJsonNewFormat;
-      if (cfg.feishuBots) {
-        feishuBots = cfg.feishuBots.map(feishuBotFromJson);
-      }
-      if (cfg.telegramBots) {
-        telegramBots = cfg.telegramBots.map(telegramBotFromJson);
-      }
-      if (cfg.webBots) {
-        webBots = cfg.webBots.map(webBotFromJson);
-      }
-      if (cfg.wechatBots) {
-        wechatBots = cfg.wechatBots.map(wechatBotFromJson);
-      }
-      if (feishuBots.length === 0 && telegramBots.length === 0 && webBots.length === 0 && wechatBots.length === 0) {
-        throw new Error(`BOTS_CONFIG file must define at least one bot: ${resolved}`);
-      }
-    } else {
-      throw new Error(`BOTS_CONFIG file must contain a JSON array or object: ${resolved}`);
-    }
-  } else {
-    // Single-bot mode from environment variables
-    if (process.env.FEISHU_APP_ID) {
-      feishuBots = [feishuBotFromEnv()];
-    }
-    if (process.env.TELEGRAM_BOT_TOKEN) {
-      telegramBots = [telegramBotFromEnv()];
-    }
-    if (process.env.WECHAT_BOT_TOKEN || process.env.WECHAT_ILINK_ENABLED === 'true') {
-      wechatBots = [wechatBotFromEnv()];
-    }
-    if (feishuBots.length === 0 && telegramBots.length === 0 && wechatBots.length === 0) {
-      throw new Error(
-        'No bot configured. Set FEISHU_APP_ID/FEISHU_APP_SECRET, TELEGRAM_BOT_TOKEN, or WECHAT_ILINK_ENABLED=true, or use BOTS_CONFIG for multi-bot mode.',
-      );
-    }
-  }
-
-  const memoryServerUrl = (
-    process.env.META_MEMORY_URL ||
-    process.env.MEMORY_SERVER_URL ||
-    'http://localhost:8100'
-  ).replace(/\/+$/, '');
-
-  const apiPort = process.env.API_PORT ? parseInt(process.env.API_PORT, 10) : 9100;
-  const apiSecret = process.env.API_SECRET || undefined;
-
-  // Expose as METABOT_* env vars so Claude Code skills can read them via shell expansion
-  process.env.METABOT_API_PORT = String(apiPort);
-  if (apiSecret) {
-    process.env.METABOT_API_SECRET = apiSecret;
-  }
-
-  // Feishu service app for wiki sync & doc reader (falls back to first Feishu bot)
-  let feishuService: AppConfig['feishuService'];
-  if (process.env.FEISHU_SERVICE_APP_ID && process.env.FEISHU_SERVICE_APP_SECRET) {
-    feishuService = {
-      appId: process.env.FEISHU_SERVICE_APP_ID,
-      appSecret: process.env.FEISHU_SERVICE_APP_SECRET,
-    };
-  } else if (feishuBots.length > 0) {
-    feishuService = {
-      appId: feishuBots[0].feishu.appId,
-      appSecret: feishuBots[0].feishu.appSecret,
-    };
-  }
-
-  const memoryEnabled = process.env.MEMORY_ENABLED !== 'false';
-  const memoryPort = process.env.MEMORY_PORT ? parseInt(process.env.MEMORY_PORT, 10) : 8100;
-  const memoryDatabaseDir = process.env.MEMORY_DATABASE_DIR || './data';
-  const memorySecret = process.env.MEMORY_SECRET || process.env.API_SECRET || '';
-  const memoryAdminToken = process.env.MEMORY_ADMIN_TOKEN || undefined;
-  const memoryReaderToken = process.env.MEMORY_TOKEN || undefined;
-
-  // Parse peers from JSON config and/or env vars
-  const peers: PeerConfig[] = [];
-  if (botsConfigPath && parsedConfig && !Array.isArray(parsedConfig)) {
-    const cfg = parsedConfig as BotsJsonNewFormat;
-    if (cfg.peers) {
-      for (const p of cfg.peers) {
-        peers.push({ name: p.name, url: p.url.replace(/\/+$/, ''), secret: p.secret });
-      }
-    }
-  }
-  if (process.env.METABOT_PEERS) {
-    const urls = process.env.METABOT_PEERS.split(',')
-      .map((u) => u.trim())
-      .filter(Boolean);
-    const secrets = (process.env.METABOT_PEER_SECRETS || '').split(',').map((s) => s.trim());
-    const names = (process.env.METABOT_PEER_NAMES || '').split(',').map((s) => s.trim());
-    for (let i = 0; i < urls.length; i++) {
-      const url = urls[i].replace(/\/+$/, '');
-      if (!peers.some((p) => p.url === url)) {
-        const autoName = names[i] || url.replace(/^https?:\/\//, '').replace(/[:.]/g, '-');
-        peers.push({ name: autoName, url, secret: secrets[i] || undefined });
-      }
-    }
-  }
-
-  return {
-    feishuBots,
-    telegramBots,
-    webBots,
-    wechatBots,
-    feishuService,
-    log: {
-      level: process.env.LOG_LEVEL || 'info',
-    },
-    memoryServerUrl,
-    api: {
-      port: apiPort,
-      secret: apiSecret,
-    },
-    memory: {
-      enabled: memoryEnabled,
-      port: memoryPort,
-      databaseDir: memoryDatabaseDir,
-      secret: memorySecret,
-      adminToken: memoryAdminToken,
-      readerToken: memoryReaderToken,
-    },
-    peers,
-  };
+  throw new Error(
+    'loadAppConfig() is deprecated. Bots are now managed exclusively through Web UI + Database.\n' +
+    'Visit http://localhost:9100/web/settings to manage bots and providers.',
+  );
 }
 
-/** Load app config from database (Phase 1). Falls back to loadAppConfig() + seedFromJson(). */
+// Legacy file-based config removed. All configuration is now in PostgreSQL.
 export async function loadAppConfigFromDB(): Promise<{
   config: AppConfig;
   botConfigStore: import('./db/bot-config-store.js').BotConfigStore;
@@ -776,10 +638,10 @@ export async function loadAppConfigFromDB(): Promise<{
 
   const rows = await store.list();
   if (rows.length === 0) {
-    // DB empty — seed from bots.json, then load normally
-    const botsConfigPath = process.env.BOTS_CONFIG;
-    if (botsConfigPath) {
-      const seeded = await store.seedFromJson(botsConfigPath);
+    // DB empty — seed from bots.json if available (one-time migration)
+    const legacyPath = process.env.BOTS_CONFIG;
+    if (legacyPath) {
+      const seeded = await store.seedFromJson(legacyPath);
       process.stdout.write(`[config] Seeded ${seeded.seeded} bots from JSON, skipped ${seeded.skipped}\n`);
     }
   }
@@ -787,8 +649,31 @@ export async function loadAppConfigFromDB(): Promise<{
   // Re-read from DB
   const allRows = await store.list();
   if (allRows.length === 0) {
-    // No bots at all — fall back to legacy loading
-    return { config: loadAppConfig(), botConfigStore: store };
+    // No bots configured yet — return empty config.
+    // Use Web UI at /web/settings to add bots.
+    return {
+      config: {
+        feishuBots: [],
+        telegramBots: [],
+        wechatBots: [],
+        webBots: [],
+        peers: [],
+        log: { level: process.env.LOG_LEVEL || 'info' },
+        api: {
+          port: parseInt(process.env.API_PORT || '9100', 10),
+          secret: process.env.API_SECRET || '',
+        },
+        memoryServerUrl: process.env.META_MEMORY_URL || process.env.MEMORY_SERVER_URL || 'http://localhost:8100',
+        memory: {
+          enabled: true,
+          port: 8100,
+          databaseDir: './data',
+          secret: process.env.MEMORY_SECRET || process.env.API_SECRET || '',
+          adminToken: process.env.MEMORY_ADMIN_TOKEN,
+        },
+      },
+      botConfigStore: store,
+    };
   }
 
   // Convert DB rows into config format, injecting secrets
@@ -834,8 +719,8 @@ export async function loadAppConfigFromDB(): Promise<{
   const memoryServerUrl = process.env.MEMORY_SERVER_URL || 'http://localhost:8100';
   const apiPort = process.env.API_PORT ? parseInt(process.env.API_PORT, 10) : 9100;
   const apiSecret = process.env.API_SECRET || undefined;
-  process.env.METABOT_API_PORT = String(apiPort);
-  if (apiSecret) process.env.METABOT_API_SECRET = apiSecret;
+  process.env.PANMIRA_API_PORT = String(apiPort);
+  if (apiSecret) process.env.PANMIRA_API_SECRET = apiSecret;
 
   let feishuService: AppConfig['feishuService'];
   if (process.env.FEISHU_SERVICE_APP_ID && process.env.FEISHU_SERVICE_APP_SECRET) {
@@ -852,7 +737,7 @@ export async function loadAppConfigFromDB(): Promise<{
   const memoryReaderToken = process.env.MEMORY_TOKEN || undefined;
 
   const peers: PeerConfig[] = [];
-  if (botsConfigPath && parsedConfig && !Array.isArray(parsedConfig)) {
+  if (parsedConfig && !Array.isArray(parsedConfig)) {
     const cfg = parsedConfig as BotsJsonNewFormat;
     if (cfg.peers) {
       for (const p of cfg.peers) {
@@ -860,12 +745,12 @@ export async function loadAppConfigFromDB(): Promise<{
       }
     }
   }
-  if (process.env.METABOT_PEERS) {
-    const urls = process.env.METABOT_PEERS.split(',')
+  if (process.env.PANMIRA_PEERS) {
+    const urls = process.env.PANMIRA_PEERS.split(',')
       .map((u) => u.trim())
       .filter(Boolean);
-    const secrets = (process.env.METABOT_PEER_SECRETS || '').split(',').map((s) => s.trim());
-    const names = (process.env.METABOT_PEER_NAMES || '').split(',').map((s) => s.trim());
+    const secrets = (process.env.PANMIRA_PEER_SECRETS || '').split(',').map((s) => s.trim());
+    const names = (process.env.PANMIRA_PEER_NAMES || '').split(',').map((s) => s.trim());
     for (let i = 0; i < urls.length; i++) {
       const url = urls[i].replace(/\/+$/, '');
       if (!peers.some((p) => p.url === url)) {

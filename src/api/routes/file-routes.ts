@@ -39,7 +39,7 @@ export async function handleFileRoutes(
     const originalName = urlObj.searchParams.get('filename') || 'upload';
     const chatId = urlObj.searchParams.get('chatId') || 'web';
 
-    const uploadDir = path.join(os.tmpdir(), 'metabot-uploads', chatId);
+    const uploadDir = path.join(os.tmpdir(), 'panmira-uploads', chatId);
     fs.mkdirSync(uploadDir, { recursive: true });
 
     const safeName = originalName.replace(/[^a-zA-Z0-9._\-\u4e00-\u9fff]/g, '_');
@@ -54,8 +54,8 @@ export async function handleFileRoutes(
   // GET /api/files/preview/<chatId>/<filename> — convert docx/xlsx to HTML
   if (method === 'GET' && url.startsWith('/api/files/preview/')) {
     const filePart = decodeURIComponent(url.slice('/api/files/preview/'.length).split('?')[0]);
-    const fullPath = path.resolve(path.join(os.tmpdir(), 'metabot-uploads', filePart));
-    const uploadsRoot = path.resolve(path.join(os.tmpdir(), 'metabot-uploads'));
+    const fullPath = path.resolve(path.join(os.tmpdir(), 'panmira-uploads', filePart));
+    const uploadsRoot = path.resolve(path.join(os.tmpdir(), 'panmira-uploads'));
 
     if (!fullPath.startsWith(uploadsRoot)) {
       res.writeHead(403, { 'Content-Type': 'text/plain' });
@@ -125,8 +125,8 @@ export async function handleFileRoutes(
   // GET /api/files/<chatId>/<filename> — serve uploaded files
   if (method === 'GET' && url.startsWith('/api/files/')) {
     const filePart = decodeURIComponent(url.slice('/api/files/'.length).split('?')[0]);
-    const fullPath = path.resolve(path.join(os.tmpdir(), 'metabot-uploads', filePart));
-    const uploadsRoot = path.resolve(path.join(os.tmpdir(), 'metabot-uploads'));
+    const fullPath = path.resolve(path.join(os.tmpdir(), 'panmira-uploads', filePart));
+    const uploadsRoot = path.resolve(path.join(os.tmpdir(), 'panmira-uploads'));
 
     if (!fullPath.startsWith(uploadsRoot)) {
       res.writeHead(403, { 'Content-Type': 'text/plain' });

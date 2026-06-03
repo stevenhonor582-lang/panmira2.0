@@ -1,10 +1,10 @@
 # Web UI
 
-MetaBot 的浏览器端聊天界面，支持实时流式输出、电话语音模式和 MetaMemory 浏览。
+Panmira 的浏览器端聊天界面，支持实时流式输出、电话语音模式和 MetaMemory 浏览。
 
 ## 概述
 
-Web UI 是一个 React SPA，部署在 MetaBot 服务器的 `/web/` 路径。通过 WebSocket 连接任意已配置的 Bot，提供与飞书/Telegram 聊天相同的功能，外加电话语音模式。
+Web UI 是一个 React SPA，部署在 Panmira 服务器的 `/web/` 路径。通过 WebSocket 连接任意已配置的 Bot，提供与飞书/Telegram 聊天相同的功能，外加电话语音模式。
 
 **访问地址**: `http://server:9100/web/`（语音功能需 HTTPS — 见 [HTTPS 设置](#https)）
 
@@ -164,7 +164,7 @@ sudo journalctl -u caddy
 cd web && npm run dev
 ```
 
-Vite 在 5173 端口启动，代理请求到 MetaBot 的 9100 端口。
+Vite 在 5173 端口启动，代理请求到 Panmira 的 9100 端口。
 
 生产构建：
 

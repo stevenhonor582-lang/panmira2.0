@@ -59,7 +59,7 @@ export async function handleGenerateRoutes(
     });
 
     const chatId = (body.chatId as string) || 'default';
-    const outDir = path.join(os.tmpdir(), 'metabot-uploads', chatId);
+    const outDir = path.join(os.tmpdir(), 'panmira-uploads', chatId);
     ensureDir(outDir);
     const filename = `speech-${Date.now()}.mp3`;
     fs.writeFileSync(path.join(outDir, filename), audioBuffer);
@@ -96,7 +96,7 @@ export async function handleGenerateRoutes(
 
     const audioBuffer = result.audioBuffer!;
     const chatId = (body.chatId as string) || 'default';
-    const outDir = path.join(os.tmpdir(), 'metabot-uploads', chatId);
+    const outDir = path.join(os.tmpdir(), 'panmira-uploads', chatId);
     ensureDir(outDir);
     const filename = `music-${Date.now()}.mp3`;
     fs.writeFileSync(path.join(outDir, filename), audioBuffer);

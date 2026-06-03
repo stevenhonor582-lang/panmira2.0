@@ -40,7 +40,7 @@ git init
 
 ### Engine Compatibility (Claude ↔ Kimi)
 
-MetaBot supports two engines: **Claude Code** and **Kimi**. The scaffolded project should be usable by either engine. Key differences you must account for:
+Panmira supports two engines: **Claude Code** and **Kimi**. The scaffolded project should be usable by either engine. Key differences you must account for:
 
 | Feature | Claude | Kimi |
 |---------|--------|------|

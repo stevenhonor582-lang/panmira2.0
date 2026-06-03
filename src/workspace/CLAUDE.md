@@ -17,7 +17,7 @@
 | /home/ubuntu/VMT-知识库/ | 行业调研、客户画像、技术文档 | 知识管理员维护，其他只读 |
 | /home/ubuntu/VMT-共享素材/ | 素材需求单、SEO配置、策略简报、发布输出 | 所有Bot可读写 |
 
-## MetaBot 基础命令
+## Panmira 基础命令
 
 mb bots | mb task <bot> <chatId> <prompt> | mm search <query> | lark-cli <domain> +<action>
 

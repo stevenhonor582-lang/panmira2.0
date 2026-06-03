@@ -1,5 +1,5 @@
 /* ============================================================
-   MetaBot Web — Global State (Zustand)
+   Panmira Web — Global State (Zustand)
    ============================================================ */
 
 import { create } from 'zustand';

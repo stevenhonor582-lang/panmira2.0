@@ -1,11 +1,11 @@
 ---
 name: metabot
-description: "MetaBot HTTP API for agent collaboration: talk to other bots, schedule tasks, manage bots and peers. Use when the user wants to delegate work to another bot, schedule tasks, create/remove bots, or check peer status."
+description: "Panmira HTTP API for agent collaboration: talk to other bots, schedule tasks, manage bots and peers. Use when the user wants to delegate work to another bot, schedule tasks, create/remove bots, or check peer status."
 ---
 
-## MetaBot API
+## Panmira API
 
-MetaBot exposes an HTTP API for agent-to-agent collaboration, task scheduling, and bot management.
+Panmira exposes an HTTP API for agent-to-agent collaboration, task scheduling, and bot management.
 
 Your bot name and chat ID are provided in the system prompt (look for "You are running as bot ... in chat ..."). Use those values for `botName` and `chatId` in the commands below.
 
@@ -59,7 +59,7 @@ mb health                                  # Health check
 
 ### Cross-Instance Agent Talk
 
-When you talk to a bot that isn't on the local instance, MetaBot automatically routes the request to the peer instance that hosts that bot. No special syntax is needed — just use `mb talk <botName> <chatId> <prompt>` as usual.
+When you talk to a bot that isn't on the local instance, Panmira automatically routes the request to the peer instance that hosts that bot. No special syntax is needed — just use `mb talk <botName> <chatId> <prompt>` as usual.
 
 Use qualified names to target a specific peer: `mb talk <peerName>/<botName> <chatId> <prompt>`.
 

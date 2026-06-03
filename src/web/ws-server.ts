@@ -673,7 +673,7 @@ async function handleChat(
       onOutputFiles: (files) => {
         if (ws.readyState !== WebSocket.OPEN) return;
         // Copy output files to uploads dir so they're accessible via /api/files/
-        const uploadsDir = path.join(os.tmpdir(), 'metabot-uploads', chatId);
+        const uploadsDir = path.join(os.tmpdir(), 'panmira-uploads', chatId);
         fs.mkdirSync(uploadsDir, { recursive: true });
         for (const file of files) {
           try {

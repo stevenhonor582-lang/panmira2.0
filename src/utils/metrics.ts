@@ -99,6 +99,6 @@ metrics.counter('metabot_commands_total', 'Total slash commands processed');
 metrics.counter('metabot_auth_denied_total', 'Total auth denied events');
 metrics.counter('metabot_api_tasks_total', 'Total API tasks processed');
 metrics.gauge('metabot_active_tasks', 'Currently running tasks');
-metrics.gauge('metabot_uptime_seconds', 'Process uptime in seconds');
+metrics.gauge('panmira_uptime_seconds', 'Process uptime in seconds');
 metrics.histogram('metabot_task_duration_seconds', 'Task duration in seconds', [1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600]);
 metrics.histogram('metabot_task_cost_usd', 'Task cost in USD', [0.01, 0.05, 0.1, 0.5, 1, 5, 10]);

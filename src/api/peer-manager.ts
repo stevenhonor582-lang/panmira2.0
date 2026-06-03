@@ -62,8 +62,8 @@ export class PeerManager {
       });
     }
 
-    const interval = process.env.METABOT_PEER_POLL_INTERVAL_MS
-      ? parseInt(process.env.METABOT_PEER_POLL_INTERVAL_MS, 10)
+    const interval = process.env.PANMIRA_PEER_POLL_INTERVAL_MS
+      ? parseInt(process.env.PANMIRA_PEER_POLL_INTERVAL_MS, 10)
       : DEFAULT_POLL_INTERVAL_MS;
 
     if (this.peers.size > 0) {
@@ -86,7 +86,7 @@ export class PeerManager {
   private async refreshPeer(state: PeerState): Promise<void> {
     const { config } = state;
     const headers: Record<string, string> = {
-      'X-MetaBot-Origin': 'peer',
+      'X-Panmira-Origin': 'peer',
     };
     if (config.secret) {
       headers['Authorization'] = `Bearer ${config.secret}`;
@@ -221,12 +221,12 @@ export class PeerManager {
     return undefined;
   }
 
-  /** Forward a task request to a peer. Adds X-MetaBot-Origin header to prevent loops. */
+  /** Forward a task request to a peer. Adds X-Panmira-Origin header to prevent loops. */
   async forwardTask(peer: PeerConfig, body: object): Promise<object> {
     const url = `${peer.url}/api/talk`;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'X-MetaBot-Origin': 'peer',
+      'X-Panmira-Origin': 'peer',
     };
     if (peer.secret) {
       headers['Authorization'] = `Bearer ${peer.secret}`;
@@ -260,7 +260,7 @@ export class PeerManager {
 
     const { config } = state;
     const headers: Record<string, string> = {
-      'X-MetaBot-Origin': 'peer',
+      'X-Panmira-Origin': 'peer',
     };
     if (config.secret) {
       headers['Authorization'] = `Bearer ${config.secret}`;

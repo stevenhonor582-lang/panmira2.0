@@ -1,5 +1,5 @@
 /* ============================================================
-   MetaBot Web — Type Definitions
+   Panmira Web — Type Definitions
    ============================================================ */
 
 export type CardStatus =

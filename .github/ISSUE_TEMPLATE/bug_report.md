@@ -30,7 +30,7 @@ What actually happened.
 - OS:
 - Feishu app type: (custom app / store app)
 - Claude Code version:
-- MetaBot version/commit:
+- Panmira version/commit:
 
 ## Logs
 

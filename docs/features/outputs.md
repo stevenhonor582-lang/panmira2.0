@@ -4,7 +4,7 @@ When Claude produces output files (images, PDFs, documents, etc.), they are auto
 
 ## How It Works
 
-1. **Per-chat outputs directory** — Before each execution, a fresh directory is created at `/tmp/metabot-outputs/<chatId>/`
+1. **Per-chat outputs directory** — Before each execution, a fresh directory is created at `/tmp/panmira-outputs/<chatId>/`
 2. **System prompt injection** — Claude is told to `cp` output files to this directory
 3. **Post-execution scan** — After execution completes, the bridge scans the directory and sends all files found
 4. **File type routing** — Images are uploaded via the image API, other files via the file API
@@ -20,7 +20,7 @@ When Claude produces output files (images, PDFs, documents, etc.), they are auto
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `outputsBaseDir` | `/tmp/metabot-outputs` | Base directory for output files (per-bot in `bots.json`) |
+| `outputsBaseDir` | `/tmp/panmira-outputs` | Base directory for output files (per-bot in `bots.json`) |
 
 ## Fallback
 

@@ -34,7 +34,7 @@ interface StoredData {
   updatedAt: string;
 }
 
-const DATA_FILE = path.join(process.env.HOME || '/home/ubuntu', '.metabot', 'skills-data.json');
+const DATA_FILE = path.join(process.env.HOME || '/home/ubuntu', '.panmira', 'skills-data.json');
 
 function loadData(): StoredData {
   try {

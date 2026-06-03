@@ -227,7 +227,7 @@ export class SessionManager {
   }
 
   private persistPath(): string {
-    const dataDir = process.env.SESSION_STORE_DIR || path.join(os.homedir(), '.metabot');
+    const dataDir = process.env.SESSION_STORE_DIR || path.join(os.homedir(), '.panmira');
     fs.mkdirSync(dataDir, { recursive: true });
     return path.join(dataDir, `sessions-${this.botName}.json`);
   }
