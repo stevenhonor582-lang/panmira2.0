@@ -412,6 +412,59 @@ function parseSkillTriggers(skillMd: string, skillName: string): string[] {
 }
 
 /** Scan ~/.claude/skills/ for skills not in the hardcoded registry. */
+
+/** Scan src/skills/vmt/ for VMT content marketing skills. */
+function discoverVmtSkills(): SkillMeta[] {
+  const vmtDir = path.join(process.cwd(), 'src', 'skills', 'vmt');
+  if (!fs.existsSync(vmtDir)) return [];
+
+  const discovered: SkillMeta[] = [];
+  const categoryMap: Record<string, string> = {
+    '01-selection-strategist': '选型策略',
+    '02-knowledge-manager': '知识管理',
+    '03-content-strategist': '内容策略',
+    '04-content-producer': '内容生产',
+    '05-seo-publisher': 'SEO发布',
+    '06-promotion-operator': '推广运营',
+    '07-customer-service': '客户服务',
+    '08-quotation-specialist': '报价专家',
+    '09-delivery-operator': '交付运营',
+    '10-quality-reviewer': '质量审核',
+  };
+
+  function walk(dir: string) {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (entry.name === 'SKILL.md') {
+        try {
+          const skillContent = fs.readFileSync(full, 'utf-8');
+          const summary = parseSkillSummary(skillContent);
+          const triggers = parseSkillTriggers(skillContent, path.basename(path.dirname(full)));
+          const dirName = path.basename(path.dirname(full));
+          // Determine category from parent directory name
+          let catLabel = 'knowledge';
+          for (const [key, label] of Object.entries(categoryMap)) {
+            if (full.includes(key)) { catLabel = label; break; }
+          }
+          discovered.push({
+            name: 'vmt-' + dirName,
+            summary: summary || dirName,
+            triggers,
+            category: 'knowledge',
+            platform: 'all',
+          });
+        } catch { /* skip broken files */ }
+      }
+    }
+  }
+
+  walk(vmtDir);
+  return discovered;
+}
+
 function discoverUserSkills(): SkillMeta[] {
   const userSkillsDir = path.join(os.homedir(), '.claude', 'skills');
   if (!fs.existsSync(userSkillsDir)) return [];
@@ -445,12 +498,12 @@ function discoverUserSkills(): SkillMeta[] {
   return discovered;
 }
 
-/** Combined registry: hardcoded + dynamically discovered skills. */
-export const SKILL_REGISTRY: SkillMeta[] = [...HARDCODED_REGISTRY, ...discoverUserSkills()];
+/** Combined registry: hardcoded + VMT + user skills. */
+export const SKILL_REGISTRY: SkillMeta[] = [...HARDCODED_REGISTRY, ...discoverVmtSkills(), ...discoverUserSkills()];
 
 /** Re-scan ~/.claude/skills/ and refresh the registry in-place so existing references see the update. */
 export function refreshSkillRegistry(): SkillMeta[] {
-  const fresh = [...HARDCODED_REGISTRY, ...discoverUserSkills()];
+  const fresh = [...HARDCODED_REGISTRY, ...discoverVmtSkills(), ...discoverUserSkills()];
   SKILL_REGISTRY.length = 0;
   SKILL_REGISTRY.push(...fresh);
   return SKILL_REGISTRY;
