@@ -1,4 +1,5 @@
 import type { Logger } from '../../utils/logger.js';
+import { validateAgentSkills } from '../../skills/skill-registry.js';
 import { pool } from '../../db/index.js';
 import type { AgentRuntimeConfig, OrchestrationConfig, BoundaryConfig } from './types.js';
 
@@ -35,6 +36,18 @@ export class ConfigReader {
       this.logger.error({ err: err?.message, agentId }, 'Failed to read agent config');
       return null;
     }
+  }
+
+  /** Validate an agent's skills — log warnings for missing ones. */
+  validateSkills(agentName: string, skillNames: string[]): string[] {
+    const { missing, warnings } = validateAgentSkills(skillNames);
+    for (const w of warnings) {
+      this.logger.warn({ agent: agentName, skill: w }, 'Agent skill validation warning');
+    }
+    if (missing.length > 0) {
+      this.logger.warn({ agent: agentName, missing }, 'Agent references skills not in registry');
+    }
+    return missing;
   }
 
   private parseJsonArray(raw: any): string[] {

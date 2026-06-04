@@ -18,6 +18,8 @@ export interface SkillMeta {
   scope?: 'global' | 'bot';
   /** Bot that owns this skill (only for scope='bot') */
   ownerBot?: string;
+  /** Required dependencies: e.g. ['mcp:github', 'apt:jq', 'skill:docker-patterns'] */
+  requires?: string[];
 }
 
 /** Hardcoded skills with known routing metadata. */
@@ -506,6 +508,40 @@ function discoverUserSkills(): SkillMeta[] {
 export const SKILL_REGISTRY: SkillMeta[] = [...HARDCODED_REGISTRY, ...discoverVmtSkills(), ...discoverUserSkills()];
 
 /** Re-scan ~/.claude/skills/ and refresh the registry in-place so existing references see the update. */
+
+/**
+ * Validate that all skills referenced by an agent actually exist.
+ * Returns list of missing skill names. Empty list = all good.
+ */
+export function validateAgentSkills(agentSkills: string[]): { missing: string[]; warnings: string[] } {
+  const registryNames = new Set(SKILL_REGISTRY.map((s) => s.name));
+  const missing: string[] = [];
+  const warnings: string[] = [];
+
+  for (const name of agentSkills) {
+    if (!registryNames.has(name)) {
+      missing.push(name);
+      warnings.push(`Skill "${name}" not found in SKILL_REGISTRY — it will be skipped at runtime`);
+    }
+  }
+
+  // Also check: do registry skills have files on disk?
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const os = require('node:os');
+  const userSkillsDir = path.join(os.homedir(), '.claude', 'skills');
+
+  for (const name of agentSkills) {
+    if (missing.includes(name)) continue;
+    const skillPath = path.join(userSkillsDir, name, 'SKILL.md');
+    if (!fs.existsSync(skillPath)) {
+      warnings.push(`Skill "${name}" has no SKILL.md at ${skillPath}`);
+    }
+  }
+
+  return { missing, warnings };
+}
+
 export function refreshSkillRegistry(): SkillMeta[] {
   const fresh = [...HARDCODED_REGISTRY, ...discoverVmtSkills(), ...discoverUserSkills()];
   SKILL_REGISTRY.length = 0;

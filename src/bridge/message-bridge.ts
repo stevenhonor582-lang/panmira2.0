@@ -787,6 +787,11 @@ export class MessageBridge {
     // ── Intent pre-check: match before routing ──
     let matchedIntent: import('./orchestrator/types.js').IntentDefinition | null = null;
     if (agentRuntimeConfig && agentRuntimeConfig.orchestration.intents.length > 0) {
+      // P0: Validate agent skills at load time
+      try {
+        this.configReader.validateSkills(agentRuntimeConfig.name, agentRuntimeConfig.skills || []);
+      } catch { /* validation is advisory */ }
+      
       matchedIntent = matchIntent(text || '', agentRuntimeConfig.orchestration.intents);
       this.logger.info({ chatId, matched: matchedIntent?.name || 'none', userMsg: (text || '').slice(0, 80) }, 'Intent pre-check result');
     }
@@ -836,16 +841,22 @@ ${ragContext.formattedContext}`
         }
       }
 
-      await this.executeWithOrchestrator(
-        msg,
-        agentRuntimeConfig!,
-        cwd,
-        outputsDir,
-        messageId,
-        abortController,
-        knowledgeContext ?? undefined,
-      );
-      return;
+      // P2: PATH A with fallback — on failure, degrade to PATH B
+      try {
+        await this.executeWithOrchestrator(
+          msg,
+          agentRuntimeConfig!,
+          cwd,
+          outputsDir,
+          messageId,
+          abortController,
+          knowledgeContext ?? undefined,
+        );
+        return;
+      } catch (orchErr: any) {
+        this.logger.warn({ err: orchErr?.message, chatId }, 'PATH A orchestration failed, falling back to PATH B');
+        // Fall through to PATH B below — don't return
+      }
     }
 
     // ── PATH B/C: No intent match or empty chain → standard LLM ──
@@ -860,13 +871,22 @@ ${knowledgeContext}`
       this.logger.debug({ chatId }, 'PATH C: standard LLM (no intent match)');
     }
 
-    // Dynamic skill deployment
+    // P1: Skill deployment — keyword-matched + agent skills (subset, not all)
     try {
       const selectedSkills = this.skillRouter.selectSkills(text || '', this.config.name);
       const selectedNames = selectedSkills.map((s) => s.name);
-      const mergedNames = [...new Set([...selectedNames, ...agentBoundSkills])];
+      // When intent matched (PATH B), also include agent-config skills that match
+      const agentSkillNames: string[] = matchedIntent && agentRuntimeConfig
+        ? (agentRuntimeConfig.skills || []).filter((name: string) =>
+            selectedSkills.some((s: any) => s.name === name) || 
+            (text || '').toLowerCase().split(/\s+/).some((w: string) => 
+              w.length > 1 && name.toLowerCase().includes(w)
+            )
+          ).slice(0, 8)
+        : [];
+      const mergedNames = [...new Set([...selectedNames, ...agentSkillNames, ...agentBoundSkills])];
       deploySelectedSkills(cwd, mergedNames, this.logger);
-      this.logger.debug({ chatId, skills: mergedNames }, 'Skills deployed for query');
+      this.logger.info({ chatId, keyword: selectedNames.length, agent: agentSkillNames.length, total: mergedNames.length }, 'Skills deployed for standard execution');
     } catch (err) {
       this.logger.warn({ err }, 'Skill deployment failed, using default skills');
     }
