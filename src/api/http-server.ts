@@ -482,6 +482,9 @@ export async function startApiServer(options: ApiServerOptions): Promise<http.Se
             sourceTemplateId: body.sourceTemplateId,
             knowledgeFolders: body.knowledgeFolders,
             skills: body.skills,
+            ironLaws: body.ironLaws,
+            boundary: body.boundary,
+            orchestration: body.orchestration,
           });
           jsonResponse(res, 201, { agent });
           return;

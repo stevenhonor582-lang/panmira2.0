@@ -52,14 +52,17 @@ export class AgentStore {
     sourceTemplateId?: string;
     knowledgeFolders?: string[];
     skills?: string[];
+    ironLaws?: string[];
+    boundary?: any;
+    orchestration?: any;
   }): Promise<AgentTemplate> {
     const tenantResult = await pool.query('SELECT id FROM tenants LIMIT 1');
     if (tenantResult.rows.length === 0) throw new Error('No tenant found');
     const tenantId = tenantResult.rows[0].id;
 
     const result = await pool.query(
-      `INSERT INTO agents (tenant_id, name, role_template, description, system_prompt, capabilities, tools, category, template_type, source_template_id, knowledge_folders, skills)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      `INSERT INTO agents (tenant_id, name, role_template, description, system_prompt, capabilities, tools, category, template_type, source_template_id, knowledge_folders, skills, orchestration, boundary, iron_laws)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        RETURNING *`,
       [
         tenantId,
@@ -74,6 +77,9 @@ export class AgentStore {
         data.sourceTemplateId || null,
         JSON.stringify(data.knowledgeFolders || []),
         JSON.stringify(data.skills || []),
+        JSON.stringify(data.orchestration || {}),
+        JSON.stringify(data.boundary || {}),
+        JSON.stringify(data.ironLaws || []),
       ],
     );
     return this.mapRow(result.rows[0]);
@@ -93,6 +99,9 @@ export class AgentStore {
       templateType?: 'standard' | 'custom';
       knowledgeFolders?: string[];
       skills?: string[];
+      ironLaws?: string[];
+      boundary?: any;
+      orchestration?: any;
     },
   ): Promise<AgentTemplate | null> {
     const sets: string[] = [];
@@ -142,6 +151,18 @@ export class AgentStore {
     if (data.skills !== undefined) {
       sets.push(`skills = $${idx++}`);
       values.push(JSON.stringify(data.skills));
+    }
+    if (data.ironLaws !== undefined) {
+      sets.push(`iron_laws = $${idx++}`);
+      values.push(JSON.stringify(data.ironLaws));
+    }
+    if (data.boundary !== undefined) {
+      sets.push(`boundary = $${idx++}`);
+      values.push(JSON.stringify(data.boundary));
+    }
+    if (data.orchestration !== undefined) {
+      sets.push(`orchestration = $${idx++}`);
+      values.push(JSON.stringify(data.orchestration));
     }
 
     if (sets.length === 0) return this.findById(id);

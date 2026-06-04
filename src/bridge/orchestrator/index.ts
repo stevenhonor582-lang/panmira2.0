@@ -174,6 +174,7 @@ export class Orchestrator {
           this.logger.warn({ step: step.step, timeoutMs: stepTimeoutMs }, 'Step timed out');
           stepResult.success = false;
           stepResult.output = `[步骤超时] 执行超过 ${stepTimeoutMs / 1000}s，触发"超10分钟无进展→重新审视方案"规则`;
+          stepResult.gateResults = [{ gate: 'step_timeout' as const, passed: false, expected: `在 ${stepTimeoutMs / 1000}s 内完成`, actual: '超时未完成', durationMs: stepTimeoutMs }];
           break; // do not retry on timeout
         }
 

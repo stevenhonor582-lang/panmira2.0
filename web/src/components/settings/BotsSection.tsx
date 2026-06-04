@@ -39,6 +39,7 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
   const [botWorkDir, setBotWorkDir] = useState('');
   const [botDesc, setBotDesc] = useState('');
   const [botMaxTurns, setBotMaxTurns] = useState('');
+  const [botBudgetUsd, setBotBudgetUsd] = useState('');
   const [feishuAppId, setFeishuAppId] = useState('');
   const [feishuAppSecret, setFeishuAppSecret] = useState('');
   const [selectedProviderId, setSelectedProviderId] = useState('');
@@ -92,6 +93,7 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
     setBotPlatform('web');
     setBotDesc('');
     setBotMaxTurns('');
+    setBotBudgetUsd('');
     setFeishuAppId('');
     setFeishuAppSecret('');
     setFeishuAppIdHint('');
@@ -156,6 +158,7 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
     setBotWorkDir(cfg.workingDirectory || bot.workingDirectory);
     setBotDesc(cfg.description || '');
     setBotMaxTurns(cfg.maxTurns != null ? String(cfg.maxTurns) : '');
+    setBotBudgetUsd(cfg.maxBudgetUsd != null ? String(cfg.maxBudgetUsd) : '');
     setFeishuAppId(cfg.feishuAppId || '');
     setFeishuAppSecret(cfg.feishuAppSecret || '');
     setFeishuAppIdHint('');
@@ -261,7 +264,7 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
       });
       if (res.ok) {
         const data = await res.json();
-        setPermsConfig(data.permissions || {});
+        setPermsConfig(data.config?.permissions || {});
       }
     } catch { /* use empty config */ }
     setPermsPanelOpen(true);
@@ -274,7 +277,7 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
     });
     if (!res.ok) throw new Error('Failed to fetch bot config');
     const cfg = await res.json();
-    const body = { ...cfg, permissions };
+    const body = { ...cfg.config, permissions };
     // Remove runtime fields that shouldn't be sent back
     delete body.paused;
     delete body.createdAt;
@@ -343,13 +346,14 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
     const body: Record<string, unknown> = {
       name: botName.trim(),
       platform: botPlatform,
-      workingDirectory: botWorkDir.trim(),
+      defaultWorkingDirectory: botWorkDir.trim(),
       engine: botEngine,
     };
     if (botDesc.trim()) body.description = botDesc.trim();
     if (botModel.trim()) body.model = botModel.trim();
     if (botEngine === 'codex' && botModel.trim()) body.codex = { model: botModel.trim() };
     if (botMaxTurns.trim()) body.maxTurns = parseInt(botMaxTurns, 10);
+    if (botBudgetUsd.trim()) body.maxBudgetUsd = parseFloat(botBudgetUsd);
     if (botEngine === 'openai-compat') {
       const openaiCompat: Record<string, string> = {};
       if (oaiBaseUrl.trim()) openaiCompat.baseUrl = oaiBaseUrl.trim();
@@ -410,7 +414,7 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
     } finally {
       setBotLoading(false);
     }
-  }, [botName, botPlatform, botWorkDir, botDesc, botMaxTurns, botEngine, botModel, feishuAppId, feishuAppSecret, oaiBaseUrl, oaiApiKey, selectedTemplateId, botSystemPrompt, botMode, editBot, token]);
+  }, [botName, botPlatform, botWorkDir, botDesc, botMaxTurns, botBudgetUsd, botEngine, botModel, feishuAppId, feishuAppSecret, oaiBaseUrl, oaiApiKey, selectedTemplateId, botSystemPrompt, botMode, editBot, token]);
 
   const selectedProvider = aiProviders.find((p) => p.id === selectedProviderId);
 
@@ -563,7 +567,7 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
                     {t('bots.noTemplate')}
                   </button>
                   {agents
-                    .filter((a) => a.templateType === "custom")
+                    .filter((a) => a.templateType === "custom" || a.templateType === "standard")
                     .filter((a) => !botAgentSearch || a.name.toLowerCase().includes(botAgentSearch.toLowerCase()) || (a.description || '').toLowerCase().includes(botAgentSearch.toLowerCase()))
                     .slice(0, 30)
                     .map((a) => (
@@ -625,6 +629,22 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
 
         <div className={styles.row}>
           <label className={styles.field}>
+            <span className={styles.label}>{t('bots.engineLabel')}</span>
+            <select className={styles.input} value={botEngine} onChange={(e) => setBotEngine(e.target.value)}>
+              <option value="claude">Claude</option>
+              <option value="codex">Codex (OpenAI)</option>
+              <option value="openai-compat">OpenAI Compatible</option>
+              <option value="kimi">Kimi</option>
+            </select>
+          </label>
+          <label className={styles.field}>
+            <span className={styles.label}>{t('bots.modelLabel')}</span>
+            <input className={styles.input} value={botModel} onChange={(e) => setBotModel(e.target.value)} placeholder="claude-sonnet-4-6" autoComplete="off" />
+          </label>
+        </div>
+
+        <div className={styles.row}>
+          <label className={styles.field}>
             <span className={styles.label}>{t('bots.descLabel')}</span>
             <input className={styles.input} value={botDesc} onChange={(e) => setBotDesc(e.target.value)} placeholder={t('bots.descPlaceholder')} autoComplete="off" />
           </label>
@@ -632,6 +652,14 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
             <span className={styles.label}>{t('bots.maxTurnsLabel')}</span>
             <input className={styles.input} type="number" value={botMaxTurns} onChange={(e) => setBotMaxTurns(e.target.value)} placeholder="30" autoComplete="off" />
           </label>
+        </div>
+
+        <div className={styles.row}>
+          <label className={styles.field}>
+            <span className={styles.label}>{t('bots.maxBudgetLabel')}</span>
+            <input className={styles.input} type="number" value={botBudgetUsd} onChange={(e) => setBotBudgetUsd(e.target.value)} placeholder="0.50" step="0.01" autoComplete="off" />
+          </label>
+          <div className={styles.field} />
         </div>
       </SlideOverPanel>
 

@@ -20,6 +20,9 @@ export interface AgentTemplate {
   sourceTemplateId: string | null;
   knowledgeFolders?: string[];
   skills?: string[];
+  orchestration?: any;
+  boundary?: any;
+  ironLaws?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -120,6 +123,9 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
   const [availableFolders, setAvailableFolders] = useState<{ id: string; name: string }[]>([]);
   const [agentSkills, setAgentSkills] = useState<string[]>([]);
   const [availableSkills, setAvailableSkills] = useState<{ name: string; summary: string; category: string; alwaysLoad?: boolean }[]>([]);
+  const [agentOrchestration, setAgentOrchestration] = useState('');
+  const [agentBoundary, setAgentBoundary] = useState('');
+  const [agentIronLaws, setAgentIronLaws] = useState('');
   const mdFileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchFolders = useCallback(async () => {
@@ -248,6 +254,9 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
     setAgentError('');
     setKnowledgeFolders([]);
     setAgentSkills([]);
+    setAgentOrchestration('');
+    setAgentBoundary('');
+    setAgentIronLaws('');
   }, []);
 
   const openCreate = useCallback(() => {
@@ -261,6 +270,9 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
     setAgentError('');
     setKnowledgeFolders([]);
     setAgentSkills([]);
+    setAgentOrchestration('');
+    setAgentBoundary('');
+    setAgentIronLaws('');
     setShowPanel(true);
   }, []);
 
@@ -274,8 +286,11 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
     setAgentPrompt(full.systemPrompt || '');
     setAgentEditView(true);
     setAgentError('');
-    setKnowledgeFolders([]);
-    setAgentSkills([]);
+    setKnowledgeFolders(full.knowledgeFolders || []);
+    setAgentSkills(full.skills || []);
+    setAgentOrchestration(full.orchestration ? JSON.stringify(full.orchestration, null, 2) : '');
+    setAgentBoundary(full.boundary ? JSON.stringify(full.boundary, null, 2) : '');
+    setAgentIronLaws(Array.isArray(full.ironLaws) ? full.ironLaws.join('\n') : '');
     setShowPanel(true);
   }, [fetchAgentDetail]);
 
@@ -291,6 +306,9 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
     setAgentError('');
     setKnowledgeFolders(full.knowledgeFolders || []);
     setAgentSkills(full.skills || []);
+    setAgentOrchestration(full.orchestration ? JSON.stringify(full.orchestration, null, 2) : '');
+    setAgentBoundary(full.boundary ? JSON.stringify(full.boundary, null, 2) : '');
+    setAgentIronLaws(Array.isArray(full.ironLaws) ? full.ironLaws.join('\n') : '');
     setShowPanel(true);
   }, [fetchAgentDetail]);
 
@@ -299,6 +317,18 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
     setAgentSaving(true);
     setAgentError('');
     try {
+      let orchestrationParsed: any = {};
+      let boundaryParsed: any = {};
+      let ironLawsParsed: string[] = [];
+      if (agentOrchestration.trim()) {
+        try { orchestrationParsed = JSON.parse(agentOrchestration); } catch { setAgentError(t('agents.invalidJson', { field: 'orchestration' })); setAgentSaving(false); return; }
+      }
+      if (agentBoundary.trim()) {
+        try { boundaryParsed = JSON.parse(agentBoundary); } catch { setAgentError(t('agents.invalidJson', { field: 'boundary' })); setAgentSaving(false); return; }
+      }
+      if (agentIronLaws.trim()) {
+        ironLawsParsed = agentIronLaws.split('\n').filter((l: string) => l.trim());
+      }
       const body: Record<string, unknown> = {
         name: agentName.trim(),
         roleTemplate: agentRole.trim() || null,
@@ -307,6 +337,9 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
         templateType: 'custom' as const,
         knowledgeFolders,
         skills: agentSkills,
+        orchestration: orchestrationParsed,
+        boundary: boundaryParsed,
+        ironLaws: ironLawsParsed,
       };
       const url = agentMode === 'create' ? '/api/agents' : `/api/agents/${editingAgent!.id}`;
       const method = agentMode === 'create' ? 'POST' : 'PUT';
@@ -326,7 +359,7 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
     } finally {
       setAgentSaving(false);
     }
-  }, [agentMode, editingAgent, agentName, agentRole, agentDesc, agentPrompt, token, fetchAgents]);
+  }, [agentMode, editingAgent, agentName, agentRole, agentDesc, agentPrompt, agentOrchestration, agentBoundary, agentIronLaws, token, fetchAgents]);
 
   const handleDelete = useCallback(async (agent: AgentTemplate) => {
     if (!window.confirm(t('agents.deleteConfirm', { name: agent.name }))) return;
@@ -634,6 +667,50 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
             )}
           </div>
         )}
+
+        <div className={styles.formSection}>
+          <h3 className={styles.formSectionTitle}>{t('agents.orchestrationConfig') || 'Orchestration Config'}</h3>
+          <div className={styles.formHint} style={{ marginBottom: 8 }}>{t('agents.orchestrationHint') || 'JSON config for orchestrator chains, boundary rules, and iron laws'}</div>
+
+          <label className={styles.field}>
+            <span className={styles.label}>{t('agents.ironLaws') || 'Iron Laws'} <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>({t('agents.onePerLine') || 'one per line'})</span></span>
+            <textarea
+              className={styles.textarea}
+              value={agentIronLaws}
+              onChange={(e) => { if (!agentRefining) setAgentIronLaws(e.target.value); }}
+              placeholder={t('agents.ironLawsPlaceholder') || 'e.g. Never modify production data without confirmation'}
+              rows={4}
+              spellCheck={false}
+              disabled={agentRefining}
+            />
+          </label>
+
+          <label className={styles.field}>
+            <span className={styles.label}>{t('agents.boundary') || 'Boundary'} <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>(JSON)</span></span>
+            <textarea
+              className={styles.textarea}
+              value={agentBoundary}
+              onChange={(e) => { if (!agentRefining) setAgentBoundary(e.target.value); }}
+              placeholder='{"maxTurns": 50, "allowedDirectories": ["/home/ubuntu"], "blockedCommands": ["rm -rf"]}'
+              rows={4}
+              spellCheck={false}
+              disabled={agentRefining}
+            />
+          </label>
+
+          <label className={styles.field}>
+            <span className={styles.label}>{t('agents.orchestration') || 'Orchestration'} <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>(JSON)</span></span>
+            <textarea
+              className={styles.textarea}
+              value={agentOrchestration}
+              onChange={(e) => { if (!agentRefining) setAgentOrchestration(e.target.value); }}
+              placeholder={'{"intents": [{"name": "Bug\u4fee\u590d", "keywords": ["bug", "\u4fee\u590d"], "chain": ["debug", "fix"]}]}'}
+              rows={6}
+              spellCheck={false}
+              disabled={agentRefining}
+            />
+          </label>
+        </div>
 
         <div className={styles.formSection}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

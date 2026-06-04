@@ -59,6 +59,13 @@ export class CardUpdater {
                 ? '⏭️'
                 : '⏳';
       lines.push(`${icon} ${s.step}`);
+
+      // Show output for completed/failed/running steps
+      const output = s.result?.summary || s.result?.output;
+      if (output && (s.status === 'passed' || s.status === 'failed' || s.status === 'running')) {
+        const preview = output.slice(0, 120).replace(/\n/g, ' ');
+        lines.push(`   _${preview}${output.length > 120 ? '...' : ''}_`);
+      }
     }
 
     if (progress.status === 'failed') {

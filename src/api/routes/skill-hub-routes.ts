@@ -48,14 +48,36 @@ export async function handleSkillHubRoutes(
     return true;
   }
 
-  // GET /api/skills/registry — list platform skills for agent binding
-  if (method === 'GET' && url === '/api/skills/registry') {
+  // GET /api/skills/registry — list all skills with scope/bindings
+  // Query params: ?bot=botName — include enabled state for that bot
+  if (method === 'GET' && url.startsWith('/api/skills/registry')) {
+    const urlObj = new URL(url, 'http://localhost');
+    const botName = urlObj.searchParams.get('bot') || '';
+
+    // Load bot bindings from DB if bot specified
+    let botBindings: Map<string, boolean> = new Map();
+    if (botName) {
+      try {
+        const { pool: dbPool } = await import('../../db/index.js');
+        const { rows } = await dbPool.query(
+          'SELECT skill_name, enabled FROM bot_skill_bindings WHERE bot_name = $1',
+          [botName],
+        );
+        for (const r of rows) botBindings.set(r.skill_name, r.enabled);
+      } catch { /* table might not exist yet */ }
+    }
+
     const skills = SKILL_REGISTRY.map((s) => ({
       name: s.name,
       summary: s.summary,
       category: s.category,
       platform: s.platform,
       alwaysLoad: s.alwaysLoad || false,
+      scope: (s as any).scope || 'global',
+      ownerBot: (s as any).ownerBot || '',
+      triggers: s.triggers || [],
+      // Per-bot binding state (only when ?bot= specified)
+      ...(botName ? { enabled: botBindings.has(s.name) ? botBindings.get(s.name) : undefined } : {}),
     }));
     jsonResponse(res, 200, { skills });
     return true;

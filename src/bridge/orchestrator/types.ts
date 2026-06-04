@@ -7,7 +7,8 @@ export type GateType =
   | 'docker_build_pass'
   | 'health_check'
   | 'rollback_available'
-  | 'repro_test_exists';
+  | 'repro_test_exists'
+  | 'step_timeout';
 
 /** 门控规则 */
 export interface GateRule {
