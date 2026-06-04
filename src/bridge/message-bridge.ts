@@ -123,6 +123,7 @@ export class MessageBridge {
 
     const isFeishu = !!(config as any).feishu;
     this.skillRouter = new SkillRouter(isFeishu ? 'feishu' : 'all');
+    this.skillRouter.setLogger(this.logger);
 
     this.configReader = new ConfigReader(logger);
     const stepExecutor = new StepExecutor(this.engineCache, logger, config);
@@ -873,7 +874,7 @@ ${knowledgeContext}`
 
     // P1: Skill deployment — keyword-matched + agent skills (subset, not all)
     try {
-      const selectedSkills = this.skillRouter.selectSkills(text || '', this.config.name);
+      const selectedSkills = await this.skillRouter.selectSkillsAsync(text || '', this.config.name);
       const selectedNames = selectedSkills.map((s) => s.name);
       // When intent matched (PATH B), also include agent-config skills that match
       const agentSkillNames: string[] = matchedIntent && agentRuntimeConfig
@@ -1535,7 +1536,7 @@ ${knowledgeContext}`
 
     // Dynamic skill deployment for API tasks (merge with agent-bound skills)
     try {
-      const selectedSkills = this.skillRouter.selectSkills(prompt, this.config.name);
+      const selectedSkills = await this.skillRouter.selectSkillsAsync(prompt, this.config.name);
       const selectedNames = selectedSkills.map((s) => s.name);
       const mergedNames = [...new Set([...selectedNames, ...apiAgentBoundSkills])];
       deploySelectedSkills(cwd, mergedNames, this.logger);

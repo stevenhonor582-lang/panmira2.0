@@ -5,19 +5,41 @@
  */
 
 import { SKILL_REGISTRY, type SkillMeta } from './skill-registry.js';
+import { SmartSkillMatcher } from './skill-matcher.js';
 import { pool } from '../db/index.js';
 
 const MAX_DYNAMIC_SKILLS = 5;
 
 export class SkillRouter {
   private platform: 'all' | 'feishu';
+  private smartMatcher: SmartSkillMatcher | null = null;
 
   constructor(platform: string) {
     this.platform = platform === 'feishu' ? 'feishu' : 'all';
   }
 
+  /** Set logger for smart matching (called after construction). */
+  setLogger(logger: any) {
+    this.smartMatcher = new SmartSkillMatcher(logger, this.platform);
+  }
+
   /** Select skills relevant to the given user message and bot. */
   selectSkills(userMessage: string, botName?: string): SkillMeta[] {
+    // Sync wrapper — actual matching is sync (keyword) with async upgrade path
+    return this.selectSkillsSync(userMessage, botName);
+  }
+
+  /** Async version with semantic matching. Use this when logger is available. */
+  async selectSkillsAsync(userMessage: string, botName?: string): Promise<SkillMeta[]> {
+    if (this.smartMatcher && userMessage.length > 3) {
+      try {
+        return await this.smartMatcher.match(userMessage, botName, 10);
+      } catch { /* fall through to keyword */ }
+    }
+    return this.selectSkillsSync(userMessage, botName);
+  }
+
+  private selectSkillsSync(userMessage: string, botName?: string): SkillMeta[] {
     const available = this.getAvailableForBot(botName);
 
     // Always-load skills
