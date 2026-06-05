@@ -151,7 +151,7 @@ export class WechatSender implements IMessageSender {
   /** Progress message for new tool calls since last update. */
   private renderProgressMessage(newTools: CardState['toolCalls'], status: CardState['status']): string {
     const parts: string[] = [];
-    const label = status === 'thinking' ? '🤔 思考中...' : '🔧 运行中...';
+    const label = status === 'preparing' ? '🔍 准备中...' : status === 'thinking' ? '🤔 思考中...' : '🔧 运行中...';
     parts.push(label);
 
     for (const t of newTools.slice(-5)) {

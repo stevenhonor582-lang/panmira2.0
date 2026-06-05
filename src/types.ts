@@ -1,6 +1,6 @@
 // Shared types used across IM platforms (Feishu, Telegram, etc.)
 
-export type CardStatus = 'thinking' | 'running' | 'complete' | 'error' | 'waiting_for_input';
+export type CardStatus = 'preparing' | 'thinking' | 'running' | 'complete' | 'error' | 'waiting_for_input';
 
 export interface ToolCall {
   name: string;
@@ -55,6 +55,8 @@ export interface CardState {
   cacheCreationTokens?: number;
   /** Background tasks (e.g. Monitor) the agent has spawned during this turn. */
   backgroundEvents?: BackgroundEvent[];
+  /** Persistent context note shown above response text (config summary, intent, etc.) */
+  contextNote?: string;
 }
 
 export interface IncomingMessage {

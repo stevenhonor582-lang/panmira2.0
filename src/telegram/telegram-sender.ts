@@ -11,6 +11,7 @@ import { shouldBypassProxy } from '../utils/http.js';
 const MAX_MESSAGE_LENGTH = 4096;
 
 const STATUS_EMOJI: Record<CardStatus, string> = {
+  preparing: '\u{1F535}',      // 🔵
   thinking: '\u{1F535}',      // 🔵
   running: '\u{1F535}',       // 🔵
   complete: '\u{1F7E2}',      // 🟢
@@ -19,6 +20,7 @@ const STATUS_EMOJI: Record<CardStatus, string> = {
 };
 
 const STATUS_LABEL: Record<CardStatus, string> = {
+  preparing: 'Preparing...',
   thinking: 'Thinking...',
   running: 'Running...',
   complete: 'Complete',
@@ -51,7 +53,7 @@ function renderCardHtml(state: CardState): string {
   // Response text
   if (state.responseText) {
     parts.push(markdownToTelegramHtml(state.responseText));
-  } else if (state.status === 'thinking') {
+  } else if (state.status === 'thinking' || state.status === 'preparing') {
     parts.push('<i>Thinking...</i>');
   }
 

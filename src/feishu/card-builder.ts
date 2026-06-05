@@ -10,6 +10,7 @@ export type {
 import type { CardState, CardStatus } from '../types.js';
 
 const STATUS_CONFIG: Record<CardStatus, { color: string; title: string; icon: string }> = {
+  preparing: { color: 'blue', title: '准备中...', icon: '🔍' },
   thinking: { color: 'blue', title: '思考中...', icon: '💡' },
   running: { color: 'blue', title: '执行中...', icon: '⚡' },
   complete: { color: 'green', title: '完成', icon: '✅' },
@@ -83,10 +84,16 @@ export function buildCard(state: CardState): string {
     elements.push({ tag: 'hr' });
   }
 
+  // Context note (iron laws, skills, knowledge — persistent during execution)
+  if (state.contextNote) {
+    elements.push({ tag: 'markdown', content: state.contextNote });
+    elements.push({ tag: 'hr' });
+  }
+
   // Response content
   if (state.responseText) {
     elements.push({ tag: 'markdown', content: truncateContent(state.responseText) });
-  } else if (state.status === 'thinking') {
+  } else if (state.status === 'thinking' || state.status === 'preparing') {
     const promptPreview = truncate(state.userPrompt || '', 80);
     elements.push({
       tag: 'markdown',

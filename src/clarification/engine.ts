@@ -50,6 +50,37 @@ export class ClarificationEngine {
     };
   }
 
+  async processPreIntent(payload: Record<string, any> = {}): Promise<EngineOutput> {
+    if (!this.config.enabled) {
+      return { needsClarification: false, missingFields: [], payload };
+    }
+
+    const allGaps: Map<string, import('./types.js').FieldGap> = new Map();
+    for (const skill of this.config.applicableSkills) {
+      try {
+        const gaps = this.validator.check(skill, payload);
+        for (const g of gaps) {
+          if (!allGaps.has(g.name)) {
+            allGaps.set(g.name, g);
+          }
+        }
+      } catch (err) {
+        if (err instanceof ClarificationError && err.code === 'SCHEMA_NOT_FOUND') {
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    const gaps = [...allGaps.values()];
+    if (gaps.length === 0) {
+      return { needsClarification: false, missingFields: [], payload };
+    }
+
+    const questions = this.generator.generate(gaps, this.config.maxQuestionsPerRound);
+    return { needsClarification: true, missingFields: gaps, payload, suggestedQuestions: questions };
+  }
+
   private skip(input: EngineInput): EngineOutput {
     return {
       needsClarification: false,

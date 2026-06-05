@@ -28,7 +28,7 @@ export async function fetchKnowledgeContext(
 
   if (deps.config.agentId) {
     try {
-      const result = await pool.query('SELECT system_prompt, knowledge_folders, skills FROM agents WHERE id = $1', [
+      const result = await pool.query('SELECT system_prompt, knowledge_folders, skills, iron_laws, boundary FROM agents WHERE id = $1', [
         deps.config.agentId,
       ]);
       deps.logger.info(
@@ -42,6 +42,26 @@ export async function fetchKnowledgeContext(
       );
       if (result.rows[0]?.system_prompt) {
         systemPromptOverride = result.rows[0].system_prompt;
+      }
+      // Inject iron_laws and boundary as structured sections (for PATH B standard LLM)
+      const ironLaws = result.rows[0]?.iron_laws;
+      const boundary = result.rows[0]?.boundary;
+      const structuredPrefix: string[] = [];
+      if (Array.isArray(ironLaws) && ironLaws.length > 0) {
+        const laws = ironLaws.map((l: string, i: number) => `${i + 1}. ${l}`).join('\n');
+        structuredPrefix.push(`## 铁律（不可违反）\n${laws}`);
+      }
+      if (boundary && (Array.isArray(boundary.can) || Array.isArray(boundary.cannot))) {
+        const lines: string[] = [];
+        for (const c of (boundary.can || [])) lines.push(`- 可以: ${c}`);
+        for (const c of (boundary.cannot || [])) lines.push(`- 禁止: ${c}`);
+        if (lines.length > 0) structuredPrefix.push(`## 行为边界\n${lines.join('\n')}`);
+      }
+      if (structuredPrefix.length > 0) {
+        const prefix = structuredPrefix.join('\n\n');
+        systemPromptOverride = systemPromptOverride
+          ? `${prefix}\n\n${systemPromptOverride}`
+          : prefix;
       }
       if (Array.isArray(result.rows[0]?.knowledge_folders) && result.rows[0].knowledge_folders.length > 0) {
         knowledgeFolders = result.rows[0].knowledge_folders;
