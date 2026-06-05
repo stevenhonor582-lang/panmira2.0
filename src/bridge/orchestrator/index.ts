@@ -6,9 +6,12 @@ import type {
   AgentRuntimeConfig,
   OrchestrationResult,
   OrchestrationProgress,
+  OrchestrationStatus,
   GateResult,
   StepResult,
   OrchestrationStep,
+  ExecutionPlan,
+  ExecutionStep,
 } from './types.js';
 import { IntentResolver } from './intent-resolver.js';
 import { TaskPlanner } from './task-planner.js';
@@ -17,6 +20,21 @@ import { GateChecker } from './gate-checker.js';
 import { SkillLoader } from './skill-loader.js';
 import { StepExecutor } from './step-executor.js';
 import { CardUpdater } from './card-updater.js';
+
+/** State needed to resume a paused orchestration (wait_for_user). */
+export interface OrchestrationResumeState {
+  agentConfig: AgentRuntimeConfig;
+  plan: ExecutionPlan;
+  progress: OrchestrationProgress;
+  previousOutput: string;
+  allGateResults: GateResult[];
+  totalCostUsd: number;
+  knowledgeContext: string;
+  cwd: string;
+  outputsDir: string;
+  cardMessageId: string;
+  preFetchedKnowledge?: string;
+}
 
 export class Orchestrator {
   private intentResolver: IntentResolver;
@@ -99,57 +117,123 @@ export class Orchestrator {
 
     await this.cardUpdater.update(msg.chatId, cardMessageId, progress, getSender);
 
-    // 4. Execute steps
-    let previousOutput = `[用户需求] ${userMessage}`;
-    const allGateResults: GateResult[] = [];
-    let totalCostUsd = 0;
+    // 4. Execute steps (delegated to shared loop)
+    return this.executeSteps({
+      msg, agentConfig, plan, progress, cwd, outputsDir, cardMessageId,
+      abortController, getSender, startTime,
+      previousOutput: `[用户需求] ${userMessage}`,
+      allGateResults: [],
+      totalCostUsd: 0,
+      knowledgeContext,
+      userMessage,
+    });
+  }
 
-    for (let i = 0; i < plan.steps.length; i++) {
+  /** Resume a paused orchestration from the given state. */
+  async resume(
+    msg: IncomingMessage,
+    state: OrchestrationResumeState,
+    abortController: AbortController,
+    getSender: (chatId?: string) => IMessageSender,
+  ): Promise<OrchestrationResult> {
+    const startTime = Date.now();
+    return this.executeSteps({
+      msg,
+      agentConfig: state.agentConfig,
+      plan: state.plan,
+      progress: state.progress,
+      cwd: state.cwd,
+      outputsDir: state.outputsDir,
+      cardMessageId: state.cardMessageId,
+      abortController,
+      getSender,
+      startTime,
+      previousOutput: state.previousOutput,
+      allGateResults: state.allGateResults,
+      totalCostUsd: state.totalCostUsd,
+      knowledgeContext: state.knowledgeContext,
+      userMessage: msg.text || '',
+    });
+  }
+
+  /** Shared step execution loop — used by both execute() and resume(). */
+  private async executeSteps(params: {
+    msg: IncomingMessage;
+    agentConfig: AgentRuntimeConfig;
+    plan: ExecutionPlan;
+    progress: OrchestrationProgress;
+    cwd: string;
+    outputsDir: string;
+    cardMessageId: string;
+    abortController: AbortController;
+    getSender: (chatId?: string) => IMessageSender;
+    startTime: number;
+    previousOutput: string;
+    allGateResults: GateResult[];
+    totalCostUsd: number;
+    knowledgeContext: string;
+    userMessage: string;
+  }): Promise<OrchestrationResult> {
+    const {
+      msg, agentConfig, plan, cwd, outputsDir, cardMessageId,
+      abortController, getSender, startTime, knowledgeContext, userMessage,
+    } = params;
+    let { previousOutput, totalCostUsd } = params;
+    const progress = params.progress;
+    const allGateResults = params.allGateResults;
+
+    for (let i = progress.currentStepIndex; i < plan.steps.length; i++) {
       if (abortController.signal.aborted) {
         progress.status = 'failed';
+        return {
+          success: false, progress, allGateResults,
+          totalDurationMs: Date.now() - startTime, totalCostUsd,
+          error: 'Aborted',
+        };
+      }
+
+      const step = plan.steps[i];
+
+      // ── wait_for_user: pause and wait for user confirmation ──
+      if (step.wait_for_user && progress.steps[i].status !== 'passed') {
+        progress.status = 'waiting_user';
+        progress.currentStepIndex = i;
+        progress.steps[i].status = 'running'; // show as active so card renders it
+        await this.cardUpdater.update(msg.chatId, cardMessageId, progress, getSender);
+
+        this.logger.info({ step: step.step, chatId: msg.chatId }, 'Orchestration paused for user approval');
         return {
           success: false,
           progress,
           allGateResults,
           totalDurationMs: Date.now() - startTime,
           totalCostUsd,
-          error: 'Aborted',
+          plan, // include plan so caller can reconstruct resume state
+          error: undefined,
         };
       }
 
-      const step = plan.steps[i];
       progress.currentStepIndex = i;
       progress.steps[i].status = 'running';
       await this.cardUpdater.update(msg.chatId, cardMessageId, progress, getSender);
 
-      // 4a. Load skill
+      // Load skill
       let skillContent = '';
       if (step.skill) {
-        skillContent = this.skillLoader.load(step.skill);
-        this.logger.debug(
-          { step: step.step, skill: step.skill, skillLen: skillContent.length },
-          'Skill loaded',
-        );
+        skillContent = this.skillLoader.loadForStep(step.skill, step.step);
       }
 
-      // 4b. Build context (now includes reference rules + knowledge)
+      // Build context
       const stepContext = this.contextBuilder.build({
-        agentConfig,
-        step,
-        skillContent,
-        previousOutput,
-        userMessage,
-        knowledgeContext,
+        agentConfig, step, skillContent, previousOutput, userMessage, knowledgeContext,
       });
-      this.logger.debug({ step: step.step, contextLen: stepContext.length }, 'Step context built');
 
-      // 4c. Execute step with retries — with per-step timeout enforcement
+      // Execute step with retries
       const stepTimeoutMs = (step as any).timeoutMs ?? 10 * 60 * 1000;
       let stepResult: StepResult | null = null;
       let retriesLeft = step.retry;
 
       do {
-        // Per-step timeout: abort if exceeds time limit (铁律: 超10分钟无进展→重新审视方案)
         const stepAbortController = new AbortController();
         const stepTimeoutId = setTimeout(
           () => stepAbortController.abort(new Error('步骤超时（10分钟无进展）')),
@@ -159,55 +243,39 @@ export class Orchestrator {
         abortController.signal.addEventListener('abort', onGlobalAbort, { once: true });
 
         stepResult = await this.stepExecutor.execute({
-          prompt: stepContext,
-          cwd,
-          outputsDir,
-          abortController: stepAbortController,
-          chatId,
+          prompt: stepContext, cwd, outputsDir,
+          abortController: stepAbortController, chatId: msg.chatId,
         });
 
         clearTimeout(stepTimeoutId);
         abortController.signal.removeEventListener('abort', onGlobalAbort);
 
-        // Timeout detection — don't retry, escalate to plan re-evaluation
         if (stepAbortController.signal.aborted && !abortController.signal.aborted) {
           this.logger.warn({ step: step.step, timeoutMs: stepTimeoutMs }, 'Step timed out');
           stepResult.success = false;
-          stepResult.output = `[步骤超时] 执行超过 ${stepTimeoutMs / 1000}s，触发"超10分钟无进展→重新审视方案"规则`;
-          stepResult.gateResults = [{ gate: 'step_timeout' as const, passed: false, expected: `在 ${stepTimeoutMs / 1000}s 内完成`, actual: '超时未完成', durationMs: stepTimeoutMs }];
-          break; // do not retry on timeout
+          stepResult.output = `[步骤超时] 执行超过 ${stepTimeoutMs / 1000}s`;
+          stepResult.gateResults = [{
+            gate: 'step_timeout' as const, passed: false,
+            expected: `在 ${stepTimeoutMs / 1000}s 内完成`, actual: '超时未完成',
+            durationMs: stepTimeoutMs,
+          }];
+          break;
         }
 
-        // 4d. Gate checks
         const gateResults = await this.gateChecker.checkAll(step.gates, stepResult, cwd);
         allGateResults.push(...gateResults);
-
         stepResult.gateResults = gateResults;
-        const allPassed = gateResults.every((g) => g.passed);
+        const allPassed = stepResult.success && gateResults.every((g) => g.passed);
 
-        this.logger.info(
-          {
-            step: step.step,
-            success: stepResult.success,
-            gatesPassed: allPassed,
-            retriesLeft,
-            costUsd: stepResult.costUsd,
-          },
-          'Step executed',
-        );
+        this.logger.info({
+          step: step.step, success: stepResult.success,
+          gatesPassed: allPassed, retriesLeft, costUsd: stepResult.costUsd,
+        }, 'Step executed');
 
         if (allPassed) break;
 
         retriesLeft--;
         if (retriesLeft >= 0) {
-          this.logger.warn(
-            {
-              step: step.step,
-              retriesLeft,
-              failedGates: gateResults.filter((g) => !g.passed).map((g) => g.gate),
-            },
-            'Retrying step',
-          );
           const failedInfo = gateResults
             .filter((g) => !g.passed)
             .map((g) => `${g.gate}: 期望${g.expected}, 实际${g.actual}`)
@@ -216,7 +284,6 @@ export class Orchestrator {
         }
       } while (retriesLeft >= 0);
 
-      // 4e. Update progress
       const allGatesPassed = stepResult!.gateResults.every((g) => g.passed);
       progress.steps[i].status = allGatesPassed ? 'passed' : 'failed';
       progress.steps[i].result = stepResult!;
@@ -225,37 +292,27 @@ export class Orchestrator {
         progress.status = 'failed';
         await this.cardUpdater.update(msg.chatId, cardMessageId, progress, getSender);
         return {
-          success: false,
-          progress,
-          allGateResults,
-          totalDurationMs: Date.now() - startTime,
-          totalCostUsd,
+          success: false, progress, allGateResults,
+          totalDurationMs: Date.now() - startTime, totalCostUsd,
           error: `步骤 "${step.step}" 门控未通过，重试 ${step.retry} 次后仍失败`,
         };
       }
 
       previousOutput = this.buildStepHandoff(step, stepResult!);
       totalCostUsd += stepResult!.costUsd;
-
       await this.cardUpdater.update(msg.chatId, cardMessageId, progress, getSender);
     }
 
-    // 5. Complete
+    // Complete
     progress.status = 'completed';
     progress.currentStepIndex = plan.steps.length;
     await this.cardUpdater.update(msg.chatId, cardMessageId, progress, getSender);
 
     const totalDurationMs = Date.now() - startTime;
-    this.logger.info(
-      {
-        chatId: msg.chatId,
-        intent: intent.name,
-        totalSteps: plan.steps.length,
-        totalDurationMs,
-        totalCostUsd,
-      },
-      'Orchestration completed',
-    );
+    this.logger.info({
+      chatId: msg.chatId, intent: progress.intentName,
+      totalSteps: plan.steps.length, totalDurationMs, totalCostUsd,
+    }, 'Orchestration completed');
 
     return { success: true, progress, allGateResults, totalDurationMs, totalCostUsd };
   }

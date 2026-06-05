@@ -75,6 +75,42 @@ export class SkillLoader {
     return `[技能 ${skillName} 的文件未找到]`;
   }
 
+  /** Load only the section relevant to the current step.
+   *  Looks for <!-- step: <stepName> --> markers in the SKILL.md.
+   *  Falls back to full file if no markers are found. */
+  loadForStep(skillName: string, stepName: string): string {
+    const fullContent = this.load(skillName);
+    if (!fullContent || fullContent.startsWith('[技能 ')) return fullContent;
+
+    // Try to find step markers: <!-- step: brainstorm -->
+    const markerRegex = /<!--\s*step:\s*(\S+)\s*-->/g;
+    const markers: { name: string; index: number }[] = [];
+    let m: RegExpExecArray | null;
+    while ((m = markerRegex.exec(fullContent)) !== null) {
+      markers.push({ name: m[1], index: m.index });
+    }
+
+    if (markers.length === 0) {
+      // No markers found — return full content (backward compatible)
+      return fullContent;
+    }
+
+    // Find the marker matching this step
+    const stepIdx = markers.findIndex((mk) => mk.name === stepName);
+    if (stepIdx === -1) {
+      // Step not found in markers — return full content
+      return fullContent;
+    }
+
+    const startIdx = markers[stepIdx].index;
+    const endIdx = stepIdx + 1 < markers.length
+      ? markers[stepIdx + 1].index
+      : fullContent.length;
+
+    const section = fullContent.slice(startIdx, endIdx).trim();
+    return section || fullContent;
+  }
+
   preload(skillNames: string[]): void {
     for (const name of skillNames) {
       try {

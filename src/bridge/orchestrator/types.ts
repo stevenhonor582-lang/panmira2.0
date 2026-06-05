@@ -108,6 +108,8 @@ export interface OrchestrationResult {
   totalDurationMs: number;
   totalCostUsd: number;
   error?: string;
+  /** Populated when status is 'waiting_user' — the full plan for resume. */
+  plan?: ExecutionPlan;
 }
 
 /** 已渲染的执行计划步骤 */

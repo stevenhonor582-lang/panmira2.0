@@ -9,7 +9,7 @@ interface StepContextInput {
   knowledgeContext?: string;
 }
 
-const REFERENCE_SECTIONS = ['任务执行', '反模式', '防偷懒', '验证门控', '安全编码', '部署必须'];
+const REFERENCE_SECTIONS = ['铁律', '止损', '反模式', '安全', '验证铁律', '部署纪律', '完成标准'];
 const MAX_REFERENCE_CHARS = 800;
 
 export class ContextBuilder {

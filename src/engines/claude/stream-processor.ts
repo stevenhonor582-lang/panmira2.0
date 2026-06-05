@@ -104,6 +104,7 @@ export class StreamProcessor {
       durationMs: this.durationMs,
       pendingQuestion: this._pendingQuestions[0] || undefined,
       backgroundEvents: this._backgroundEvents.size > 0 ? [...this._backgroundEvents.values()] : undefined,
+      contextNote: this._contextNote,
     };
   }
 
@@ -334,6 +335,7 @@ export class StreamProcessor {
       cacheCreationTokens: this._lastCacheCreationTokens,
       contextWindow: this._overrideContextWindow ?? this._contextWindow,
       backgroundEvents: this._backgroundEvents.size > 0 ? [...this._backgroundEvents.values()] : undefined,
+      contextNote: this._contextNote,
     };
   }
 
@@ -412,6 +414,12 @@ export class StreamProcessor {
     return tools;
   }
 
+  private _contextNote: string | undefined;
+
+  setContextNote(note: string): void {
+    this._contextNote = note;
+  }
+
   /** Return the current card state without processing a new message. */
   getCurrentState(): CardState {
     const hasActiveTools = this.toolCalls.some((t) => t.status === 'running');
@@ -432,6 +440,7 @@ export class StreamProcessor {
       durationMs: this.durationMs,
       pendingQuestion: this._pendingQuestions[0] || undefined,
       backgroundEvents: this._backgroundEvents.size > 0 ? [...this._backgroundEvents.values()] : undefined,
+      contextNote: this._contextNote,
     };
   }
 

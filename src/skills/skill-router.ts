@@ -111,6 +111,13 @@ export class SkillRouter {
     );
   }
 
+  /** Pre-warm all skill embeddings (call at startup). */
+  async preWarmAll(): Promise<void> {
+    if (!this.smartMatcher) return;
+    const allNames = this.getAllStagedSkillNames();
+    await this.smartMatcher.preWarm(allNames);
+  }
+
   /** Get names of all skills that should be staged (for pre-loading). */
   getAllStagedSkillNames(): string[] {
     return SKILL_REGISTRY.filter((s) => s.platform === 'all' || s.platform === this.platform).map((s) => s.name);
