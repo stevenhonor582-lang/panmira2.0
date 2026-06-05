@@ -2,6 +2,8 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useStore } from '../../store';
 import { SlideOverPanel } from '../SlideOverPanel';
+import { ChainEditor } from './ChainEditor';
+import { ChainEditorModal } from './ChainEditorModal';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import styles from '../SettingsView.module.css';
@@ -126,6 +128,7 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
   const [agentOrchestration, setAgentOrchestration] = useState('');
   const [agentBoundary, setAgentBoundary] = useState('');
   const [agentIronLaws, setAgentIronLaws] = useState('');
+  const [orchestrationModalOpen, setOrchestrationModalOpen] = useState(false);
   const mdFileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchFolders = useCallback(async () => {
@@ -164,7 +167,7 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
 
   const fetchSkills = useCallback(async () => {
     try {
-      const res = await fetch('/api/skills/registry');
+      const res = await fetch('/api/skills/registry', { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const data = await res.json();
         setAvailableSkills(data.skills || []);
@@ -234,7 +237,15 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
       if (res.ok) {
         const data = await res.json();
         const full = data.agent;
-        setAgents((prev) => prev.map((a) => (a.id === id ? { ...a, systemPrompt: full.systemPrompt } : a)));
+        setAgents((prev) => prev.map((a) => (a.id === id ? {
+          ...a,
+          systemPrompt: full.systemPrompt,
+          orchestration: full.orchestration,
+          boundary: full.boundary,
+          ironLaws: full.ironLaws,
+          knowledgeFolders: full.knowledgeFolders,
+          skills: full.skills,
+        } : a)));
         return full;
       }
     } catch { /* ignore */ }
@@ -277,7 +288,7 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
   }, []);
 
   const createFromTemplate = useCallback(async (agent: AgentTemplate) => {
-    const full = agent.systemPrompt ? agent : (await fetchAgentDetail(agent.id)) || agent;
+    const full = (await fetchAgentDetail(agent.id)) || agent;
     setAgentMode('create');
     setEditingAgent(null);
     setAgentName(t('agents.nameCopy', { name: full.name }));
@@ -295,7 +306,7 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
   }, [fetchAgentDetail]);
 
   const openEdit = useCallback(async (agent: AgentTemplate) => {
-    const full = agent.systemPrompt ? agent : (await fetchAgentDetail(agent.id)) || agent;
+    const full = (await fetchAgentDetail(agent.id)) || agent;
     setAgentMode('edit');
     setEditingAgent(full);
     setAgentName(full.name);
@@ -495,7 +506,7 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
               className={`${styles.filterChip} ${agentCategory === cat ? styles.filterChipActive : ''}`}
               onClick={() => setAgentCategory(cat)}
             >
-              {AGENT_CATEGORIES[cat] || cat}
+              {t(AGENT_CATEGORIES[cat]) || cat}
             </button>
           ))}
         </div>
@@ -530,7 +541,7 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
               <div key={agent.id} className={`${styles.agentCard} ${isPreview ? styles.agentCardExpanded : ''}`}>
                 <div className={styles.agentCardHeader}>
                   <div className={styles.agentCardName}>{agent.name}</div>
-                  <span className={styles.agentCategoryTag}>{AGENT_CATEGORIES[agent.category] || agent.category}</span>
+                  <span className={styles.agentCategoryTag}>{t(AGENT_CATEGORIES[agent.category]) || agent.category}</span>
                 </div>
                 <div className={styles.agentCardDesc}>{agent.description || t('agents.noDescription')}</div>
                 <div className={styles.agentCardActions}>
@@ -699,14 +710,71 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
           </label>
 
           <label className={styles.field}>
-            <span className={styles.label}>{t('agents.orchestration') || 'Orchestration'} <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>(JSON)</span></span>
-            <textarea
-              className={styles.textarea}
-              value={agentOrchestration}
-              onChange={(e) => { if (!agentRefining) setAgentOrchestration(e.target.value); }}
-              placeholder={'{"intents": [{"name": "Bug\u4fee\u590d", "keywords": ["bug", "\u4fee\u590d"], "chain": ["debug", "fix"]}]}'}
-              rows={6}
-              spellCheck={false}
+            <span className={styles.label}>{t('agents.orchestration') || 'Orchestration'}</span>
+            {(() => {
+              let config: any = { intents: [] };
+              try { config = JSON.parse(agentOrchestration || '{}'); } catch {}
+              const intents = config?.intents || [];
+              const totalSteps = intents.reduce((sum: number, it: any) => sum + (it.chain?.length || 0), 0);
+              const totalTriggers = intents.reduce((sum: number, it: any) => sum + (it.triggers?.length || 0), 0);
+              return (
+                <div style={{
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--glass-border)',
+                  borderRadius: 'var(--r-md)',
+                  padding: '12px 14px',
+                }}>
+                  {intents.length === 0 ? (
+                    <div style={{ fontSize: 12, color: 'var(--text-3)', textAlign: 'center', padding: '8px 0' }}>
+                      No orchestration configured — all messages go to standard LLM
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {intents.map((intent: any, ii: number) => (
+                        <div key={ii} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                          <span style={{
+                            width: 8, height: 8, borderRadius: '50%',
+                            background: ['var(--accent)', '#3b82f6', '#a855f7', '#f59e0b', '#ef4444'][ii % 5],
+                            flexShrink: 0,
+                          }} />
+                          <span style={{ fontWeight: 600, color: 'var(--text-0)' }}>{intent.name || 'Unnamed'}</span>
+                          <span style={{ color: 'var(--text-3)' }}>
+                            {intent.triggers?.length || 0} triggers
+                          </span>
+                          <span style={{ color: 'var(--text-3)' }}>
+                            {(intent.chain?.length || 0) === 0 ? 'PATH B' : `${intent.chain?.length || 0} steps`}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                    <span style={{
+                      fontSize: 11, color: 'var(--text-3)', fontFamily: 'var(--font-mono)',
+                    }}>
+                      {intents.length} intent{intents.length !== 1 ? 's' : ''}
+                      {totalSteps > 0 ? ` · ${totalSteps} step${totalSteps !== 1 ? 's' : ''}` : ''}
+                      {totalTriggers > 0 ? ` · ${totalTriggers} trigger${totalTriggers !== 1 ? 's' : ''}` : ''}
+                    </span>
+                    <div style={{ flex: 1 }} />
+                    <button
+                      type="button"
+                      className={`${styles.btn} ${styles.btnSmall} ${styles.btnAccent}`}
+                      onClick={(e) => { e.preventDefault(); setOrchestrationModalOpen(true); }}
+                      disabled={agentRefining}
+                    >
+                      Open Editor
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+            <ChainEditorModal
+              open={orchestrationModalOpen}
+              onClose={() => setOrchestrationModalOpen(false)}
+              onSave={(config) => setAgentOrchestration(JSON.stringify(config, null, 2))}
+              initialValue={(() => { try { return JSON.parse(agentOrchestration); } catch { return { intents: [] }; } })()}
+              availableSkills={availableSkills.map((s) => s.name)}
               disabled={agentRefining}
             />
           </label>

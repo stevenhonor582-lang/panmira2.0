@@ -13,7 +13,11 @@ i18n
       en: { translation: en },
     },
     fallbackLng: 'zh',
-    interpolation: { escapeValue: false },
+    interpolation: {
+      escapeValue: false,
+      prefix: '{',
+      suffix: '}',
+    },
     detection: {
       order: ['localStorage', 'navigator'],
       lookupLocalStorage: 'lang',

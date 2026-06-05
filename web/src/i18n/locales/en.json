@@ -50,9 +50,9 @@
   "settings.system": "System",
   "settings.logout": "Logout",
   "dashboard.justNow": "Just now",
-  "dashboard.minutesAgo": "{{count}} min ago",
-  "dashboard.hoursAgo": "{{count}} hr ago",
-  "dashboard.daysAgo": "{{count}} days ago",
+  "dashboard.minutesAgo": "{count} min ago",
+  "dashboard.hoursAgo": "{count} hr ago",
+  "dashboard.daysAgo": "{count} days ago",
   "dashboard.noData": "No data",
   "dashboard.totalTokens": "Total Tokens",
   "dashboard.todayTokens": "Today's Tokens",
@@ -535,5 +535,13 @@
   "skills.noBindingsDesc": "No skills bound to this bot yet.",
   "skills.uninstall": "Uninstall",
   "skills.availableSkills": "Available Skills",
-  "skills.searchAvailable": "Search available skills..."
+  "skills.searchAvailable": "Search available skills...",
+  "agents.orchestrationConfig": "Orchestration Config",
+  "agents.orchestrationHint": "JSON config for orchestrator chains, boundary rules, and iron laws",
+  "agents.ironLaws": "Iron Laws",
+  "agents.onePerLine": "one per line",
+  "agents.ironLawsPlaceholder": "e.g. Never modify production data without confirmation",
+  "agents.boundary": "Boundary",
+  "agents.orchestration": "Orchestration",
+  "agents.invalidJson": "Invalid JSON in {field}"
 }

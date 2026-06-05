@@ -468,7 +468,7 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
       <SlideOverPanel
         open={showPanel}
         onClose={() => setShowPanel(false)}
-        title={botMode === 'create' ? t('bots.addBotTitle') : t('bots.editBotTitle', { name: editBot?.name || '' })}
+        title={botMode === 'create' ? t('bots.addBotTitle') : t('bots.editBotTitle', { name: botName || editBot?.name || '' })}
       >
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginBottom: 16 }}>
           <button className={`${styles.btn} ${styles.btnOutline}`} onClick={() => setShowPanel(false)}>{t('bots.cancel')}</button>
@@ -535,7 +535,7 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
               </select>
             </label>
           )}
-          {selectedProvider && (
+          {(selectedProvider || (botModel && botEngine)) && (
             <div className={styles.formHint} style={{ color: 'var(--accent)' }}>
               {t('bots.modelInfo', { model: botModel || '—', engine: botEngine || 'claude' })}
             </div>
@@ -627,6 +627,7 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
           )}
         </div>
 
+        {!selectedProviderId && (
         <div className={styles.row}>
           <label className={styles.field}>
             <span className={styles.label}>{t('bots.engineLabel')}</span>
@@ -642,6 +643,7 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
             <input className={styles.input} value={botModel} onChange={(e) => setBotModel(e.target.value)} placeholder="claude-sonnet-4-6" autoComplete="off" />
           </label>
         </div>
+        )}
 
         <div className={styles.row}>
           <label className={styles.field}>

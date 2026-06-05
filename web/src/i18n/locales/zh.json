@@ -50,9 +50,9 @@
   "settings.system": "系统设置",
   "settings.logout": "退出登录",
   "dashboard.justNow": "刚刚",
-  "dashboard.minutesAgo": "{{count}} 分钟前",
-  "dashboard.hoursAgo": "{{count}} 小时前",
-  "dashboard.daysAgo": "{{count}} 天前",
+  "dashboard.minutesAgo": "{count} 分钟前",
+  "dashboard.hoursAgo": "{count} 小时前",
+  "dashboard.daysAgo": "{count} 天前",
   "dashboard.noData": "暂无数据",
   "dashboard.totalTokens": "总 Token",
   "dashboard.todayTokens": "今日 Token",
@@ -535,5 +535,13 @@
   "skills.noBindingsDesc": "该 Bot 尚未绑定任何技能，点击安装添加。",
   "skills.uninstall": "卸载",
   "skills.availableSkills": "可安装技能",
-  "skills.searchAvailable": "搜索可安装技能..."
+  "skills.searchAvailable": "搜索可安装技能...",
+  "agents.orchestrationConfig": "编排配置",
+  "agents.orchestrationHint": "编排器链、边界规则和铁律的 JSON 配置",
+  "agents.ironLaws": "铁律",
+  "agents.onePerLine": "每行一条",
+  "agents.ironLawsPlaceholder": "例如：未经确认不得修改生产数据",
+  "agents.boundary": "边界",
+  "agents.orchestration": "编排",
+  "agents.invalidJson": "{field} JSON 格式错误"
 }
