@@ -787,6 +787,21 @@ export class MessageBridge {
       this.logger.warn({ err: (configResult as any).reason }, 'Agent config load failed');
     }
 
+    // ── Agent template injection ──
+    // Compose systemPromptOverride: agent template as base identity,
+    // knowledge override as supplement. This ensures the web+DB configured
+    // agent system_prompt actually reaches Claude.
+    const agentSystemPrompt = agentRuntimeConfig?.systemPrompt;
+    if (agentSystemPrompt) {
+      systemPromptOverride = systemPromptOverride
+        ? agentSystemPrompt + '\n\n' + systemPromptOverride
+        : agentSystemPrompt;
+      this.logger.info(
+        { agentPromptLength: agentSystemPrompt.length, hasKnowledgeOverride: !!(knowledgeResult.status === 'fulfilled' && knowledgeResult.value?.systemPromptOverride) },
+        'Agent system prompt injected as base identity',
+      );
+    }
+
     if (pendingSummary.status === 'fulfilled' && pendingSummary.value) {
       knowledgeContext = knowledgeContext
         ? `${knowledgeContext}\n\n## 前次会话摘要\n${pendingSummary.value}`

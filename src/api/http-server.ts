@@ -88,7 +88,9 @@ const rateLimiter = new RateLimiter(60000, 100); // 100 req/min per IP
 // Expose start time for metrics route
 (globalThis as any).__panmira_start_time = startTime;
 
-export async function startApiServer(options: ApiServerOptions): Promise<http.Server> {
+export interface ApiServerResult { server: http.Server; broadcastAll: (msg: Record<string, unknown>) => void; }
+
+export async function startApiServer(options: ApiServerOptions): Promise<ApiServerResult> {
   const {
     port,
     secret,
@@ -771,5 +773,5 @@ ${content}
     logger.info({ host, port }, 'API server started');
   });
 
-  return server;
+  return { server, broadcastAll: ws.handle?.broadcastAll ?? (() => {}) };
 }

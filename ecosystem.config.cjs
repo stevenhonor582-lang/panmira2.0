@@ -19,24 +19,25 @@ module.exports = {
   apps: [
     {
       name: 'panmira',
-      script: 'src/index.ts',
-      interpreter: path.join(__dirname, 'node_modules/.bin/tsx'),
+      // Use start-safe.sh wrapper: runs tsc --noEmit before tsx,
+      // preventing crash loops from syntax errors
+      script: 'bin/start-safe.sh',
+      interpreter: '/bin/bash',
       cwd: __dirname,
-      node_args: '--no-warnings=DeprecationWarning',
 
       watch: false,
       autorestart: true,
-      max_restarts: 10,
-      min_uptime: '10s',
-      restart_delay: 3000,
-      kill_timeout: 10000,
+      max_restarts: 5,
+      min_uptime: '30s',
+      restart_delay: 5000,
+      kill_timeout: 15000,
 
       error_file: path.join(__dirname, 'logs', 'error.log'),
       out_file: path.join(__dirname, 'logs', 'out.log'),
       merge_logs: true,
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
 
-      env: Object.assign({ NODE_ENV: 'production', NODE_OPTIONS: '--no-warnings=DeprecationWarning' }, envVars),
+      env: Object.assign({ NODE_ENV: 'production' }, envVars),
     },
   ],
 };

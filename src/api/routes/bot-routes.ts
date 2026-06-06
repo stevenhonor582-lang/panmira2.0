@@ -7,6 +7,7 @@ import { NullSender } from '../../web/null-sender.js';
 import { MessageBridge } from '../../bridge/message-bridge.js';
 import { startFeishuBot } from '../../feishu/feishu-bot-starter.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
+import { initWorkspaceSkeleton } from '../../workspace-init.js';
 import type { RouteContext } from './types.js';
 
 export async function handleBotRoutes(
@@ -175,6 +176,11 @@ export async function handleBotRoutes(
     try {
       const workDir = body.defaultWorkingDirectory as string;
       fs.mkdirSync(workDir, { recursive: true });
+
+      if (body.initWorkspace !== false) {
+        const result = initWorkspaceSkeleton(workDir, name, (body.description as string) || name, logger);
+        entry.knowledgeFolders = result.knowledgeFolders;
+      }
 
       await botConfigStore.create(platform, entry);
       logger.info({ name, platform }, 'Bot added to DB');

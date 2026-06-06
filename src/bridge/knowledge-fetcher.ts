@@ -73,7 +73,29 @@ export async function fetchKnowledgeContext(
     if (lastSentence) searchQuery += lastSentence[0].slice(0, 100);
   }
 
-  const results = await deps.memoryClient.searchInFolders(searchQuery, knowledgeFolders, 5);
+  // Resolve knowledge folder names to actual folder UUIDs
+  let folderUuids: string[] = [];
+  if (deps.workspaceManager) {
+    try {
+      const botFolderIds = await deps.workspaceManager.getBotFolderIds(deps.config.name);
+      folderUuids = botFolderIds;
+    } catch {}
+  }
+  // Also resolve by name for folders under the bot's workspace tree
+  if (knowledgeFolders.length > 0) {
+    try {
+      const nameResults = await pool.query(
+          "SELECT f.id FROM folders f WHERE f.name = ANY($1) AND f.path LIKE '\u6570\u5b57\u5458\u5de5/' || $2 || '%'",
+        [knowledgeFolders, deps.config.name],
+      );
+      for (const row of nameResults.rows) {
+        if (!folderUuids.includes(row.id)) folderUuids.push(row.id);
+      }
+    } catch {}
+  }
+  if (folderUuids.length === 0) folderUuids = knowledgeFolders;
+
+  const results = await deps.memoryClient.searchInFolders(searchQuery, folderUuids, 5);
 
   // P2.3: Search bot's own conversation history for cross-session recall
   let conversationContext = '';

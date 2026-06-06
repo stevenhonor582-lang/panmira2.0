@@ -33,6 +33,7 @@ export function useWebSocket() {
   const loadServerHistory = useStore((s) => s.loadServerHistory);
   const setAsrState = useStore((s) => s.setAsrState);
   const setAsrPartialText = useStore((s) => s.setAsrPartialText);
+  const setServerShutdownReason = useStore((s) => s.setServerShutdownReason);
 
   const wsRef = useRef<WebSocket | null>(null);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
@@ -65,6 +66,7 @@ export function useWebSocket() {
     ws.onopen = () => {
       if (!mountedRef.current) return;
       reconnectAttempt.current = 0;
+      setServerShutdownReason(null);
       setConnected(true);
 
       // Request group list
@@ -281,6 +283,10 @@ export function useWebSocket() {
           case 'pong':
             // heartbeat ack — nothing to do
             break;
+
+          case 'server_shutdown':
+            setServerShutdownReason(msg.reason || msg.message || 'restarting');
+            break;
         }
       } catch {
         // malformed message
@@ -307,7 +313,7 @@ export function useWebSocket() {
         if (mountedRef.current) connect();
       }, delay);
     };
-  }, [token, cleanup, setConnected, setBots, updateMessageState, addMessage, addMessageAttachment, markRunningMessagesDisconnected, addGroup, removeGroup, setGroups, setIncomingVoiceCall, addActivityEvent, renameSession, deleteSession, mergeServerSessions, loadServerHistory, setAsrState, setAsrPartialText]);
+  }, [token, cleanup, setConnected, setBots, updateMessageState, addMessage, addMessageAttachment, markRunningMessagesDisconnected, addGroup, removeGroup, setGroups, setIncomingVoiceCall, addActivityEvent, renameSession, deleteSession, mergeServerSessions, loadServerHistory, setAsrState, setAsrPartialText, setServerShutdownReason]);
 
   const send = useCallback(
     (msg: WSOutgoingMessage) => {

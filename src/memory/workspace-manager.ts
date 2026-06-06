@@ -6,8 +6,11 @@ const ORG_ROOT = '组织公共区';
 const ORG_CATEGORIES = ['00-导航', 'R0-品牌规范', 'R1-竞品库', 'R2-客户库', 'R3-卖法手册', 'R4-技术库', 'R5-产品库'];
 
 const EMPLOYEE_ROOT = '数字员工';
-const EMPLOYEE_CATEGORIES = ['知识沉淀', '工作库', '专业文档', '技能库', '项目', '索引'];
-const WORK_SUB_CATEGORIES: Record<string, string[]> = {
+const EMPLOYEE_CATEGORIES = ['知识沉淀', '专业文档', '技能库', '项目', '索引'];
+const PROJECT_SUB_CATEGORIES = ['上传文件', '产出文件', '知识'];
+
+// Deprecated: kept for reference, replaced by PROJECT_SUB_CATEGORIES
+const _WORK_SUB_CATEGORIES_DEPRECATED: Record<string, string[]> = {
   工作库: ['上传文件', '产出文件'],
 };
 
@@ -22,8 +25,6 @@ export interface Workspace {
 
 const BOT_CATEGORY_MAP: Record<string, string> = {
   knowledge: '知识沉淀',
-  uploads: '上传文件',
-  outputs: '产出文件',
   professional: '专业文档',
   skills: '技能库',
   projects: '项目',
@@ -101,15 +102,7 @@ export class WorkspaceManager {
 
     const categories: Record<string, Folder> = {};
     for (const cat of EMPLOYEE_CATEGORIES) {
-      const catFolder = await this.storage.createFolder(cat, botRoot.id, 'shared');
-      categories[cat] = catFolder;
-
-      const subCats = WORK_SUB_CATEGORIES[cat];
-      if (subCats) {
-        for (const sub of subCats) {
-          categories[sub] = await this.storage.createFolder(sub, catFolder.id, 'shared');
-        }
-      }
+      categories[cat] = await this.storage.createFolder(cat, botRoot.id, 'shared');
     }
 
     const ws: Workspace = {
@@ -163,6 +156,9 @@ export class WorkspaceManager {
     const projectsFolder = ws.categories['项目'];
     if (!projectsFolder) throw new Error('项目 folder not found');
     const projectFolder = await this.storage.createFolder(projectName, projectsFolder.id, 'shared');
+    for (const sub of PROJECT_SUB_CATEGORIES) {
+      await this.storage.createFolder(sub, projectFolder.id, 'shared');
+    }
     await this.storage.createFolder('索引', projectFolder.id, 'shared');
     return projectFolder;
   }
@@ -406,10 +402,19 @@ export class WorkspaceManager {
     return [ws.rootFolderId, ...Object.values(ws.categories).map((f) => f.id)];
   }
 
-  async getBotOutputFolderId(botName: string): Promise<string> {
+  async getBotOutputFolderId(botName: string, projectName?: string): Promise<string> {
+    if (projectName) {
+      const projectFolder = await this.ensureBotProject(botName, projectName);
+      const tree = await this.storage.getFolderTree('admin');
+      const projNode = this.findInTreeDeep(tree, projectFolder.id);
+      if (projNode) {
+        const outputNode = (projNode.children || []).find((c: any) => c.name === '产出文件');
+        if (outputNode) return outputNode.id;
+      }
+    }
     const ws = await this.ensureBotWorkspace(botName);
-    const folder = ws.categories['产出文件'];
-    if (!folder) throw new Error('产出文件 folder not found');
+    const folder = ws.categories['知识沉淀'];
+    if (!folder) throw new Error('知识沉淀 folder not found (fallback for output)');
     return folder.id;
   }
 

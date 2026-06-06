@@ -229,6 +229,10 @@ export interface AppStore {
   asrPartialText: string;
   setAsrState: (state: 'idle' | 'connecting' | 'active' | 'error') => void;
   setAsrPartialText: (text: string) => void;
+
+  // Server shutdown notification
+  serverShutdownReason: string | null;
+  setServerShutdownReason: (reason: string | null) => void;
 }
 
 export const useStore = create<AppStore>((set, get) => ({
@@ -673,6 +677,10 @@ export const useStore = create<AppStore>((set, get) => ({
   asrPartialText: '',
   setAsrState(state: 'idle' | 'connecting' | 'active' | 'error') { set({ asrState: state }); },
   setAsrPartialText(text: string) { set({ asrPartialText: text }); },
+
+  /* ---- Server shutdown notification ---- */
+  serverShutdownReason: null as string | null,
+  setServerShutdownReason(reason: string | null) { set({ serverShutdownReason: reason }); },
 
   /* ---- Sidebar ---- */
   sidebarOpen: window.innerWidth > 768,

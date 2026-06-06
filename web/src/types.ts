@@ -184,7 +184,8 @@ export type WSIncomingMessage =
   | { type: 'asr_transcript'; text: string; isFinal: boolean }
   | { type: 'asr_error'; error: string }
   | { type: 'asr_stopped' }
-  | { type: 'pong' };
+  | { type: 'pong' }
+  | { type: 'server_shutdown'; reason: string; message: string };
 
 export type WSOutgoingMessage =
   | { type: 'chat'; botName: string; chatId: string; text: string; messageId: string }

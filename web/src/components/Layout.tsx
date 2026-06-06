@@ -414,6 +414,7 @@ export function Layout({ children }: LayoutProps) {
   const toggleSidebar = useStore((s) => s.toggleSidebar);
   const setSidebarOpen = useStore((s) => s.setSidebarOpen);
   const connected = useStore((s) => s.connected);
+  const serverShutdownReason = useStore((s) => s.serverShutdownReason);
   const bots = useStore((s) => s.bots);
   const activeBotName = useStore((s) => s.activeBotName);
   const sessions = useStore((s) => s.sessions);
@@ -727,6 +728,18 @@ export function Layout({ children }: LayoutProps) {
 
   return (
     <div className={s.shell}>
+      {/* Server shutdown notification banner */}
+      {serverShutdownReason && !connected && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
+          padding: '8px 16px', textAlign: 'center',
+          background: 'color-mix(in srgb, #f59e0b 15%, transparent)',
+          borderBottom: '1px solid color-mix(in srgb, #f59e0b 40%, transparent)',
+          color: '#fbbf24', fontSize: '13px', fontWeight: 500,
+        }}>
+          服务重启中... ({serverShutdownReason}) 请稍候
+        </div>
+      )}
       {/* Hamburger for collapsed sidebar */}
       {!sidebarOpen && (
         <button className={s.hamburger} onClick={toggleSidebar}>

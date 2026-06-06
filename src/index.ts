@@ -396,7 +396,7 @@ async function main() {
   // botsConfigPath removed — Panmira uses DB-only configuration
 
   // Start API server
-  const apiServer = await startApiServer({
+  const { server: apiServer, broadcastAll } = await startApiServer({
     port: appConfig.api.port,
     secret: appConfig.api.secret,
     registry,
@@ -426,6 +426,9 @@ async function main() {
     if (shuttingDown) return;
     shuttingDown = true;
     logger.info({ signal }, 'Shutting down...');
+
+    // Notify all WebSocket clients before disconnecting
+    broadcastAll({ type: 'server_shutdown', reason: signal, message: 'Server is restarting...' });
 
     scheduler.destroy();
     if (peerManager) {

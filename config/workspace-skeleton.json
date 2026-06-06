@@ -1,0 +1,13 @@
+{
+  "directories": [
+    "knowledge-base",
+    "projects/默认/uploads",
+    "projects/默认/outputs",
+    "docs"
+  ],
+  "claudeMd": "---\nname: {botName}\n---\n# {displayName}\n\n> 角色、铁律、技能路由定义在 DB agent template。\n> 全局规范见 `~/.claude/CLAUDE.md`。\n\n## 工作区\n\n- 路径: `{workDir}`\n- 技能质量日志: `docs/skill-quality-log.md`\n",
+  "knowledgeFolders": ["知识沉淀", "专业文档", "技能库", "项目"],
+  "initialFiles": {
+    "docs/skill-quality-log.md": "# 技能质量追踪日志\n\n> 每次使用技能后追加一行。定期回顾，优先调用高质量路径。\n\n| 日期 | 技能 | 任务摘要 | 结果 | 备注 |\n|------|------|----------|------|------|\n"
+  }
+}
