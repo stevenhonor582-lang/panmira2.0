@@ -1,4 +1,6 @@
 import * as net from 'node:net';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { pool } from '../db/index.js';
 import type { Logger } from './logger.js';
 
@@ -104,4 +106,75 @@ export async function runPreflight(logger: Logger): Promise<PreflightResult> {
   }
 
   return { pass, checks };
+}
+
+/**
+ * Validate bot-agent consistency after startup.
+ * Checks: agent existence, knowledgeFolders sync, workspace directory.
+ * Auto-fixes where possible.
+ */
+export async function validateBotConsistency(
+  allBotNames: string[],
+  registry: { get: (name: string) => { config: { agentId?: string; knowledgeFolders?: string[]; claude: { defaultWorkingDirectory: string } } } | undefined },
+  logger: Logger,
+): Promise<void> {
+  let checked = 0;
+  let warnings = 0;
+  let fixed = 0;
+
+  for (const botName of allBotNames) {
+    const botInfo = registry.get(botName);
+    if (!botInfo) continue;
+
+    // 1. Check agentId → agents table
+    const agentId = botInfo.config.agentId;
+    if (agentId) {
+      try {
+        const { rows } = await pool.query('SELECT id, knowledge_folders FROM agents WHERE id = $1', [agentId]);
+        if (rows.length === 0) {
+          logger.warn({ botName, agentId }, 'Bot references non-existent agent — check agent template');
+          warnings++;
+        }
+      } catch (err: any) {
+        logger.warn({ botName, err: err.message }, 'Agent lookup failed');
+        warnings++;
+      }
+    }
+
+    // 2. Sync knowledgeFolders: bot_configs → agents
+    const knowledgeFolders = botInfo.config.knowledgeFolders;
+    if (agentId && knowledgeFolders && knowledgeFolders.length > 0) {
+      try {
+        const { rows } = await pool.query('SELECT knowledge_folders FROM agents WHERE id = $1', [agentId]);
+        const current = rows[0]?.knowledge_folders;
+        const needsUpdate = !current || JSON.stringify(current) !== JSON.stringify(knowledgeFolders);
+        if (needsUpdate) {
+          await pool.query('UPDATE agents SET knowledge_folders = $1 WHERE id = $2', [
+            JSON.stringify(knowledgeFolders),
+            agentId,
+          ]);
+          logger.info({ botName, folders: knowledgeFolders }, 'Fixed: synced knowledgeFolders to agent');
+          fixed++;
+        }
+      } catch (err: any) {
+        logger.warn({ botName, err: err.message }, 'knowledgeFolders sync failed');
+        warnings++;
+      }
+    }
+
+    // 3. Check workspace directory exists
+    const workDir = botInfo.config.claude?.defaultWorkingDirectory;
+    if (workDir && !fs.existsSync(workDir)) {
+      logger.warn({ botName, workDir }, 'Workspace directory does not exist — will be created on first use');
+      warnings++;
+    }
+
+    checked++;
+  }
+
+  if (warnings > 0 || fixed > 0) {
+    logger.info({ checked, warnings, fixed }, 'Bot consistency validation complete');
+  } else {
+    logger.info({ checked }, 'Bot consistency validation passed — all bots healthy');
+  }
 }

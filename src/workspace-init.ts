@@ -9,7 +9,7 @@ interface SkeletonConfig {
   initialFiles: Record<string, string>;
 }
 
-const SKELETON_PATH = new URL('../config/workspace-skeleton.json', import.meta.url);
+const SKELETON_PATH = new URL('../../config/workspace-skeleton.json', import.meta.url);
 
 function loadSkeleton(): SkeletonConfig {
   const raw = fs.readFileSync(SKELETON_PATH, 'utf-8');

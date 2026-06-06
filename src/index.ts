@@ -19,7 +19,7 @@ import { DocSync } from './sync/doc-sync.js';
 import { MemoryClient } from './memory/memory-client.js';
 
 import { pool } from './db/index.js';
-import { runPreflight } from './utils/preflight.js';
+import { runPreflight, validateBotConsistency } from './utils/preflight.js';
 import { SessionRegistry } from './session/session-registry.js';
 import { ChatSessionStore } from './db/chat-session-store.js';
 import { ScheduledTaskStore } from './db/scheduled-task-store.js';
@@ -324,28 +324,23 @@ async function main() {
     }
     logger.info({ botCount: allNames.length }, 'Bot/Org工作空间已初始化');
 
-    // Auto-bind: sync knowledge_folders from standard templates to custom agents
-    let boundCount = 0;
+    // Validate bot-agent consistency and auto-fix mismatches
+    await validateBotConsistency(allNames, registry, logger);
+
+    // Sync knowledgeFolders from bot_configs to agents (single source of truth)
+    let syncCount = 0;
     for (const botName of allNames) {
       const botInfo = registry.get(botName);
       const agentId = botInfo?.config.agentId;
-      if (!agentId) continue;
-      const { rows: agentRows } = await pool.query('SELECT name FROM agents WHERE id = $1', [agentId]);
-      const agentName = agentRows[0]?.name;
-      if (!agentName) continue;
-      const { rows: stdRows } = await pool.query(
-        "SELECT knowledge_folders FROM agents WHERE name = $1 AND template_type = 'standard'",
-        [agentName],
-      );
-      const folders = stdRows[0]?.knowledge_folders || [];
-      if (folders.length === 0) continue;
+      const knowledgeFolders = botInfo?.config.knowledgeFolders;
+      if (!agentId || !knowledgeFolders || knowledgeFolders.length === 0) continue;
       await pool.query('UPDATE agents SET knowledge_folders = $1 WHERE id = $2', [
-        JSON.stringify(folders),
+        JSON.stringify(knowledgeFolders),
         agentId,
       ]);
-      boundCount++;
+      syncCount++;
     }
-    logger.info({ boundCount }, '知识库文件夹已从标准模板同步到数字员工');
+    logger.info({ syncCount }, '知识库文件夹已从bot_configs同步到agents');
 
     // Backfill embeddings for existing documents without vectors (background, non-blocking)
     const { DocEmbedder } = await import('./memory/doc-embedder.js');

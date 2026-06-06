@@ -1,21 +1,34 @@
 import type { MemoryStorage, Folder, Document, DocumentSummary } from './memory-storage.js';
 import type { Logger } from '../utils/logger.js';
 import { pool } from '../db/index.js';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ORG_ROOT = '组织公共区';
-const ORG_CATEGORIES = ['00-导航', 'R0-品牌规范', 'R1-竞品库', 'R2-客户库', 'R3-卖法手册', 'R4-技术库', 'R5-产品库'];
+interface DbFolderConfig {
+  root: string;
+  categories: Record<string, string>;
+  projectSubCategories?: string[];
+}
 
-const EMPLOYEE_ROOT = '数字员工';
-const EMPLOYEE_CATEGORIES = ['知识沉淀', '专业文档', '技能库', '项目', '索引'];
-const PROJECT_SUB_CATEGORIES = ['上传文件', '产出文件', '知识'];
+interface SkeletonConfig {
+  dbFolders?: {
+    org?: DbFolderConfig;
+    bot?: DbFolderConfig;
+    group?: DbFolderConfig;
+  };
+}
 
-// Deprecated: kept for reference, replaced by PROJECT_SUB_CATEGORIES
-const _WORK_SUB_CATEGORIES_DEPRECATED: Record<string, string[]> = {
-  工作库: ['上传文件', '产出文件'],
-};
-
-const GROUP_ROOT = '群协作区';
-const GROUP_CATEGORIES = ['项目文件', '协作文档', '知识沉淀', '索引'];
+function loadDbFolders(): { org: DbFolderConfig; bot: DbFolderConfig; group: DbFolderConfig } {
+  const skeletonPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'config', 'workspace-skeleton.json');
+  const raw = fs.readFileSync(skeletonPath, 'utf-8');
+  const skeleton = JSON.parse(raw) as SkeletonConfig;
+  const dbf = skeleton.dbFolders;
+  if (!dbf?.org || !dbf?.bot || !dbf?.group) {
+    throw new Error('workspace-skeleton.json missing dbFolders.org/bot/group');
+  }
+  return { org: dbf.org, bot: dbf.bot, group: dbf.group };
+}
 
 export interface Workspace {
   rootFolderId: string;
@@ -23,56 +36,33 @@ export interface Workspace {
   categories: Record<string, Folder>;
 }
 
-const BOT_CATEGORY_MAP: Record<string, string> = {
-  knowledge: '知识沉淀',
-  professional: '专业文档',
-  skills: '技能库',
-  projects: '项目',
-  index: '索引',
-};
-
-const ORG_CATEGORY_MAP: Record<string, string> = {
-  navigation: '00-导航',
-  brand: 'R0-品牌规范',
-  competitors: 'R1-竞品库',
-  customers: 'R2-客户库',
-  salesPlaybook: 'R3-卖法手册',
-  tech: 'R4-技术库',
-  products: 'R5-产品库',
-  index: '索引',
-};
-
-const GROUP_CATEGORY_MAP: Record<string, string> = {
-  projectFiles: '项目文件',
-  collabDocs: '协作文档',
-  knowledge: '知识沉淀',
-  index: '索引',
-};
-
 export class WorkspaceManager {
   private orgCache: Workspace | null = null;
   private botCache = new Map<string, Workspace>();
   private groupCache = new Map<string, Workspace>();
+  private readonly cfg: { org: DbFolderConfig; bot: DbFolderConfig; group: DbFolderConfig };
 
   constructor(
     private storage: MemoryStorage,
     private logger: Logger,
-  ) {}
+  ) {
+    this.cfg = loadDbFolders();
+  }
 
   // ── Org Workspace ──
 
   async ensureOrgWorkspace(): Promise<Workspace> {
     if (this.orgCache) return this.orgCache;
 
-    const root = await this.storage.createFolder(ORG_ROOT, 'root', 'shared');
+    const { root: rootName, categories: catMap } = this.cfg.org;
+    const root = await this.storage.createFolder(rootName, 'root', 'shared');
     const categories: Record<string, Folder> = {};
-    for (const name of ORG_CATEGORIES) {
-      categories[name] = await this.storage.createFolder(name, root.id, 'shared');
+    for (const catName of Object.values(catMap)) {
+      categories[catName] = await this.storage.createFolder(catName, root.id, 'shared');
     }
-    categories['索引'] = await this.storage.createFolder('索引', root.id, 'shared');
 
     this.orgCache = { rootFolderId: root.id, rootPath: root.path, categories };
-    this.logger.info({ categories: [...ORG_CATEGORIES, '索引'] }, '组织公共区已初始化');
+    this.logger.info({ categories: Object.values(catMap) }, `${rootName}已初始化`);
     return this.orgCache;
   }
 
@@ -97,12 +87,13 @@ export class WorkspaceManager {
     const cached = this.botCache.get(botName);
     if (cached) return cached;
 
-    const employeeRoot = await this.storage.createFolder(EMPLOYEE_ROOT, 'root', 'shared');
+    const { root: empRoot, categories: catMap } = this.cfg.bot;
+    const employeeRoot = await this.storage.createFolder(empRoot, 'root', 'shared');
     const botRoot = await this.storage.createFolder(botName, employeeRoot.id, 'shared');
 
     const categories: Record<string, Folder> = {};
-    for (const cat of EMPLOYEE_CATEGORIES) {
-      categories[cat] = await this.storage.createFolder(cat, botRoot.id, 'shared');
+    for (const catName of Object.values(catMap)) {
+      categories[catName] = await this.storage.createFolder(catName, botRoot.id, 'shared');
     }
 
     const ws: Workspace = {
@@ -128,7 +119,7 @@ export class WorkspaceManager {
     if (!category) {
       return this.storage.listDocuments(ws.rootFolderId, limit, offset);
     }
-    const catName = BOT_CATEGORY_MAP[category] || category;
+    const catName = this.cfg.bot.categories[category] || category;
     const folder = ws.categories[catName];
     if (!folder) throw new Error(`Invalid category: ${category} (mapped to ${catName})`);
     return this.storage.listDocuments(folder.id, limit, offset);
@@ -142,7 +133,7 @@ export class WorkspaceManager {
     tags: string[] = [],
   ): Promise<Document> {
     const ws = await this.ensureBotWorkspace(botName);
-    const catName = BOT_CATEGORY_MAP[category] || category;
+    const catName = this.cfg.bot.categories[category] || category;
     const folder = ws.categories[catName];
     if (!folder) throw new Error(`Invalid category: ${category} (mapped to ${catName})`);
     const doc = await this.storage.createDocument({ title, content, tags, folder_id: folder.id });
@@ -156,7 +147,8 @@ export class WorkspaceManager {
     const projectsFolder = ws.categories['项目'];
     if (!projectsFolder) throw new Error('项目 folder not found');
     const projectFolder = await this.storage.createFolder(projectName, projectsFolder.id, 'shared');
-    for (const sub of PROJECT_SUB_CATEGORIES) {
+    const subCats = this.cfg.bot.projectSubCategories || [];
+    for (const sub of subCats) {
       await this.storage.createFolder(sub, projectFolder.id, 'shared');
     }
     await this.storage.createFolder('索引', projectFolder.id, 'shared');
@@ -204,7 +196,6 @@ export class WorkspaceManager {
     if (cached) return cached;
 
     let resolvedName = groupName;
-    // Priority 1: coordinator_configs (user-configured group name in Panmira settings)
     if (!resolvedName) {
       try {
         const { rows } = await pool.query('SELECT group_name FROM coordinator_configs WHERE group_id = $1', [groupId]);
@@ -213,7 +204,6 @@ export class WorkspaceManager {
         /* table may not exist */
       }
     }
-    // Priority 2: discovered_groups.chat_name
     if (!resolvedName) {
       try {
         const { rows } = await pool.query('SELECT chat_name FROM discovered_groups WHERE chat_id = $1', [groupId]);
@@ -224,7 +214,9 @@ export class WorkspaceManager {
     }
     const idBasedName = groupId.replace(/^oc_/, '').slice(0, 20);
     const safeName = resolvedName || idBasedName;
-    const groupRoot = await this.storage.createFolder(GROUP_ROOT, 'root', 'shared');
+
+    const { root: groupRootName, categories: catMap } = this.cfg.group;
+    const groupRoot = await this.storage.createFolder(groupRootName, 'root', 'shared');
     let groupFolder = await this.storage.createFolder(safeName, groupRoot.id, 'shared');
 
     if (resolvedName && groupFolder.name === idBasedName) {
@@ -233,8 +225,8 @@ export class WorkspaceManager {
     }
 
     const categories: Record<string, Folder> = {};
-    for (const cat of GROUP_CATEGORIES) {
-      categories[cat] = await this.storage.createFolder(cat, groupFolder.id, 'shared');
+    for (const catName of Object.values(catMap)) {
+      categories[catName] = await this.storage.createFolder(catName, groupFolder.id, 'shared');
     }
 
     const ws: Workspace = {
@@ -259,7 +251,7 @@ export class WorkspaceManager {
     if (!category) {
       return this.storage.listDocuments(ws.rootFolderId, limit, offset);
     }
-    const catName = GROUP_CATEGORY_MAP[category] || category;
+    const catName = this.cfg.group.categories[category] || category;
     const folder = ws.categories[catName];
     if (!folder) throw new Error(`Invalid group category: ${category}`);
     return this.storage.listDocuments(folder.id, limit, offset);
@@ -273,7 +265,7 @@ export class WorkspaceManager {
     tags: string[] = [],
   ): Promise<Document> {
     const ws = await this.ensureGroupWorkspace(groupId);
-    const catName = GROUP_CATEGORY_MAP[category] || category;
+    const catName = this.cfg.group.categories[category] || category;
     const folder = ws.categories[catName];
     if (!folder) throw new Error(`Invalid group category: ${category}`);
     const doc = await this.storage.createDocument({ title, content, tags, folder_id: folder.id });
@@ -296,8 +288,7 @@ export class WorkspaceManager {
     return ok;
   }
 
-  /** Rebuild the appropriate workspace index for a document, using its path to determine scope.
-   *  (folderBelongsTo only checks direct categories, not subfolders like 工作库/产出文件/) */
+  /** Rebuild the appropriate workspace index for a document, using its path to determine scope. */
   async rebuildIndexByDocPath(docId: string): Promise<void> {
     const doc = await this.storage.getDocument(docId);
     if (!doc?.path) return;
@@ -331,7 +322,6 @@ export class WorkspaceManager {
   }
 
   async rebuildIndexForDoc(docId: string, folderId: string): Promise<void> {
-    // Check cached workspaces first
     const org = this.orgCache;
     if (org && this.folderBelongsTo(org, folderId)) {
       await this.rebuildIndex(org, 'org');
@@ -349,8 +339,6 @@ export class WorkspaceManager {
         return;
       }
     }
-    // Fallback: ensure workspace by iterating all known scopes
-    // (handles documents belonging to workspaces not yet cached)
   }
 
   private folderBelongsTo(ws: Workspace, folderId: string): boolean {
@@ -452,7 +440,6 @@ export class WorkspaceManager {
       if (catName === '索引') continue;
       const docs = await this.storage.listDocuments(folder.id, 100, 0);
 
-      // Also include docs from subfolders (e.g. 项目/外贸报价)
       const catNode = this.findInTreeDeep(tree, folder.id);
       const subDocs: DocumentSummary[] = [];
       if (catNode) {
@@ -519,15 +506,15 @@ export class WorkspaceManager {
   // ── Accessors ──
 
   getOrgCategoryNames(): string[] {
-    return [...ORG_CATEGORIES];
+    return [...Object.values(this.cfg.org.categories)];
   }
 
   getBotCategoryMap(): Record<string, string> {
-    return { ...BOT_CATEGORY_MAP };
+    return { ...this.cfg.bot.categories };
   }
 
   getGroupCategoryMap(): Record<string, string> {
-    return { ...GROUP_CATEGORY_MAP };
+    return { ...this.cfg.group.categories };
   }
 
   // ── Private ──
