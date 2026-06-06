@@ -455,11 +455,11 @@ export class ClaudeExecutor {
         },
         {
           matcher: 'Write',
-          hooks: [createFSGuardHook(this.config.permissions, this.config.claude.defaultWorkingDirectory) as any],
+          hooks: [createFSGuardHook(this.config.permissions, this.config.claude.defaultWorkingDirectory, options.userRole) as any],
         },
         {
           matcher: 'Edit',
-          hooks: [createFSGuardHook(this.config.permissions, this.config.claude.defaultWorkingDirectory) as any],
+          hooks: [createFSGuardHook(this.config.permissions, this.config.claude.defaultWorkingDirectory, options.userRole) as any],
         },
       ],
     };
