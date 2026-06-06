@@ -18,6 +18,7 @@ RUN cd web && npm ci --include=dev
 COPY tsconfig.json ./
 COPY src/ ./src/
 COPY web/ ./web/
+COPY skills/ ./skills/
 COPY drizzle.config.ts ./
 
 RUN npm run build
@@ -40,6 +41,8 @@ COPY --from=builder /app/dist ./dist
 # Copy configs and scripts
 COPY bin/ ./bin/
 COPY scripts/ ./scripts/
+COPY skills/ ./skills/
+COPY config/ ./config/
 COPY bots.example.json ./
 COPY ecosystem.config.cjs ./
 

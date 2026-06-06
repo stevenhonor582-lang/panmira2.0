@@ -568,6 +568,41 @@ function discoverVmtSkills(): SkillMeta[] {
   return discovered;
 }
 
+
+/** Scan ./skills/ (project-root bundled skills) for skills not in the hardcoded registry. */
+function discoverBuiltinSkills(): SkillMeta[] {
+  const builtinDir = path.join(process.cwd(), 'skills');
+  if (!fs.existsSync(builtinDir)) return [];
+
+  const knownNames = new Set(HARDCODED_REGISTRY.map((s) => s.name));
+  const discovered: SkillMeta[] = [];
+
+  try {
+    for (const entry of fs.readdirSync(builtinDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      if (knownNames.has(entry.name)) continue;
+
+      const skillMdPath = path.join(builtinDir, entry.name, 'SKILL.md');
+      if (!fs.existsSync(skillMdPath)) continue;
+
+      const content = fs.readFileSync(skillMdPath, 'utf-8');
+      const summary = parseSkillSummary(content) || `Builtin skill: ${entry.name}`;
+
+      discovered.push({
+        name: entry.name,
+        summary,
+        triggers: parseSkillTriggers(content, entry.name),
+        category: 'knowledge',
+        platform: 'all',
+      });
+    }
+  } catch {
+    // ignore scan errors
+  }
+
+  return discovered;
+}
+
 function discoverUserSkills(): SkillMeta[] {
   const userSkillsDir = path.join(os.homedir(), '.claude', 'skills');
   if (!fs.existsSync(userSkillsDir)) return [];
@@ -602,7 +637,7 @@ function discoverUserSkills(): SkillMeta[] {
 }
 
 /** Combined registry: hardcoded + VMT + user skills. */
-export const SKILL_REGISTRY: SkillMeta[] = [...HARDCODED_REGISTRY, ...discoverVmtSkills(), ...discoverUserSkills()];
+export const SKILL_REGISTRY: SkillMeta[] = [...HARDCODED_REGISTRY, ...discoverVmtSkills(), ...discoverBuiltinSkills(), ...discoverUserSkills()];
 
 /** Re-scan ~/.claude/skills/ and refresh the registry in-place so existing references see the update. */
 
@@ -637,7 +672,7 @@ export function validateAgentSkills(agentSkills: string[]): { missing: string[];
 }
 
 export function refreshSkillRegistry(): SkillMeta[] {
-  const fresh = [...HARDCODED_REGISTRY, ...discoverVmtSkills(), ...discoverUserSkills()];
+  const fresh = [...HARDCODED_REGISTRY, ...discoverVmtSkills(), ...discoverBuiltinSkills(), ...discoverUserSkills()];
   SKILL_REGISTRY.length = 0;
   SKILL_REGISTRY.push(...fresh);
   return SKILL_REGISTRY;

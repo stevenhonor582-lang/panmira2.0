@@ -29,6 +29,7 @@ import { GroupCoordinator } from './api/group-coordinator.js';
 import { BindingEngine } from './api/routing-bindings.js';
 import { IntentRouter } from './api/intent-router.js';
 import { CoordinatorConfigStore } from './db/coordinator-config-store.js';
+import * as fs from 'node:fs';
 import { DiscoveredGroupStore } from './db/discovered-group-store.js';
 
 async function backfillEmbedDocuments(embedder: any, logger: Logger): Promise<void> {
@@ -55,6 +56,41 @@ async function backfillEmbedDocuments(embedder: any, logger: Logger): Promise<vo
   logger.info({ backfilled, total: rows.length }, 'Embedding backfill completed');
 }
 
+async function seedDefaultAgents(logger: Logger): Promise<void> {
+  const { rows } = await pool.query('SELECT count(*)::int as cnt FROM agents');
+  if (rows[0]?.cnt > 0) return;
+
+  const seedPath = path.join(process.cwd(), 'config', 'default-agents.json');
+  if (!fs.existsSync(seedPath)) {
+    logger.warn('No default-agents.json found, skipping seed');
+    return;
+  }
+
+  try {
+    const agents = JSON.parse(fs.readFileSync(seedPath, 'utf-8'));
+    for (const agent of agents) {
+      await pool.query(
+        `INSERT INTO agents (name, display_name, description, role, system_prompt, skills, knowledge_folders, model_preferences)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (name) DO NOTHING`,
+        [
+          agent.name,
+          agent.display_name,
+          agent.description,
+          agent.role,
+          agent.system_prompt,
+          JSON.stringify(agent.skills),
+          JSON.stringify(agent.knowledge_folders),
+          JSON.stringify(agent.model_preferences || {}),
+        ],
+      );
+    }
+    logger.info({ count: agents.length }, 'Default agent templates seeded');
+  } catch (err: any) {
+    logger.warn({ err: err.message }, 'Failed to seed default agents (non-critical)');
+  }
+}
+
 async function main() {
   const { config: appConfig, botConfigStore } = await loadAppConfigFromDB();
   const chatSessionStore = new ChatSessionStore();
@@ -68,6 +104,9 @@ async function main() {
     logger.fatal({ failures: preflight.checks.filter(c => c.status === 'fail') }, 'Preflight check failed — aborting startup');
     process.exit(1);
   }
+
+  // Seed default agent templates on first startup
+  await seedDefaultAgents(logger);
 
   // Ensure MEMORY_SECRET env var is available for Claude subprocesses (used by metamemory skill)
   if (appConfig.memory.secret && !process.env.MEMORY_SECRET) {
