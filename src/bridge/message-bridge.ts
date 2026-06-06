@@ -25,8 +25,6 @@ import { CONTEXT_USAGE_THRESHOLD } from './context-manager.js';
 import { MemoryWriter } from './memory-writer.js';
 import { ClarificationMiddleware } from '../clarification/index.js';
 import type { FeishuCard } from '../clarification/card-builder.js';
-import { RequirementAnalyzer } from './requirement-analyzer.js';
-import type { ClarificationContext } from './requirement-analyzer.js';
 import { SkillLoader } from './orchestrator/skill-loader.js';
 import { ConfigReader } from './orchestrator/config-reader.js';
 import { Orchestrator } from './orchestrator/index.js';
@@ -84,9 +82,6 @@ export class MessageBridge {
   private clarificationMw: ClarificationMiddleware | null = null;
   private outputArchiver: OutputArchiver;
   private rag: PanmiraRAG;
-  private requirementAnalyzer: RequirementAnalyzer;
-  /** Multi-turn clarification state — accumulates Q&A across rounds. */
-  private clarificationContexts = new Map<string, ClarificationContext>();
   private workspaceManager?: import('../memory/workspace-manager.js').WorkspaceManager;
 
   constructor(
@@ -132,9 +127,6 @@ export class MessageBridge {
     this.configReader = new ConfigReader(logger);
     const stepExecutor = new StepExecutor(this.engineCache, logger, config);
     this.orchestrator = new Orchestrator(stepExecutor, this.memoryClient, logger);
-
-    // LLM-powered requirement analysis (runs before intent matching when needed)
-    this.requirementAnalyzer = new RequirementAnalyzer(logger, new SkillLoader());
   }
 
   /** Emit an activity event if a listener is registered. */
@@ -146,50 +138,12 @@ export class MessageBridge {
     }
   }
 
-  /** Detect short continuation messages that don't need requirement analysis. */
-  private isContinuationMessage(text: string, hasActiveSession: boolean, hasClarificationContext: boolean): boolean {
-    if (!hasActiveSession) return false;
-    if (hasClarificationContext) return false; // respect active clarification
-    const trimmed = text.trim();
-    if (trimmed.length > 50) return false;
-    const contPat = /^(继续|检查|排查|修一下|怎么样|好了吗|完成了吗|接着|接续|恢复|重启|重试|看看|查一下|测一下|跑一下|试一下|debug|fix|continue|go on|run|test|check|retry|status|progress)\b/i;
-    return contPat.test(trimmed);
-  }
-
   /** Detect pure chat / non-technical messages that don't need skill deployment. */
   private isChatMessage(text: string): boolean {
     const trimmed = text.trim();
     if (trimmed.length > 60) return false;
     const chatPat = /^(你好|您好|hi|hello|hey|谢谢|多谢|thanks|thank you|好的|ok|嗯|哦|明白了|懂了|知道了|收到|got it|再见|bye|晚安|早安|早|晚上好|早上好|下午好|在吗|在不)\b/i;
     return chatPat.test(trimmed);
-  }
-
-  /** Build session context string for the requirement analyzer. */
-  private buildSessionContext(chatId: string, session: any, knowledgeContext: string | null): string | undefined {
-    const parts: string[] = [];
-    parts.push('## 会话状态');
-    if (session.sessionId) {
-      parts.push(`- Claude 会话: ${session.sessionId}（续接中）`);
-    } else {
-      parts.push('- 新会话（无历史）');
-    }
-    if (session.workingDirectory) {
-      parts.push(`- 工作目录: ${session.workingDirectory}`);
-    }
-    // Check for pending question from AskUserQuestion (in-flight execution)
-    const runningTask = this.runningTasks.get(chatId);
-    if (runningTask?.pendingQuestion) {
-      const pq = runningTask.pendingQuestion;
-      const allQuestions = pq.questions.map((q: any) => q.text || q.question).join('；');
-      parts.push(`- 上一轮执行中向用户提问: ${allQuestions}`);
-      parts.push('- 当前消息是对上述问题的回复');
-    }
-    if (knowledgeContext) {
-      parts.push('');
-      parts.push('## 相关知识库内容');
-      parts.push(knowledgeContext.slice(0, 300));
-    }
-    return parts.join('\n');
   }
 
   private get _sessionDeps(): SessionHelperDeps {
@@ -828,7 +782,7 @@ export class MessageBridge {
 
     if (configResult.status === 'fulfilled') {
       agentRuntimeConfig = configResult.value;
-      this.logger.info({ agentId: this.config.agentId, found: !!agentRuntimeConfig }, 'Agent config loaded for requirement analysis');
+      this.logger.info({ agentId: this.config.agentId, found: !!agentRuntimeConfig }, 'Agent config loaded');
     } else {
       this.logger.warn({ err: (configResult as any).reason }, 'Agent config load failed');
     }
@@ -849,46 +803,7 @@ export class MessageBridge {
       contextNote: '🔍 知识已加载' + (agentRuntimeConfig ? ' · 配置已读取' : ''),
     }).catch(() => {});
 
-    // ── Build prior context: clarification Q&A + task state ──
-    let priorContext: ClarificationContext | undefined;
-    const existingContext = this.clarificationContexts.get(chatId);
-    if (existingContext) {
-      const lastQuestion = existingContext.history.length > 0
-        ? existingContext.history[existingContext.history.length - 1].question
-        : '';
-      existingContext.history.push({ question: lastQuestion || '补充信息', answer: text || '' });
-      priorContext = existingContext;
-      this.logger.info({ chatId, round: existingContext.history.length }, 'Clarification context updated');
-    }
-
-    // Inject task-level context when there's an active session but no clarification state
-    if (!priorContext && session.sessionId) {
-      const taskHistory: Array<{ question: string; answer: string }> = [];
-      taskHistory.push({ question: 'Claude会话ID', answer: session.sessionId });
-      taskHistory.push({ question: '工作目录', answer: cwd });
-
-      const runningTask = this.runningTasks.get(chatId);
-      if (runningTask?.pendingQuestion) {
-        const pq = runningTask.pendingQuestion;
-        const questionTexts = pq.questions.map((q: any) => q.text || q.question).join('；');
-        taskHistory.push({ question: '上一轮提问', answer: questionTexts });
-        taskHistory.push({ question: '本轮角色', answer: '用户正在回答上一轮的提问，不要重复问类似问题' });
-      }
-
-      if (pendingSummary.status === 'fulfilled' && pendingSummary.value) {
-        taskHistory.push({ question: '前次任务摘要', answer: pendingSummary.value.slice(0, 500) });
-      }
-
-      priorContext = {
-        originalMessage: text || '',
-        history: taskHistory,
-        payload: {},
-      };
-      this.logger.info({ chatId, historyItems: taskHistory.length }, 'Built task-level prior context');
-    }
-
-    // ── Phase 2: Intent-first routing ──
-    // Launch skill matching in background — runs concurrently with requirement analysis
+    // ── Phase 2: Intent-first routing (simplified — no requirement analyzer) ──
     const skipSkills = this.isChatMessage(text || '');
     const skillPromise: Promise<any[]> = skipSkills
       ? Promise.resolve([])
@@ -897,185 +812,20 @@ export class MessageBridge {
           return [];
         });
 
-    const hasActiveSession = !!session.sessionId;
-    const hasClarification = this.clarificationContexts.has(chatId);
-    let analysis: import('./requirement-analyzer.js').RequirementAnalysis;
     let matchedIntent: import('./orchestrator/types.js').IntentDefinition | null = null;
 
-    // Step 1: Keyword intent matching (fast, no LLM cost)
+    // Keyword intent matching (fast, no LLM cost)
     if (agentRuntimeConfig && agentRuntimeConfig.orchestration.intents.length > 0) {
       try {
         this.configReader.validateSkills(agentRuntimeConfig.name, agentRuntimeConfig.skills || []);
       } catch { /* validation is advisory */ }
-
-      matchedIntent = null as any;
-      if (false && matchedIntent) {
-        this.logger.info({ chatId, intent: matchedIntent?.name, method: 'keyword' }, 'Intent matched via keyword — skipping RequirementAnalyzer');
-      }
+      // Intent matching disabled — always fall through to standard LLM
+      matchedIntent = null;
     }
 
-    // Step 2: Decide whether to run LLM analysis
-    if (this.isContinuationMessage(text || '', hasActiveSession, hasClarification)) {
-      this.logger.info({ chatId, msg: (text || '').slice(0, 50) }, 'Fast-path: skipping RequirementAnalyzer');
-      analysis = {
-        needsClarification: false,
-        objective: (text || '').slice(0, 100),
-        intentHint: matchedIntent?.name || null,
-        confidence: 'high',
-        clarifyingQuestions: [],
-        enrichedPayload: {},
-        missingInfo: [],
-      };
-    } else if (matchedIntent && !hasClarification) {
-      this.logger.info({ chatId, intent: matchedIntent?.name }, 'Intent matched: skipping requirement analysis');
-      analysis = {
-        needsClarification: false,
-        objective: (text || '').slice(0, 100),
-        intentHint: matchedIntent?.name,
-        confidence: 'high',
-        clarifyingQuestions: [],
-        enrichedPayload: {},
-        missingInfo: [],
-      };
-    } else {
-      // No clear keyword match — run lightweight LLM analysis
-      this.getSender(chatId).updateCard(messageId, {
-        status: 'preparing',
-        userPrompt: displayPrompt,
-        responseText: '',
-        toolCalls: [],
-        contextNote: '🤔 正在理解需求...',
-      }).catch(() => {});
+    this.logger.info({ agentId: this.config.agentId, botName: this.config.name, hasIntents: agentRuntimeConfig?.orchestration?.intents?.length }, '[DIAG] Orchestrator eligibility — intent matching offline');
 
-      const sessionContext = this.buildSessionContext(chatId, session, knowledgeContext);
-
-      analysis = await this.requirementAnalyzer.analyze(
-        text || '',
-        this.executorForChat(chatId),
-        cwd,
-        abortController,
-        session.model || this.config.claude.model || 'claude-haiku-4-5-20251001',
-        priorContext,
-        agentRuntimeConfig?.ironLaws,
-        agentRuntimeConfig?.boundary?.can,
-        agentRuntimeConfig?.boundary?.cannot,
-        sessionContext,
-      );
-
-      // Use LLM's intentHint to refine keyword match
-      if (!matchedIntent && analysis.intentHint && analysis.confidence !== 'low' && agentRuntimeConfig?.orchestration.intents) {
-        const hintLower = analysis.intentHint.toLowerCase();
-        matchedIntent = agentRuntimeConfig.orchestration.intents.find(
-          (intent) => intent.name.toLowerCase().includes(hintLower) ||
-            intent.triggers.some((t) => hintLower.includes(t.toLowerCase()))
-        ) || null;
-        if (false && matchedIntent) {
-          this.logger.info({ chatId, intentHint: analysis.intentHint, matched: matchedIntent?.name }, 'Intent matched via LLM hint');
-        }
-      }
-    }
-
-    this.logger.info({ agentId: this.config.agentId, botName: this.config.name, hasIntents: agentRuntimeConfig?.orchestration?.intents?.length, matched: matchedIntent?.name || 'none' }, '[DIAG] Orchestrator eligibility');
-
-    // ── Clarification gate: only show questions when truly stuck ──
-    if (analysis.needsClarification && analysis.confidence === 'low') {
-      const context: ClarificationContext = existingContext || {
-        originalMessage: text || '',
-        history: [],
-        payload: {},
-      };
-      Object.assign(context.payload, analysis.enrichedPayload);
-      this.clarificationContexts.set(chatId, context);
-
-      const cardLines: string[] = [];
-      cardLines.push(`🤔 **${analysis.objective || '让我确认一下...'}**`);
-      cardLines.push('');
-      for (const q of analysis.clarifyingQuestions.slice(0, 2)) {
-        cardLines.push(`• ${q.text}`);
-        if (q.options && q.options.length > 0) {
-          cardLines.push(`  ${q.options.map((o: any) => `[${o.label}]`).join(' ')}`);
-        }
-      }
-      if (analysis.missingInfo.length > 0) {
-        cardLines.push('');
-        cardLines.push(`_还不清楚: ${analysis.missingInfo.join('、')}_`);
-      }
-
-      await this.getSender(chatId).updateCard(messageId, {
-        status: 'waiting_for_input',
-        userPrompt: (text || '').slice(0, 80),
-        responseText: cardLines.join('\n'),
-        toolCalls: [],
-        contextNote: `💡 需要确认 ${Math.min(analysis.clarifyingQuestions.length, 2)} 个问题`,
-      });
-
-      this.logger.info({ chatId, questions: analysis.clarifyingQuestions.length, confidence: analysis.confidence }, 'Clarification needed — awaiting user response');
-      return;
-    }
-
-    // Clear any pending clarification context
-    this.clarificationContexts.delete(chatId);
-
-    // ── PATH A: Intent matched with valid chain → orchestration ──
-    if (matchedIntent && matchedIntent?.chain.length > 0) {
-      this.logger.info({ chatId, intent: matchedIntent?.name, chainSteps: matchedIntent?.chain.length }, 'PATH A: orchestration');
-
-      // Clarification for matched intent
-      if (this.clarificationMw) {
-        const targetSkill = matchedIntent?.chain[0]?.skill || matchedIntent?.name;
-        try {
-          let clarified = false;
-          await this.clarificationMw.handle(
-            { userId: msg.userId, botId: this.config.name, targetSkill, rawMessage: text || '', chatId },
-            async () => { clarified = true; },
-          );
-          if (!clarified) {
-            this.logger.info({ chatId, targetSkill }, 'Clarification in progress, waiting for user');
-            return;
-          }
-        } catch (err: any) {
-          this.logger.warn({ err: err?.message, targetSkill }, 'Clarification skipped due to error');
-        }
-      }
-
-      // RAG context retrieval
-      const ragContext = await this.rag.retrieve(text || '', chatId, this.config.name);
-      if (ragContext.sourceCount > 0) {
-        this.logger.info({ chatId, sources: ragContext.sourceCount }, 'RAG context retrieved');
-        knowledgeContext = knowledgeContext
-          ? `${knowledgeContext}
-
-${ragContext.formattedContext}`
-          : ragContext.formattedContext;
-      }
-
-      // Deploy intent chain skills
-      const chainSkillNames = matchedIntent?.chain.map((s: any) => s.skill).filter(Boolean);
-      const skillNames = [...new Set([...chainSkillNames, ...(agentRuntimeConfig!.skills || [])])];
-      if (skillNames.length > 0) {
-        try {
-        } catch (err) {
-          this.logger.warn({ err }, 'Skill deployment failed');
-        }
-      }
-
-      // P2: PATH A with fallback — on failure, degrade to PATH B
-      try {
-        await this.executeWithOrchestrator(
-          msg,
-          agentRuntimeConfig!,
-          cwd,
-          outputsDir,
-          messageId,
-          abortController,
-          knowledgeContext ?? undefined,
-        );
-        return;
-      } catch (orchErr: any) {
-        this.logger.warn({ err: orchErr?.message, chatId }, 'PATH A orchestration failed, falling back to PATH B');
-        // Fall through to PATH B below — don't return
-      }
-    }
+    // PATH A: removed (intent matching was already disabled, RequirementAnalyzer removed)
 
     // ── PATH B/C: No intent match or empty chain → standard LLM ──
     if (false && matchedIntent) {
@@ -1095,7 +845,7 @@ ${knowledgeContext}`
       this.logger.info({ chatId, msg: (text || '').slice(0, 40) }, 'Skipping skill deployment for chat message');
     } else {
       try {
-        // Show progress only if skills aren't ready yet (rare — they usually finish during analysis)
+        // Show progress only if skills aren't ready yet (rare — they usually finish during skill match)
         this.getSender(chatId).updateCard(messageId, {
           status: 'preparing',
           userPrompt: displayPrompt,
