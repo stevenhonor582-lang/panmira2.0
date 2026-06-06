@@ -191,12 +191,7 @@ export class SessionManager {
         loaded++;
       }
       if (loaded > 0) {
-        // PM2 restart invalidates all Claude API sessions — clear stale sessionIds
-        for (const [, s] of this.sessions) {
-          s.sessionId = undefined;
-          s.sessionIdEngine = undefined;
-        }
-        this.logger.info({ loaded, cleared: true }, 'Restored sessions from DB (sessionIds cleared for fresh start)');
+        this.logger.info({ loaded }, 'Restored sessions from DB');
       }
     } catch (err) {
       this.logger.warn({ err }, 'Failed to load sessions from DB, starting fresh');
@@ -289,12 +284,7 @@ export class SessionManager {
         loaded++;
       }
       if (loaded > 0) {
-        // PM2 restart invalidates all Claude API sessions — clear stale sessionIds
-        for (const [, s] of this.sessions) {
-          s.sessionId = undefined;
-          s.sessionIdEngine = undefined;
-        }
-        this.logger.info({ loaded, path: p, cleared: true }, 'Restored sessions from disk (sessionIds cleared for fresh start)');
+        this.logger.info({ loaded, path: p }, 'Restored sessions from disk');
       }
     } catch (err) {
       this.logger.warn({ err }, 'Failed to load sessions from disk, starting fresh');

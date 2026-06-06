@@ -738,7 +738,8 @@ export async function loadAppConfigFromDB(): Promise<{
   }
 
   const memoryServerUrl = process.env.MEMORY_SERVER_URL || 'http://localhost:8100';
-  const apiPort = process.env.API_PORT ? parseInt(process.env.API_PORT, 10) : 9100;
+  const apiPortRaw = process.env.API_PORT ? parseInt(process.env.API_PORT, 10) : 9100;
+  const apiPort = Number.isNaN(apiPortRaw) ? 9100 : apiPortRaw;
   const apiSecret = process.env.API_SECRET || undefined;
   process.env.PANMIRA_API_PORT = String(apiPort);
   if (apiSecret) process.env.PANMIRA_API_SECRET = apiSecret;
@@ -751,7 +752,8 @@ export async function loadAppConfigFromDB(): Promise<{
   }
 
   const memoryEnabled = process.env.MEMORY_ENABLED !== 'false';
-  const memoryPort = process.env.MEMORY_PORT ? parseInt(process.env.MEMORY_PORT, 10) : 8100;
+  const memoryPortRaw = process.env.MEMORY_PORT ? parseInt(process.env.MEMORY_PORT, 10) : 8100;
+  const memoryPort = Number.isNaN(memoryPortRaw) ? 8100 : memoryPortRaw;
   const memoryDatabaseDir = process.env.MEMORY_DATABASE_DIR || './data';
   const memorySecret = process.env.MEMORY_SECRET || process.env.API_SECRET || '';
   const memoryAdminToken = process.env.MEMORY_ADMIN_TOKEN || undefined;
@@ -762,7 +764,7 @@ export async function loadAppConfigFromDB(): Promise<{
     const cfg = parsedConfig as BotsJsonNewFormat;
     if (cfg.peers) {
       for (const p of cfg.peers) {
-        peers.push({ name: p.name, url: p.url.replace(/\/+$/, ''), secret: p.secret });
+        if (p.url) peers.push({ name: p.name, url: p.url.replace(/\/+$/, ''), secret: p.secret });
       }
     }
   }

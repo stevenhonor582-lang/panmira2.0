@@ -25,18 +25,27 @@ export class SkillRouter {
 
   /** Select skills relevant to the given user message and bot. */
   selectSkills(userMessage: string, botName?: string): SkillMeta[] {
-    // Sync wrapper — actual matching is sync (keyword) with async upgrade path
     return this.selectSkillsSync(userMessage, botName);
   }
 
   /** Async version with semantic matching. Use this when logger is available. */
-  async selectSkillsAsync(userMessage: string, botName?: string): Promise<SkillMeta[]> {
+  async selectSkillsAsync(userMessage: string, botName?: string, agentRole?: string): Promise<SkillMeta[]> {
+    let result: SkillMeta[];
     if (this.smartMatcher && userMessage.length > 3) {
       try {
-        return await this.smartMatcher.match(userMessage, botName, 10);
-      } catch { /* fall through to keyword */ }
+        result = await this.smartMatcher.match(userMessage, botName, 10);
+      } catch {
+        result = this.selectSkillsSync(userMessage, botName);
+      }
+    } else {
+      result = this.selectSkillsSync(userMessage, botName);
     }
-    return this.selectSkillsSync(userMessage, botName);
+    return this.filterByRole(result, agentRole);
+  }
+
+  private filterByRole(skills: SkillMeta[], agentRole?: string): SkillMeta[] {
+    if (!agentRole) return skills;
+    return skills.filter((s: any) => !s.agentRoles || s.agentRoles.length === 0 || s.agentRoles.includes(agentRole));
   }
 
   private selectSkillsSync(userMessage: string, botName?: string): SkillMeta[] {

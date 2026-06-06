@@ -27,7 +27,7 @@ export class GateChecker {
     return results;
   }
 
-  private async checkOne(rule: GateRule, cwd: string): Promise<GateResult> {
+  private async checkOne(rule: GateRule, cwd: string, stepResult?: StepResult): Promise<GateResult> {
     const workDir = rule.cwd || cwd;
     switch (rule.type) {
       case 'test_pass':
@@ -46,9 +46,59 @@ export class GateChecker {
         return this.checkRollback(workDir);
       case 'repro_test_exists':
         return this.checkReproTest(workDir);
+      case 'requirement_verify':
+        return this.checkRequirementVerify(stepResult, rule);
       default:
         return { passed: false, gate: rule.type, error: `Unknown gate type: ${rule.type}`, durationMs: 0 };
     }
+  }
+
+  /** Verify output satisfies the original requirement. */
+  private checkRequirementVerify(stepResult: StepResult | undefined, rule: GateRule): GateResult {
+    if (!stepResult) return { passed: false, gate: "requirement_verify", actual: "无步骤产出可验证", durationMs: 0 };
+    const userGoal = (rule as any).userGoal as string | undefined;
+    const issues: string[] = [];
+
+    // 1. Output must have content
+    if (!stepResult.output || stepResult.output.length < 50) {
+      issues.push('产出内容过少（< 50 字符）');
+    }
+
+    // 2. If user goal is available, check basic signal matches
+    if (userGoal && stepResult.output) {
+      const goalKeywords = userGoal
+        .replace(/[，,。.！!？?、\s]+/g, ' ')
+        .split(' ')
+        .filter((w: string) => w.length >= 2)
+        .slice(0, 5);
+      const outputLower = stepResult.output.toLowerCase();
+      const matched = goalKeywords.filter((kw: string) => outputLower.includes(kw.toLowerCase()));
+      if (matched.length === 0 && userGoal.length > 10) {
+        issues.push(`产出未明显关联需求目标关键词: ${goalKeywords.join(', ')}`);
+      }
+    }
+
+    // 3. Step must be successful
+    if (!stepResult.success) {
+      issues.push('步骤执行未成功');
+    }
+
+    if (issues.length > 0) {
+      return {
+        passed: false,
+        gate: 'requirement_verify',
+        actual: issues.join('; '),
+        expected: `产出应满足需求${userGoal ? `: ${userGoal.slice(0, 80)}` : ''}`,
+        durationMs: 0,
+      };
+    }
+
+    return {
+      passed: true,
+      gate: 'requirement_verify',
+      actual: '产出验证通过',
+      durationMs: 0,
+    };
   }
 
   private checkTestPass(cwd: string): GateResult {

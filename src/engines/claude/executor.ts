@@ -141,6 +141,8 @@ export interface ExecutorOptions {
   systemPromptOverride?: string;
   /** Knowledge base context to inject into system prompt. */
   knowledgeContext?: string | null;
+  /** Called when AskUserQuestion is detected, before the hook blocks. */
+  onPendingQuestion?: (question: { toolUseId: string; questions: Array<{ question: string; header: string; options: Array<{ label: string; description: string }>; multiSelect: boolean }> }) => void;
 }
 
 export type SDKMessage = {
@@ -372,6 +374,20 @@ export class ClaudeExecutor {
       { signal }: { signal: AbortSignal },
     ): Promise<Record<string, unknown>> => {
       const toolInput = input.tool_input as Record<string, unknown>;
+
+      // Notify bridge BEFORE blocking so pendingQuestion is set even when stream is frozen
+      if (options.onPendingQuestion && Array.isArray((input.tool_input as Record<string, unknown>).questions)) {
+        const qs = (input.tool_input as Record<string, unknown>).questions as Array<Record<string, unknown>>;
+        options.onPendingQuestion({
+          toolUseId: input.tool_use_id,
+          questions: qs.map((q: Record<string, unknown>) => ({
+            question: String(q.question || ''),
+            header: String(q.header || ''),
+            options: Array.isArray(q.options) ? (q.options as Array<Record<string, unknown>>).map((o: Record<string, unknown>) => ({ label: String(o.label || ''), description: String(o.description || '') })) : [],
+            multiSelect: Boolean(q.multiSelect),
+          })),
+        });
+      }
       const id = input.tool_use_id;
 
       const answers = await new Promise<Record<string, string>>((resolve) => {

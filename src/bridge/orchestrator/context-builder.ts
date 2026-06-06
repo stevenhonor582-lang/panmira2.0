@@ -78,8 +78,12 @@ export class ContextBuilder {
               return '- Docker 镜像构建必须成功';
             case 'health_check':
               return `- 健康检查 ${g.endpoint} 必须返回 ${g.expect || 200}`;
+              return '- 产出必须满足原始需求目标';
+              return '';
             case 'rollback_available':
               return '- 必须确认回滚版本已保留';
+            case 'requirement_verify':
+              return '- 产出必须满足原始需求目标';
             default:
               return '';
           }

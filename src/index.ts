@@ -484,8 +484,8 @@ async function main() {
     process.exit(0);
   };
 
-  process.on('SIGINT', () => shutdown('SIGINT'));
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => { shutdown('SIGINT').catch((err) => { logger.error({ err }, 'Shutdown error on SIGINT'); process.exit(1); }); });
+  process.on('SIGTERM', () => { shutdown('SIGTERM').catch((err) => { logger.error({ err }, 'Shutdown error on SIGTERM'); process.exit(1); }); });
 }
 
 async function startBotsSafely<TConfig extends BotConfigBase, THandle>(

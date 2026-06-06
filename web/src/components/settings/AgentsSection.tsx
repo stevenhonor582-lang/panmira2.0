@@ -2,8 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useStore } from '../../store';
 import { SlideOverPanel } from '../SlideOverPanel';
-import { ChainEditor } from './ChainEditor';
-import { ChainEditorModal } from './ChainEditorModal';
+// Removed: orchestration/orchestrationModal — merged into system_prompt
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import styles from '../SettingsView.module.css';
@@ -647,39 +646,25 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
           </div>
         )}
 
-        {availableSkills.length > 0 && (
-          <div className={styles.formSection}>
-            <h3 className={styles.formSectionTitle}>{t('agents.skillBinding')}</h3>
-            <div className={styles.formHint} style={{ marginBottom: 8 }}>
-              {t('agents.skillBindingHint')}
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {availableSkills.filter((s) => !s.alwaysLoad).map((s) => {
-                const selected = agentSkills.includes(s.name);
-                return (
-                  <button
-                    key={s.name}
-                    type="button"
-                    className={`${styles.btn} ${styles.btnSmall} ${selected ? styles.btnAccent : styles.btnOutline}`}
-                    onClick={() => {
-                      setAgentSkills(selected ? agentSkills.filter((n) => n !== s.name) : [...agentSkills, s.name]);
-                    }}
-                    disabled={agentRefining}
-                  >
-                    {selected ? '✓ ' : ''}{s.name}
-                  </button>
-                );
-              })}
-            </div>
-            {agentSkills.length > 0 && (
-              <div className={styles.formHint} style={{ marginTop: 6 }}>
-                {t('agents.boundSkills', { count: agentSkills.length })}
-              </div>
-            )}
-          </div>
-        )}
-
         <div className={styles.formSection}>
+          <h3 className={styles.formSectionTitle}>{t('agents.skillBinding')}</h3>
+          {agentSkills.length === 0 ? (
+            <div className={styles.formHint}>{t('agents.noSkillsBound') || 'No skills bound — skills will be auto-matched from the full registry'}</div>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {agentSkills.map((name) => (
+                <span key={name} className={`${styles.btn} ${styles.btnSmall} ${styles.btnAccent}`} style={{ cursor: 'default' }}>
+                  {name}
+                </span>
+              ))}
+            </div>
+          )}
+          <div className={styles.formHint} style={{ marginTop: 6 }}>
+            {t('agents.boundSkills', { count: agentSkills.length })}
+          </div>
+        </div>
+
+        {false && (<div className={styles.formSection}>
           <h3 className={styles.formSectionTitle}>{t('agents.orchestrationConfig') || 'Orchestration Config'}</h3>
           <div className={styles.formHint} style={{ marginBottom: 8 }}>{t('agents.orchestrationHint') || 'JSON config for orchestrator chains, boundary rules, and iron laws'}</div>
 
@@ -769,16 +754,8 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
                 </div>
               );
             })()}
-            <ChainEditorModal
-              open={orchestrationModalOpen}
-              onClose={() => setOrchestrationModalOpen(false)}
-              onSave={(config) => setAgentOrchestration(JSON.stringify(config, null, 2))}
-              initialValue={(() => { try { return JSON.parse(agentOrchestration); } catch { return { intents: [] }; } })()}
-              availableSkills={availableSkills.map((s) => s.name)}
-              disabled={agentRefining}
-            />
           </label>
-        </div>
+        </div>)}
 
         <div className={styles.formSection}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

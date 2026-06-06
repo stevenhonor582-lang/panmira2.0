@@ -8,7 +8,8 @@ export type GateType =
   | 'health_check'
   | 'rollback_available'
   | 'repro_test_exists'
-  | 'step_timeout';
+  | 'step_timeout'
+  | 'requirement_verify';
 
 /** 门控规则 */
 export interface GateRule {

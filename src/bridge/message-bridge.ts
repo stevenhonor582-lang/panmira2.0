@@ -21,7 +21,6 @@ import { metrics } from '../utils/metrics.js';
 import type { SessionRegistry } from '../session/session-registry.js';
 import type { ChatSessionStore } from '../db/chat-session-store.js';
 import { SkillRouter } from '../skills/skill-router.js';
-import { deploySelectedSkills } from '../api/skills-installer.js';
 import { CONTEXT_USAGE_THRESHOLD } from './context-manager.js';
 import { MemoryWriter } from './memory-writer.js';
 import { ClarificationMiddleware } from '../clarification/index.js';
@@ -33,7 +32,6 @@ import { ConfigReader } from './orchestrator/config-reader.js';
 import { Orchestrator } from './orchestrator/index.js';
 import { StepExecutor } from './orchestrator/step-executor.js';
 import type { AgentRuntimeConfig } from './orchestrator/types.js';
-import { matchIntent } from './orchestrator/intent-resolver.js';
 import { OutputArchiver } from './output-archiver.js';
 import { PanmiraRAG } from '../panmira/rag.js';
 import {
@@ -910,9 +908,9 @@ export class MessageBridge {
         this.configReader.validateSkills(agentRuntimeConfig.name, agentRuntimeConfig.skills || []);
       } catch { /* validation is advisory */ }
 
-      matchedIntent = matchIntent(text || '', agentRuntimeConfig.orchestration.intents);
-      if (matchedIntent) {
-        this.logger.info({ chatId, intent: matchedIntent.name, method: 'keyword' }, 'Intent matched via keyword — skipping RequirementAnalyzer');
+      matchedIntent = null as any;
+      if (false && matchedIntent) {
+        this.logger.info({ chatId, intent: matchedIntent?.name, method: 'keyword' }, 'Intent matched via keyword — skipping RequirementAnalyzer');
       }
     }
 
@@ -929,11 +927,11 @@ export class MessageBridge {
         missingInfo: [],
       };
     } else if (matchedIntent && !hasClarification) {
-      this.logger.info({ chatId, intent: matchedIntent.name }, 'Intent matched: skipping requirement analysis');
+      this.logger.info({ chatId, intent: matchedIntent?.name }, 'Intent matched: skipping requirement analysis');
       analysis = {
         needsClarification: false,
         objective: (text || '').slice(0, 100),
-        intentHint: matchedIntent.name,
+        intentHint: matchedIntent?.name,
         confidence: 'high',
         clarifyingQuestions: [],
         enrichedPayload: {},
@@ -971,8 +969,8 @@ export class MessageBridge {
           (intent) => intent.name.toLowerCase().includes(hintLower) ||
             intent.triggers.some((t) => hintLower.includes(t.toLowerCase()))
         ) || null;
-        if (matchedIntent) {
-          this.logger.info({ chatId, intentHint: analysis.intentHint, matched: matchedIntent.name }, 'Intent matched via LLM hint');
+        if (false && matchedIntent) {
+          this.logger.info({ chatId, intentHint: analysis.intentHint, matched: matchedIntent?.name }, 'Intent matched via LLM hint');
         }
       }
     }
@@ -1019,12 +1017,12 @@ export class MessageBridge {
     this.clarificationContexts.delete(chatId);
 
     // ── PATH A: Intent matched with valid chain → orchestration ──
-    if (matchedIntent && matchedIntent.chain.length > 0) {
-      this.logger.info({ chatId, intent: matchedIntent.name, chainSteps: matchedIntent.chain.length }, 'PATH A: orchestration');
+    if (matchedIntent && matchedIntent?.chain.length > 0) {
+      this.logger.info({ chatId, intent: matchedIntent?.name, chainSteps: matchedIntent?.chain.length }, 'PATH A: orchestration');
 
       // Clarification for matched intent
       if (this.clarificationMw) {
-        const targetSkill = matchedIntent.chain[0]?.skill || matchedIntent.name;
+        const targetSkill = matchedIntent?.chain[0]?.skill || matchedIntent?.name;
         try {
           let clarified = false;
           await this.clarificationMw.handle(
@@ -1052,12 +1050,10 @@ ${ragContext.formattedContext}`
       }
 
       // Deploy intent chain skills
-      const chainSkillNames = matchedIntent.chain.map((s: any) => s.skill).filter(Boolean);
+      const chainSkillNames = matchedIntent?.chain.map((s: any) => s.skill).filter(Boolean);
       const skillNames = [...new Set([...chainSkillNames, ...(agentRuntimeConfig!.skills || [])])];
       if (skillNames.length > 0) {
         try {
-          const { deploySelectedSkills } = await import('../api/skills-installer.js');
-          deploySelectedSkills(cwd, skillNames, this.logger);
         } catch (err) {
           this.logger.warn({ err }, 'Skill deployment failed');
         }
@@ -1082,13 +1078,13 @@ ${ragContext.formattedContext}`
     }
 
     // ── PATH B/C: No intent match or empty chain → standard LLM ──
-    if (matchedIntent) {
-      this.logger.info({ chatId, intent: matchedIntent.name }, 'PATH B: standard LLM + intent context');
+    if (false && matchedIntent) {
+      this.logger.info({ chatId, intent: matchedIntent?.name }, 'PATH B: standard LLM + intent context');
       knowledgeContext = knowledgeContext
-        ? `## 用户意图: ${matchedIntent.name}
+        ? `## 用户意图: ${matchedIntent?.name}
 
 ${knowledgeContext}`
-        : `## 用户意图: ${matchedIntent.name}`;
+        : `## 用户意图: ${matchedIntent?.name}`;
     } else {
       this.logger.debug({ chatId }, 'PATH C: standard LLM (no intent match)');
     }
@@ -1120,7 +1116,6 @@ ${knowledgeContext}`
             ).slice(0, 8)
           : [];
         const mergedNames = [...new Set([...selectedNames, ...agentSkillNames, ...agentBoundSkills])];
-        deploySelectedSkills(cwd, mergedNames, this.logger);
         this.logger.info({ chatId, keyword: selectedNames.length, agent: agentSkillNames.length, total: mergedNames.length }, 'Skills deployed for standard execution');
       } catch (err) {
         this.logger.warn({ err }, 'Skill deployment failed, using default skills');
@@ -1310,8 +1305,8 @@ ${knowledgeContext}`
           this.logger.warn({ chatId }, 'Stream ended without result message, forcing complete state');
           lastState = {
             ...lastState,
-            status: lastState.responseText ? 'complete' : 'error',
-            errorMessage: lastState.responseText ? undefined : 'Claude session ended unexpectedly',
+            status: 'error',
+            errorMessage: lastState.responseText ? '流意外中断 — 任务可能未完成，请检查产出或重新发送消息' : 'Claude session ended unexpectedly',
           };
         }
       }
@@ -1782,7 +1777,6 @@ ${knowledgeContext}`
       const selectedSkills = await this.skillRouter.selectSkillsAsync(prompt, this.config.name);
       const selectedNames = selectedSkills.map((s) => s.name);
       const mergedNames = [...new Set([...selectedNames, ...apiAgentBoundSkills])];
-      deploySelectedSkills(cwd, mergedNames, this.logger);
     } catch (err: any) {
       this.logger.debug({ err: err?.message }, 'Skill staging not available, using default skills');
     }
@@ -1928,8 +1922,8 @@ ${knowledgeContext}`
         } else {
           lastState = {
             ...lastState,
-            status: lastState.responseText ? 'complete' : 'error',
-            errorMessage: lastState.responseText ? undefined : 'Claude session ended unexpectedly',
+            status: 'error',
+            errorMessage: lastState.responseText ? '流意外中断 — 任务可能未完成，请检查产出或重新发送消息' : 'Claude session ended unexpectedly',
           };
         }
       }
