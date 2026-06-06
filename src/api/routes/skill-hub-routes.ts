@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as os from 'node:os';
 import type * as http from 'node:http';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import type { RouteContext } from './types.js';
@@ -67,18 +68,44 @@ export async function handleSkillHubRoutes(
       } catch { /* table might not exist yet */ }
     }
 
-    const skills = SKILL_REGISTRY.map((s) => ({
-      name: s.name,
-      summary: s.summary,
-      category: s.category,
-      platform: s.platform,
-      alwaysLoad: s.alwaysLoad || false,
-      scope: (s as any).scope || 'global',
-      ownerBot: (s as any).ownerBot || '',
-      triggers: s.triggers || [],
-      // Per-bot binding state (only when ?bot= specified)
-      ...(botName ? { enabled: botBindings.has(s.name) ? botBindings.get(s.name) : undefined } : {}),
-    }));
+    const skills = SKILL_REGISTRY.map((s) => {
+      // Extract plugin name from prefix (e.g. "gstack:review" → "gstack", "lark-im" → "lark")
+      let pluginName = '';
+      if (s.name.includes(':')) {
+        pluginName = s.name.split(':')[0];
+      } else if (s.name.startsWith('lark')) {
+        pluginName = 'lark';
+      } else if (['panmira','metaskill','skill-hub','metamemory','phone-call'].includes(s.name)) {
+        pluginName = 'system';
+      } else if (s.name.startsWith('vmt-')) {
+        pluginName = 'vmt';
+      } else if (['article-writing','content-engine','brand-voice','blueprint','deep-research','market-research','investor-materials','seo','a-share-analyst'].includes(s.name)) {
+        pluginName = 'ecc';
+      } else if (['beautiful-prose','humanize-chinese','plan-writing','business-analyst','pitch-psychologist'].includes(s.name)) {
+        pluginName = 'antigravity';
+      } else if (['copywriting','copy-editing','content-strategy','emails','marketing-psychology'].includes(s.name)) {
+        pluginName = 'marketing';
+      } else if (['gpt-image2-ppt','slides-grab'].includes(s.name)) {
+        pluginName = 'slides';
+      } else {
+        pluginName = 'user';
+      }
+
+      return {
+        name: s.name,
+        summary: s.summary,
+        category: s.category,
+        platform: s.platform,
+        alwaysLoad: s.alwaysLoad || false,
+        scope: (s as any).scope || 'global',
+        ownerBot: (s as any).ownerBot || '',
+        triggers: s.triggers || [],
+        pluginName,
+        directory: (s as any).directory || path.join(os.homedir(), '.claude', 'skills', s.name),
+        // Per-bot binding state (only when ?bot= specified)
+        ...(botName ? { enabled: botBindings.has(s.name) ? botBindings.get(s.name) : undefined } : {}),
+      };
+    });
     jsonResponse(res, 200, { skills });
     return true;
   }

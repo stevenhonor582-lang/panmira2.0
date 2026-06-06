@@ -20,6 +20,7 @@ export interface PendingBatch {
 export interface RunningTask {
   abortController: AbortController;
   startTime: number;
+  prompt: string;
   executionHandle: import('../engines/index.js').ExecutionHandle;
   pendingQuestion: PendingQuestion | null;
   currentQuestionIndex: number;

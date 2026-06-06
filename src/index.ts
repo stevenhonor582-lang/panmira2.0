@@ -429,6 +429,23 @@ async function main() {
   // Resolve bots config path for API-driven bot CRUD
   // botsConfigPath removed — Panmira uses DB-only configuration
 
+  // Recover: notify chats that had tasks interrupted by a previous restart
+  const allBridgesForRecovery = [
+    ...feishuHandles.map((h) => h.bridge),
+    ...telegramHandles.map((h) => h.bridge),
+    ...wechatHandles.map((h) => h.bridge),
+  ];
+  for (const bridge of allBridgesForRecovery) {
+    try {
+      const count = await bridge.notifyOrphanedTasks();
+      if (count > 0) {
+        logger.info({ count }, 'Sent task recovery notifications');
+      }
+    } catch (err: any) {
+      logger.warn({ err: err?.message }, 'Failed to check for orphaned tasks');
+    }
+  }
+
   // Start API server
   const { server: apiServer, broadcastAll } = await startApiServer({
     port: appConfig.api.port,

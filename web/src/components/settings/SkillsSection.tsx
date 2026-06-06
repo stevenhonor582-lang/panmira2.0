@@ -16,12 +16,27 @@ interface SkillEntry {
   directory?: string;
   enabled?: boolean; // per-bot binding state
   origin?: string;
+  pluginName?: string;
 }
 
 const CATEGORIES = ['all', 'system', 'productivity', 'knowledge', 'communication', 'voice', 'admin'] as const;
 const CATEGORY_LABELS: Record<string, string> = {
   system: '系统', productivity: '效率', knowledge: '知识',
   communication: '沟通', voice: '语音', admin: '管理',
+};
+
+const PLUGIN_LABELS: Record<string, string> = {
+  system: '系统',
+  lark: '飞书',
+  superpowers: 'Superpowers',
+  gstack: 'gstack',
+  ecc: 'ECC',
+  anthropics: 'anthropics',
+  antigravity: '去AI味',
+  marketing: '营销',
+  slides: 'PPT',
+  vmt: 'VMT',
+  user: '用户',
 };
 
 export function SkillsSection() {
@@ -35,6 +50,7 @@ export function SkillsSection() {
   const [search, setSearch] = useState('');
   const [scopeFilter, setScopeFilter] = useState('all'); // 'all' | 'global' | 'bot'
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [pluginFilter, setPluginFilter] = useState('all');
   const [selectedBot, setSelectedBot] = useState('');
   const [bindings, setBindings] = useState<Map<string, boolean>>(new Map()); // skillName -> enabled
   const [previewSkill, setPreviewSkill] = useState<string | null>(null);
@@ -66,6 +82,7 @@ export function SkillsSection() {
         triggers: s.triggers || [],
         directory: s.directory || '',
         origin: s.origin || s.pluginName || '',
+        pluginName: s.pluginName || '',
       }));
       setAllSkills(skills);
 
@@ -136,11 +153,18 @@ export function SkillsSection() {
   const filtered = allSkills
     .filter(s => scopeFilter === 'all' || s.scope === scopeFilter)
     .filter(s => categoryFilter === 'all' || s.category === categoryFilter)
+    .filter(s => pluginFilter === 'all' || s.pluginName === pluginFilter)
     .filter(s => !selectedBot || s.scope === 'global' || s.owner_bot === selectedBot)
     .filter(s => !search || s.name.toLowerCase().includes(search.toLowerCase()) || s.summary.toLowerCase().includes(search.toLowerCase()));
 
-  // Categories present in current data
+  // Categories and plugins present in current data
   const activeCategories = [...new Set(allSkills.map(s => s.category))];
+  const activePlugins = [...new Set(allSkills.map(s => s.pluginName).filter((p): p is string => !!p))];
+  const pluginCounts: Record<string, number> = {};
+  for (const s of allSkills) {
+    const p = s.pluginName || 'user';
+    pluginCounts[p] = (pluginCounts[p] || 0) + 1;
+  }
   const scopeCounts = { all: allSkills.length, global: allSkills.filter(s => s.scope === 'global').length, bot: allSkills.filter(s => s.scope === 'bot').length };
 
   // Skills not yet bound to selected bot
@@ -152,9 +176,15 @@ export function SkillsSection() {
     <>
       <h2 className={styles.contentTitle}>{t('skills.title')}</h2>
       <p className={styles.contentDesc}>
-        {t('skills.desc', { plugins: 0, skills: allSkills.length })} · 
+        {t('skills.desc', { plugins: activePlugins.length, skills: allSkills.length })} ·
         全局 {scopeCounts.global} · Bot私有 {scopeCounts.bot}
         {selectedBot && <> · {selectedBot} 已绑定 {bindings.size}</>}
+        {filtered.length !== allSkills.length && (
+          <> · <span style={{ color: 'var(--accent, #6c8aff)', fontWeight: 600 }}>筛选结果: {filtered.length} / {allSkills.length}</span>
+            <button style={{ marginLeft: 6, fontSize: 11, color: 'var(--muted)', background: 'none', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 8px', cursor: 'pointer' }}
+              onClick={() => { setScopeFilter('all'); setCategoryFilter('all'); setPluginFilter('all'); setSearch(''); }}>清除筛选</button>
+          </>
+        )}
       </p>
 
       {/* ── Filter Bar ── */}
@@ -182,6 +212,17 @@ export function SkillsSection() {
           {activeCategories.filter(c => c !== 'all').map(c => (
             <button key={c} className={`${styles.filterChip} ${categoryFilter === c ? styles.filterChipActive : ''}`}
               onClick={() => setCategoryFilter(c)}>{CATEGORY_LABELS[c] || c}</button>
+          ))}
+        </div>
+
+        <div className={styles.filterBar} style={{ margin: 0 }}>
+          <button className={`${styles.filterChip} ${pluginFilter === 'all' ? styles.filterChipActive : ''}`}
+            onClick={() => setPluginFilter('all')}>全部插件</button>
+          {activePlugins.sort((a, b) => (pluginCounts[b] || 0) - (pluginCounts[a] || 0)).map(p => (
+            <button key={p} className={`${styles.filterChip} ${pluginFilter === p ? styles.filterChipActive : ''}`}
+              onClick={() => setPluginFilter(p)}>
+              {PLUGIN_LABELS[p] || p} <span style={{ opacity: 0.6, fontSize: 10 }}>{pluginCounts[p] || 0}</span>
+            </button>
           ))}
         </div>
 
@@ -217,7 +258,9 @@ export function SkillsSection() {
                 <div className={styles.agentCardHeader}>
                   <div className={styles.agentCardName}>{skill.name}</div>
                   <div style={{ display: 'flex', gap: 4 }}>
-                    <span className={styles.agentCategoryTag}>{CATEGORY_LABELS[skill.category] || skill.category}</span>
+                    <span className={styles.agentCategoryTag}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => setCategoryFilter(skill.category)}>{CATEGORY_LABELS[skill.category] || skill.category}</span>
                     <span style={{
                       display: 'inline-block', padding: '1px 6px', borderRadius: 3, fontSize: 10,
                       background: skill.scope === 'bot' ? 'rgba(251,191,36,.15)' : 'rgba(108,138,255,.15)',
@@ -225,6 +268,15 @@ export function SkillsSection() {
                     }}>
                       {skill.scope === 'bot' ? `🤖 ${skill.owner_bot}` : '🌐 全局'}
                     </span>
+                    {skill.pluginName && (
+                      <span style={{
+                        display: 'inline-block', padding: '1px 6px', borderRadius: 3, fontSize: 10,
+                        background: 'rgba(255,255,255,.08)', color: 'var(--muted)',
+                        cursor: 'pointer',
+                      }} onClick={() => setPluginFilter(skill.pluginName!)}>
+                        {PLUGIN_LABELS[skill.pluginName] || skill.pluginName}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className={styles.agentCardDesc}>
@@ -233,7 +285,8 @@ export function SkillsSection() {
                 {skill.triggers.length > 0 && (
                   <div style={{ marginTop: 4, display: 'flex', gap: 3, flexWrap: 'wrap' }}>
                     {skill.triggers.slice(0, 5).map(tr => (
-                      <span key={tr} style={{ fontSize: 10, color: 'var(--muted)', background: 'var(--bg)', padding: '1px 5px', borderRadius: 3 }}>{tr}</span>
+                      <span key={tr} style={{ fontSize: 10, color: 'var(--muted)', background: 'var(--bg)', padding: '1px 5px', borderRadius: 3, cursor: 'pointer' }}
+                            onClick={() => setSearch(tr)}>{tr}</span>
                     ))}
                   </div>
                 )}

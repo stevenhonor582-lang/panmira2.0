@@ -18,32 +18,6 @@ SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
 
---
--- Name: umami; Type: SCHEMA; Schema: -; Owner: -
---
-
-CREATE SCHEMA umami;
-
-
---
--- Name: vector; Type: EXTENSION; Schema: -; Owner: -
---
-
-CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
-
-
---
--- Name: EXTENSION vector; Type: COMMENT; Schema: -; Owner: -
---
-
-COMMENT ON EXTENSION vector IS 'vector data type and ivfflat and hnsw access methods';
-
-
-SET default_tablespace = '';
-
-SET default_table_access_method = heap;
-
---
 -- Name: _journal; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -730,10 +704,8 @@ CREATE TABLE public.voice_identities (
 
 
 --
--- Name: board; Type: TABLE; Schema: umami; Owner: -
 --
 
-CREATE TABLE umami.board (
     board_id uuid NOT NULL,
     type character varying(50) NOT NULL,
     name character varying(200) NOT NULL,
@@ -747,10 +719,8 @@ CREATE TABLE umami.board (
 
 
 --
--- Name: event_data; Type: TABLE; Schema: umami; Owner: -
 --
 
-CREATE TABLE umami.event_data (
     event_data_id uuid NOT NULL,
     website_id uuid NOT NULL,
     website_event_id uuid NOT NULL,
@@ -764,10 +734,8 @@ CREATE TABLE umami.event_data (
 
 
 --
--- Name: link; Type: TABLE; Schema: umami; Owner: -
 --
 
-CREATE TABLE umami.link (
     link_id uuid NOT NULL,
     name character varying(100) NOT NULL,
     url character varying(500) NOT NULL,
@@ -781,10 +749,8 @@ CREATE TABLE umami.link (
 
 
 --
--- Name: pixel; Type: TABLE; Schema: umami; Owner: -
 --
 
-CREATE TABLE umami.pixel (
     pixel_id uuid NOT NULL,
     name character varying(100) NOT NULL,
     slug character varying(100) NOT NULL,
@@ -797,10 +763,8 @@ CREATE TABLE umami.pixel (
 
 
 --
--- Name: report; Type: TABLE; Schema: umami; Owner: -
 --
 
-CREATE TABLE umami.report (
     report_id uuid NOT NULL,
     user_id uuid NOT NULL,
     website_id uuid NOT NULL,
@@ -814,10 +778,8 @@ CREATE TABLE umami.report (
 
 
 --
--- Name: revenue; Type: TABLE; Schema: umami; Owner: -
 --
 
-CREATE TABLE umami.revenue (
     revenue_id uuid NOT NULL,
     website_id uuid NOT NULL,
     session_id uuid NOT NULL,
@@ -830,10 +792,8 @@ CREATE TABLE umami.revenue (
 
 
 --
--- Name: segment; Type: TABLE; Schema: umami; Owner: -
 --
 
-CREATE TABLE umami.segment (
     segment_id uuid NOT NULL,
     website_id uuid NOT NULL,
     type character varying(50) NOT NULL,
@@ -845,10 +805,8 @@ CREATE TABLE umami.segment (
 
 
 --
--- Name: session; Type: TABLE; Schema: umami; Owner: -
 --
 
-CREATE TABLE umami.session (
     session_id uuid NOT NULL,
     website_id uuid NOT NULL,
     browser character varying(20),
@@ -865,10 +823,8 @@ CREATE TABLE umami.session (
 
 
 --
--- Name: session_data; Type: TABLE; Schema: umami; Owner: -
 --
 
-CREATE TABLE umami.session_data (
     session_data_id uuid NOT NULL,
     website_id uuid NOT NULL,
     session_id uuid NOT NULL,
@@ -883,10 +839,8 @@ CREATE TABLE umami.session_data (
 
 
 --
--- Name: session_replay; Type: TABLE; Schema: umami; Owner: -
 --
 
-CREATE TABLE umami.session_replay (
     replay_id uuid NOT NULL,
     website_id uuid NOT NULL,
     session_id uuid NOT NULL,
@@ -901,10 +855,8 @@ CREATE TABLE umami.session_replay (
 
 
 --
--- Name: session_replay_saved; Type: TABLE; Schema: umami; Owner: -
 --
 
-CREATE TABLE umami.session_replay_saved (
     saved_replay_id uuid NOT NULL,
     name character varying(100) NOT NULL,
     website_id uuid NOT NULL,
@@ -915,10 +867,8 @@ CREATE TABLE umami.session_replay_saved (
 
 
 --
--- Name: share; Type: TABLE; Schema: umami; Owner: -
 --
 
-CREATE TABLE umami.share (
     share_id uuid NOT NULL,
     entity_id uuid NOT NULL,
     name character varying(200) NOT NULL,
@@ -931,10 +881,8 @@ CREATE TABLE umami.share (
 
 
 --
--- Name: team; Type: TABLE; Schema: umami; Owner: -
 --
 
-CREATE TABLE umami.team (
     team_id uuid NOT NULL,
     name character varying(50) NOT NULL,
     access_code character varying(50),
@@ -946,10 +894,8 @@ CREATE TABLE umami.team (
 
 
 --
--- Name: team_user; Type: TABLE; Schema: umami; Owner: -
 --
 
-CREATE TABLE umami.team_user (
     team_user_id uuid NOT NULL,
     team_id uuid NOT NULL,
     user_id uuid NOT NULL,
@@ -960,10 +906,8 @@ CREATE TABLE umami.team_user (
 
 
 --
--- Name: user; Type: TABLE; Schema: umami; Owner: -
 --
 
-CREATE TABLE umami."user" (
     user_id uuid NOT NULL,
     username character varying(255) NOT NULL,
     password character varying(60) NOT NULL,
@@ -977,10 +921,8 @@ CREATE TABLE umami."user" (
 
 
 --
--- Name: website; Type: TABLE; Schema: umami; Owner: -
 --
 
-CREATE TABLE umami.website (
     website_id uuid NOT NULL,
     name character varying(100) NOT NULL,
     domain character varying(500),
@@ -997,10 +939,8 @@ CREATE TABLE umami.website (
 
 
 --
--- Name: website_event; Type: TABLE; Schema: umami; Owner: -
 --
 
-CREATE TABLE umami.website_event (
     event_id uuid NOT NULL,
     website_id uuid NOT NULL,
     session_id uuid NOT NULL,
@@ -1463,138 +1403,104 @@ ALTER TABLE ONLY public.voice_identities
 
 
 --
--- Name: board board_pkey; Type: CONSTRAINT; Schema: umami; Owner: -
 --
 
-ALTER TABLE ONLY umami.board
     ADD CONSTRAINT board_pkey PRIMARY KEY (board_id);
 
 
 --
--- Name: event_data event_data_pkey; Type: CONSTRAINT; Schema: umami; Owner: -
 --
 
-ALTER TABLE ONLY umami.event_data
     ADD CONSTRAINT event_data_pkey PRIMARY KEY (event_data_id);
 
 
 --
--- Name: link link_pkey; Type: CONSTRAINT; Schema: umami; Owner: -
 --
 
-ALTER TABLE ONLY umami.link
     ADD CONSTRAINT link_pkey PRIMARY KEY (link_id);
 
 
 --
--- Name: pixel pixel_pkey; Type: CONSTRAINT; Schema: umami; Owner: -
 --
 
-ALTER TABLE ONLY umami.pixel
     ADD CONSTRAINT pixel_pkey PRIMARY KEY (pixel_id);
 
 
 --
--- Name: report report_pkey; Type: CONSTRAINT; Schema: umami; Owner: -
 --
 
-ALTER TABLE ONLY umami.report
     ADD CONSTRAINT report_pkey PRIMARY KEY (report_id);
 
 
 --
--- Name: revenue revenue_pkey; Type: CONSTRAINT; Schema: umami; Owner: -
 --
 
-ALTER TABLE ONLY umami.revenue
     ADD CONSTRAINT revenue_pkey PRIMARY KEY (revenue_id);
 
 
 --
--- Name: segment segment_pkey; Type: CONSTRAINT; Schema: umami; Owner: -
 --
 
-ALTER TABLE ONLY umami.segment
     ADD CONSTRAINT segment_pkey PRIMARY KEY (segment_id);
 
 
 --
--- Name: session_data session_data_pkey; Type: CONSTRAINT; Schema: umami; Owner: -
 --
 
-ALTER TABLE ONLY umami.session_data
     ADD CONSTRAINT session_data_pkey PRIMARY KEY (session_data_id);
 
 
 --
--- Name: session session_pkey; Type: CONSTRAINT; Schema: umami; Owner: -
 --
 
-ALTER TABLE ONLY umami.session
     ADD CONSTRAINT session_pkey PRIMARY KEY (session_id);
 
 
 --
--- Name: session_replay session_replay_pkey; Type: CONSTRAINT; Schema: umami; Owner: -
 --
 
-ALTER TABLE ONLY umami.session_replay
     ADD CONSTRAINT session_replay_pkey PRIMARY KEY (replay_id);
 
 
 --
--- Name: session_replay_saved session_replay_saved_pkey; Type: CONSTRAINT; Schema: umami; Owner: -
 --
 
-ALTER TABLE ONLY umami.session_replay_saved
     ADD CONSTRAINT session_replay_saved_pkey PRIMARY KEY (saved_replay_id);
 
 
 --
--- Name: share share_pkey; Type: CONSTRAINT; Schema: umami; Owner: -
 --
 
-ALTER TABLE ONLY umami.share
     ADD CONSTRAINT share_pkey PRIMARY KEY (share_id);
 
 
 --
--- Name: team team_pkey; Type: CONSTRAINT; Schema: umami; Owner: -
 --
 
-ALTER TABLE ONLY umami.team
     ADD CONSTRAINT team_pkey PRIMARY KEY (team_id);
 
 
 --
--- Name: team_user team_user_pkey; Type: CONSTRAINT; Schema: umami; Owner: -
 --
 
-ALTER TABLE ONLY umami.team_user
     ADD CONSTRAINT team_user_pkey PRIMARY KEY (team_user_id);
 
 
 --
--- Name: user user_pkey; Type: CONSTRAINT; Schema: umami; Owner: -
 --
 
-ALTER TABLE ONLY umami."user"
     ADD CONSTRAINT user_pkey PRIMARY KEY (user_id);
 
 
 --
--- Name: website_event website_event_pkey; Type: CONSTRAINT; Schema: umami; Owner: -
 --
 
-ALTER TABLE ONLY umami.website_event
     ADD CONSTRAINT website_event_pkey PRIMARY KEY (event_id);
 
 
 --
--- Name: website website_pkey; Type: CONSTRAINT; Schema: umami; Owner: -
 --
 
-ALTER TABLE ONLY umami.website
     ADD CONSTRAINT website_pkey PRIMARY KEY (website_id);
 
 
@@ -1641,556 +1547,319 @@ CREATE INDEX idx_clarification_user_bot ON public.clarification_sessions USING b
 
 
 --
--- Name: board_created_at_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX board_created_at_idx ON umami.board USING btree (created_at);
 
-
 --
--- Name: board_team_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX board_team_id_idx ON umami.board USING btree (team_id);
 
 
 --
--- Name: board_user_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX board_user_id_idx ON umami.board USING btree (user_id);
 
-
 --
--- Name: event_data_created_at_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX event_data_created_at_idx ON umami.event_data USING btree (created_at);
 
 
 --
--- Name: event_data_website_event_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX event_data_website_event_id_idx ON umami.event_data USING btree (website_event_id);
 
-
 --
--- Name: event_data_website_id_created_at_data_key_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX event_data_website_id_created_at_data_key_idx ON umami.event_data USING btree (website_id, created_at, data_key);
 
 
 --
--- Name: event_data_website_id_created_at_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX event_data_website_id_created_at_idx ON umami.event_data USING btree (website_id, created_at);
 
-
 --
--- Name: event_data_website_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX event_data_website_id_idx ON umami.event_data USING btree (website_id);
 
-
 --
--- Name: link_created_at_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX link_created_at_idx ON umami.link USING btree (created_at);
 
 
 --
--- Name: link_slug_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX link_slug_idx ON umami.link USING btree (slug);
 
-
 --
--- Name: link_slug_key; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE UNIQUE INDEX link_slug_key ON umami.link USING btree (slug);
 
 
 --
--- Name: link_team_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX link_team_id_idx ON umami.link USING btree (team_id);
 
-
 --
--- Name: link_user_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX link_user_id_idx ON umami.link USING btree (user_id);
 
-
 --
--- Name: pixel_created_at_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX pixel_created_at_idx ON umami.pixel USING btree (created_at);
 
 
 --
--- Name: pixel_slug_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX pixel_slug_idx ON umami.pixel USING btree (slug);
 
-
 --
--- Name: pixel_slug_key; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE UNIQUE INDEX pixel_slug_key ON umami.pixel USING btree (slug);
 
 
 --
--- Name: pixel_team_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX pixel_team_id_idx ON umami.pixel USING btree (team_id);
 
-
 --
--- Name: pixel_user_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX pixel_user_id_idx ON umami.pixel USING btree (user_id);
 
-
 --
--- Name: report_name_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX report_name_idx ON umami.report USING btree (name);
 
 
 --
--- Name: report_type_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX report_type_idx ON umami.report USING btree (type);
 
-
 --
--- Name: report_user_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX report_user_id_idx ON umami.report USING btree (user_id);
 
 
 --
--- Name: report_website_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX report_website_id_idx ON umami.report USING btree (website_id);
 
-
 --
--- Name: revenue_session_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX revenue_session_id_idx ON umami.revenue USING btree (session_id);
 
-
 --
--- Name: revenue_website_id_created_at_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX revenue_website_id_created_at_idx ON umami.revenue USING btree (website_id, created_at);
 
 
 --
--- Name: revenue_website_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX revenue_website_id_idx ON umami.revenue USING btree (website_id);
 
-
 --
--- Name: revenue_website_id_session_id_created_at_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX revenue_website_id_session_id_created_at_idx ON umami.revenue USING btree (website_id, session_id, created_at);
 
 
 --
--- Name: segment_website_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX segment_website_id_idx ON umami.segment USING btree (website_id);
 
-
 --
--- Name: session_created_at_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX session_created_at_idx ON umami.session USING btree (created_at);
 
-
 --
--- Name: session_data_created_at_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX session_data_created_at_idx ON umami.session_data USING btree (created_at);
 
 
 --
--- Name: session_data_session_id_created_at_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX session_data_session_id_created_at_idx ON umami.session_data USING btree (session_id, created_at);
 
-
 --
--- Name: session_data_session_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX session_data_session_id_idx ON umami.session_data USING btree (session_id);
 
 
 --
--- Name: session_data_website_id_created_at_data_key_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX session_data_website_id_created_at_data_key_idx ON umami.session_data USING btree (website_id, created_at, data_key);
 
-
 --
--- Name: session_data_website_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX session_data_website_id_idx ON umami.session_data USING btree (website_id);
 
-
 --
--- Name: session_replay_saved_visit_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX session_replay_saved_visit_id_idx ON umami.session_replay_saved USING btree (visit_id);
 
 
 --
--- Name: session_replay_saved_website_id_created_at_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX session_replay_saved_website_id_created_at_idx ON umami.session_replay_saved USING btree (website_id, created_at);
 
-
 --
--- Name: session_replay_saved_website_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX session_replay_saved_website_id_idx ON umami.session_replay_saved USING btree (website_id);
 
 
 --
--- Name: session_replay_saved_website_id_visit_id_key; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE UNIQUE INDEX session_replay_saved_website_id_visit_id_key ON umami.session_replay_saved USING btree (website_id, visit_id);
 
-
 --
--- Name: session_replay_session_id_chunk_index_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX session_replay_session_id_chunk_index_idx ON umami.session_replay USING btree (session_id, chunk_index);
 
-
 --
--- Name: session_replay_session_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX session_replay_session_id_idx ON umami.session_replay USING btree (session_id);
 
 
 --
--- Name: session_replay_visit_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX session_replay_visit_id_idx ON umami.session_replay USING btree (visit_id);
 
-
 --
--- Name: session_replay_website_id_created_at_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX session_replay_website_id_created_at_idx ON umami.session_replay USING btree (website_id, created_at);
 
 
 --
--- Name: session_replay_website_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX session_replay_website_id_idx ON umami.session_replay USING btree (website_id);
 
-
 --
--- Name: session_replay_website_id_session_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX session_replay_website_id_session_id_idx ON umami.session_replay USING btree (website_id, session_id);
 
-
 --
--- Name: session_replay_website_id_visit_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX session_replay_website_id_visit_id_idx ON umami.session_replay USING btree (website_id, visit_id);
 
 
 --
--- Name: session_website_id_created_at_browser_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX session_website_id_created_at_browser_idx ON umami.session USING btree (website_id, created_at, browser);
 
-
 --
--- Name: session_website_id_created_at_city_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX session_website_id_created_at_city_idx ON umami.session USING btree (website_id, created_at, city);
 
 
 --
--- Name: session_website_id_created_at_country_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX session_website_id_created_at_country_idx ON umami.session USING btree (website_id, created_at, country);
 
-
 --
--- Name: session_website_id_created_at_device_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX session_website_id_created_at_device_idx ON umami.session USING btree (website_id, created_at, device);
 
-
 --
--- Name: session_website_id_created_at_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX session_website_id_created_at_idx ON umami.session USING btree (website_id, created_at);
 
 
 --
--- Name: session_website_id_created_at_language_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX session_website_id_created_at_language_idx ON umami.session USING btree (website_id, created_at, language);
 
-
 --
--- Name: session_website_id_created_at_os_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX session_website_id_created_at_os_idx ON umami.session USING btree (website_id, created_at, os);
 
 
 --
--- Name: session_website_id_created_at_region_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX session_website_id_created_at_region_idx ON umami.session USING btree (website_id, created_at, region);
 
-
 --
--- Name: session_website_id_created_at_screen_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX session_website_id_created_at_screen_idx ON umami.session USING btree (website_id, created_at, screen);
 
-
 --
--- Name: session_website_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX session_website_id_idx ON umami.session USING btree (website_id);
 
 
 --
--- Name: share_entity_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX share_entity_id_idx ON umami.share USING btree (entity_id);
 
-
 --
--- Name: share_slug_key; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE UNIQUE INDEX share_slug_key ON umami.share USING btree (slug);
 
 
 --
--- Name: team_access_code_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX team_access_code_idx ON umami.team USING btree (access_code);
 
-
 --
--- Name: team_access_code_key; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE UNIQUE INDEX team_access_code_key ON umami.team USING btree (access_code);
 
-
 --
--- Name: team_user_team_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX team_user_team_id_idx ON umami.team_user USING btree (team_id);
 
 
 --
--- Name: team_user_user_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX team_user_user_id_idx ON umami.team_user USING btree (user_id);
 
-
 --
--- Name: user_username_key; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE UNIQUE INDEX user_username_key ON umami."user" USING btree (username);
 
 
 --
--- Name: website_created_at_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX website_created_at_idx ON umami.website USING btree (created_at);
 
-
 --
--- Name: website_created_by_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX website_created_by_idx ON umami.website USING btree (created_by);
 
-
 --
--- Name: website_event_created_at_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX website_event_created_at_idx ON umami.website_event USING btree (created_at);
 
 
 --
--- Name: website_event_session_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX website_event_session_id_idx ON umami.website_event USING btree (session_id);
 
-
 --
--- Name: website_event_visit_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX website_event_visit_id_idx ON umami.website_event USING btree (visit_id);
 
 
 --
--- Name: website_event_website_id_created_at_event_name_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX website_event_website_id_created_at_event_name_idx ON umami.website_event USING btree (website_id, created_at, event_name);
 
-
 --
--- Name: website_event_website_id_created_at_hostname_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX website_event_website_id_created_at_hostname_idx ON umami.website_event USING btree (website_id, created_at, hostname);
 
-
 --
--- Name: website_event_website_id_created_at_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX website_event_website_id_created_at_idx ON umami.website_event USING btree (website_id, created_at);
 
 
 --
--- Name: website_event_website_id_created_at_page_title_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX website_event_website_id_created_at_page_title_idx ON umami.website_event USING btree (website_id, created_at, page_title);
 
-
 --
--- Name: website_event_website_id_created_at_referrer_domain_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX website_event_website_id_created_at_referrer_domain_idx ON umami.website_event USING btree (website_id, created_at, referrer_domain);
 
 
 --
--- Name: website_event_website_id_created_at_tag_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX website_event_website_id_created_at_tag_idx ON umami.website_event USING btree (website_id, created_at, tag);
 
-
 --
--- Name: website_event_website_id_created_at_url_path_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX website_event_website_id_created_at_url_path_idx ON umami.website_event USING btree (website_id, created_at, url_path);
 
-
 --
--- Name: website_event_website_id_created_at_url_query_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX website_event_website_id_created_at_url_query_idx ON umami.website_event USING btree (website_id, created_at, url_query);
 
 
 --
--- Name: website_event_website_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX website_event_website_id_idx ON umami.website_event USING btree (website_id);
 
-
 --
--- Name: website_event_website_id_session_id_created_at_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX website_event_website_id_session_id_created_at_idx ON umami.website_event USING btree (website_id, session_id, created_at);
 
 
 --
--- Name: website_event_website_id_visit_id_created_at_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX website_event_website_id_visit_id_created_at_idx ON umami.website_event USING btree (website_id, visit_id, created_at);
 
-
 --
--- Name: website_team_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
 
-CREATE INDEX website_team_id_idx ON umami.website USING btree (team_id);
 
-
 --
--- Name: website_user_id_idx; Type: INDEX; Schema: umami; Owner: -
 --
-
-CREATE INDEX website_user_id_idx ON umami.website USING btree (user_id);
 
 
 --

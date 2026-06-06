@@ -10,6 +10,7 @@ import type { DocSync } from '../sync/doc-sync.js';
 import type { Engine, Executor, ExecutionHandle, EngineName } from '../engines/index.js';
 import { createEngine, resolveEngineName, StreamProcessor, SessionManager } from '../engines/index.js';
 import { RateLimiter } from './rate-limiter.js';
+import { saveActiveTasks, recoverAndNotify, clearActiveTasks, type PersistedTask } from './task-state-store.js';
 import { OutputsManager } from './outputs-manager.js';
 import { MemoryClient } from '../memory/memory-client.js';
 import { AuditLogger } from '../utils/audit-logger.js';
@@ -239,6 +240,32 @@ export class MessageBridge {
       chatId,
       startTime: task.startTime,
     }));
+  }
+
+  /** Collect current running tasks in a persistable format. */
+  private collectPersistableTasks(): PersistedTask[] {
+    return Array.from(this.runningTasks.entries()).map(([chatId, task]) => ({
+      chatId,
+      botName: this.config.name,
+      startTime: task.startTime,
+      prompt: '',  // filled from audit or empty
+      cardMessageId: task.cardMessageId,
+    }));
+  }
+
+  /** Update the persisted task snapshot (call after task starts or changes). */
+  persistTaskSnapshot(): void {
+    const tasks = this.collectPersistableTasks();
+    if (tasks.length > 0) {
+      saveActiveTasks(tasks, this.config.name);
+    } else {
+      clearActiveTasks(this.config.name);
+    }
+  }
+
+  /** On startup, notify chats that had tasks interrupted by a previous restart. */
+  async notifyOrphanedTasks(): Promise<number> {
+    return recoverAndNotify(this.config.name, this.sender, this.logger);
   }
 
   /** Stop a running task for the given chatId. Returns true if a task was stopped. */
@@ -827,40 +854,19 @@ export class MessageBridge {
           return [];
         });
 
-    let matchedIntent: import('./orchestrator/types.js').IntentDefinition | null = null;
-
-    // Keyword intent matching (fast, no LLM cost)
     if (agentRuntimeConfig && agentRuntimeConfig.orchestration.intents.length > 0) {
       try {
         this.configReader.validateSkills(agentRuntimeConfig.name, agentRuntimeConfig.skills || []);
       } catch { /* validation is advisory */ }
-      // Intent matching disabled — always fall through to standard LLM
-      matchedIntent = null;
     }
 
     this.logger.info({ agentId: this.config.agentId, botName: this.config.name, hasIntents: agentRuntimeConfig?.orchestration?.intents?.length }, '[DIAG] Orchestrator eligibility — intent matching offline');
 
-    // PATH A: removed (intent matching was already disabled, RequirementAnalyzer removed)
-
-    // ── PATH B/C: No intent match or empty chain → standard LLM ──
-    if (false && matchedIntent) {
-      this.logger.info({ chatId, intent: matchedIntent?.name }, 'PATH B: standard LLM + intent context');
-      knowledgeContext = knowledgeContext
-        ? `## 用户意图: ${matchedIntent?.name}
-
-${knowledgeContext}`
-        : `## 用户意图: ${matchedIntent?.name}`;
-    } else {
-      this.logger.debug({ chatId }, 'PATH C: standard LLM (no intent match)');
-    }
-
     // P1: Skill deployment — keyword-matched + agent skills (subset, not all)
-    // Skill matching already launched in background during Phase 2 — await result now
     if (skipSkills) {
       this.logger.info({ chatId, msg: (text || '').slice(0, 40) }, 'Skipping skill deployment for chat message');
     } else {
       try {
-        // Show progress only if skills aren't ready yet (rare — they usually finish during skill match)
         this.getSender(chatId).updateCard(messageId, {
           status: 'preparing',
           userPrompt: displayPrompt,
@@ -871,17 +877,8 @@ ${knowledgeContext}`
 
         const selectedSkills = await skillPromise;
         const selectedNames = selectedSkills.map((s: any) => s.name);
-        // When intent matched (PATH B), also include agent-config skills that match
-        const agentSkillNames: string[] = matchedIntent && agentRuntimeConfig
-          ? (agentRuntimeConfig.skills || []).filter((name: string) =>
-              selectedSkills.some((s: any) => s.name === name) ||
-              (text || '').toLowerCase().split(/\s+/).some((w: string) =>
-                w.length > 1 && name.toLowerCase().includes(w)
-              )
-            ).slice(0, 8)
-          : [];
-        const mergedNames = [...new Set([...selectedNames, ...agentSkillNames, ...agentBoundSkills])];
-        this.logger.info({ chatId, keyword: selectedNames.length, agent: agentSkillNames.length, total: mergedNames.length }, 'Skills deployed for standard execution');
+        const mergedNames = [...new Set([...selectedNames, ...agentBoundSkills])];
+        this.logger.info({ chatId, keyword: selectedNames.length, total: mergedNames.length }, 'Skills deployed for standard execution');
       } catch (err) {
         this.logger.warn({ err }, 'Skill deployment failed, using default skills');
       }
@@ -918,6 +915,7 @@ ${knowledgeContext}`
     const runningTask: RunningTask = {
       abortController,
       startTime,
+      prompt: text ?? '',
       executionHandle,
       pendingQuestion: null,
       currentQuestionIndex: 0,
@@ -929,6 +927,7 @@ ${knowledgeContext}`
     };
     this.runningTasks.set(chatId, runningTask);
     metrics.setGauge('metabot_active_tasks', this.runningTasks.size);
+    this.persistTaskSnapshot();
 
     this.audit.log({ event: 'task_start', botName: this.config.name, chatId, userId, prompt: text });
     this.emitActivity({
@@ -1437,6 +1436,7 @@ ${knowledgeContext}`
       if (this.runningTasks.get(chatId) === runningTask) {
         this.runningTasks.delete(chatId);
         metrics.setGauge('metabot_active_tasks', this.runningTasks.size);
+        this.persistTaskSnapshot();
         this.processQueue(chatId);
       }
       if (imagePath) {
@@ -1565,6 +1565,7 @@ ${knowledgeContext}`
     const runningTask: RunningTask = {
       abortController,
       startTime,
+      prompt: options.prompt ?? '',
       executionHandle,
       pendingQuestion: null,
       currentQuestionIndex: 0,
@@ -1576,6 +1577,7 @@ ${knowledgeContext}`
     };
     this.runningTasks.set(chatId, runningTask);
     metrics.setGauge('metabot_active_tasks', this.runningTasks.size);
+    this.persistTaskSnapshot();
 
     this.audit.log({ event: 'api_task_start', botName: this.config.name, chatId, userId, prompt });
     this.emitActivity({
@@ -1992,6 +1994,7 @@ ${knowledgeContext}`
       }
       this.runningTasks.delete(chatId);
       metrics.setGauge('metabot_active_tasks', this.runningTasks.size);
+      this.persistTaskSnapshot();
       this.processQueue(chatId);
       try {
         this.outputsManager.cleanup(outputsDir);
@@ -2378,6 +2381,36 @@ ${knowledgeContext}`
   }
 
   destroy(): void {
+    // 🔍 DIAGNOSTIC: log runningTasks state BEFORE any collection
+    const _diagRunning = this.runningTasks.size;
+    const _diagPending = this.pendingBatches.size;
+    this.logger.info({
+      runningTasks: _diagRunning,
+      pendingBatches: _diagPending,
+      chatIds: _diagRunning > 0 ? Array.from(this.runningTasks.keys()) : [],
+    }, '[DIAG] destroy() called — runningTasks snapshot');
+
+    // Persist active tasks FIRST so they survive the restart
+    const tasks = this.collectPersistableTasks();
+    this.logger.info({
+      collected: tasks.length,
+      stillInMap: this.runningTasks.size,
+    }, '[DIAG] collectPersistableTasks() result');
+    if (_diagRunning > 0 && tasks.length === 0) {
+      const first = this.runningTasks.entries().next().value;
+      this.logger.warn({
+        bug: 'CONFIRMED',
+        runningCount: _diagRunning,
+        firstChatId: first ? first[0] : null,
+        hasCardMsgId: first ? !!first[1]?.cardMessageId : null,
+        promptPreview: first ? String(first[1]?.prompt || '').slice(0, 60) : null,
+      }, '[DIAG] runningTasks NOT empty but collect returned 0');
+    }
+    if (tasks.length > 0) {
+      saveActiveTasks(tasks, this.config.name);
+      this.logger.info({ count: tasks.length }, 'Persisted active tasks before shutdown');
+    }
+
     for (const [, batch] of this.pendingBatches) {
       clearTimeout(batch.timerId);
     }
