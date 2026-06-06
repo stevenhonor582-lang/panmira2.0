@@ -1071,7 +1071,7 @@ ${knowledgeContext}`
           lastState = {
             ...lastState,
             status: 'error',
-            errorMessage: lastState.responseText ? '流意外中断 — 任务可能未完成，请检查产出或重新发送消息' : 'Claude session ended unexpectedly',
+            errorMessage: lastState.responseText ? '任务被中断，请重新发送消息继续' : 'Claude session ended unexpectedly',
           };
         }
       }
@@ -1688,7 +1688,7 @@ ${knowledgeContext}`
           lastState = {
             ...lastState,
             status: 'error',
-            errorMessage: lastState.responseText ? '流意外中断 — 任务可能未完成，请检查产出或重新发送消息' : 'Claude session ended unexpectedly',
+            errorMessage: lastState.responseText ? '任务被中断，请重新发送消息继续' : 'Claude session ended unexpectedly',
           };
         }
       }
@@ -2394,7 +2394,7 @@ ${knowledgeContext}`
         userPrompt: '',
         responseText: '',
         toolCalls: [],
-        errorMessage: '会话因重启中断',
+        errorMessage: '服务重启中，请稍后重新发送消息继续',
       }).catch(() => {});
       this.logger.info({ chatId }, 'Aborted running task during shutdown');
     }

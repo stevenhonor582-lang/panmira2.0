@@ -461,34 +461,31 @@ async function main() {
     shuttingDown = true;
     logger.info({ signal }, 'Shutting down...');
 
-    // Notify all WebSocket clients before disconnecting
+    // Immediately notify all active chat users about restart
     broadcastAll({ type: 'server_shutdown', reason: signal, message: 'Server is restarting...' });
+
+    // Immediately destroy all bridges — sends error cards to active chats
+    // so users see "会话因重启中断" instead of a hung "thinking" state.
+    // This must happen BEFORE PM2 kill_timeout (15s) expires.
+    const allBridges = [
+      ...feishuHandles.map((h) => h.bridge),
+      ...telegramHandles.map((h) => h.bridge),
+      ...wechatHandles.map((h) => h.bridge),
+    ];
+    for (const bridge of allBridges) {
+      bridge.destroy();
+    }
 
     scheduler.destroy();
     if (peerManager) {
       peerManager.destroy();
     }
 
-    // Wait for running tasks to finish (max 30s)
-    const runningBridges = [
-      ...feishuHandles.map((h) => h.bridge),
-      ...telegramHandles.map((h) => h.bridge),
-      ...wechatHandles.map((h) => h.bridge),
-    ];
-    const busyBridges = runningBridges.filter((b) => b.getRunningTasksInfo().length > 0);
+    // Give running tasks a brief window to flush (5s max), then proceed
+    const busyBridges = allBridges.filter((b) => b.getRunningTasksInfo().length > 0);
     if (busyBridges.length > 0) {
-      logger.info({ count: busyBridges.length }, 'Waiting for running tasks to complete...');
-      await Promise.race([
-        new Promise<void>((resolve) => {
-          const check = setInterval(() => {
-            if (busyBridges.every((b) => b.getRunningTasksInfo().length === 0)) {
-              clearInterval(check);
-              resolve();
-            }
-          }, 1000);
-        }),
-        new Promise<void>((resolve) => setTimeout(resolve, 30_000)),
-      ]);
+      logger.info({ count: busyBridges.length }, 'Waiting briefly for tasks to flush...');
+      await new Promise<void>((resolve) => setTimeout(resolve, 5_000));
     }
 
     apiServer.close();
@@ -500,15 +497,10 @@ async function main() {
       memoryServer.server.close();
       memoryServer.storage.close();
     }
-    for (const handle of feishuHandles) {
-      handle.bridge.destroy();
-    }
     for (const handle of telegramHandles) {
-      handle.bridge.destroy();
       handle.bot.stop();
     }
     for (const handle of wechatHandles) {
-      handle.bridge.destroy();
       handle.stop();
     }
     try {
