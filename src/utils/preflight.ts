@@ -2,6 +2,7 @@ import * as net from 'node:net';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { pool } from '../db/index.js';
+import { initWorkspaceSkeleton } from '../workspace-init.js';
 import type { Logger } from './logger.js';
 
 interface PreflightResult {
@@ -162,11 +163,43 @@ export async function validateBotConsistency(
       }
     }
 
-    // 3. Check workspace directory exists
+    // 3. Validate workspace skeleton structure and auto-fix missing pieces
     const workDir = botInfo.config.claude?.defaultWorkingDirectory;
-    if (workDir && !fs.existsSync(workDir)) {
-      logger.warn({ botName, workDir }, 'Workspace directory does not exist — will be created on first use');
-      warnings++;
+    if (workDir) {
+      if (!fs.existsSync(workDir)) {
+        logger.warn({ botName, workDir }, 'Workspace directory missing — auto-creating with skeleton');
+        try {
+          initWorkspaceSkeleton(workDir, botName, botName, logger);
+          fixed++;
+        } catch (err: any) {
+          logger.warn({ botName, err: err.message }, 'Failed to auto-create workspace');
+          warnings++;
+        }
+      } else {
+        const claudePath = path.join(workDir, 'CLAUDE.md');
+        if (!fs.existsSync(claudePath)) {
+          try {
+            initWorkspaceSkeleton(workDir, botName, botName, logger);
+            logger.info({ botName }, 'Fixed: completed missing workspace skeleton files');
+            fixed++;
+          } catch (err: any) {
+            logger.warn({ botName, err: err.message }, 'Failed to patch workspace skeleton');
+            warnings++;
+          }
+        }
+      }
+
+      const kbDir = path.join(workDir, 'knowledge-base');
+      if (fs.existsSync(workDir) && !fs.existsSync(kbDir)) {
+        try {
+          initWorkspaceSkeleton(workDir, botName, botName, logger);
+          logger.info({ botName }, 'Fixed: created missing knowledge-base directory');
+          fixed++;
+        } catch (err: any) {
+          logger.warn({ botName, err: err.message }, 'Failed to create knowledge-base');
+          warnings++;
+        }
+      }
     }
 
     checked++;
