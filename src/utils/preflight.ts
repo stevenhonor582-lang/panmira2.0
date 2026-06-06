@@ -23,7 +23,6 @@ export async function runPreflight(logger: Logger): Promise<PreflightResult> {
   const requiredEnvVars = [
     'JWT_SECRET',
     'DATABASE_URL',
-    'ANTHROPIC_AUTH_TOKEN',
     'ANTHROPIC_BASE_URL',
     'API_SECRET',
   ];
@@ -36,6 +35,14 @@ export async function runPreflight(logger: Logger): Promise<PreflightResult> {
     } else {
       checks.push({ name: `ENV:${varName}`, status: 'ok', message: 'Set' });
     }
+  }
+
+  // 1b. Auth token: accept either ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY
+  const authToken = process.env.ANTHROPIC_AUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
+  if (!authToken) {
+    checks.push({ name: 'ENV:ANTHROPIC_AUTH', status: 'fail', message: 'Neither ANTHROPIC_AUTH_TOKEN nor ANTHROPIC_API_KEY is set' });
+  } else {
+    checks.push({ name: 'ENV:ANTHROPIC_AUTH', status: 'ok', message: 'Set' });
   }
 
   // 2. Check PostgreSQL connectivity
