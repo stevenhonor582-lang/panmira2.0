@@ -2,6 +2,9 @@
    Panmira Web — Global State (Zustand)
    ============================================================ */
 
+import { migrateLocalStorage } from './utils/storage-migration';
+migrateLocalStorage();
+
 import { create } from 'zustand';
 import type {
   ActiveView,
@@ -80,7 +83,7 @@ function persistSessions(sessions: Map<string, ChatSession>) {
     sessions.forEach((v, k) => {
       obj[k] = v;
     });
-    localStorage.setItem('metabot:sessions', JSON.stringify(obj));
+    localStorage.setItem('panmira:sessions', JSON.stringify(obj));
   } catch {
     // storage full — silently ignore
   }
@@ -88,7 +91,7 @@ function persistSessions(sessions: Map<string, ChatSession>) {
 
 function loadSessions(): Map<string, ChatSession> {
   try {
-    const raw = localStorage.getItem('metabot:sessions');
+    const raw = localStorage.getItem('panmira:sessions');
     if (!raw) return new Map();
     const obj = JSON.parse(raw) as Record<string, ChatSession>;
     const map = new Map<string, ChatSession>();
@@ -238,13 +241,13 @@ export interface AppStore {
 export const useStore = create<AppStore>((set, get) => ({
   /* ---- Auth ---- */
   token: (() => {
-    const t = localStorage.getItem('metabot:token');
+    const t = localStorage.getItem('panmira:token');
     if (t && t.startsWith('eyJ')) {
       try {
         const payload = JSON.parse(atob(t.split('.')[1]));
         if (payload.exp && payload.exp * 1000 < Date.now()) {
           // Access token expired — try refresh in background
-          const rt = localStorage.getItem('metabot:refresh');
+          const rt = localStorage.getItem('panmira:refresh');
           if (rt) {
             fetch('/api/auth/refresh', {
               method: 'POST',
@@ -252,13 +255,13 @@ export const useStore = create<AppStore>((set, get) => ({
               body: JSON.stringify({ refreshToken: rt }),
             }).then(r => r.ok ? r.json() : null).then(data => {
               if (data?.accessToken) {
-                localStorage.setItem('metabot:token', data.accessToken);
-                if (data.refreshToken) localStorage.setItem('metabot:refresh', data.refreshToken);
+                localStorage.setItem('panmira:token', data.accessToken);
+                if (data.refreshToken) localStorage.setItem('panmira:refresh', data.refreshToken);
                 set({ token: data.accessToken });
               } else {
-                localStorage.removeItem('metabot:token');
-                localStorage.removeItem('metabot:user');
-                localStorage.removeItem('metabot:refresh');
+                localStorage.removeItem('panmira:token');
+                localStorage.removeItem('panmira:user');
+                localStorage.removeItem('panmira:refresh');
                 set({ token: null, currentUser: null });
               }
             }).catch(() => {});
@@ -270,10 +273,10 @@ export const useStore = create<AppStore>((set, get) => ({
     }
     return t;
   })(),
-  currentUser: (() => { try { return JSON.parse(localStorage.getItem('metabot:user') || 'null'); } catch { return null; } })(),
+  currentUser: (() => { try { return JSON.parse(localStorage.getItem('panmira:user') || 'null'); } catch { return null; } })(),
 
   login(token: string) {
-    localStorage.setItem('metabot:token', token);
+    localStorage.setItem('panmira:token', token);
     set({ token });
     // Fetch current user info
     if (token.startsWith('eyJ')) {
@@ -281,7 +284,7 @@ export const useStore = create<AppStore>((set, get) => ({
         .then((r) => (r.ok ? r.json() : null))
         .then((user) => {
           if (user) {
-            localStorage.setItem('metabot:user', JSON.stringify(user));
+            localStorage.setItem('panmira:user', JSON.stringify(user));
             set({ currentUser: user });
           }
         })
@@ -293,7 +296,7 @@ export const useStore = create<AppStore>((set, get) => ({
         .then((data) => {
           const admin = (data?.users || []).find((u: any) => u.role === 'admin');
           if (admin) {
-            localStorage.setItem('metabot:user', JSON.stringify(admin));
+            localStorage.setItem('panmira:user', JSON.stringify(admin));
             set({ currentUser: admin });
           }
         })
@@ -312,9 +315,9 @@ export const useStore = create<AppStore>((set, get) => ({
       throw new Error(data.error || 'Login failed');
     }
     const data = await res.json();
-    localStorage.setItem('metabot:token', data.accessToken);
-    localStorage.setItem('metabot:user', JSON.stringify(data.user));
-    if (data.refreshToken) localStorage.setItem('metabot:refresh', data.refreshToken);
+    localStorage.setItem('panmira:token', data.accessToken);
+    localStorage.setItem('panmira:user', JSON.stringify(data.user));
+    if (data.refreshToken) localStorage.setItem('panmira:refresh', data.refreshToken);
     set({ token: data.accessToken, currentUser: data.user });
   },
 
@@ -329,16 +332,16 @@ export const useStore = create<AppStore>((set, get) => ({
       throw new Error(data.error || 'Registration failed');
     }
     const data = await res.json();
-    localStorage.setItem('metabot:token', data.accessToken);
-    localStorage.setItem('metabot:user', JSON.stringify(data.user));
-    if (data.refreshToken) localStorage.setItem('metabot:refresh', data.refreshToken);
+    localStorage.setItem('panmira:token', data.accessToken);
+    localStorage.setItem('panmira:user', JSON.stringify(data.user));
+    if (data.refreshToken) localStorage.setItem('panmira:refresh', data.refreshToken);
     set({ token: data.accessToken, currentUser: data.user });
   },
 
   logout() {
-    localStorage.removeItem('metabot:token');
-    localStorage.removeItem('metabot:user');
-    localStorage.removeItem('metabot:refresh');
+    localStorage.removeItem('panmira:token');
+    localStorage.removeItem('panmira:user');
+    localStorage.removeItem('panmira:refresh');
     set({ token: null, currentUser: null, connected: false, bots: [], activeBotName: null });
   },
 
@@ -490,7 +493,7 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   clearSessions() {
-    localStorage.removeItem('metabot:sessions');
+    localStorage.removeItem('panmira:sessions');
     set({ sessions: new Map(), activeSessionId: null });
   },
 
@@ -616,19 +619,19 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   /* ---- Theme ---- */
-  theme: (localStorage.getItem('metabot:theme') as Theme) || 'dark',
+  theme: (localStorage.getItem('panmira:theme') as Theme) || 'dark',
   toggleTheme() {
     const next = get().theme === 'dark' ? 'light' : 'dark';
-    localStorage.setItem('metabot:theme', next);
+    localStorage.setItem('panmira:theme', next);
     document.documentElement.setAttribute('data-theme', next);
     set({ theme: next });
   },
 
   /* ---- Font size ---- */
-  fontSize: (localStorage.getItem('metabot:fontsize') as 'small' | 'normal' | 'large' | 'xl') || 'normal',
+  fontSize: (localStorage.getItem('panmira:fontsize') as 'small' | 'normal' | 'large' | 'xl') || 'normal',
   setFontSize(size: 'small' | 'normal' | 'large' | 'xl') {
     const scales: Record<string, string> = { small: '0.9', normal: '1', large: '1.1', xl: '1.25' };
-    localStorage.setItem('metabot:fontsize', size);
+    localStorage.setItem('panmira:fontsize', size);
     document.documentElement.style.setProperty('--font-scale', scales[size] || '1');
     set({ fontSize: size });
   },
@@ -638,9 +641,9 @@ export const useStore = create<AppStore>((set, get) => ({
   setTeamStatus(status: TeamStatus) {
     set({ teamStatus: status });
   },
-  teamViewMode: (localStorage.getItem('metabot:teamViewMode') as 'workspace' | 'office') || 'workspace',
+  teamViewMode: (localStorage.getItem('panmira:teamViewMode') as 'workspace' | 'office') || 'workspace',
   setTeamViewMode(mode: 'workspace' | 'office') {
-    localStorage.setItem('metabot:teamViewMode', mode);
+    localStorage.setItem('panmira:teamViewMode', mode);
     set({ teamViewMode: mode });
   },
   selectedAgentKey: null,
@@ -692,19 +695,19 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   /* ---- Global defaults ---- */
-  defaultEngine: localStorage.getItem('metabot:defaultEngine') || 'claude',
+  defaultEngine: localStorage.getItem('panmira:defaultEngine') || 'claude',
   setDefaultEngine(engine: string) {
-    localStorage.setItem('metabot:defaultEngine', engine);
+    localStorage.setItem('panmira:defaultEngine', engine);
     set({ defaultEngine: engine });
   },
-  defaultModel: localStorage.getItem('metabot:defaultModel') || '',
+  defaultModel: localStorage.getItem('panmira:defaultModel') || '',
   setDefaultModel(model: string) {
-    localStorage.setItem('metabot:defaultModel', model);
+    localStorage.setItem('panmira:defaultModel', model);
     set({ defaultModel: model });
   },
-  defaultWorkDir: localStorage.getItem('metabot:defaultWorkDir') || '',
+  defaultWorkDir: localStorage.getItem('panmira:defaultWorkDir') || '',
   setDefaultWorkDir(dir: string) {
-    localStorage.setItem('metabot:defaultWorkDir', dir);
+    localStorage.setItem('panmira:defaultWorkDir', dir);
     set({ defaultWorkDir: dir });
   },
 
@@ -719,7 +722,7 @@ export const useStore = create<AppStore>((set, get) => ({
       const serverProviders: Array<{ id: string; name: string; baseUrl: string; model: string; isDefault: boolean; apiKeyEncrypted: string | null }> = data.providers || [];
 
       // Migrate localStorage providers to server on first load
-      const localRaw = localStorage.getItem('metabot:aiProviders');
+      const localRaw = localStorage.getItem('panmira:aiProviders');
       if (localRaw && serverProviders.length === 0) {
         try {
           const localProviders: import('./utils/models').AIProvider[] = JSON.parse(localRaw);
@@ -733,7 +736,7 @@ export const useStore = create<AppStore>((set, get) => ({
           const res2 = await fetch('/api/providers', { headers: authHeaders });
           const data2 = await res2.json();
           set({ aiProviders: (data2.providers || []).map(mapServerProvider) });
-          localStorage.removeItem('metabot:aiProviders');
+          localStorage.removeItem('panmira:aiProviders');
           return;
         } catch { /* migration failed, continue with server data */ }
       }
@@ -741,7 +744,7 @@ export const useStore = create<AppStore>((set, get) => ({
       const mapped = serverProviders.map(mapServerProvider);
       const defaultP = serverProviders.find((p) => p.isDefault);
       set({ aiProviders: mapped, defaultProviderId: defaultP?.id || '' });
-      localStorage.removeItem('metabot:aiProviders');
+      localStorage.removeItem('panmira:aiProviders');
     } catch { /* fetch failed */ }
   },
   async addProvider(provider) {

@@ -185,7 +185,7 @@
   "bots.pauseFailed": "Pause failed",
   "bots.resumeFailed": "Resume failed",
   "bots.deleteConfirm": "Delete digital worker \"{name}\"? This action cannot be undone",
-  "bots.restartNeeded": "Bot added, server restart required. Run 'pm2 restart metabot' when ready",
+  "bots.restartNeeded": "Bot added, server restart required. Run 'pm2 restart panmira' when ready",
   "bots.operationFailed": "Operation failed",
   "bots.nameLabel": "Name *",
   "bots.platformLabel": "Platform",
