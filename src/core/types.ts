@@ -1,4 +1,4 @@
-// Core data interfaces migrated from matebot Python dataclasses
+// Core data interfaces
 
 import type { TaskStatus, MemoryLayer, CollabRequestStatus, ApprovalStatus, ApprovalAction, Intent, UserRole } from './constants.js';
 

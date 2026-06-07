@@ -1,4 +1,4 @@
-// Enums and constants migrated from matebot Python
+// Enums and constants
 
 export enum UserRole {
   ADMIN = 'admin',

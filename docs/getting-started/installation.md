@@ -5,13 +5,13 @@
 === "Linux / macOS"
 
     ```bash
-    curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh | bash
+    curl -fsSL https://raw.githubusercontent.com/xvirobotics/panmira/main/install.sh | bash
     ```
 
 === "Windows (PowerShell)"
 
     ```powershell
-    irm https://raw.githubusercontent.com/xvirobotics/metabot/main/install.ps1 | iex
+    irm https://raw.githubusercontent.com/xvirobotics/panmira/main/install.ps1 | iex
     ```
 
 The installer walks you through: working directory → Claude auth → IM credentials → auto-start with PM2.
@@ -21,14 +21,14 @@ The installer walks you through: working directory → Claude auth → IM creden
 Already installed? One command to pull, rebuild, and restart:
 
 ```bash
-metabot update
+panmira update
 ```
 
 ## Manual Install
 
 ```bash
-git clone https://github.com/xvirobotics/metabot.git
-cd metabot && npm install
+git clone https://github.com/xvirobotics/panmira.git
+cd panmira && npm install
 cp bots.example.json bots.json   # edit with your bot configs
 cp .env.example .env              # edit global settings
 npm run dev
@@ -51,4 +51,4 @@ npm run dev
 
 ## Windows Notes
 
-The PowerShell installer auto-detects `winget`/`choco`/`scoop` for Node.js installation. CLI tools (`mm`, `mb`, `metabot`, `fd`) are installed with `.cmd` wrappers and require [Git for Windows](https://git-scm.com) (provides Git Bash).
+The PowerShell installer auto-detects `winget`/`choco`/`scoop` for Node.js installation. CLI tools (`mm`, `mb`, `panmira`, `fd`) are installed with `.cmd` wrappers and require [Git for Windows](https://git-scm.com) (provides Git Bash).

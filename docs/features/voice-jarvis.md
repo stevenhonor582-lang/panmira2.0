@@ -55,7 +55,7 @@ Zero screen interaction. Works while walking, hiking, driving.
 - iPhone with Siri enabled
 - AirPods (or any earphones with Siri support)
 - Panmira server accessible from the internet (public IP + port 9100 open)
-- Your `API_SECRET` from MetaBot's `.env`
+- Your `API_SECRET` from Panmira's `.env`
 - `VOLCENGINE_TTS_APPID` + `VOLCENGINE_TTS_ACCESS_KEY` set in `.env` (for Doubao STT+TTS, recommended), or `OPENAI_API_KEY` (for Whisper STT fallback)
 
 ### Step 1: Create the Shortcut
@@ -124,7 +124,7 @@ Search and add **Play Sound**:
 - iPhone with Siri enabled
 - AirPods (or any earphones with Siri support)
 - Panmira server accessible from the internet (public IP + port 9100 open)
-- Your `API_SECRET` from MetaBot's `.env`
+- Your `API_SECRET` from Panmira's `.env`
 
 ### Step 1: Create the Shortcut
 

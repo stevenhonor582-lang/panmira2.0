@@ -18,7 +18,7 @@ echo "skill root: $SKILL_ROOT"
 echo ""
 echo "--- Step 1: preflight-check (10+ checks) ---"
 PREFLIGHT_OUT="$TEMP_DIR/preflight.json"
-"$SCRIPTS/preflight-check.sh" metabot-core prod > "$PREFLIGHT_OUT"
+"$SCRIPTS/preflight-check.sh" panmira-core prod > "$PREFLIGHT_OUT"
 PASSED=$(python3 -c "import json; d=json.load(open('$PREFLIGHT_OUT')); print(d['passed'])")
 CHECKS=$(python3 -c "import json; d=json.load(open('$PREFLIGHT_OUT')); print(len(d['checks']))")
 echo "preflight passed=$PASSED, checks=$CHECKS"
@@ -29,7 +29,7 @@ echo "preflight passed=$PASSED, checks=$CHECKS"
 echo ""
 echo "--- Step 2: build-artifact ---"
 BUILD_OUT="$TEMP_DIR/build.json"
-"$SCRIPTS/build-artifact.sh" metabot-core v1.5.2 > "$BUILD_OUT"
+"$SCRIPTS/build-artifact.sh" panmira-core v1.5.2 > "$BUILD_OUT"
 BUILD_STATUS=$(python3 -c "import json; d=json.load(open('$BUILD_OUT')); print(d['status'])")
 BUILD_ID=$(python3 -c "import json; d=json.load(open('$BUILD_OUT')); print(d['build_id'])")
 echo "build status=$BUILD_STATUS, build_id=$BUILD_ID"
@@ -40,7 +40,7 @@ echo "build status=$BUILD_STATUS, build_id=$BUILD_ID"
 echo ""
 echo "--- Step 3: deploy-canary ---"
 DEPLOY_OUT="$TEMP_DIR/deploy.json"
-"$SCRIPTS/deploy-canary.sh" metabot-core v1.5.2 prod 10 > "$DEPLOY_OUT"
+"$SCRIPTS/deploy-canary.sh" panmira-core v1.5.2 prod 10 > "$DEPLOY_OUT"
 DEPLOY_STATUS=$(python3 -c "import json; d=json.load(open('$DEPLOY_OUT')); print(d['deploy_status'])")
 STRATEGY=$(python3 -c "import json; d=json.load(open('$DEPLOY_OUT')); print(d['strategy'])")
 FINAL_PCT=$(python3 -c "import json; d=json.load(open('$DEPLOY_OUT')); print(d['final_percentage'])")
@@ -53,7 +53,7 @@ echo "deploy status=$DEPLOY_STATUS, strategy=$STRATEGY, final=$FINAL_PCT%"
 echo ""
 echo "--- Step 4: health-check ---"
 HEALTH_OUT="$TEMP_DIR/health.json"
-"$SCRIPTS/health-check.sh" http://metabot-core.prod.svc > "$HEALTH_OUT"
+"$SCRIPTS/health-check.sh" http://panmira-core.prod.svc > "$HEALTH_OUT"
 HEALTH_STATUS=$(python3 -c "import json; d=json.load(open('$HEALTH_OUT')); print(d['status'])")
 echo "health status=$HEALTH_STATUS"
 [ "$HEALTH_STATUS" = "healthy" ] || { echo "FAIL: health not healthy"; exit 1; }
@@ -62,7 +62,7 @@ echo "health status=$HEALTH_STATUS"
 echo ""
 echo "--- Step 5: smoke-test ---"
 SMOKE_OUT="$TEMP_DIR/smoke.json"
-"$SCRIPTS/smoke-test.sh" metabot-core prod > "$SMOKE_OUT"
+"$SCRIPTS/smoke-test.sh" panmira-core prod > "$SMOKE_OUT"
 SMOKE_STATUS=$(python3 -c "import json; d=json.load(open('$SMOKE_OUT')); print(d['status'])")
 SMOKE_PASSED=$(python3 -c "import json; d=json.load(open('$SMOKE_OUT')); print(d['passed'])")
 echo "smoke status=$SMOKE_STATUS, passed=$SMOKE_PASSED"
@@ -119,7 +119,7 @@ result = {
             "artifacts": {"report_path": f"runs/2026-06-01/{pre_data['deploy_id']}/"}
         }
     },
-    "deployed_url": "https://metabot-core.prod.internal",
+    "deployed_url": "https://panmira-core.prod.internal",
     "rollback_available_until": "2026-06-08T22:08:00Z",
     "metadata": {
         "service": config["service"],
@@ -144,7 +144,7 @@ echo "report: $REPORT_LINES lines"
 # 7. 验证报告内容
 echo ""
 echo "--- Step 7: verify report contents ---"
-for keyword in "Deploy Report" "preflight" "build" "deploy" "verify" "post" "metabot-core" "v1.5.2" "[OK]" "canary"; do
+for keyword in "Deploy Report" "preflight" "build" "deploy" "verify" "post" "panmira-core" "v1.5.2" "[OK]" "canary"; do
   if grep -qiF "$keyword" "$REPORT"; then
     echo "  OK: contains '$keyword'"
   else
@@ -200,7 +200,7 @@ echo ""
 DEPLOY_ID=$(python3 -c "import json; print(json.load(open('$PREFLIGHT_OUT'))['deploy_id'])")
 echo "--- Step 13: rollback (simulate) ---"
 ROLLBACK_OUT="$TEMP_DIR/rollback.json"
-"$SCRIPTS/rollback.sh" "$DEPLOY_ID" metabot-core prod > "$ROLLBACK_OUT"
+"$SCRIPTS/rollback.sh" "$DEPLOY_ID" panmira-core prod > "$ROLLBACK_OUT"
 ROLLBACK_STATUS=$(python3 -c "import json; d=json.load(open('$ROLLBACK_OUT')); print(d['rollback_status'])")
 echo "rollback status=$ROLLBACK_STATUS"
 [ "$ROLLBACK_STATUS" = "succeeded" ] || { echo "FAIL: rollback not succeeded"; exit 1; }

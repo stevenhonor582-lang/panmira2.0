@@ -7,11 +7,11 @@ import './i18n';
 import './theme.css';
 
 // Apply persisted theme
-const theme = localStorage.getItem('metabot:theme') || 'dark';
+const theme = localStorage.getItem('panmira:theme') || 'dark';
 document.documentElement.setAttribute('data-theme', theme);
 
 // Apply persisted font scale
-const fontSize = localStorage.getItem('metabot:fontsize') || 'normal';
+const fontSize = localStorage.getItem('panmira:fontsize') || 'normal';
 const fontScales: Record<string, string> = { small: '0.9', normal: '1', large: '1.1', xl: '1.25' };
 document.documentElement.style.setProperty('--font-scale', fontScales[fontSize] || '1');
 

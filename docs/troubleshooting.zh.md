@@ -13,14 +13,14 @@ Bot 启动正常，但发消息时回复此错误。
 claude login
 
 # 方案 B：API Key — 写入 .env
-echo 'ANTHROPIC_API_KEY=sk-ant-your-key' >> /path/to/metabot/.env
+echo 'ANTHROPIC_API_KEY=sk-ant-your-key' >> /path/to/panmira/.env
 ```
 
 然后重启服务：
 
 ```bash
-metabot restart
-# 或: pkill -f "tsx src/index.ts" && cd /path/to/metabot && npm run dev
+panmira restart
+# 或: pkill -f "tsx src/index.ts" && cd /path/to/panmira && npm run dev
 ```
 
 !!! warning "注意"

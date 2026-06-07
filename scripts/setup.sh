@@ -51,8 +51,8 @@ else
   read -rp "管理后台密码 [panmira2025secret]: " API_SECRET
   API_SECRET=${API_SECRET:-panmira2025secret}
 
-  read -rp "数据库连接串 [postgresql://metabot:metabot@localhost:5432/metabot]: " DB_URL
-  DB_URL=${DB_URL:-postgresql://metabot:metabot@localhost:5432/metabot}
+  read -rp "数据库连接串 [postgresql://panmira:panmira@localhost:5432/panmira]: " DB_URL
+  DB_URL=${DB_URL:-postgresql://panmira:panmira@localhost:5432/panmira}
 
   read -rp "API 端口 [9100]: " API_PORT
   API_PORT=${API_PORT:-9100}
@@ -97,7 +97,7 @@ info "检查数据库..."
 
 # 尝试连接数据库
 source "$ENV_FILE" 2>/dev/null || true
-DB_URL="${DATABASE_URL:-postgresql://metabot:metabot@localhost:5432/metabot}"
+DB_URL="${DATABASE_URL:-postgresql://panmira:panmira@localhost:5432/panmira}"
 
 if command -v psql &>/dev/null; then
   if psql "$DB_URL" -c "SELECT 1" &>/dev/null; then

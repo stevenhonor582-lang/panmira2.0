@@ -18,7 +18,7 @@ Panmira supports WeChat personal accounts via the ClawBot plugin (iLink Bot API)
 Run the installer and pick `3) WeChat ClawBot` as the IM platform:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/xvirobotics/panmira/main/install.sh | bash
 ```
 
 The installer will:
@@ -57,7 +57,7 @@ Add a `wechatBots` section to your `bots.json`:
 }
 ```
 
-#### 2. Start MetaBot
+#### 2. Start Panmira
 
 ```bash
 npm run dev

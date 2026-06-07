@@ -185,7 +185,7 @@
   "bots.pauseFailed": "暂停失败",
   "bots.resumeFailed": "恢复失败",
   "bots.deleteConfirm": "删除数字员工 \"{name}\"？此操作不可撤销",
-  "bots.restartNeeded": "机器人已添加，需要重启服务器后才能生效。请在合适时机执行 pm2 restart metabot",
+  "bots.restartNeeded": "机器人已添加，需要重启服务器后才能生效。请在合适时机执行 pm2 restart panmira",
   "bots.operationFailed": "操作失败",
   "bots.nameLabel": "名称 *",
   "bots.platformLabel": "平台",

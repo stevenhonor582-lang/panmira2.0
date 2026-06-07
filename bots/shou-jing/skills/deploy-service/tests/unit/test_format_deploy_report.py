@@ -68,10 +68,10 @@ def base_deploy_result() -> dict:
                 "artifacts": {"report_path": "runs/2026-06-01/deploy-test-success/"}
             }
         },
-        "deployed_url": "https://metabot-core.prod.internal",
+        "deployed_url": "https://panmira-core.prod.internal",
         "rollback_available_until": "2026-06-08T22:08:00Z",
         "metadata": {
-            "service": "metabot-core",
+            "service": "panmira-core",
             "version": "v1.5.2",
             "environment": "prod",
             "started_at": started.isoformat(),
@@ -101,7 +101,7 @@ class TestFormatDeployReport(unittest.TestCase):
         # 状态标记
         self.assertIn("[OK]", out)
         # 关键字段
-        self.assertIn("metabot-core", out)
+        self.assertIn("panmira-core", out)
         self.assertIn("v1.5.2", out)
         self.assertIn("canary", out)
         # 报告元数据

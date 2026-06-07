@@ -37,7 +37,7 @@ for sk in "${DEPRECATED[@]}"; do
 done
 
 # Agent模板skills vs 全局skills
-AGENT_SKILLS=$(PGPASSWORD=metabot2025vmt psql -h 127.0.0.1 -U ubuntu -d metabot -t -c "SELECT DISTINCT jsonb_array_elements_text(skills) FROM agents WHERE skills IS NOT NULL;" 2>/dev/null | tr -d ' ' | grep -v '^$' || true)
+AGENT_SKILLS=$(PGPASSWORD=panmira2025vmt psql -h 127.0.0.1 -U ubuntu -d panmira -t -c "SELECT DISTINCT jsonb_array_elements_text(skills) FROM agents WHERE skills IS NOT NULL;" 2>/dev/null | tr -d ' ' | grep -v '^$' || true)
 
 MISSING_IN_GLOBAL=""
 while IFS= read -r ask; do
@@ -62,15 +62,15 @@ done
 section "2. Agent模板层: 去重 + prompt长度 + 完整性"
 
 # 检查重复agent名
-DUPS=$(PGPASSWORD=metabot2025vmt psql -h 127.0.0.1 -U ubuntu -d metabot -t -c "SELECT name, count(*) FROM agents GROUP BY name HAVING count(*) > 1;" 2>/dev/null)
+DUPS=$(PGPASSWORD=panmira2025vmt psql -h 127.0.0.1 -U ubuntu -d panmira -t -c "SELECT name, count(*) FROM agents GROUP BY name HAVING count(*) > 1;" 2>/dev/null)
 [[ -z "$DUPS" ]] && pass "无重复Agent模板" || fail "存在重复Agent:$DUPS"
 
 # system_prompt 长度检查
-LONG_PROMPTS=$(PGPASSWORD=metabot2025vmt psql -h 127.0.0.1 -U ubuntu -d metabot -t -c "SELECT name, length(system_prompt) FROM agents WHERE length(system_prompt) > 500;" 2>/dev/null)
+LONG_PROMPTS=$(PGPASSWORD=panmira2025vmt psql -h 127.0.0.1 -U ubuntu -d panmira -t -c "SELECT name, length(system_prompt) FROM agents WHERE length(system_prompt) > 500;" 2>/dev/null)
 [[ -z "$LONG_PROMPTS" ]] && pass "所有system_prompt < 500字" || warn "以下system_prompt过长(>500字):$LONG_PROMPTS"
 
 # 检查 agents 总数
-AGENT_COUNT=$(PGPASSWORD=metabot2025vmt psql -h 127.0.0.1 -U ubuntu -d metabot -t -c "SELECT count(*) FROM agents;" 2>/dev/null | tr -d ' ')
+AGENT_COUNT=$(PGPASSWORD=panmira2025vmt psql -h 127.0.0.1 -U ubuntu -d panmira -t -c "SELECT count(*) FROM agents;" 2>/dev/null | tr -d ' ')
 [[ "$AGENT_COUNT" -le 12 ]] && pass "Agent模板数量: $AGENT_COUNT (合理)" || warn "Agent模板数量: $AGENT_COUNT (偏多)"
 
 # ============================================================
@@ -78,7 +78,7 @@ AGENT_COUNT=$(PGPASSWORD=metabot2025vmt psql -h 127.0.0.1 -U ubuntu -d metabot -
 # ============================================================
 section "3. Bot-Agent映射: 一致性"
 
-BOT_AGENTS=$(PGPASSWORD=metabot2025vmt psql -h 127.0.0.1 -U ubuntu -d metabot -t -c "SELECT name, config_json->>'agentId' FROM bot_configs WHERE is_active=true;" 2>/dev/null)
+BOT_AGENTS=$(PGPASSWORD=panmira2025vmt psql -h 127.0.0.1 -U ubuntu -d panmira -t -c "SELECT name, config_json->>'agentId' FROM bot_configs WHERE is_active=true;" 2>/dev/null)
 
 while IFS='|' read -r bot_name agent_id; do
   bot_name=$(echo "$bot_name" | xargs)
@@ -86,9 +86,9 @@ while IFS='|' read -r bot_name agent_id; do
   [[ -z "$bot_name" ]] && continue
   
   # 检查agent是否存在
-  AGENT_EXISTS=$(PGPASSWORD=metabot2025vmt psql -h 127.0.0.1 -U ubuntu -d metabot -t -c "SELECT count(*) FROM agents WHERE id='$agent_id';" 2>/dev/null | tr -d ' ')
+  AGENT_EXISTS=$(PGPASSWORD=panmira2025vmt psql -h 127.0.0.1 -U ubuntu -d panmira -t -c "SELECT count(*) FROM agents WHERE id='$agent_id';" 2>/dev/null | tr -d ' ')
   if [[ "$AGENT_EXISTS" == "1" ]]; then
-    AGENT_NAME=$(PGPASSWORD=metabot2025vmt psql -h 127.0.0.1 -U ubuntu -d metabot -t -c "SELECT name FROM agents WHERE id='$agent_id';" 2>/dev/null | xargs)
+    AGENT_NAME=$(PGPASSWORD=panmira2025vmt psql -h 127.0.0.1 -U ubuntu -d panmira -t -c "SELECT name FROM agents WHERE id='$agent_id';" 2>/dev/null | xargs)
     pass "$bot_name → $AGENT_NAME ($agent_id)"
   else
     fail "$bot_name → agent $agent_id 不存在!"
@@ -166,7 +166,7 @@ for f in ~/.claude/CLAUDE.md /home/ubuntu/workspace/CLAUDE.md; do
 done
 
 # 默认模板
-DEFAULT_TEMPLATE=~/metabot/src/workspace/CLAUDE.md
+DEFAULT_TEMPLATE=~/panmira/src/workspace/CLAUDE.md
 if [[ -f "$DEFAULT_TEMPLATE" ]]; then
   if grep -q "VMT" "$DEFAULT_TEMPLATE"; then
     pass "默认模板: VMT-aware"

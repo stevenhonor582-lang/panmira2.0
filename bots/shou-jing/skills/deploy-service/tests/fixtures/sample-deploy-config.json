@@ -1,5 +1,5 @@
 {
-  "service": "metabot-core",
+  "service": "panmira-core",
   "version": "v1.5.2",
   "environment": "prod",
   "strategy": "canary",

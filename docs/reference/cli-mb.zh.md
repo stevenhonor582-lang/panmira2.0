@@ -78,7 +78,7 @@ mb help                             # 显示帮助
 默认连接 `http://localhost:9100`。配置远程访问：
 
 ```bash
-# 在 ~/.panmira/.env 或 ~/metabot/.env 中
-METABOT_URL=http://your-server:9100
+# 在 ~/.panmira/.env 或 ~/panmira/.env 中
+PANMIRA_URL=http://your-server:9100
 API_SECRET=your-secret
 ```

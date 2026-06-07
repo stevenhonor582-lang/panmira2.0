@@ -19,7 +19,7 @@
 
 1. Create app at [open.feishu.cn](https://open.feishu.cn/) → add Bot capability
 2. Enable permissions: `im:message`, `im:message:readonly`, `im:resource`, `im:chat:readonly` (for group chat detection), `docx:document:readonly`, `wiki:wiki` (for doc reading & wiki sync)
-3. Start MetaBot, then enable persistent connection + `im.message.receive_v1` event
+3. Start Panmira, then enable persistent connection + `im.message.receive_v1` event
 4. Publish the app
 
 ```json

@@ -555,7 +555,7 @@ function feishuBotFromEnv(): BotConfig {
   const codex = buildCodexConfig();
   return {
     name: 'default',
-    ...((process.env.PANMIRA_ENGINE || process.env.METABOT_ENGINE) ? { engine: (process.env.PANMIRA_ENGINE || process.env.METABOT_ENGINE) as EngineName } : {}),
+    ...((process.env.PANMIRA_ENGINE) ? { engine: process.env.PANMIRA_ENGINE as EngineName } : {}),
     ...(codex ? { codex } : {}),
     feishu: {
       appId: required('FEISHU_APP_ID'),
@@ -579,7 +579,7 @@ function telegramBotFromEnv(): TelegramBotConfig {
   const codex = buildCodexConfig();
   return {
     name: 'telegram-default',
-    ...((process.env.PANMIRA_ENGINE || process.env.METABOT_ENGINE) ? { engine: (process.env.PANMIRA_ENGINE || process.env.METABOT_ENGINE) as EngineName } : {}),
+    ...((process.env.PANMIRA_ENGINE) ? { engine: process.env.PANMIRA_ENGINE as EngineName } : {}),
     ...(codex ? { codex } : {}),
     telegram: {
       botToken: required('TELEGRAM_BOT_TOKEN'),
@@ -602,7 +602,7 @@ function wechatBotFromEnv(): WechatBotConfig {
   const codex = buildCodexConfig();
   return {
     name: 'wechat-default',
-    ...((process.env.PANMIRA_ENGINE || process.env.METABOT_ENGINE) ? { engine: (process.env.PANMIRA_ENGINE || process.env.METABOT_ENGINE) as EngineName } : {}),
+    ...((process.env.PANMIRA_ENGINE) ? { engine: process.env.PANMIRA_ENGINE as EngineName } : {}),
     ...(codex ? { codex } : {}),
     wechat: {
       botToken: process.env.WECHAT_BOT_TOKEN || undefined,

@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# mb - MetaBot API CLI (installed by MetaBot)
+# mb - Panmira API CLI (installed by Panmira)
 # Standalone executable — works without sourcing any file.
 
 set -euo pipefail
 
 # --- Config: always read .env, then fall back to env vars / defaults ---
-METABOT_ENV="${METABOT_HOME:-$HOME/metabot}/.env"
-if [[ -f "$METABOT_ENV" ]]; then
-  _port=$(sed -n 's/^API_PORT=//p' "$METABOT_ENV" 2>/dev/null || true)
-  _secret=$(sed -n 's/^API_SECRET=//p' "$METABOT_ENV" 2>/dev/null || true)
-  _url=$(sed -n 's/^METABOT_URL=//p' "$METABOT_ENV" 2>/dev/null || true)
+PANMIRA_ENV="${PANMIRA_HOME:-$HOME/panmira}/.env"
+if [[ -f "$PANMIRA_ENV" ]]; then
+  _port=$(sed -n 's/^API_PORT=//p' "$PANMIRA_ENV" 2>/dev/null || true)
+  _secret=$(sed -n 's/^API_SECRET=//p' "$PANMIRA_ENV" 2>/dev/null || true)
+  _url=$(sed -n 's/^PANMIRA_URL=//p' "$PANMIRA_ENV" 2>/dev/null || true)
 fi
-METABOT_URL="${METABOT_URL:-${_url:-http://localhost:${_port:-9100}}}"
+PANMIRA_URL="${PANMIRA_URL:-${_url:-http://localhost:${_port:-9100}}}"
 _secret="${_secret:-${API_SECRET:-changeme}}"
-METABOT_AUTH="Authorization: Bearer $_secret"
+PANMIRA_AUTH="Authorization: Bearer $_secret"
 
 _json() { python3 -m json.tool 2>/dev/null || cat; }
 
@@ -23,10 +23,10 @@ shift 2>/dev/null || true
 case "$cmd" in
   # --- Bot management ---
   bots|b)
-    curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/bots" | _json
+    curl -s -H "$PANMIRA_AUTH" "$PANMIRA_URL/api/bots" | _json
     ;;
   bot)
-    curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/bots/$1" | _json
+    curl -s -H "$PANMIRA_AUTH" "$PANMIRA_URL/api/bots/$1" | _json
     ;;
   # --- Agent Talk (cross-instance auto-routing) ---
   talk|t)
@@ -43,8 +43,8 @@ case "$cmd" in
 import json, sys
 print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'prompt': sys.argv[3], 'sendCards': True}))
 " "$bot" "$chat" "$prompt" | \
-    curl -s -X POST "$METABOT_URL/api/talk" \
-      -H "$METABOT_AUTH" -H "Content-Type: application/json" \
+    curl -s -X POST "$PANMIRA_URL/api/talk" \
+      -H "$PANMIRA_AUTH" -H "Content-Type: application/json" \
       -d @-
     ;;
   # --- Task delegation (deprecated alias for talk) ---
@@ -60,8 +60,8 @@ print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'prompt': sys.a
 import json, sys
 print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'prompt': sys.argv[3], 'sendCards': True}))
 " "$bot" "$chat" "$prompt" | \
-    curl -s -X POST "$METABOT_URL/api/talk" \
-      -H "$METABOT_AUTH" -H "Content-Type: application/json" \
+    curl -s -X POST "$PANMIRA_URL/api/talk" \
+      -H "$PANMIRA_AUTH" -H "Content-Type: application/json" \
       -d @-
     ;;
   # --- Scheduling ---
@@ -69,7 +69,7 @@ print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'prompt': sys.a
     subcmd="${1:-list}"; shift 2>/dev/null || true
     case "$subcmd" in
       list|ls)
-        curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/schedule" | _json
+        curl -s -H "$PANMIRA_AUTH" "$PANMIRA_URL/api/schedule" | _json
         ;;
       add|a)
         bot="$1" chat="$2" delay="$3"; shift 3 2>/dev/null || true
@@ -82,8 +82,8 @@ print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'prompt': sys.a
 import json, sys
 print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'delaySeconds': int(sys.argv[3]), 'prompt': sys.argv[4]}))
 " "$bot" "$chat" "$delay" "$prompt" | \
-        curl -s -X POST "$METABOT_URL/api/schedule" \
-          -H "$METABOT_AUTH" -H "Content-Type: application/json" \
+        curl -s -X POST "$PANMIRA_URL/api/schedule" \
+          -H "$PANMIRA_AUTH" -H "Content-Type: application/json" \
           -d @- | _json
         ;;
       cron|c)
@@ -98,21 +98,21 @@ print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'delaySeconds':
 import json, sys
 print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'cronExpr': sys.argv[3], 'prompt': sys.argv[4]}))
 " "$bot" "$chat" "$cron_expr" "$prompt" | \
-        curl -s -X POST "$METABOT_URL/api/schedule" \
-          -H "$METABOT_AUTH" -H "Content-Type: application/json" \
+        curl -s -X POST "$PANMIRA_URL/api/schedule" \
+          -H "$PANMIRA_AUTH" -H "Content-Type: application/json" \
           -d @- | _json
         ;;
       pause|p)
         if [[ -z "${1:-}" ]]; then echo "Usage: mb schedule pause <id>"; exit 1; fi
-        curl -s -X POST "$METABOT_URL/api/schedule/$1/pause" -H "$METABOT_AUTH" | _json
+        curl -s -X POST "$PANMIRA_URL/api/schedule/$1/pause" -H "$PANMIRA_AUTH" | _json
         ;;
       resume|r)
         if [[ -z "${1:-}" ]]; then echo "Usage: mb schedule resume <id>"; exit 1; fi
-        curl -s -X POST "$METABOT_URL/api/schedule/$1/resume" -H "$METABOT_AUTH" | _json
+        curl -s -X POST "$PANMIRA_URL/api/schedule/$1/resume" -H "$PANMIRA_AUTH" | _json
         ;;
       cancel|rm)
         if [[ -z "${1:-}" ]]; then echo "Usage: mb schedule cancel <id>"; exit 1; fi
-        curl -s -X DELETE "$METABOT_URL/api/schedule/$1" -H "$METABOT_AUTH" | _json
+        curl -s -X DELETE "$PANMIRA_URL/api/schedule/$1" -H "$PANMIRA_AUTH" | _json
         ;;
       *)
         echo "mb schedule - Task scheduling"
@@ -127,14 +127,14 @@ print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'cronExpr': sys
     ;;
   # --- Peers ---
   peers|p)
-    curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/peers" | _json
+    curl -s -H "$PANMIRA_AUTH" "$PANMIRA_URL/api/peers" | _json
     ;;
   # --- Stats & Metrics ---
   stats|st)
-    curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/stats" | _json
+    curl -s -H "$PANMIRA_AUTH" "$PANMIRA_URL/api/stats" | _json
     ;;
   metrics|m)
-    curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/metrics"
+    curl -s -H "$PANMIRA_AUTH" "$PANMIRA_URL/api/metrics"
     ;;
   # --- RTC Voice Call ---
   voice|v)
@@ -171,20 +171,20 @@ if sys.argv[3]: p['prompt'] = sys.argv[3]
 if sys.argv[4]: p['welcomeMessage'] = sys.argv[4]
 print(json.dumps(p))
 " "$bot" "$chat" "${_prompt:-}" "${_welcome:-}" | \
-        curl -s -X POST "$METABOT_URL/api/rtc/voice?wait=true" \
-          -H "$METABOT_AUTH" -H "Content-Type: application/json" \
+        curl -s -X POST "$PANMIRA_URL/api/rtc/voice?wait=true" \
+          -H "$PANMIRA_AUTH" -H "Content-Type: application/json" \
           --max-time 660 \
           -d @- | _json
         ;;
       transcript|t)
         if [[ -z "${1:-}" ]]; then echo "Usage: mb voice transcript <sessionId>"; exit 1; fi
-        curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/rtc/transcript?sessionId=$1" | _json
+        curl -s -H "$PANMIRA_AUTH" "$PANMIRA_URL/api/rtc/transcript?sessionId=$1" | _json
         ;;
       list|ls)
-        curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/rtc/sessions" | _json
+        curl -s -H "$PANMIRA_AUTH" "$PANMIRA_URL/api/rtc/sessions" | _json
         ;;
       config)
-        curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/rtc/config" | _json
+        curl -s -H "$PANMIRA_AUTH" "$PANMIRA_URL/api/rtc/config" | _json
         ;;
       tts)
         _provider=""
@@ -222,8 +222,8 @@ print(json.dumps(body))
           _output="/tmp/mb-voice-$(date +%s).mp3"
         fi
         _http_code=$(curl -s -w '%{http_code}' -o "$_output" \
-          -X POST "$METABOT_URL/api/tts" \
-          -H "$METABOT_AUTH" -H "Content-Type: application/json" \
+          -X POST "$PANMIRA_URL/api/tts" \
+          -H "$PANMIRA_AUTH" -H "Content-Type: application/json" \
           -d "$_json_body")
         if [[ "$_http_code" != "200" ]]; then
           echo "Error: TTS request failed (HTTP $_http_code)"
@@ -262,16 +262,16 @@ print(json.dumps(body))
     subcmd="${1:-list}"; shift 2>/dev/null || true
     case "$subcmd" in
       list|ls)
-        curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/skills" | _json
+        curl -s -H "$PANMIRA_AUTH" "$PANMIRA_URL/api/skills" | _json
         ;;
       search|s)
         query="$*"
         if [[ -z "${query:-}" ]]; then echo "Usage: mb skills search <query>"; exit 1; fi
-        curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/skills/search?q=$(python3 -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))' "$query")" | _json
+        curl -s -H "$PANMIRA_AUTH" "$PANMIRA_URL/api/skills/search?q=$(python3 -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))' "$query")" | _json
         ;;
       get|g)
         if [[ -z "${1:-}" ]]; then echo "Usage: mb skills get <name>"; exit 1; fi
-        curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/skills/$1" | _json
+        curl -s -H "$PANMIRA_AUTH" "$PANMIRA_URL/api/skills/$1" | _json
         ;;
       publish|pub)
         bot="${1:-}" skill="${2:-}"
@@ -279,8 +279,8 @@ print(json.dumps(body))
           echo "Usage: mb skills publish <botName> <skillName>"
           exit 1
         fi
-        curl -s -X POST "$METABOT_URL/api/skills/$skill/publish-from-bot" \
-          -H "$METABOT_AUTH" -H "Content-Type: application/json" \
+        curl -s -X POST "$PANMIRA_URL/api/skills/$skill/publish-from-bot" \
+          -H "$PANMIRA_AUTH" -H "Content-Type: application/json" \
           -d "{\"botName\":\"$bot\"}" | _json
         ;;
       install|i)
@@ -294,13 +294,13 @@ print(json.dumps(body))
 import json, sys
 print(json.dumps({'botName': sys.argv[1], 'source': sys.argv[2]}))
 " "$bot" "$source" | \
-        curl -s -X POST "$METABOT_URL/api/skills/$skill/install" \
-          -H "$METABOT_AUTH" -H "Content-Type: application/json" \
+        curl -s -X POST "$PANMIRA_URL/api/skills/$skill/install" \
+          -H "$PANMIRA_AUTH" -H "Content-Type: application/json" \
           -d @- | _json
         ;;
       remove|rm)
         if [[ -z "${1:-}" ]]; then echo "Usage: mb skills remove <name>"; exit 1; fi
-        curl -s -X DELETE "$METABOT_URL/api/skills/$1" -H "$METABOT_AUTH" | _json
+        curl -s -X DELETE "$PANMIRA_URL/api/skills/$1" -H "$PANMIRA_AUTH" | _json
         ;;
       *)
         echo "mb skills - Skill Hub (shared skill registry)"
@@ -315,30 +315,30 @@ print(json.dumps({'botName': sys.argv[1], 'source': sys.argv[2]}))
     ;;
   # --- Health ---
   health|h)
-    curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/health" | _json
+    curl -s -H "$PANMIRA_AUTH" "$PANMIRA_URL/api/health" | _json
     ;;
   # --- Update from GitHub ---
   update|up)
-    METABOT_SRC="${METABOT_HOME:-$HOME/metabot}"
+    PANMIRA_SRC="${PANMIRA_HOME:-$HOME/panmira}"
     LOCAL_BIN="$HOME/.local/bin"
-    if [[ ! -d "$METABOT_SRC/.git" ]]; then
-      echo "Error: MetaBot repo not found at $METABOT_SRC"
+    if [[ ! -d "$PANMIRA_SRC/.git" ]]; then
+      echo "Error: Panmira repo not found at $PANMIRA_SRC"
       exit 1
     fi
 
     echo "==> Pulling latest from GitHub..."
-    git -C "$METABOT_SRC" pull --ff-only || { echo "Error: git pull failed (try resolving conflicts manually)"; exit 1; }
+    git -C "$PANMIRA_SRC" pull --ff-only || { echo "Error: git pull failed (try resolving conflicts manually)"; exit 1; }
 
     echo "==> Installing dependencies..."
-    (cd "$METABOT_SRC" && npm install --include=dev --no-audit --no-fund 2>&1 | tail -1)
+    (cd "$PANMIRA_SRC" && npm install --include=dev --no-audit --no-fund 2>&1 | tail -1)
 
     echo "==> Building..."
-    (cd "$METABOT_SRC" && npm run build 2>&1) || { echo "Error: build failed"; exit 1; }
+    (cd "$PANMIRA_SRC" && npm run build 2>&1) || { echo "Error: build failed"; exit 1; }
 
     echo "==> Updating CLI tools..."
     mkdir -p "$LOCAL_BIN"
-    for cli in mb mm metabot; do
-      src="$METABOT_SRC/bin/$cli"
+    for cli in mb mm panmira; do
+      src="$PANMIRA_SRC/bin/$cli"
       dst="$LOCAL_BIN/$cli"
       if [[ -f "$src" ]]; then
         if ! cmp -s "$src" "$dst" 2>/dev/null; then
@@ -352,14 +352,14 @@ print(json.dumps({'botName': sys.argv[1], 'source': sys.argv[2]}))
     echo "==> Updating skills..."
     SKILLS_DIR="$HOME/.claude/skills"
     mkdir -p "$SKILLS_DIR"
-    for skill in metaskill metamemory metabot voice phone-call skill-hub; do
+    for skill in metaskill metamemory panmira voice phone-call skill-hub; do
       case "$skill" in
-        metaskill)   src="$METABOT_SRC/src/skills/metaskill" ;;
-        metamemory)  src="$METABOT_SRC/src/memory/skill" ;;
-        metabot)     src="$METABOT_SRC/src/skills/metabot" ;;
-        voice)       src="$METABOT_SRC/src/skills/voice" ;;
-        phone-call)  src="$METABOT_SRC/src/skills/phone-call" ;;
-        skill-hub)   src="$METABOT_SRC/src/skills/skill-hub" ;;
+        metaskill)   src="$PANMIRA_SRC/src/skills/metaskill" ;;
+        metamemory)  src="$PANMIRA_SRC/src/memory/skill" ;;
+        panmira)     src="$PANMIRA_SRC/src/skills/panmira" ;;
+        voice)       src="$PANMIRA_SRC/src/skills/voice" ;;
+        phone-call)  src="$PANMIRA_SRC/src/skills/phone-call" ;;
+        skill-hub)   src="$PANMIRA_SRC/src/skills/skill-hub" ;;
         *)           src="" ;;
       esac
       if [[ -n "$src" && -d "$src" ]]; then
@@ -381,16 +381,16 @@ print(json.dumps({'botName': sys.argv[1], 'source': sys.argv[2]}))
     fi
 
     # Update workspace skills if bots.json exists
-    if [[ -f "$METABOT_SRC/bots.json" ]] && command -v node &>/dev/null; then
+    if [[ -f "$PANMIRA_SRC/bots.json" ]] && command -v node &>/dev/null; then
       work_dir=$(node -e "
-        const c=JSON.parse(require('fs').readFileSync('$METABOT_SRC/bots.json','utf-8'));
+        const c=JSON.parse(require('fs').readFileSync('$PANMIRA_SRC/bots.json','utf-8'));
         const b=[...(c.feishuBots||[]),...(c.telegramBots||[]),...(c.wechatBots||[])];
         if(b[0])console.log(b[0].defaultWorkingDirectory);
       " 2>/dev/null || true)
       if [[ -n "${work_dir:-}" ]]; then
         ws_skills_dir="$work_dir/.claude/skills"
         mkdir -p "$ws_skills_dir"
-        for skill in metaskill metamemory metabot voice phone-call skill-hub; do
+        for skill in metaskill metamemory panmira voice phone-call skill-hub; do
           if [[ -d "$SKILLS_DIR/$skill" ]]; then
             mkdir -p "$ws_skills_dir/$skill"
             cp -r "$SKILLS_DIR/$skill/." "$ws_skills_dir/$skill/"
@@ -409,26 +409,26 @@ print(json.dumps({'botName': sys.argv[1], 'source': sys.argv[2]}))
         if [[ -d "$ws_skills_dir/feishu-doc" ]]; then
           rm -rf "$ws_skills_dir/feishu-doc"
         fi
-        if [[ -f "$METABOT_SRC/src/workspace/CLAUDE.md" ]]; then
-          cp "$METABOT_SRC/src/workspace/CLAUDE.md" "$work_dir/CLAUDE.md"
+        if [[ -f "$PANMIRA_SRC/src/workspace/CLAUDE.md" ]]; then
+          cp "$PANMIRA_SRC/src/workspace/CLAUDE.md" "$work_dir/CLAUDE.md"
         fi
       fi
     fi
 
     echo "==> Restarting service..."
-    if command -v pm2 &>/dev/null && pm2 list 2>/dev/null | grep -q metabot; then
-      pm2 restart metabot && echo "    Restarted via pm2"
+    if command -v pm2 &>/dev/null && pm2 list 2>/dev/null | grep -q panmira; then
+      pm2 restart panmira && echo "    Restarted via pm2"
     elif pgrep -f "tsx src/index" &>/dev/null; then
       pkill -f "tsx src/index"
-      (cd "$METABOT_SRC" && nohup npm run dev > /tmp/metabot.log 2>&1 &)
+      (cd "$PANMIRA_SRC" && nohup npm run dev > /tmp/panmira.log 2>&1 &)
       echo "    Restarted dev server (PID $!)"
     elif pgrep -f "node dist/index" &>/dev/null; then
       pkill -f "node dist/index"
-      (cd "$METABOT_SRC" && nohup npm start > /tmp/metabot.log 2>&1 &)
+      (cd "$PANMIRA_SRC" && nohup npm start > /tmp/panmira.log 2>&1 &)
       echo "    Restarted production server (PID $!)"
     else
-      echo "    No running MetaBot process found. Start manually:"
-      echo "    cd $METABOT_SRC && npm run dev"
+      echo "    No running Panmira process found. Start manually:"
+      echo "    cd $PANMIRA_SRC && npm run dev"
     fi
 
     echo "==> Update complete!"
@@ -480,8 +480,8 @@ print(json.dumps(body))
 
     # Call API
     _http_code=$(curl -s -w '%{http_code}' -o "$_output" \
-      -X POST "$METABOT_URL/api/tts" \
-      -H "$METABOT_AUTH" -H "Content-Type: application/json" \
+      -X POST "$PANMIRA_URL/api/tts" \
+      -H "$PANMIRA_AUTH" -H "Content-Type: application/json" \
       -d "$_json_body")
 
     if [[ "$_http_code" != "200" ]]; then
@@ -510,7 +510,7 @@ print(json.dumps(body))
     ;;
   # --- Help ---
   *)
-    echo "mb - MetaBot API CLI"
+    echo "mb - Panmira API CLI"
     echo ""
     echo "  Bots:"
     echo "    mb bots                          - List all bots (local + peer)"

@@ -6,7 +6,7 @@
 #
 set -euo pipefail
 
-SERVICE="${1:-metabot-core}"
+SERVICE="${1:-panmira-core}"
 ENVIRONMENT="${2:-prod}"
 BASE_URL="http://${SERVICE}.${ENVIRONMENT}.svc"
 

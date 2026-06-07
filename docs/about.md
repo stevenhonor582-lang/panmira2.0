@@ -8,14 +8,14 @@ We open-sourced it because we believe this is how companies will work in the fut
 
 ## Links
 
-- [GitHub Repository](https://github.com/xvirobotics/metabot)
+- [GitHub Repository](https://github.com/xvirobotics/panmira)
 - [XVI Robotics](https://xvirobotics.com)
-- [Issue Tracker](https://github.com/xvirobotics/metabot/issues)
+- [Issue Tracker](https://github.com/xvirobotics/panmira/issues)
 
 ## License
 
-[MIT](https://github.com/xvirobotics/metabot/blob/main/LICENSE)
+[MIT](https://github.com/xvirobotics/panmira/blob/main/LICENSE)
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=xvirobotics/metabot&type=Date)](https://star-history.com/#xvirobotics/metabot&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=xvirobotics/panmira&type=Date)](https://star-history.com/#xvirobotics/panmira&Date)

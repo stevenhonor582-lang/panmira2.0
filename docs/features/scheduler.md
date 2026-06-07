@@ -47,7 +47,7 @@ a progress report, and save it to MetaMemory under /reports.
 curl -X POST http://localhost:9100/api/schedule \
   -H "Content-Type: application/json" \
   -d '{
-    "botName": "metabot",
+    "botName": "panmira",
     "chatId": "oc_xxx",
     "prompt": "Check service health and report",
     "cron": "0 8 * * 1-5",
@@ -59,7 +59,7 @@ curl -X POST http://localhost:9100/api/schedule \
 
 ```bash
 mb schedule list                                              # list all
-mb schedule cron metabot chatId '0 8 * * 1-5' "daily report" # create cron
+mb schedule cron panmira chatId '0 8 * * 1-5' "daily report" # create cron
 mb schedule pause <id>                                        # pause
 mb schedule resume <id>                                       # resume
 ```

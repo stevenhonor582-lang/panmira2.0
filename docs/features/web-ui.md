@@ -25,7 +25,7 @@ The Web UI is a React SPA served at `/web/` on your Panmira server. It connects 
 
 ## Quick Start
 
-1. Start Panmira: `npm run dev` or `metabot start`
+1. Start Panmira: `npm run dev` or `panmira start`
 2. Open `http://localhost:9100/web/` in your browser
 3. Enter your `API_SECRET` as the token
 4. Select a bot and start chatting
@@ -86,17 +86,17 @@ sudo apt-get update && sudo apt-get install caddy
 
 ### Step 2: Configure DNS
 
-Add an A record for your domain (e.g. `metabot.yourdomain.com`) pointing to your server's public IP. Wait for DNS propagation:
+Add an A record for your domain (e.g. `panmira.yourdomain.com`) pointing to your server's public IP. Wait for DNS propagation:
 
 ```bash
-host metabot.yourdomain.com 1.1.1.1
+host panmira.yourdomain.com 1.1.1.1
 ```
 
 ### Step 3: Configure Caddy
 
 ```bash
 sudo tee /etc/caddy/Caddyfile > /dev/null << 'EOF'
-metabot.yourdomain.com {
+panmira.yourdomain.com {
     reverse_proxy localhost:9100
 }
 EOF
@@ -115,7 +115,7 @@ Look for "certificate obtained successfully".
 
 ### Step 4: Access
 
-Open `https://metabot.yourdomain.com/web/` in a browser. The phone call button now has microphone access.
+Open `https://panmira.yourdomain.com/web/` in a browser. The phone call button now has microphone access.
 
 !!! note
     WebSocket connections (`/ws`) are automatically proxied by Caddy. No additional WebSocket configuration is needed.

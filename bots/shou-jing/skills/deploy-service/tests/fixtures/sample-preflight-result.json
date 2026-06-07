@@ -1,6 +1,6 @@
 {
   "deploy_id": "deploy-1717248000000-a1b2c3d4",
-  "service": "metabot-core",
+  "service": "panmira-core",
   "environment": "prod",
   "passed": true,
   "fatal_count": 0,
@@ -14,7 +14,7 @@
     {"id": "disk.space", "category": "resources", "level": "fatal", "name": "磁盘空间", "status": "passed", "message": "12GB free", "duration_ms": 60},
     {"id": "db.reachable", "category": "dependency", "level": "fatal", "name": "数据库可达", "status": "passed", "message": "postgres OK", "duration_ms": 200},
     {"id": "cache.reachable", "category": "dependency", "level": "fatal", "name": "缓存可达", "status": "passed", "message": "redis OK", "duration_ms": 50},
-    {"id": "image.exists", "category": "artifact", "level": "fatal", "name": "镜像存在", "status": "passed", "message": "metabot-core v1.5.2 digest found", "duration_ms": 300},
+    {"id": "image.exists", "category": "artifact", "level": "fatal", "name": "镜像存在", "status": "passed", "message": "panmira-core v1.5.2 digest found", "duration_ms": 300},
     {"id": "secrets.complete", "category": "artifact", "level": "fatal", "name": "secrets 完整", "status": "passed", "message": "db/api-key/tls all present", "duration_ms": 100},
     {"id": "approval", "category": "compliance", "level": "fatal", "name": "审批状态", "status": "passed", "message": "approver cio_feishu_id approved", "duration_ms": 5},
     {"id": "backup", "category": "compliance", "level": "fatal", "name": "备份可用", "status": "passed", "message": "last backup 1h ago", "duration_ms": 80}

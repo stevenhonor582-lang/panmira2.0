@@ -68,13 +68,13 @@ Use `mb bots` to see all available bots including those on peer instances (they 
 ### API Reference (for complex operations)
 
 For operations not covered by `mb` (creating bots, updating tasks, sendCards option), use the API directly.
-Auth header: `-H "Authorization: Bearer $METABOT_API_SECRET"`
-Base URL: !`echo http://localhost:${METABOT_API_PORT:-9100}`
+Auth header: `-H "Authorization: Bearer $PANMIRA_API_SECRET"`
+Base URL: !`echo http://localhost:${PANMIRA_API_PORT:-9100}`
 
 **Talk to a bot (primary endpoint):**
 ```bash
-curl -s -X POST http://localhost:${METABOT_API_PORT:-9100}/api/talk \
-  -H "Authorization: Bearer $METABOT_API_SECRET" \
+curl -s -X POST http://localhost:${PANMIRA_API_PORT:-9100}/api/talk \
+  -H "Authorization: Bearer $PANMIRA_API_SECRET" \
   -H "Content-Type: application/json" \
   -d '{"botName":"<bot>","chatId":"<chatId>","prompt":"<message>","sendCards":true}'
 ```
@@ -82,38 +82,38 @@ The `botName` field supports qualified names: `"alice/backend-bot"` routes direc
 
 **Create Feishu bot:**
 ```bash
-curl -s -X POST http://localhost:${METABOT_API_PORT:-9100}/api/bots \
-  -H "Authorization: Bearer $METABOT_API_SECRET" \
+curl -s -X POST http://localhost:${PANMIRA_API_PORT:-9100}/api/bots \
+  -H "Authorization: Bearer $PANMIRA_API_SECRET" \
   -H "Content-Type: application/json" \
   -d '{"platform":"feishu","name":"<name>","feishuAppId":"...","feishuAppSecret":"...","defaultWorkingDirectory":"/path","installSkills":true}'
 ```
 
 **Create Telegram bot:**
 ```bash
-curl -s -X POST http://localhost:${METABOT_API_PORT:-9100}/api/bots \
-  -H "Authorization: Bearer $METABOT_API_SECRET" \
+curl -s -X POST http://localhost:${PANMIRA_API_PORT:-9100}/api/bots \
+  -H "Authorization: Bearer $PANMIRA_API_SECRET" \
   -H "Content-Type: application/json" \
   -d '{"platform":"telegram","name":"<name>","telegramBotToken":"...","defaultWorkingDirectory":"/path","installSkills":true}'
 ```
 
 **Remove bot:**
 ```bash
-curl -s -X DELETE http://localhost:${METABOT_API_PORT:-9100}/api/bots/<name> \
-  -H "Authorization: Bearer $METABOT_API_SECRET"
+curl -s -X DELETE http://localhost:${PANMIRA_API_PORT:-9100}/api/bots/<name> \
+  -H "Authorization: Bearer $PANMIRA_API_SECRET"
 ```
 
 **Update scheduled task:**
 ```bash
-curl -s -X PATCH http://localhost:${METABOT_API_PORT:-9100}/api/schedule/<id> \
-  -H "Authorization: Bearer $METABOT_API_SECRET" \
+curl -s -X PATCH http://localhost:${PANMIRA_API_PORT:-9100}/api/schedule/<id> \
+  -H "Authorization: Bearer $PANMIRA_API_SECRET" \
   -H "Content-Type: application/json" \
   -d '{"prompt":"updated prompt","delaySeconds":7200}'
 ```
 
 **Create recurring scheduled task (cron):**
 ```bash
-curl -s -X POST http://localhost:${METABOT_API_PORT:-9100}/api/schedule \
-  -H "Authorization: Bearer $METABOT_API_SECRET" \
+curl -s -X POST http://localhost:${PANMIRA_API_PORT:-9100}/api/schedule \
+  -H "Authorization: Bearer $PANMIRA_API_SECRET" \
   -H "Content-Type: application/json" \
   -d '{"botName":"<bot>","chatId":"<chatId>","prompt":"<task>","cronExpr":"0 8 * * 1-5","timezone":"Asia/Shanghai","label":"Daily report"}'
 ```
@@ -121,24 +121,24 @@ Cron format: `minute hour day month weekday` (5 fields). Examples: `0 8 * * *` =
 
 **Pause/resume recurring task:**
 ```bash
-curl -s -X POST http://localhost:${METABOT_API_PORT:-9100}/api/schedule/<id>/pause \
-  -H "Authorization: Bearer $METABOT_API_SECRET"
-curl -s -X POST http://localhost:${METABOT_API_PORT:-9100}/api/schedule/<id>/resume \
-  -H "Authorization: Bearer $METABOT_API_SECRET"
+curl -s -X POST http://localhost:${PANMIRA_API_PORT:-9100}/api/schedule/<id>/pause \
+  -H "Authorization: Bearer $PANMIRA_API_SECRET"
+curl -s -X POST http://localhost:${PANMIRA_API_PORT:-9100}/api/schedule/<id>/resume \
+  -H "Authorization: Bearer $PANMIRA_API_SECRET"
 ```
 
 **Update recurring task:**
 ```bash
-curl -s -X PATCH http://localhost:${METABOT_API_PORT:-9100}/api/schedule/<id> \
-  -H "Authorization: Bearer $METABOT_API_SECRET" \
+curl -s -X PATCH http://localhost:${PANMIRA_API_PORT:-9100}/api/schedule/<id> \
+  -H "Authorization: Bearer $PANMIRA_API_SECRET" \
   -H "Content-Type: application/json" \
   -d '{"cronExpr":"0 9 * * *","prompt":"Updated prompt","timezone":"Asia/Shanghai"}'
 ```
 
 **List peers:**
 ```bash
-curl -s http://localhost:${METABOT_API_PORT:-9100}/api/peers \
-  -H "Authorization: Bearer $METABOT_API_SECRET"
+curl -s http://localhost:${PANMIRA_API_PORT:-9100}/api/peers \
+  -H "Authorization: Bearer $PANMIRA_API_SECRET"
 ```
 
 When asked to create a bot:

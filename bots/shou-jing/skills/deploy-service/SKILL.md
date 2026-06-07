@@ -55,7 +55,7 @@ tags:
 ### 1.1 触发场景
 
 - 消息包含"部署/上线/发布/deploy/release" + 服务名 + 版本号
-- 消息形如"部署 metabot-core v1.5.2 到 prod"
+- 消息形如"部署 panmira-core v1.5.2 到 prod"
 - 用户 @守静 说"把 XX 部署到 XX 环境"
 - CI 失败需手动重试部署（带 PR/commit 信息）
 - 飞书 webhook 触发（CI/CD 集成）
@@ -71,7 +71,7 @@ tags:
 ## 2. 核心流程（5 阶段）
 
 ```
-用户消息: "部署 metabot-core v1.5.2 到 prod"
+用户消息: "部署 panmira-core v1.5.2 到 prod"
   ↓
 [Clarification] 必填: service, version, environment；prod 还需 approver
   ↓
@@ -245,7 +245,7 @@ Stage 5: scripts/format-deploy-report.py   → deploy_report
 
 ## 8. 扩展
 
-- **多服务支持**：当前支持 metabot-core/portal/mcp + custom，可扩展
+- **多服务支持**：当前支持 panmira-core/portal/mcp + custom，可扩展
 - **多策略组合**：canary + 蓝绿混合模式（先 canary 验证再切换）
 - **集成 Argo Rollouts**：未来可对接 GitOps 平台
 - **金丝雀指标**：可对接 Prometheus 自动化金丝雀决策

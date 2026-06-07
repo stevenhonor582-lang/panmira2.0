@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://metabot.local/schemas/incident-response.v1.json",
+  "$id": "https://panmira.local/schemas/incident-response.v1.json",
   "title": "IncidentResponseIO",
   "input": {
     "type": "object",

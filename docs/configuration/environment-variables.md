@@ -58,16 +58,16 @@ Falls back to the first Feishu bot's credentials if not set.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `METABOT_PEERS` | — | Comma-separated peer URLs. Prefer HTTPS for internet-reachable peers; use plain HTTP only for localhost or a private overlay network |
-| `METABOT_PEER_SECRETS` | — | Comma-separated peer secrets (positional match) |
-| `METABOT_PEER_NAMES` | auto | Comma-separated peer names |
+| `PANMIRA_PEERS` | — | Comma-separated peer URLs. Prefer HTTPS for internet-reachable peers; use plain HTTP only for localhost or a private overlay network |
+| `PANMIRA_PEER_SECRETS` | — | Comma-separated peer secrets (positional match) |
+| `PANMIRA_PEER_NAMES` | auto | Comma-separated peer names |
 | `PANMIRA_PEER_POLL_INTERVAL_MS` | `30000` | Peer poll interval |
 
 ## Remote Access
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `METABOT_URL` | `http://localhost:9100` | Panmira API URL for CLI. The default is local HTTP; for remote access prefer an HTTPS reverse proxy or a private-network address |
+| `PANMIRA_URL` | `http://localhost:9100` | Panmira API URL for CLI. The default is local HTTP; for remote access prefer an HTTPS reverse proxy or a private-network address |
 | `META_MEMORY_URL` | `http://localhost:8100` | MetaMemory URL for CLI. The default is local HTTP; for remote access prefer an HTTPS reverse proxy or a private-network address |
 
 ## Voice

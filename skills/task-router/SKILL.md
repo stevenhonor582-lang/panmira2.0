@@ -123,9 +123,9 @@ description: >
 
 ### L1 示例
 ```
-用户："把README里的项目名改成MetaBot"
+用户："把README里的项目名改成Panmira"
 路由：L1 → 直接修改
-输出：[L1] 已将README中的项目名更新为MetaBot
+输出：[L1] 已将README中的项目名更新为Panmira
 ```
 
 ### L2 示例

@@ -373,10 +373,10 @@ export function BotPermissionsPanel({
               updatePerms((p) => ({ ...p, fileSystem: { ...p.fileSystem, protectConfig: e.target.checked } }))
             }
           />
-          保护系统配置 (禁止修改 metabot 源码)
+          保护系统配置 (禁止修改 panmira 源码)
         </label>
         <div className={styles.formHint} style={{ marginTop: 6 }}>
-          默认禁止: rm -rf /、chmod 777、dd、mkfs 等危险命令，以及写入 /etc/ 和 ~/metabot/src/ 等系统路径。sudo 和 pm2 可通过上方「特权命令白名单」单独开放。
+          默认禁止: rm -rf /、chmod 777、dd、mkfs 等危险命令，以及写入 /etc/ 和 ~/panmira/src/ 等系统路径。sudo 和 pm2 可通过上方「特权命令白名单」单独开放。
         </div>
       </div>
     </SlideOverPanel>

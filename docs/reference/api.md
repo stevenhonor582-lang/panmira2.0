@@ -39,7 +39,7 @@ Authorization: Bearer <API_SECRET>
 
 ```json
 {
-  "botName": "metabot",
+  "botName": "panmira",
   "chatId": "unique-chat-id",
   "prompt": "Your message to the agent"
 }
@@ -71,7 +71,7 @@ The `botName` field supports [qualified names](../features/peers.md#qualified-na
 
 ```json
 {
-  "botName": "metabot",
+  "botName": "panmira",
   "chatId": "oc_xxx",
   "prompt": "Check service health",
   "cron": "0 8 * * 1-5",
@@ -83,7 +83,7 @@ For one-time tasks, use `delayMs` instead of `cron`:
 
 ```json
 {
-  "botName": "metabot",
+  "botName": "panmira",
   "chatId": "oc_xxx",
   "prompt": "Remind me about the deployment",
   "delayMs": 1800000

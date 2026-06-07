@@ -47,7 +47,7 @@
 curl -X POST http://localhost:9100/api/schedule \
   -H "Content-Type: application/json" \
   -d '{
-    "botName": "metabot",
+    "botName": "panmira",
     "chatId": "oc_xxx",
     "prompt": "检查服务健康状态并报告",
     "cron": "0 8 * * 1-5",
@@ -59,7 +59,7 @@ curl -X POST http://localhost:9100/api/schedule \
 
 ```bash
 mb schedule list                                              # 列出全部
-mb schedule cron metabot chatId '0 8 * * 1-5' "每日报告"       # 创建 cron
+mb schedule cron panmira chatId '0 8 * * 1-5' "每日报告"       # 创建 cron
 mb schedule pause <id>                                        # 暂停
 mb schedule resume <id>                                       # 恢复
 ```

@@ -13,14 +13,14 @@ The bot starts but replies with this error when you message it.
 claude login
 
 # Option B: API key — add to .env
-echo 'ANTHROPIC_API_KEY=sk-ant-your-key' >> /path/to/metabot/.env
+echo 'ANTHROPIC_API_KEY=sk-ant-your-key' >> /path/to/panmira/.env
 ```
 
 Then restart the service:
 
 ```bash
-metabot restart
-# or: pkill -f "tsx src/index.ts" && cd /path/to/metabot && npm run dev
+panmira restart
+# or: pkill -f "tsx src/index.ts" && cd /path/to/panmira && npm run dev
 ```
 
 !!! warning

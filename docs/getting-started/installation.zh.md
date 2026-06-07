@@ -5,13 +5,13 @@
 === "Linux / macOS"
 
     ```bash
-    curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh | bash
+    curl -fsSL https://raw.githubusercontent.com/xvirobotics/panmira/main/install.sh | bash
     ```
 
 === "Windows (PowerShell)"
 
     ```powershell
-    irm https://raw.githubusercontent.com/xvirobotics/metabot/main/install.ps1 | iex
+    irm https://raw.githubusercontent.com/xvirobotics/panmira/main/install.ps1 | iex
     ```
 
 安装器引导：工作目录 → Claude 认证 → IM 凭证 → PM2 自动启动。
@@ -21,14 +21,14 @@
 已安装？一条命令拉取、构建、重启：
 
 ```bash
-metabot update
+panmira update
 ```
 
 ## 手动安装
 
 ```bash
-git clone https://github.com/xvirobotics/metabot.git
-cd metabot && npm install
+git clone https://github.com/xvirobotics/panmira.git
+cd panmira && npm install
 cp bots.example.json bots.json   # 编辑 Bot 配置
 cp .env.example .env              # 编辑全局设置
 npm run dev
@@ -51,4 +51,4 @@ npm run dev
 
 ## Windows 说明
 
-PowerShell 安装器自动检测 `winget`/`choco`/`scoop` 来安装 Node.js。CLI 工具（`mm`、`mb`、`metabot`、`fd`）通过 `.cmd` 包装器安装，需要 [Git for Windows](https://git-scm.com)（提供 Git Bash）。
+PowerShell 安装器自动检测 `winget`/`choco`/`scoop` 来安装 Node.js。CLI 工具（`mm`、`mb`、`panmira`、`fd`）通过 `.cmd` 包装器安装，需要 [Git for Windows](https://git-scm.com)（提供 Git Bash）。

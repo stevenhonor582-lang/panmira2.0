@@ -15,14 +15,14 @@ Commands you can send to Panmira in Feishu or Telegram.
 | `/sync status` | Show wiki sync statistics |
 | `/help` | Show available commands |
 | `/metaskill ...` | Generate agent teams, agents, or skills |
-| `/metabot` | Load Agent Bus docs (scheduling, bot management, cross-instance talk) |
+| `/panmira` | Load Agent Bus docs (scheduling, bot management, cross-instance talk) |
 | `/anything` | Any unrecognized command is forwarded to Claude Code as a skill |
 
 ## Notes
 
 - In **DMs**, the bot replies to all messages
 - Commands like `/memory` and `/sync` respond quickly without spawning Claude
-- `/metaskill` and `/metabot` are skills that get loaded into Claude's context on demand
+- `/metaskill` and `/panmira` are skills that get loaded into Claude's context on demand
 
 ## Feishu Group Chat Behavior
 

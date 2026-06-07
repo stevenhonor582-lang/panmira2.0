@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://metabot.local/schemas/knowledge-rag-qa.v1.json",
+  "$id": "https://panmira.local/schemas/knowledge-rag-qa.v1.json",
   "title": "KnowledgeRagQA",
   "input": {
     "type": "object",

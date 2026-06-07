@@ -119,7 +119,7 @@ echo ""
 info "Starting service with PM2..."
 
 # Stop existing instance if running
-pm2 delete metabot 2>/dev/null || true
+pm2 delete panmira 2>/dev/null || true
 pm2 start ecosystem.config.cjs
 
 echo ""

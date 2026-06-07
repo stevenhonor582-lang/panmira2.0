@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://metabot.local/schemas/deploy-service.v1.json",
+  "$id": "https://panmira.local/schemas/deploy-service.v1.json",
   "title": "DeployServiceIO",
   "input": {
     "type": "object",
@@ -8,7 +8,7 @@
     "properties": {
       "service": {
         "type": "string",
-        "enum": ["metabot-core", "metabot-portal", "metabot-mcp", "custom"],
+        "enum": ["panmira-core", "panmira-portal", "panmira-mcp", "custom"],
         "description": "目标服务名（必填）"
       },
       "version": {

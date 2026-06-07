@@ -504,8 +504,8 @@ After the team is verified, register it as a web bot so it appears in the Web UI
 **Run this command from inside the project folder:**
 
 ```bash
-curl -s -X POST "http://localhost:${METABOT_API_PORT:-9100}/api/bots" \
-  -H "Authorization: Bearer $METABOT_API_SECRET" \
+curl -s -X POST "http://localhost:${PANMIRA_API_PORT:-9100}/api/bots" \
+  -H "Authorization: Bearer $PANMIRA_API_SECRET" \
   -H "Content-Type: application/json" \
   -d "{\"platform\":\"web\",\"name\":\"$(basename $(pwd))\",\"description\":\"Agent team created by MetaSkill\",\"defaultWorkingDirectory\":\"$(pwd)\",\"installSkills\":true}" \
   | python3 -m json.tool 2>/dev/null || true

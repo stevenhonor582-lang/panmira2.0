@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Panmira Uninstaller
 # Usage: bash uninstall.sh
-#   or:  curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/uninstall.sh | bash
+#   or:  curl -fsSL https://raw.githubusercontent.com/xvirobotics/panmira/main/uninstall.sh | bash
 set -euo pipefail
 
 # ============================================================================
@@ -16,7 +16,7 @@ fi
 # ============================================================================
 # Configuration
 # ============================================================================
-METABOT_HOME="${METABOT_HOME:-$HOME/metabot}"
+PANMIRA_HOME="${PANMIRA_HOME:-$HOME/panmira}"
 LOCAL_BIN="$HOME/.local/bin"
 SKILLS_DIR="$HOME/.claude/skills"
 BASH_ALIASES="$HOME/.bash_aliases"
@@ -67,9 +67,9 @@ echo "  ╚═══════════════════════
 echo -e "${NC}"
 echo ""
 
-echo -e "  This will remove Panmira from: ${BOLD}${METABOT_HOME}${NC}"
+echo -e "  This will remove Panmira from: ${BOLD}${PANMIRA_HOME}${NC}"
 echo ""
-if ! prompt_yn "Are you sure you want to uninstall MetaBot?"; then
+if ! prompt_yn "Are you sure you want to uninstall Panmira?"; then
   info "Uninstall cancelled."
   exit 0
 fi
@@ -80,9 +80,9 @@ fi
 step "Phase 1: Stopping Panmira services"
 
 if command -v pm2 &>/dev/null; then
-  if pm2 describe metabot &>/dev/null 2>&1; then
+  if pm2 describe panmira &>/dev/null 2>&1; then
     info "Stopping Panmira PM2 process..."
-    pm2 delete metabot 2>/dev/null || true
+    pm2 delete panmira 2>/dev/null || true
     success "Panmira PM2 process removed"
   else
     info "No Panmira PM2 process found"
@@ -113,7 +113,7 @@ fi
 # ============================================================================
 step "Phase 2: Removing CLI tools"
 
-for cli in mm mb metabot fd; do
+for cli in mm mb panmira fd; do
   if [[ -f "$LOCAL_BIN/$cli" ]]; then
     rm -f "$LOCAL_BIN/$cli"
     success "Removed $LOCAL_BIN/$cli"
@@ -145,7 +145,7 @@ if [[ -f "$BASH_ALIASES" ]]; then
   if grep -q 'mb()' "$BASH_ALIASES" 2>/dev/null; then
     awk '
       /^# Panmira API shortcuts/ { skip=1; next }
-      skip && /^[^ \t]/ && !/^(export METABOT|mb\(\))/ { skip=0 }
+      skip && /^[^ \t]/ && !/^(export PANMIRA|mb\(\))/ { skip=0 }
       skip { next }
       { print }
     ' "$BASH_ALIASES" > "$BASH_ALIASES.tmp" && mv "$BASH_ALIASES.tmp" "$BASH_ALIASES"
@@ -171,7 +171,7 @@ fi
 # ============================================================================
 step "Phase 4: Removing Claude skills"
 
-for skill in metaskill metamemory metabot voice feishu-doc; do
+for skill in metaskill metamemory panmira voice feishu-doc; do
   if [[ -d "$SKILLS_DIR/$skill" ]]; then
     rm -rf "$SKILLS_DIR/$skill"
     success "Removed skill: $skill"
@@ -203,30 +203,30 @@ fi
 # ============================================================================
 step "Phase 5: Removing Panmira installation"
 
-if [[ -d "$METABOT_HOME" ]]; then
+if [[ -d "$PANMIRA_HOME" ]]; then
   # Check for data that might be worth keeping
   HAS_DATA=false
-  if [[ -f "$METABOT_HOME/data/metamemory.db" ]]; then
+  if [[ -f "$PANMIRA_HOME/data/metamemory.db" ]]; then
     HAS_DATA=true
   fi
 
   if [[ "$HAS_DATA" == "true" ]]; then
     echo ""
-    warn "MetaMemory database found at $METABOT_HOME/data/metamemory.db"
-    if prompt_yn "Back up MetaMemory data to ~/metabot-backup/ before deleting?"; then
-      BACKUP_DIR="$HOME/metabot-backup"
+    warn "MetaMemory database found at $PANMIRA_HOME/data/metamemory.db"
+    if prompt_yn "Back up MetaMemory data to ~/panmira-backup/ before deleting?"; then
+      BACKUP_DIR="$HOME/panmira-backup"
       mkdir -p "$BACKUP_DIR"
-      cp -r "$METABOT_HOME/data" "$BACKUP_DIR/" 2>/dev/null || true
-      [[ -f "$METABOT_HOME/.env" ]] && cp "$METABOT_HOME/.env" "$BACKUP_DIR/" 2>/dev/null || true
-      [[ -f "$METABOT_HOME/bots.json" ]] && cp "$METABOT_HOME/bots.json" "$BACKUP_DIR/" 2>/dev/null || true
+      cp -r "$PANMIRA_HOME/data" "$BACKUP_DIR/" 2>/dev/null || true
+      [[ -f "$PANMIRA_HOME/.env" ]] && cp "$PANMIRA_HOME/.env" "$BACKUP_DIR/" 2>/dev/null || true
+      [[ -f "$PANMIRA_HOME/bots.json" ]] && cp "$PANMIRA_HOME/bots.json" "$BACKUP_DIR/" 2>/dev/null || true
       success "Backed up data to $BACKUP_DIR"
     fi
   fi
 
-  rm -rf "$METABOT_HOME"
-  success "Removed $METABOT_HOME"
+  rm -rf "$PANMIRA_HOME"
+  success "Removed $PANMIRA_HOME"
 else
-  info "Panmira directory not found at $METABOT_HOME"
+  info "Panmira directory not found at $PANMIRA_HOME"
 fi
 
 # ============================================================================
@@ -237,8 +237,8 @@ step "Phase 6: Cleanup workspace deployments"
 # Check common workspace locations for deployed skills/CLAUDE.md
 WORKSPACE_DIRS=()
 # Try to find from backup or known locations
-for dir in "$HOME/metabot-workspace" "$HOME/workspace" "$HOME/projects"; do
-  if [[ -d "$dir/.claude/skills/metabot" ]] || [[ -d "$dir/.claude/skills/metamemory" ]]; then
+for dir in "$HOME/panmira-workspace" "$HOME/workspace" "$HOME/projects"; do
+  if [[ -d "$dir/.claude/skills/panmira" ]] || [[ -d "$dir/.claude/skills/metamemory" ]]; then
     WORKSPACE_DIRS+=("$dir")
   fi
 done
@@ -248,7 +248,7 @@ if [[ ${#WORKSPACE_DIRS[@]} -gt 0 ]]; then
     echo ""
     info "Found deployed Panmira skills in: $ws"
     if prompt_yn "Remove deployed skills from $ws?"; then
-      for skill in metaskill metamemory metabot voice; do
+      for skill in metaskill metamemory panmira voice; do
         rm -rf "$ws/.claude/skills/$skill" 2>/dev/null || true
       done
       success "Removed deployed skills from $ws"
@@ -269,15 +269,15 @@ echo "  ╚═══════════════════════
 echo -e "${NC}"
 echo ""
 echo -e "  ${BOLD}Removed:${NC}"
-echo "    - PM2 processes (metabot, metamemory)"
-echo "    - CLI tools (mm, mb, metabot)"
+echo "    - PM2 processes (panmira, metamemory)"
+echo "    - CLI tools (mm, mb, panmira)"
 echo "    - Shell shortcuts from ~/.bash_aliases"
-echo "    - Claude skills (metaskill, metamemory, metabot, lark-cli skills)"
+echo "    - Claude skills (metaskill, metamemory, panmira, lark-cli skills)"
 echo "    - lark-cli config (~/.lark-cli)"
-echo "    - Panmira directory ($METABOT_HOME)"
-if [[ -d "$HOME/metabot-backup" ]]; then
+echo "    - Panmira directory ($PANMIRA_HOME)"
+if [[ -d "$HOME/panmira-backup" ]]; then
   echo ""
-  echo -e "  ${BOLD}Backup:${NC} ~/metabot-backup/"
+  echo -e "  ${BOLD}Backup:${NC} ~/panmira-backup/"
 fi
 echo ""
 echo -e "  ${BOLD}Not removed (manual cleanup if needed):${NC}"

@@ -31,7 +31,7 @@ export function notifyTaskComplete(botName: string, preview?: string): void {
       const n = new Notification(`${botName} — Task Complete`, {
         body: preview?.slice(0, 100) || 'Task finished',
         icon: '/web/favicon.ico',
-        tag: 'metabot-task', // replaces previous
+        tag: 'panmira-task', // replaces previous
       });
       // Auto-close after 5s
       setTimeout(() => n.close(), 5000);

@@ -1,7 +1,7 @@
 #!/bin/bash
 # pg_dump cron — daily 3 AM, keep 14 days
 set -eu
-DB_NAME="metabot"
+DB_NAME="panmira"
 BACKUP_DIR="/home/ubuntu/backups"
 TS=$(date +%F)
 FILE="${BACKUP_DIR}/pg-${TS}.sql.gz"

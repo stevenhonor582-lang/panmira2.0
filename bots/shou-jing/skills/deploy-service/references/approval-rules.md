@@ -19,7 +19,7 @@ deployer 触发部署后，系统自动向审批人发送飞书卡片：
 
 ```
 [部署审批] 待审批
-- 服务: metabot-core
+- 服务: panmira-core
 - 版本: v1.5.2
 - 环境: prod
 - 策略: canary

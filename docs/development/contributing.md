@@ -1,13 +1,13 @@
 # Contributing
 
-Thanks for your interest in contributing to MetaBot!
+Thanks for your interest in contributing to Panmira!
 
 ## Development Setup
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/xvirobotics/metabot.git
-cd metabot
+git clone https://github.com/xvirobotics/panmira.git
+cd panmira
 
 # 2. Install dependencies
 npm install
@@ -39,12 +39,12 @@ npm run build        # TypeScript compile to dist/
 
 ### Reporting Bugs
 
-- Use the [Bug Report](https://github.com/xvirobotics/metabot/issues/new?template=bug_report.md) template
+- Use the [Bug Report](https://github.com/xvirobotics/panmira/issues/new?template=bug_report.md) template
 - Include logs (redact sensitive info) and steps to reproduce
 
 ### Suggesting Features
 
-- Use the [Feature Request](https://github.com/xvirobotics/metabot/issues/new?template=feature_request.md) template
+- Use the [Feature Request](https://github.com/xvirobotics/panmira/issues/new?template=feature_request.md) template
 - Describe the use case, not just the solution
 
 ### Submitting Pull Requests

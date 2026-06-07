@@ -6,15 +6,15 @@ services:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
-      POSTGRES_USER: metabot
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-metabot}
-      POSTGRES_DB: metabot
+      POSTGRES_USER: panmira
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-panmira}
+      POSTGRES_DB: panmira
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
       - "127.0.0.1:5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U metabot"]
+      test: ["CMD-SHELL", "pg_isready -U panmira"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -34,18 +34,18 @@ services:
       retries: 5
 
   # ── Panmira ──
-  metabot:
+  panmira:
     build: .
     restart: unless-stopped
     ports:
       - "${API_PORT:-9100}:9100"
     env_file: .env
     environment:
-      - DATABASE_URL=postgresql://metabot:${DB_PASSWORD:-metabot}@postgres:5432/metabot
+      - DATABASE_URL=postgresql://panmira:${DB_PASSWORD:-panmira}@postgres:5432/panmira
       - REDIS_URL=redis://redis:6379
       - NODE_ENV=production
     volumes:
-      - metabot-data:/app/data
+      - panmira-data:/app/data
       - ${CLAUDE_WORKDIR:-./workspace}:/workspace
     depends_on:
       postgres:
@@ -73,5 +73,5 @@ services:
 volumes:
   pgdata:
   redisdata:
-  metabot-data:
+  panmira-data:
   # memory-data:

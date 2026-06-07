@@ -97,7 +97,7 @@ Replace Google Fonts link: swap Plus Jakarta Sans → Sora + IBM Plex Mono
 
 ### Step 9: Build & test
 - `npm run build:web`
-- Test on `https://metabot.xvirobotics.com/web/`
+- Test on `https://panmira.xvirobotics.com/web/`
 - Verify dark/light themes, all views, phone call mode
 
 ### Step 10: Commit & push

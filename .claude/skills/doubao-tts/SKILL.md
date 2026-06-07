@@ -57,7 +57,7 @@ bin/doubao-tts "你好" --speed 1.2 --volume 1.5 -o output.mp3
 
 ## API Details
 
-### Environment Variables (already configured in MetaBot .env)
+### Environment Variables (already configured in Panmira .env)
 ```
 VOLCENGINE_TTS_APPID=<app_id>
 VOLCENGINE_TTS_ACCESS_KEY=<access_key>
@@ -79,7 +79,7 @@ VOLCENGINE_TTS_RESOURCE_ID=volc.service_type.10029  (optional)
 
 1. **Write the script** — Create the podcast script as markdown or plain text
 2. **Generate audio** — Use `bin/doubao-tts -f script.txt -v zh_male_aojiaobazong_moon_bigtts -o podcast.mp3`
-3. **Copy to outputs** — `cp podcast.mp3 /tmp/metabot-outputs/<chatId>/` to send to user
+3. **Copy to outputs** — `cp podcast.mp3 /tmp/panmira-outputs/<chatId>/` to send to user
 4. For multi-voice podcasts, generate each speaker's segments separately, then concatenate with `ffmpeg`
 
 ## Multi-Voice Podcast Example

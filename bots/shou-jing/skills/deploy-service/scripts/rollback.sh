@@ -7,7 +7,7 @@
 set -euo pipefail
 
 DEPLOY_ID="${1:-unknown}"
-SERVICE="${2:-metabot-core}"
+SERVICE="${2:-panmira-core}"
 ENVIRONMENT="${3:-prod}"
 
 START_MS=$(date +%s%3N)
