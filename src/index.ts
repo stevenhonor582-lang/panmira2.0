@@ -321,6 +321,7 @@ async function main() {
     await workspaceManager.ensureOrgWorkspace();
     for (const botName of allNames) {
       await workspaceManager.ensureBotWorkspace(botName);
+      await workspaceManager.ensureBotProject(botName, '默认');
     }
     logger.info({ botCount: allNames.length }, 'Bot/Org工作空间已初始化');
 
