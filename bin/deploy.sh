@@ -8,7 +8,7 @@ echo "[deploy] 1/5 git pull..."
 git pull origin main
 
 echo "[deploy] 2/5 npm install..."
-npm ci 2>/dev/null || npm install 2>/dev/null || true
+npm ci --include=dev 2>/dev/null || npm install --include=dev 2>/dev/null || true
 
 echo "[deploy] 3/5 type check..."
 npx tsc --noEmit || echo "[deploy] ⚠ type check failed, continuing with last build"
