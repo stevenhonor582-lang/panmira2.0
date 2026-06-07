@@ -1,5 +1,5 @@
 ---
-name: metabot
+name: panmira
 description: "Panmira HTTP API for agent collaboration: talk to other bots, schedule tasks, manage bots and peers. Use when the user wants to delegate work to another bot, schedule tasks, create/remove bots, or check peer status."
 ---
 

@@ -3,7 +3,7 @@
  *
  * Connects to wss://openspeech.bytedance.com/api/v3/sauc/bigmodel
  * using the Volcengine binary frame protocol. Receives raw PCM 16kHz
- * 16-bit mono audio from the browser (via MetaBot's /ws) and streams
+ * 16-bit mono audio from the browser (via Panmira's /ws) and streams
  * partial transcripts back in real time.
  */
 

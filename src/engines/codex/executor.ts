@@ -212,7 +212,7 @@ export class CodexExecutor {
 
     if (apiContext) {
       sections.push(
-        `## Panmira API\nYou are running as bot "${apiContext.botName}" in chat "${apiContext.chatId}".\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`,
+        `## Panmira API\nYou are running as bot "${apiContext.botName}" in chat "${apiContext.chatId}".\nUse the /panmira skill for full API documentation (agent bus, scheduling, bot management).`,
       );
 
       if (apiContext.groupMembers && apiContext.groupMembers.length > 0) {

@@ -23,8 +23,8 @@ const ALWAYS_BLOCKED_PATTERNS = [
 
 /** Protected paths that non-admin roles cannot write to. */
 const PROTECTED_PATHS = [
-  { prefix: '/home/ubuntu/panmira/src/', label: 'metabot source code' },
-  { prefix: '/home/ubuntu/panmira/web/', label: 'metabot web code' },
+  { prefix: '/home/ubuntu/panmira/src/', label: 'panmira source code' },
+  { prefix: '/home/ubuntu/panmira/web/', label: 'panmira web code' },
   { prefix: '/home/ubuntu/.claude/skills/', label: 'Claude skills' },
   { prefix: '/home/ubuntu/.claude/CLAUDE.md', label: 'CLAUDE.md config' },
   { prefix: '/home/ubuntu/.claude/settings.json', label: 'settings.json' },

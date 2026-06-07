@@ -11,7 +11,7 @@ import { OpenAICompatEngine } from './openai-compat/index.js';
  *
  * Engine selection:
  *   1. `config.engine` field (explicit)
- *   2. `METABOT_ENGINE` env var (global default)
+ *   2. `PANMIRA_ENGINE` env var (global default)
  *   3. `'claude'` (fallback)
  */
 export function createEngine(config: BotConfigBase, logger: Logger, override?: EngineName): Engine {
@@ -36,7 +36,7 @@ export function createEngine(config: BotConfigBase, logger: Logger, override?: E
 export function resolveEngineName(config: BotConfigBase): EngineName {
   const explicit = config.engine;
   if (explicit) return explicit;
-  const envDefault = process.env.METABOT_ENGINE as EngineName | undefined;
+  const envDefault = (process.env.PANMIRA_ENGINE || process.env.METABOT_ENGINE) as EngineName | undefined;
   if (envDefault === 'claude' || envDefault === 'kimi' || envDefault === 'codex' || envDefault === 'openai-compat')
     return envDefault;
   return 'claude';

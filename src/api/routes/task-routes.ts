@@ -222,7 +222,7 @@ export async function handleTaskRoutes(
     }
 
     // Bot not found locally — check peers
-    const origin = req.headers['x-metabot-origin'];
+    const origin = req.headers['x-panmira-origin'];
     if (!origin && peerManager) {
       const peerMatch = peerManager.findBotPeer(botName);
       if (peerMatch) {

@@ -928,7 +928,7 @@ export class MessageBridge {
       lastResponsePreview: '',
     };
     this.runningTasks.set(chatId, runningTask);
-    metrics.setGauge('metabot_active_tasks', this.runningTasks.size);
+    metrics.setGauge('panmira_active_tasks', this.runningTasks.size);
     this.persistTaskSnapshot();
 
     this.audit.log({ event: 'task_start', botName: this.config.name, chatId, userId, prompt: text });
@@ -1218,10 +1218,10 @@ export class MessageBridge {
         cacheReadTokens: lastState.cacheReadTokens,
         cacheCreationTokens: lastState.cacheCreationTokens,
       });
-      metrics.incCounter('metabot_tasks_total');
-      metrics.incCounter('metabot_tasks_by_status', lastState.status === 'complete' ? 'success' : 'error');
-      metrics.observeHistogram('metabot_task_duration_seconds', durationMs / 1000);
-      if (lastState.costUsd) metrics.observeHistogram('metabot_task_cost_usd', lastState.costUsd);
+      metrics.incCounter('panmira_tasks_total');
+      metrics.incCounter('panmira_tasks_by_status', lastState.status === 'complete' ? 'success' : 'error');
+      metrics.observeHistogram('panmira_task_duration_seconds', durationMs / 1000);
+      if (lastState.costUsd) metrics.observeHistogram('panmira_task_cost_usd', lastState.costUsd);
 
       // Auto-record conversation memory (fire-and-forget)
       if (lastState.status === 'complete' && text) {
@@ -1375,8 +1375,8 @@ export class MessageBridge {
             cacheReadTokens: lastState.cacheReadTokens,
             cacheCreationTokens: lastState.cacheCreationTokens,
           });
-          metrics.incCounter('metabot_tasks_total');
-          metrics.incCounter('metabot_tasks_by_status', lastState.status === 'complete' ? 'success' : 'error');
+          metrics.incCounter('panmira_tasks_total');
+          metrics.incCounter('panmira_tasks_by_status', lastState.status === 'complete' ? 'success' : 'error');
 
           await this.recordSession(
             chatId,
@@ -1416,8 +1416,8 @@ export class MessageBridge {
         timestamp: Date.now(),
       });
       this.costTracker.record({ botName: this.config.name, userId, success: false, durationMs });
-      metrics.incCounter('metabot_tasks_total');
-      metrics.incCounter('metabot_tasks_by_status', 'error');
+      metrics.incCounter('panmira_tasks_total');
+      metrics.incCounter('panmira_tasks_by_status', 'error');
 
       const errorState: CardState = {
         status: 'error',
@@ -1442,7 +1442,7 @@ export class MessageBridge {
       // Only delete if this is still our task (guards against stopTask race condition)
       if (this.runningTasks.get(chatId) === runningTask) {
         this.runningTasks.delete(chatId);
-        metrics.setGauge('metabot_active_tasks', this.runningTasks.size);
+        metrics.setGauge('panmira_active_tasks', this.runningTasks.size);
         this.persistTaskSnapshot();
         this.processQueue(chatId);
       }
@@ -1584,7 +1584,7 @@ export class MessageBridge {
       lastResponsePreview: '',
     };
     this.runningTasks.set(chatId, runningTask);
-    metrics.setGauge('metabot_active_tasks', this.runningTasks.size);
+    metrics.setGauge('panmira_active_tasks', this.runningTasks.size);
     this.persistTaskSnapshot();
 
     this.audit.log({ event: 'api_task_start', botName: this.config.name, chatId, userId, prompt });
@@ -1817,9 +1817,9 @@ export class MessageBridge {
         cacheReadTokens: lastState.cacheReadTokens,
         cacheCreationTokens: lastState.cacheCreationTokens,
       });
-      metrics.incCounter('metabot_api_tasks_total');
-      metrics.observeHistogram('metabot_task_duration_seconds', durationMs / 1000);
-      if (lastState.costUsd) metrics.observeHistogram('metabot_task_cost_usd', lastState.costUsd);
+      metrics.incCounter('panmira_api_tasks_total');
+      metrics.observeHistogram('panmira_task_duration_seconds', durationMs / 1000);
+      if (lastState.costUsd) metrics.observeHistogram('panmira_task_cost_usd', lastState.costUsd);
 
       // Auto-record conversation memory (fire-and-forget)
       if (lastState.status === 'complete' && prompt) {
@@ -2006,7 +2006,7 @@ export class MessageBridge {
         this.logger.warn({ err: e, chatId }, 'Error finishing execution handle');
       }
       this.runningTasks.delete(chatId);
-      metrics.setGauge('metabot_active_tasks', this.runningTasks.size);
+      metrics.setGauge('panmira_active_tasks', this.runningTasks.size);
       this.persistTaskSnapshot();
       this.processQueue(chatId);
       try {
