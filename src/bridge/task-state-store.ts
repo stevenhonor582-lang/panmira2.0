@@ -14,6 +14,8 @@ export interface PersistedTask {
   startTime: number;
   prompt: string;
   cardMessageId: string;
+  /** What the bot had produced so far before interruption */
+  lastResponsePreview?: string;
 }
 
 const FILENAME = 'active-tasks.json';
@@ -82,12 +84,23 @@ export async function recoverAndNotify(
   let notified = 0;
   for (const task of tasks) {
     try {
-      const elapsed = Math.round((Date.now() - task.startTime) / 1000);
-      const promptPreview = task.prompt.length > 80 ? task.prompt.slice(0, 80) + '...' : task.prompt;
+      const elapsed = Math.round((Date.now() - task.startTime) / 60000);
+      const promptPreview = task.prompt.length > 120 ? task.prompt.slice(0, 120) + '...' : task.prompt;
+      const responsePreview = task.lastResponsePreview
+        ? task.lastResponsePreview.length > 200
+          ? task.lastResponsePreview.slice(0, 200) + '...'
+          : task.lastResponsePreview
+        : null;
+      const elapsedStr = elapsed >= 60 ? `${Math.floor(elapsed / 60)}h${elapsed % 60}m` : `${elapsed}min`;
+      let body = `📋 Task interrupted after ${elapsedStr} due to restart:\n\n❓ Original request: ${promptPreview}`;
+      if (responsePreview) {
+        body += `\n\n📝 Response so far (excerpt):\n${responsePreview}`;
+      }
+      body += `\n\n💡 Please resend to continue. You can say "continue the previous task".`;
       await sender.sendTextNotice(
         task.chatId,
         '⏠ 任务因重启中断',
-        `你之前的任务「${promptPreview}」在 ${elapsed}s 后因服务重启中断。\n\n请重新发送消息继续，对话历史已保留。`,
+        body,
         'orange',
       );
       notified++;

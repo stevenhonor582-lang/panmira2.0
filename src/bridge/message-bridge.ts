@@ -248,8 +248,9 @@ export class MessageBridge {
       chatId,
       botName: this.config.name,
       startTime: task.startTime,
-      prompt: '',  // filled from audit or empty
+      prompt: task.prompt,
       cardMessageId: task.cardMessageId,
+      lastResponsePreview: task.lastResponsePreview || undefined,
     }));
   }
 
@@ -860,7 +861,7 @@ export class MessageBridge {
       } catch { /* validation is advisory */ }
     }
 
-    this.logger.info({ agentId: this.config.agentId, botName: this.config.name, hasIntents: agentRuntimeConfig?.orchestration?.intents?.length }, '[DIAG] Orchestrator eligibility — intent matching offline');
+    this.logger.info({ agentId: this.config.agentId, botName: this.config.name, hasIntents: agentRuntimeConfig?.orchestration?.intents?.length }, 'Orchestrator eligibility — intent matching offline');
 
     // P1: Skill deployment — keyword-matched + agent skills (subset, not all)
     if (skipSkills) {
@@ -924,6 +925,7 @@ export class MessageBridge {
       processor,
       rateLimiter,
       chatId,
+      lastResponsePreview: '',
     };
     this.runningTasks.set(chatId, runningTask);
     metrics.setGauge('metabot_active_tasks', this.runningTasks.size);
@@ -971,6 +973,11 @@ export class MessageBridge {
 
         const state = processor.processMessage(message);
         lastState = state;
+
+        // Track response preview for recovery notifications
+        if (state.responseText) {
+          runningTask.lastResponsePreview = state.responseText.slice(-300);
+        }
 
         // Update session ID if discovered
         const newSessionId = processor.getSessionId();
@@ -1574,6 +1581,7 @@ export class MessageBridge {
       processor,
       rateLimiter,
       chatId,
+      lastResponsePreview: '',
     };
     this.runningTasks.set(chatId, runningTask);
     metrics.setGauge('metabot_active_tasks', this.runningTasks.size);
@@ -1624,6 +1632,11 @@ export class MessageBridge {
 
         const state = processor.processMessage(message);
         lastState = state;
+
+        // Track response preview for recovery notifications
+        if (state.responseText) {
+          runningTask.lastResponsePreview = state.responseText.slice(-300);
+        }
 
         const newSessionId = processor.getSessionId();
         if (newSessionId && (newSessionId !== session.sessionId || session.sessionIdEngine !== engineName)) {
@@ -2381,31 +2394,8 @@ export class MessageBridge {
   }
 
   destroy(): void {
-    // 🔍 DIAGNOSTIC: log runningTasks state BEFORE any collection
-    const _diagRunning = this.runningTasks.size;
-    const _diagPending = this.pendingBatches.size;
-    this.logger.info({
-      runningTasks: _diagRunning,
-      pendingBatches: _diagPending,
-      chatIds: _diagRunning > 0 ? Array.from(this.runningTasks.keys()) : [],
-    }, '[DIAG] destroy() called — runningTasks snapshot');
-
     // Persist active tasks FIRST so they survive the restart
     const tasks = this.collectPersistableTasks();
-    this.logger.info({
-      collected: tasks.length,
-      stillInMap: this.runningTasks.size,
-    }, '[DIAG] collectPersistableTasks() result');
-    if (_diagRunning > 0 && tasks.length === 0) {
-      const first = this.runningTasks.entries().next().value;
-      this.logger.warn({
-        bug: 'CONFIRMED',
-        runningCount: _diagRunning,
-        firstChatId: first ? first[0] : null,
-        hasCardMsgId: first ? !!first[1]?.cardMessageId : null,
-        promptPreview: first ? String(first[1]?.prompt || '').slice(0, 60) : null,
-      }, '[DIAG] runningTasks NOT empty but collect returned 0');
-    }
     if (tasks.length > 0) {
       saveActiveTasks(tasks, this.config.name);
       this.logger.info({ count: tasks.length }, 'Persisted active tasks before shutdown');
