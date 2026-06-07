@@ -1,10 +1,10 @@
-# MetaBot
+# Panmira
 
 **构建受监督的、自我进化的 Agent 组织的基础设施。**
 
-[![CI](https://img.shields.io/github/actions/workflow/status/xvirobotics/metabot/ci.yml?branch=main&style=flat-square)](https://github.com/xvirobotics/metabot/actions)
+[![CI](https://img.shields.io/github/actions/workflow/status/xvirobotics/panmira/ci.yml?branch=main&style=flat-square)](https://github.com/xvirobotics/panmira/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](https://opensource.org/licenses/MIT)
-[![GitHub stars](https://img.shields.io/github/stars/xvirobotics/metabot?style=flat-square)](https://github.com/xvirobotics/metabot)
+[![GitHub stars](https://img.shields.io/github/stars/xvirobotics/panmira?style=flat-square)](https://github.com/xvirobotics/panmira)
 
 ---
 
@@ -36,23 +36,23 @@ Panmira 把它们都解放出来。给每个 Agent 一个 **Claude Code 或 Kimi
 | **Agent 总线** | 9100 端口 REST API。Agent 通过 `mb talk` 互相对话。运行时创建/删除 Bot。 |
 | **Peers 联邦** | 跨实例 Bot 发现和任务路由。 |
 | **定时任务调度器** | 一次性延迟和周期性 cron 任务。支持时区，跨重启持久化。 |
-| **CLI 工具** | `metabot`、`mm`、`mb`、`fd` 命令，管理服务、知识库、Agent 总线和飞书文档。 |
+| **CLI 工具** | `panmira`、`mm`、`mb`、`fd` 命令，管理服务、知识库、Agent 总线和飞书文档。 |
 
 ## 快速安装
 
 === "Linux / macOS"
 
     ```bash
-    curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh | bash
+    curl -fsSL https://raw.githubusercontent.com/xvirobotics/panmira/main/install.sh | bash
     ```
 
 === "Windows (PowerShell)"
 
     ```powershell
-    irm https://raw.githubusercontent.com/xvirobotics/metabot/main/install.ps1 | iex
+    irm https://raw.githubusercontent.com/xvirobotics/panmira/main/install.ps1 | iex
     ```
 
 安装器引导：工作目录 → **引擎选择（Claude / Kimi）** → 订阅登录 → IM 凭证 → PM2 自动启动。
 
 [开始使用](getting-started/installation.md){ .md-button .md-button--primary }
-[GitHub 仓库](https://github.com/xvirobotics/metabot){ .md-button }
+[GitHub 仓库](https://github.com/xvirobotics/panmira){ .md-button }

@@ -58,16 +58,16 @@
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `METABOT_PEERS` | — | 逗号分隔的 peer URL |
-| `METABOT_PEER_SECRETS` | — | 逗号分隔的 peer secret（位置对应） |
-| `METABOT_PEER_NAMES` | 自动 | 逗号分隔的 peer 名称 |
+| `PANMIRA_PEERS` | — | 逗号分隔的 peer URL |
+| `PANMIRA_PEER_SECRETS` | — | 逗号分隔的 peer secret（位置对应） |
+| `PANMIRA_PEER_NAMES` | 自动 | 逗号分隔的 peer 名称 |
 | `PANMIRA_PEER_POLL_INTERVAL_MS` | `30000` | peer 拉取间隔 |
 
 ## 远程访问
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `METABOT_URL` | `http://localhost:9100` | Panmira API 地址（CLI 用） |
+| `PANMIRA_URL` | `http://localhost:9100` | Panmira API 地址（CLI 用） |
 | `META_MEMORY_URL` | `http://localhost:8100` | MetaMemory 地址（CLI 用） |
 
 ## 语音

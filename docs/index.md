@@ -1,10 +1,10 @@
-# MetaBot
+# Panmira
 
 **Infrastructure for building a supervised, self-improving agent organization.**
 
-[![CI](https://img.shields.io/github/actions/workflow/status/xvirobotics/metabot/ci.yml?branch=main&style=flat-square)](https://github.com/xvirobotics/metabot/actions)
+[![CI](https://img.shields.io/github/actions/workflow/status/xvirobotics/panmira/ci.yml?branch=main&style=flat-square)](https://github.com/xvirobotics/panmira/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](https://opensource.org/licenses/MIT)
-[![GitHub stars](https://img.shields.io/github/stars/xvirobotics/metabot?style=flat-square)](https://github.com/xvirobotics/metabot)
+[![GitHub stars](https://img.shields.io/github/stars/xvirobotics/panmira?style=flat-square)](https://github.com/xvirobotics/panmira)
 
 ---
 
@@ -36,23 +36,23 @@ Each bot picks its engine in `bots.json`. Frontend bot on Claude, backend bot on
 | **Agent Bus** | REST API on port 9100. Agents talk to each other via `mb talk`. Create/remove bots at runtime. |
 | **Peers** | Federation system for cross-instance bot discovery and task routing. |
 | **Task Scheduler** | One-time delays and recurring cron jobs. Timezone-aware, persists across restarts. |
-| **CLI Tools** | `metabot`, `mm`, `mb` commands for management, memory, and agent bus. |
+| **CLI Tools** | `panmira`, `mm`, `mb` commands for management, memory, and agent bus. |
 
 ## Quick Install
 
 === "Linux / macOS"
 
     ```bash
-    curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh | bash
+    curl -fsSL https://raw.githubusercontent.com/xvirobotics/panmira/main/install.sh | bash
     ```
 
 === "Windows (PowerShell)"
 
     ```powershell
-    irm https://raw.githubusercontent.com/xvirobotics/metabot/main/install.ps1 | iex
+    irm https://raw.githubusercontent.com/xvirobotics/panmira/main/install.ps1 | iex
     ```
 
 The installer walks you through: working directory, **engine choice (Claude / Kimi)**, subscription login, IM credentials, and auto-start with PM2.
 
 [Get Started](getting-started/installation.md){ .md-button .md-button--primary }
-[View on GitHub](https://github.com/xvirobotics/metabot){ .md-button }
+[View on GitHub](https://github.com/xvirobotics/panmira){ .md-button }

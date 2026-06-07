@@ -1,5 +1,5 @@
 {
-  "url": "http://metabot-core.prod.svc",
+  "url": "http://panmira-core.prod.svc",
   "status": "healthy",
   "liveness": "passed",
   "readiness": "passed",

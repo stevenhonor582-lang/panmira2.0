@@ -5,7 +5,7 @@ Panmira is a TypeScript ESM project (`"type": "module"`, all imports use `.js` e
 ## Directory Layout
 
 ```
-metabot/
+panmira/
 ├── src/
 │   ├── index.ts                    # Entrypoint
 │   ├── config.ts                   # Configuration loader
@@ -39,12 +39,12 @@ metabot/
 │   │   ├── sync-store.ts           # SQLite persistence
 │   │   └── markdown-to-blocks.ts   # MD → Feishu blocks
 │   ├── skills/
-│   │   └── metabot/
+│   │   └── panmira/
 │   │       └── SKILL.md            # Agent Bus skill
 │   └── utils/
 │       └── logger.ts               # Logging
 ├── bin/
-│   ├── metabot                     # Service management CLI
+│   ├── panmira                     # Service management CLI
 │   ├── mb                          # Agent Bus CLI
 │   ├── mm                          # MetaMemory CLI
 │   └── doubao-tts                  # Doubao TTS CLI

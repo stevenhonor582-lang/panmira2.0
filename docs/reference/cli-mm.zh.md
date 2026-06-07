@@ -29,7 +29,7 @@ mm delete DOC_ID                    # 删除文档
 默认连接 `http://localhost:8100`。配置远程访问：
 
 ```bash
-# 在 ~/.panmira/.env 或 ~/metabot/.env 中
+# 在 ~/.panmira/.env 或 ~/panmira/.env 中
 META_MEMORY_URL=http://your-server:8100
 API_SECRET=your-secret
 ```

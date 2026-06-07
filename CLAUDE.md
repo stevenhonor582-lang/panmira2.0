@@ -172,7 +172,7 @@ A full-featured React SPA served at `/web/` with real-time WebSocket streaming. 
 
 **Static file serving**: Hashed assets (`/web/assets/*-<hash>.js`) get `Cache-Control: immutable` (1 year). `index.html` gets `no-cache`. Missing assets return 404 (not SPA fallback) to prevent stale-cache white-screen issues.
 
-**Dev workflow**: Run `cd web && npm run dev` for Vite dev server (port 5173) with API/WS proxy to 9100. Production: `npm run build:web` builds to `dist/web/`, served by MetaBot's HTTP server.
+**Dev workflow**: Run `cd web && npm run dev` for Vite dev server (port 5173) with API/WS proxy to 9100. Production: `npm run build:web` builds to `dist/web/`, served by Panmira's HTTP server.
 
 ## Configuration
 
@@ -250,13 +250,13 @@ sudo apt-get update && sudo apt-get install caddy
 
 ### Step 2: Configure DNS
 
-Add an A record for your domain (e.g. `metabot.xvirobotics.com`) pointing to your server's public IP. Wait for DNS propagation (check with `host <domain> 1.1.1.1`).
+Add an A record for your domain (e.g. `panmira.xvirobotics.com`) pointing to your server's public IP. Wait for DNS propagation (check with `host <domain> 1.1.1.1`).
 
 ### Step 3: Configure Caddy
 
 ```bash
 sudo tee /etc/caddy/Caddyfile > /dev/null << 'EOF'
-metabot.yourdomain.com {
+panmira.yourdomain.com {
     reverse_proxy localhost:9100
 }
 EOF
@@ -267,7 +267,7 @@ Caddy automatically obtains and renews Let's Encrypt certificates. Ports 80 and 
 
 ### Step 4: Access
 
-Open `https://metabot.yourdomain.com/web/` in a browser. The phone call button in Chat now has microphone access.
+Open `https://panmira.yourdomain.com/web/` in a browser. The phone call button in Chat now has microphone access.
 
 **Note**: WebSocket connections (`/ws`) are automatically proxied by Caddy. No additional WebSocket configuration is needed.
 
@@ -355,14 +355,14 @@ The bot starts but replies with this error when you message it. This means the A
 claude login
 
 # Option B: API key — add to .env
-echo 'ANTHROPIC_API_KEY=sk-ant-your-key' >> /path/to/metabot/.env
+echo 'ANTHROPIC_API_KEY=sk-ant-your-key' >> /path/to/panmira/.env
 ```
 
 Then restart the service:
 
 ```bash
 pkill -f "tsx src/index.ts"
-cd /path/to/metabot && npm run dev
+cd /path/to/panmira && npm run dev
 ```
 
 ### Service won't connect to Feishu

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Panmira Installer
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh | bash -s -- --dir /opt/metabot
-#   METABOT_HOME=/opt/metabot bash install.sh
+#   curl -fsSL https://raw.githubusercontent.com/xvirobotics/panmira/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/xvirobotics/panmira/main/install.sh | bash -s -- --dir /opt/panmira
+#   PANMIRA_HOME=/opt/panmira bash install.sh
 set -euo pipefail
 
 # ============================================================================
@@ -30,15 +30,15 @@ Usage:
 
 Options:
   -d, --dir <path>     Install Panmira to <path>.
-                       Priority: --dir > METABOT_HOME env var > interactive prompt.
-                       Default: $HOME/metabot
+                       Priority: --dir > PANMIRA_HOME env var > interactive prompt.
+                       Default: $HOME/panmira
   -h, --help           Show this help and exit.
 
 Examples:
   bash install.sh
-  bash install.sh --dir /opt/metabot
-  bash install.sh -d ~/projects/metabot
-  METABOT_HOME=/opt/metabot bash install.sh
+  bash install.sh --dir /opt/panmira
+  bash install.sh -d ~/projects/panmira
+  PANMIRA_HOME=/opt/panmira bash install.sh
 USAGE
 }
 
@@ -67,9 +67,9 @@ done
 # ============================================================================
 # Configuration defaults
 # ============================================================================
-# METABOT_HOME is resolved later (Phase 0.5) — priority: --dir > env var > prompt > default.
-DEFAULT_METABOT_HOME="$HOME/metabot"
-METABOT_REPO="${METABOT_REPO:-https://github.com/xvirobotics/metabot.git}"
+# PANMIRA_HOME is resolved later (Phase 0.5) — priority: --dir > env var > prompt > default.
+DEFAULT_PANMIRA_HOME="$HOME/panmira"
+PANMIRA_REPO="${PANMIRA_REPO:-https://github.com/xvirobotics/panmira.git}"
 
 # ============================================================================
 # Colors and formatting
@@ -185,40 +185,40 @@ sed_i() {
 
 # ============================================================================
 # Phase 0.5: Resolve install directory
-# Priority: --dir CLI arg > METABOT_HOME env var > interactive prompt > default.
+# Priority: --dir CLI arg > PANMIRA_HOME env var > interactive prompt > default.
 # ============================================================================
 step "Phase 0.5: Choose install directory"
 
 if [[ -n "$INSTALL_DIR_ARG" ]]; then
-  METABOT_HOME="$INSTALL_DIR_ARG"
-  info "Using install directory from --dir: $METABOT_HOME"
-elif [[ -n "${METABOT_HOME:-}" ]]; then
-  info "Using install directory from METABOT_HOME env: $METABOT_HOME"
+  PANMIRA_HOME="$INSTALL_DIR_ARG"
+  info "Using install directory from --dir: $PANMIRA_HOME"
+elif [[ -n "${PANMIRA_HOME:-}" ]]; then
+  info "Using install directory from PANMIRA_HOME env: $PANMIRA_HOME"
 else
   echo ""
   echo -e "${BOLD}Where should Panmira be installed?${NC}"
-  echo "  (You can override later with the METABOT_HOME env var or --dir flag.)"
-  prompt_input METABOT_HOME "Install directory" "$DEFAULT_METABOT_HOME"
+  echo "  (You can override later with the PANMIRA_HOME env var or --dir flag.)"
+  prompt_input PANMIRA_HOME "Install directory" "$DEFAULT_PANMIRA_HOME"
 fi
 
 # Expand a leading ~ to $HOME (avoids eval; safe with spaces).
-METABOT_HOME="${METABOT_HOME/#\~/$HOME}"
+PANMIRA_HOME="${PANMIRA_HOME/#\~/$HOME}"
 
-# Require an absolute path so all later $METABOT_HOME references are unambiguous.
-if [[ "$METABOT_HOME" != /* ]]; then
-  error "Install path must be absolute, got: $METABOT_HOME"
+# Require an absolute path so all later $PANMIRA_HOME references are unambiguous.
+if [[ "$PANMIRA_HOME" != /* ]]; then
+  error "Install path must be absolute, got: $PANMIRA_HOME"
   exit 1
 fi
 
 # Refuse a few obviously-bad targets that would clobber the user's home or root.
-case "$METABOT_HOME" in
+case "$PANMIRA_HOME" in
   /|/root|/home|/Users|"$HOME")
-    error "Refusing to install directly into $METABOT_HOME — pick a dedicated subdirectory."
+    error "Refusing to install directly into $PANMIRA_HOME — pick a dedicated subdirectory."
     exit 1
     ;;
 esac
 
-success "Install directory: $METABOT_HOME"
+success "Install directory: $PANMIRA_HOME"
 
 # ============================================================================
 # Phase 1: Check prerequisites
@@ -323,33 +323,33 @@ fi
 # ============================================================================
 # Phase 2: Clone or update repo
 # ============================================================================
-step "Phase 2: Setting up Panmira at ${METABOT_HOME}"
+step "Phase 2: Setting up Panmira at ${PANMIRA_HOME}"
 
-if [[ -d "$METABOT_HOME/.git" ]]; then
+if [[ -d "$PANMIRA_HOME/.git" ]]; then
   info "Existing installation found, pulling latest..."
-  cd "$METABOT_HOME"
+  cd "$PANMIRA_HOME"
   OLD_HEAD="$(git rev-parse HEAD)"
   git pull --ff-only || warn "git pull failed, continuing with existing code"
   NEW_HEAD="$(git rev-parse HEAD)"
   # Re-exec with the updated install.sh if it changed (avoids running stale code from memory)
-  if [[ "$OLD_HEAD" != "$NEW_HEAD" && -z "${METABOT_REEXEC:-}" ]]; then
+  if [[ "$OLD_HEAD" != "$NEW_HEAD" && -z "${PANMIRA_REEXEC:-}" ]]; then
     info "install.sh updated, re-launching..."
-    export METABOT_REEXEC=1
-    exec bash "$METABOT_HOME/install.sh"
+    export PANMIRA_REEXEC=1
+    exec bash "$PANMIRA_HOME/install.sh"
   fi
 else
-  info "Cloning MetaBot..."
-  git clone "$METABOT_REPO" "$METABOT_HOME"
-  cd "$METABOT_HOME"
+  info "Cloning Panmira..."
+  git clone "$PANMIRA_REPO" "$PANMIRA_HOME"
+  cd "$PANMIRA_HOME"
 fi
-success "Panmira code ready at ${METABOT_HOME}"
+success "Panmira code ready at ${PANMIRA_HOME}"
 
 # ============================================================================
 # Phase 3: Install dependencies
 # ============================================================================
 step "Phase 3: Installing dependencies"
 
-cd "$METABOT_HOME"
+cd "$PANMIRA_HOME"
 info "Running npm install..."
 npm install --production=false
 success "npm dependencies installed"
@@ -417,9 +417,9 @@ install_kimi_cli() {
 # ============================================================================
 step "Phase 4: Configuration"
 
-if [[ -f "$METABOT_HOME/.env" ]]; then
+if [[ -f "$PANMIRA_HOME/.env" ]]; then
   warn ".env already exists. Skipping interactive config."
-  warn "Edit ${METABOT_HOME}/.env to modify settings."
+  warn "Edit ${PANMIRA_HOME}/.env to modify settings."
   SKIP_CONFIG=true
 else
   SKIP_CONFIG=false
@@ -430,7 +430,7 @@ if [[ "$SKIP_CONFIG" == "false" ]]; then
   # ------ 4a: Working directory ------
   echo ""
   echo -e "${BOLD}Working Directory:${NC}"
-  prompt_input WORK_DIR "Project directory for Claude to work in" "$HOME/metabot-workspace"
+  prompt_input WORK_DIR "Project directory for Claude to work in" "$HOME/panmira-workspace"
   mkdir -p "$WORK_DIR"
   success "Working directory: ${WORK_DIR}"
 
@@ -581,7 +581,7 @@ API_TIMEOUT_MS=600000"
   # ------ 4d: Bot name + auto-generated settings ------
   echo ""
   echo -e "${BOLD}Bot Name:${NC}"
-  prompt_input BOT_NAME "Name for your bot" "metabot"
+  prompt_input BOT_NAME "Name for your bot" "panmira"
 
   # Auto-generate API secret
   API_SECRET="$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | xxd -p | tr -d '\n' | head -c 64)"
@@ -632,12 +632,12 @@ if [[ "$SKIP_CONFIG" == "false" ]]; then
     echo ""
     echo "# MetaMemory"
     echo "META_MEMORY_URL=${META_MEMORY_URL}"
-  } > "$METABOT_HOME/.env"
-  chmod 600 "$METABOT_HOME/.env"
+  } > "$PANMIRA_HOME/.env"
+  chmod 600 "$PANMIRA_HOME/.env"
   success ".env generated"
 
   # Generate bots.json (use node for safe JSON escaping)
-  BOTS_JSON="$METABOT_HOME/bots.json"
+  BOTS_JSON="$PANMIRA_HOME/bots.json"
   FEISHU_BOTS_JSON="[]"
   TELEGRAM_BOTS_JSON="[]"
   WECHAT_BOTS_JSON="[]"
@@ -717,47 +717,47 @@ mkdir -p "$SKILLS_DIR"
 # Install metaskill (bundled in src/skills/metaskill/)
 info "Installing metaskill skill..."
 mkdir -p "$SKILLS_DIR/metaskill/flows"
-cp "$METABOT_HOME/src/skills/metaskill/SKILL.md" "$SKILLS_DIR/metaskill/SKILL.md"
-cp "$METABOT_HOME/src/skills/metaskill/flows/team.md" "$SKILLS_DIR/metaskill/flows/team.md"
-cp "$METABOT_HOME/src/skills/metaskill/flows/agent.md" "$SKILLS_DIR/metaskill/flows/agent.md"
-cp "$METABOT_HOME/src/skills/metaskill/flows/skill.md" "$SKILLS_DIR/metaskill/flows/skill.md"
+cp "$PANMIRA_HOME/src/skills/metaskill/SKILL.md" "$SKILLS_DIR/metaskill/SKILL.md"
+cp "$PANMIRA_HOME/src/skills/metaskill/flows/team.md" "$SKILLS_DIR/metaskill/flows/team.md"
+cp "$PANMIRA_HOME/src/skills/metaskill/flows/agent.md" "$SKILLS_DIR/metaskill/flows/agent.md"
+cp "$PANMIRA_HOME/src/skills/metaskill/flows/skill.md" "$SKILLS_DIR/metaskill/flows/skill.md"
 success "metaskill skill installed → $SKILLS_DIR/metaskill"
 
 # Install metamemory skill (bundled in src/memory/skill/)
 info "Installing metamemory skill..."
 mkdir -p "$SKILLS_DIR/metamemory"
-cp "$METABOT_HOME/src/memory/skill/SKILL.md" "$SKILLS_DIR/metamemory/SKILL.md"
+cp "$PANMIRA_HOME/src/memory/skill/SKILL.md" "$SKILLS_DIR/metamemory/SKILL.md"
 # Clean up old skill location if it exists
 if [[ -d "$HOME/.claude/skills/memory" ]]; then
   rm -rf "$HOME/.claude/skills/memory"
 fi
 success "metamemory skill installed → $SKILLS_DIR/metamemory"
 
-# Install metabot skill (bundled in src/skills/metabot/)
-info "Installing metabot skill..."
-mkdir -p "$SKILLS_DIR/metabot"
-cp "$METABOT_HOME/src/skills/metabot/SKILL.md" "$SKILLS_DIR/metabot/SKILL.md"
-success "metabot skill installed → $SKILLS_DIR/metabot"
+# Install panmira skill (bundled in src/skills/panmira/)
+info "Installing panmira skill..."
+mkdir -p "$SKILLS_DIR/panmira"
+cp "$PANMIRA_HOME/src/skills/panmira/SKILL.md" "$SKILLS_DIR/panmira/SKILL.md"
+success "panmira skill installed → $SKILLS_DIR/panmira"
 
 # Install voice skill (bundled in src/skills/voice/)
 info "Installing voice skill..."
 mkdir -p "$SKILLS_DIR/voice"
-cp "$METABOT_HOME/src/skills/voice/SKILL.md" "$SKILLS_DIR/voice/SKILL.md"
+cp "$PANMIRA_HOME/src/skills/voice/SKILL.md" "$SKILLS_DIR/voice/SKILL.md"
 success "voice skill installed → $SKILLS_DIR/voice"
 
 # Install skill-hub skill (bundled in src/skills/skill-hub/)
 info "Installing skill-hub skill..."
 mkdir -p "$SKILLS_DIR/skill-hub"
-cp "$METABOT_HOME/src/skills/skill-hub/SKILL.md" "$SKILLS_DIR/skill-hub/SKILL.md"
+cp "$PANMIRA_HOME/src/skills/skill-hub/SKILL.md" "$SKILLS_DIR/skill-hub/SKILL.md"
 success "skill-hub skill installed → $SKILLS_DIR/skill-hub"
 
 # Detect Feishu bots
 HAS_FEISHU=false
 if [[ "$SKIP_CONFIG" == "false" && "$SETUP_FEISHU" == "true" ]]; then
   HAS_FEISHU=true
-elif [[ "$SKIP_CONFIG" == "true" && -f "$METABOT_HOME/bots.json" ]]; then
+elif [[ "$SKIP_CONFIG" == "true" && -f "$PANMIRA_HOME/bots.json" ]]; then
   # Detect from existing config
-  if node -e "const c=JSON.parse(require('fs').readFileSync('$METABOT_HOME/bots.json','utf-8')); process.exit((c.feishuBots||[]).length>0?0:1)" 2>/dev/null; then
+  if node -e "const c=JSON.parse(require('fs').readFileSync('$PANMIRA_HOME/bots.json','utf-8')); process.exit((c.feishuBots||[]).length>0?0:1)" 2>/dev/null; then
     HAS_FEISHU=true
   fi
 fi
@@ -795,9 +795,9 @@ if [[ "$SETUP_LARK_CLI" == "true" ]]; then
   fi
 
   # Configure lark-cli with first Feishu bot credentials
-  if [[ ! -f "$HOME/.lark-cli/config.json" && -f "$METABOT_HOME/bots.json" ]]; then
-    FEISHU_APP_ID=$(node -e "const c=JSON.parse(require('fs').readFileSync('$METABOT_HOME/bots.json','utf-8')); console.log((c.feishuBots||[])[0]?.feishuAppId||'')" 2>/dev/null)
-    FEISHU_APP_SECRET=$(node -e "const c=JSON.parse(require('fs').readFileSync('$METABOT_HOME/bots.json','utf-8')); console.log((c.feishuBots||[])[0]?.feishuAppSecret||'')" 2>/dev/null)
+  if [[ ! -f "$HOME/.lark-cli/config.json" && -f "$PANMIRA_HOME/bots.json" ]]; then
+    FEISHU_APP_ID=$(node -e "const c=JSON.parse(require('fs').readFileSync('$PANMIRA_HOME/bots.json','utf-8')); console.log((c.feishuBots||[])[0]?.feishuAppId||'')" 2>/dev/null)
+    FEISHU_APP_SECRET=$(node -e "const c=JSON.parse(require('fs').readFileSync('$PANMIRA_HOME/bots.json','utf-8')); console.log((c.feishuBots||[])[0]?.feishuAppSecret||'')" 2>/dev/null)
     if [[ -n "$FEISHU_APP_ID" && -n "$FEISHU_APP_SECRET" ]]; then
       echo "$FEISHU_APP_SECRET" | lark-cli config init --app-id "$FEISHU_APP_ID" --app-secret-stdin --brand feishu 2>/dev/null && \
         success "lark-cli configured with app $FEISHU_APP_ID" || \
@@ -824,10 +824,10 @@ fi
 if [[ "$SKIP_CONFIG" == "false" ]]; then
   DEPLOY_WORK_DIR="$WORK_DIR"
 else
-  if [[ -f "$METABOT_HOME/bots.json" ]]; then
+  if [[ -f "$PANMIRA_HOME/bots.json" ]]; then
     DEPLOY_WORK_DIR=$(node -e "
       const fs = require('fs');
-      const cfg = JSON.parse(fs.readFileSync('$METABOT_HOME/bots.json','utf-8'));
+      const cfg = JSON.parse(fs.readFileSync('$PANMIRA_HOME/bots.json','utf-8'));
       const bots = [...(cfg.feishuBots||[]),...(cfg.telegramBots||[]),...(cfg.wechatBots||[])];
       if (bots[0]) console.log(bots[0].defaultWorkingDirectory);
     " 2>/dev/null || echo "")
@@ -841,7 +841,7 @@ if [[ -n "${DEPLOY_WORK_DIR:-}" ]]; then
   SKILLS_DEST="$DEPLOY_WORK_DIR/.claude/skills"
 
   # Copy skills (common + lark-cli skills if Feishu)
-  DEPLOY_SKILLS="metaskill metamemory metabot voice skill-hub"
+  DEPLOY_SKILLS="metaskill metamemory panmira voice skill-hub"
   if [[ "$SETUP_LARK_CLI" == "true" ]]; then
     for lark_skill in lark-base lark-calendar lark-contact lark-doc lark-drive lark-event lark-im lark-mail lark-minutes lark-openapi-explorer lark-shared lark-sheets lark-skill-maker lark-task lark-vc lark-whiteboard lark-wiki lark-workflow-meeting-summary lark-workflow-standup-report; do
       [[ -d "$SKILLS_DIR/$lark_skill" ]] && DEPLOY_SKILLS="$DEPLOY_SKILLS $lark_skill"
@@ -856,8 +856,8 @@ if [[ -n "${DEPLOY_WORK_DIR:-}" ]]; then
   done
 
   # Deploy CLAUDE.md to working directory (+ AGENTS.md symlink for Kimi engine)
-  if [[ -f "$METABOT_HOME/src/workspace/CLAUDE.md" ]]; then
-    cp "$METABOT_HOME/src/workspace/CLAUDE.md" "$DEPLOY_WORK_DIR/CLAUDE.md"
+  if [[ -f "$PANMIRA_HOME/src/workspace/CLAUDE.md" ]]; then
+    cp "$PANMIRA_HOME/src/workspace/CLAUDE.md" "$DEPLOY_WORK_DIR/CLAUDE.md"
     success "Deployed CLAUDE.md → $DEPLOY_WORK_DIR/CLAUDE.md"
     # Kimi engine reads AGENTS.md not CLAUDE.md — symlink so both engines see the same doc
     if [[ ! -e "$DEPLOY_WORK_DIR/AGENTS.md" ]]; then
@@ -871,19 +871,19 @@ else
 fi
 
 # ============================================================================
-# Phase 7: MetaMemory (embedded in MetaBot)
+# Phase 7: MetaMemory (embedded in Panmira)
 # ============================================================================
 step "Phase 7: MetaMemory"
 
 METAMEMORY_INSTALLED=false
 
 info "MetaMemory is embedded in Panmira (no separate server needed)."
-mkdir -p "${METABOT_HOME}/data"
+mkdir -p "${PANMIRA_HOME}/data"
 
 # Migrate existing database from standalone Python MetaMemory if found
-if [[ -f "$HOME/.metamemory-data/metamemory.db" && ! -f "$METABOT_HOME/data/metamemory.db" ]]; then
+if [[ -f "$HOME/.metamemory-data/metamemory.db" && ! -f "$PANMIRA_HOME/data/metamemory.db" ]]; then
   info "Migrating existing MetaMemory database..."
-  cp "$HOME/.metamemory-data/metamemory.db" "$METABOT_HOME/data/"
+  cp "$HOME/.metamemory-data/metamemory.db" "$PANMIRA_HOME/data/"
   success "Database migrated from ~/.metamemory-data/"
 fi
 
@@ -913,7 +913,7 @@ if ! grep -q 'mm()' "$BASH_ALIASES" 2>/dev/null; then
   info "Installing mm() shell shortcut..."
   cat >> "$BASH_ALIASES" << 'MMEOF'
 
-# MetaMemory shortcuts (installed by MetaBot)
+# MetaMemory shortcuts (installed by Panmira)
 export MEMORY_URL="http://localhost:8100"
 export MEMORY_AUTH="Authorization: Bearer ${MEMORY_ADMIN_TOKEN:-${MEMORY_TOKEN:-${MEMORY_SECRET:-${API_SECRET:-changeme}}}}"
 
@@ -969,9 +969,9 @@ if ! grep -q 'mb()' "$BASH_ALIASES" 2>/dev/null; then
   info "Installing mb() shell shortcut..."
   cat >> "$BASH_ALIASES" << 'MBEOF'
 
-# Panmira API shortcuts (installed by MetaBot)
-export METABOT_URL="http://localhost:${METABOT_API_PORT:-9100}"
-export METABOT_AUTH="Authorization: Bearer ${METABOT_API_SECRET:-changeme}"
+# Panmira API shortcuts (installed by Panmira)
+export PANMIRA_URL="http://localhost:${PANMIRA_API_PORT:-9100}"
+export PANMIRA_AUTH="Authorization: Bearer ${PANMIRA_API_SECRET:-changeme}"
 
 mb() {
   local cmd="${1:-help}"
@@ -979,10 +979,10 @@ mb() {
   case "$cmd" in
     # --- Bot management ---
     bots|b)
-      curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/bots" | python3 -m json.tool 2>/dev/null || curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/bots"
+      curl -s -H "$PANMIRA_AUTH" "$PANMIRA_URL/api/bots" | python3 -m json.tool 2>/dev/null || curl -s -H "$PANMIRA_AUTH" "$PANMIRA_URL/api/bots"
       ;;
     bot)
-      curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/bots/$1" | python3 -m json.tool 2>/dev/null || curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/bots/$1"
+      curl -s -H "$PANMIRA_AUTH" "$PANMIRA_URL/api/bots/$1" | python3 -m json.tool 2>/dev/null || curl -s -H "$PANMIRA_AUTH" "$PANMIRA_URL/api/bots/$1"
       ;;
     # --- Task delegation ---
     task|t)
@@ -992,8 +992,8 @@ mb() {
         echo "Usage: mb task <botName> <chatId> <prompt>"
         return 1
       fi
-      curl -s -X POST "$METABOT_URL/api/tasks" \
-        -H "$METABOT_AUTH" -H "Content-Type: application/json" \
+      curl -s -X POST "$PANMIRA_URL/api/tasks" \
+        -H "$PANMIRA_AUTH" -H "Content-Type: application/json" \
         -d "{\"botName\":\"$bot\",\"chatId\":\"$chat\",\"prompt\":\"$prompt\",\"sendCards\":true}"
       ;;
     # --- Scheduling ---
@@ -1001,7 +1001,7 @@ mb() {
       local subcmd="${1:-list}"; shift 2>/dev/null
       case "$subcmd" in
         list|ls)
-          curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/schedule" | python3 -m json.tool 2>/dev/null || curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/schedule"
+          curl -s -H "$PANMIRA_AUTH" "$PANMIRA_URL/api/schedule" | python3 -m json.tool 2>/dev/null || curl -s -H "$PANMIRA_AUTH" "$PANMIRA_URL/api/schedule"
           ;;
         add|a)
           local bot="$1" chat="$2" delay="$3"; shift 3 2>/dev/null
@@ -1010,13 +1010,13 @@ mb() {
             echo "Usage: mb schedule add <botName> <chatId> <delaySeconds> <prompt>"
             return 1
           fi
-          curl -s -X POST "$METABOT_URL/api/schedule" \
-            -H "$METABOT_AUTH" -H "Content-Type: application/json" \
+          curl -s -X POST "$PANMIRA_URL/api/schedule" \
+            -H "$PANMIRA_AUTH" -H "Content-Type: application/json" \
             -d "{\"botName\":\"$bot\",\"chatId\":\"$chat\",\"delaySeconds\":$delay,\"prompt\":\"$prompt\"}"
           ;;
         cancel|rm)
           if [[ -z "$1" ]]; then echo "Usage: mb schedule cancel <id>"; return 1; fi
-          curl -s -X DELETE "$METABOT_URL/api/schedule/$1" -H "$METABOT_AUTH"
+          curl -s -X DELETE "$PANMIRA_URL/api/schedule/$1" -H "$PANMIRA_AUTH"
           ;;
         *)
           echo "mb schedule - Task scheduling"
@@ -1028,7 +1028,7 @@ mb() {
       ;;
     # --- Health ---
     health|h)
-      curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/health" | python3 -m json.tool 2>/dev/null || curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/health"
+      curl -s -H "$PANMIRA_AUTH" "$PANMIRA_URL/api/health" | python3 -m json.tool 2>/dev/null || curl -s -H "$PANMIRA_AUTH" "$PANMIRA_URL/api/health"
       ;;
     # --- Help ---
     *)
@@ -1054,10 +1054,10 @@ mb() {
 MBEOF
   # Patch the actual secrets into the file
   if [[ -n "${API_PORT:-}" ]]; then
-    sed_i "s|\${METABOT_API_PORT:-9100}|${API_PORT}|g" "$BASH_ALIASES"
+    sed_i "s|\${PANMIRA_API_PORT:-9100}|${API_PORT}|g" "$BASH_ALIASES"
   fi
   if [[ -n "${API_SECRET:-}" ]]; then
-    sed_i "s|\${METABOT_API_SECRET:-changeme}|${API_SECRET}|g" "$BASH_ALIASES"
+    sed_i "s|\${PANMIRA_API_SECRET:-changeme}|${API_SECRET}|g" "$BASH_ALIASES"
   fi
   success "mb() shortcut installed"
 else
@@ -1071,13 +1071,13 @@ fi
 # Source it in the current shell so mm/mb work immediately after install
 source "$BASH_ALIASES" 2>/dev/null || true
 
-# Install mm/mb/metabot as standalone executables in ~/.local/bin (no source needed)
+# Install mm/mb/panmira as standalone executables in ~/.local/bin (no source needed)
 LOCAL_BIN="$HOME/.local/bin"
 mkdir -p "$LOCAL_BIN"
-CLI_TOOLS="mm mb metabot"
+CLI_TOOLS="mm mb panmira"
 for cli in $CLI_TOOLS; do
-  if [[ -f "$METABOT_HOME/bin/$cli" ]]; then
-    cp "$METABOT_HOME/bin/$cli" "$LOCAL_BIN/$cli"
+  if [[ -f "$PANMIRA_HOME/bin/$cli" ]]; then
+    cp "$PANMIRA_HOME/bin/$cli" "$LOCAL_BIN/$cli"
     chmod +x "$LOCAL_BIN/$cli"
   fi
 done
@@ -1088,40 +1088,40 @@ if ! echo "$PATH" | grep -q "$LOCAL_BIN"; then
   echo "export PATH=\"$LOCAL_BIN:\$PATH\"" >> "$HOME/.bashrc"
   info "Added ~/.local/bin to PATH in ~/.bashrc"
 fi
-success "mm/mb/metabot CLI tools installed to $LOCAL_BIN"
+success "mm/mb/panmira CLI tools installed to $LOCAL_BIN"
 
-# Persist METABOT_HOME for non-default install paths so the CLI tools
-# (mm/mb/metabot) can find the install in new shell sessions. The CLIs all
-# fall back to $HOME/metabot, so we only need to export when it differs.
-if [[ "$METABOT_HOME" != "$DEFAULT_METABOT_HOME" ]]; then
+# Persist PANMIRA_HOME for non-default install paths so the CLI tools
+# (mm/mb/panmira) can find the install in new shell sessions. The CLIs all
+# fall back to $HOME/panmira, so we only need to export when it differs.
+if [[ "$PANMIRA_HOME" != "$DEFAULT_PANMIRA_HOME" ]]; then
   for rc_file in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
     [[ -f "$rc_file" ]] || continue
     # Drop any prior export to keep this idempotent across re-runs.
-    if grep -q '^export METABOT_HOME=' "$rc_file" 2>/dev/null; then
-      sed_i '/^export METABOT_HOME=/d' "$rc_file"
+    if grep -q '^export PANMIRA_HOME=' "$rc_file" 2>/dev/null; then
+      sed_i '/^export PANMIRA_HOME=/d' "$rc_file"
     fi
   done
-  echo "export METABOT_HOME=\"$METABOT_HOME\"" >> "$HOME/.bashrc"
+  echo "export PANMIRA_HOME=\"$PANMIRA_HOME\"" >> "$HOME/.bashrc"
   if [[ -f "$HOME/.zshrc" ]]; then
-    echo "export METABOT_HOME=\"$METABOT_HOME\"" >> "$HOME/.zshrc"
+    echo "export PANMIRA_HOME=\"$PANMIRA_HOME\"" >> "$HOME/.zshrc"
   fi
-  info "Persisted METABOT_HOME=$METABOT_HOME to shell rc files"
+  info "Persisted PANMIRA_HOME=$PANMIRA_HOME to shell rc files"
 fi
 
 # ============================================================================
 # Phase 8: Build + Start Panmira with PM2
 # ============================================================================
-step "Phase 8: Starting MetaBot"
+step "Phase 8: Starting Panmira"
 
-cd "$METABOT_HOME"
+cd "$PANMIRA_HOME"
 
 info "Building TypeScript..."
 npm run build 2>/dev/null && success "Build complete" || warn "Build failed, will use tsx directly via PM2"
 
 # Always delete + start fresh to avoid stale/stopped process issues
-if pm2 describe metabot &>/dev/null 2>&1; then
+if pm2 describe panmira &>/dev/null 2>&1; then
   info "Removing old Panmira PM2 process..."
-  pm2 delete metabot 2>/dev/null || true
+  pm2 delete panmira 2>/dev/null || true
 fi
 info "Starting Panmira with PM2..."
 pm2 start ecosystem.config.cjs
@@ -1133,8 +1133,8 @@ success "Panmira is running!"
 HAS_WECHAT_BOT=false
 if [[ "$SKIP_CONFIG" == "false" && "${SETUP_WECHAT:-false}" == "true" ]]; then
   HAS_WECHAT_BOT=true
-elif [[ "$SKIP_CONFIG" == "true" && -f "$METABOT_HOME/bots.json" ]]; then
-  if node -e "const c=JSON.parse(require('fs').readFileSync('$METABOT_HOME/bots.json','utf-8')); process.exit((c.wechatBots||[]).length>0?0:1)" 2>/dev/null; then
+elif [[ "$SKIP_CONFIG" == "true" && -f "$PANMIRA_HOME/bots.json" ]]; then
+  if node -e "const c=JSON.parse(require('fs').readFileSync('$PANMIRA_HOME/bots.json','utf-8')); process.exit((c.wechatBots||[]).length>0?0:1)" 2>/dev/null; then
     HAS_WECHAT_BOT=true
   fi
 fi
@@ -1143,7 +1143,7 @@ if [[ "$HAS_WECHAT_BOT" == "true" ]]; then
   echo ""
   info "WeChat ClawBot detected — waiting for QR login URL..."
   WX_QR_URL=""
-  LOG_FILE="$METABOT_HOME/logs/out.log"
+  LOG_FILE="$PANMIRA_HOME/logs/out.log"
   for i in $(seq 1 15); do
     sleep 2
     if [[ -f "$LOG_FILE" ]]; then
@@ -1167,7 +1167,7 @@ if [[ "$HAS_WECHAT_BOT" == "true" ]]; then
     echo ""
   else
     warn "QR URL not yet available. Check logs to get it:"
-    echo "    pm2 logs metabot --lines 30"
+    echo "    pm2 logs panmira --lines 30"
   fi
 fi
 
@@ -1181,7 +1181,7 @@ echo "  ║           Panmira — Ready!               ║"
 echo "  ╚══════════════════════════════════════════╝"
 echo -e "${NC}"
 echo ""
-echo -e "  ${BOLD}Installation:${NC}   ${METABOT_HOME}"
+echo -e "  ${BOLD}Installation:${NC}   ${PANMIRA_HOME}"
 if [[ "${SKIP_CONFIG}" == "false" ]]; then
   echo -e "  ${BOLD}Working Dir:${NC}    ${WORK_DIR}"
   echo -e "  ${BOLD}API:${NC}            http://localhost:${API_PORT}"
@@ -1197,9 +1197,9 @@ if [[ "$METAMEMORY_INSTALLED" == "true" ]]; then
 fi
 echo ""
 echo -e "  ${BOLD}Commands:${NC}"
-echo "    pm2 logs metabot          # View Panmira logs"
-echo "    pm2 restart metabot       # Restart MetaBot"
-echo "    pm2 stop metabot          # Stop MetaBot"
+echo "    pm2 logs panmira          # View Panmira logs"
+echo "    pm2 restart panmira       # Restart Panmira"
+echo "    pm2 stop panmira          # Stop Panmira"
 if [[ "$METAMEMORY_INSTALLED" == "true" ]]; then
   echo "    mm search <query>         # Search MetaMemory"
   echo "    mm folders                # Browse knowledge tree"
@@ -1227,11 +1227,11 @@ if [[ "${SKIP_CONFIG}" == "false" ]]; then
     STEP_NUM=$((STEP_NUM + 1))
   fi
   if [[ "${SETUP_WECHAT:-false}" == "true" ]]; then
-    echo "    ${STEP_NUM}. Scan the WeChat QR code shown above (or check pm2 logs metabot)"
+    echo "    ${STEP_NUM}. Scan the WeChat QR code shown above (or check pm2 logs panmira)"
     STEP_NUM=$((STEP_NUM + 1))
     echo "    ${STEP_NUM}. Send a message to your ClawBot in WeChat"
     STEP_NUM=$((STEP_NUM + 1))
   fi
-  echo "    ${STEP_NUM}. Check logs: pm2 logs metabot"
+  echo "    ${STEP_NUM}. Check logs: pm2 logs panmira"
 fi
 echo ""

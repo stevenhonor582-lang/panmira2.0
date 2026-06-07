@@ -7,7 +7,7 @@
 #
 set -euo pipefail
 
-SERVICE="${1:-metabot-core}"
+SERVICE="${1:-panmira-core}"
 VERSION="${2:-v1.0.0}"
 BUILD_ID="build-$(date +%s)-$(echo "${SERVICE}-${VERSION}" | md5sum | cut -c1-8)"
 
@@ -18,9 +18,9 @@ START_MS=$(date +%s%3N)
 # git checkout "${VERSION}"
 # 2. 检测项目类型并 build
 # case "$SERVICE" in
-#   metabot-core) npm run build ;;
-#   metabot-portal) yarn build ;;
-#   metabot-mcp) go build -o bin/mcp . ;;
+#   panmira-core) npm run build ;;
+#   panmira-portal) yarn build ;;
+#   panmira-mcp) go build -o bin/mcp . ;;
 # esac
 # 3. docker build
 # docker build -t "registry.internal/${SERVICE}:${VERSION}" .

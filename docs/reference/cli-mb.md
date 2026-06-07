@@ -79,7 +79,7 @@ By default, `mb` connects to `http://localhost:9100`. For internet-reachable dep
 
 ```bash
 # Generate a secret once: openssl rand -hex 32
-# In ~/.panmira/.env or ~/metabot/.env
-METABOT_URL=http://your-server:9100
+# In ~/.panmira/.env or ~/panmira/.env
+PANMIRA_URL=http://your-server:9100
 API_SECRET=your-secret
 ```

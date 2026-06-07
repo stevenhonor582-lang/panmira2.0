@@ -7,10 +7,10 @@
 *Write code · Manage agents · Automate everything*
 
 <p>
-  <a href="https://github.com/xvirobotics/metabot/actions"><img src="https://img.shields.io/github/actions/workflow/status/xvirobotics/metabot/ci.yml?branch=main&style=for-the-badge&label=CI&logo=github" alt="CI"></a>
+  <a href="https://github.com/xvirobotics/panmira/actions"><img src="https://img.shields.io/github/actions/workflow/status/xvirobotics/panmira/ci.yml?branch=main&style=for-the-badge&label=CI&logo=github" alt="CI"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="License"></a>
-  <a href="https://github.com/xvirobotics/metabot"><img src="https://img.shields.io/github/stars/xvirobotics/metabot?style=for-the-badge&logo=github" alt="Stars"></a>
-  <a href="https://github.com/xvirobotics/metabot/network/members"><img src="https://img.shields.io/github/forks/xvirobotics/metabot?style=for-the-badge&logo=github" alt="Forks"></a>
+  <a href="https://github.com/xvirobotics/panmira"><img src="https://img.shields.io/github/stars/xvirobotics/panmira?style=for-the-badge&logo=github" alt="Stars"></a>
+  <a href="https://github.com/xvirobotics/panmira/network/members"><img src="https://img.shields.io/github/forks/xvirobotics/panmira?style=for-the-badge&logo=github" alt="Forks"></a>
 </p>
 
 <p>
@@ -28,7 +28,7 @@
   <img src="https://img.shields.io/badge/Web_UI-61DAFB?style=for-the-badge&logo=react&logoColor=white" alt="Web UI">
 </p>
 
-[中文](README.md) · **English** · [📚 Docs](https://xvirobotics.com/metabot/)
+[中文](README.md) · **English** · [📚 Docs](https://xvirobotics.com/panmira/)
 
 </div>
 
@@ -37,12 +37,12 @@
 ![Panmira Demo](resources/panmira-demo.gif)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/xvirobotics/panmira/main/install.sh | bash
 ```
 
 The installer walks you through everything: working directory → **engine choice (Claude / Kimi / Codex)** → subscription login → IM platform → auto-start with PM2. **5 minutes to get started.**
 
-> Custom install directory (default `~/metabot`): `curl ... | bash -s -- --dir /opt/metabot`, or `METABOT_HOME=/opt/metabot bash install.sh`. Windows: `.\install.ps1 -Dir C:\opt\metabot`.
+> Custom install directory (default `~/panmira`): `curl ... | bash -s -- --dir /opt/panmira`, or `PANMIRA_HOME=/opt/panmira bash install.sh`. Windows: `.\install.ps1 -Dir C:\opt\panmira`.
 
 ---
 
@@ -67,7 +67,7 @@ Panmira isn't locked to one vendor — all three top AI coding agents ship with 
 { "name": "vegeta", "engine": "codex", "codex": { "model": "gpt-5.4-codex" } }
 ```
 
-Codex support uses the local `codex exec --json` CLI and resumes chat sessions with `codex exec resume`. Authenticate once with `codex login` (or configure your Codex API key/profile) before starting MetaBot.
+Codex support uses the local `codex exec --json` CLI and resumes chat sessions with `codex exec resume`. Authenticate once with `codex login` (or configure your Codex API key/profile) before starting Panmira.
 
 Run your frontend bot on Claude and your backend bot on Kimi? Totally fine. The Agent Bus lets them delegate to each other — the calling bot doesn't need to know which engine is on the other side.
 
@@ -82,7 +82,7 @@ Run your frontend bot on Claude and your backend bot on Kimi? Totally fine. The 
 - **Voice assistant (Jarvis mode)** — "Hey Siri, Jarvis" from AirPods, hands-free voice control of any agent
 - **Self-growing organization** — a manager bot creates new agents on demand, assigns tasks, schedules follow-ups
 
-## Why MetaBot
+## Why Panmira
 
 | | Panmira | Claude / Kimi / Codex CLI (terminal) | Dify / Coze |
 |---|---|---|---|
@@ -127,7 +127,7 @@ The engine layer is abstracted — Kimi's event stream and Codex's JSONL stream 
 | **Self-Improving** | MetaMemory | Shared knowledge store. Agents write what they learn, other agents retrieve it |
 | **Agent Organization** | MetaSkill + Scheduler + Agent Bus | One command generates a full agent team. Agents delegate tasks and create new agents |
 
-Full-featured browser-based chat interface. Access at `https://your-server/web/` after starting MetaBot.
+Full-featured browser-based chat interface. Access at `https://your-server/web/` after starting Panmira.
 
 ![Panmira Web UI](resources/web-ui.png)
 
@@ -142,7 +142,7 @@ Full-featured browser-based chat interface. Access at `https://your-server/web/`
 
 **Stack**: React 19 + Vite + Zustand + react-markdown
 
-> Voice features require HTTPS. We recommend Caddy as a reverse proxy. See [Web UI docs](https://xvirobotics.com/metabot/features/web-ui/).
+> Voice features require HTTPS. We recommend Caddy as a reverse proxy. See [Web UI docs](https://xvirobotics.com/panmira/features/web-ui/).
 
 ## Core Components
 
@@ -170,22 +170,22 @@ Full-featured browser-based chat interface. Access at `https://your-server/web/`
 
 1. iPhone WeChat 8.0.70+ → Settings → Plugins → enable **ClawBot**
 2. Run `install.sh`, pick `3) WeChat ClawBot` — scan QR to bind
-3. See [WeChat Setup Guide](https://xvirobotics.com/metabot/features/wechat/)
+3. See [WeChat Setup Guide](https://xvirobotics.com/panmira/features/wechat/)
 
 ### Feishu/Lark
 
 1. Create app at [open.feishu.cn](https://open.feishu.cn/) → add Bot capability
 2. Enable permissions: `im:message`, `im:message:readonly`, `im:resource`, `im:chat:readonly`
-3. Start MetaBot, then enable persistent connection + `im.message.receive_v1` event
+3. Start Panmira, then enable persistent connection + `im.message.receive_v1` event
 4. Publish the app
 
 > No public IP needed. Feishu uses WebSocket, Telegram and WeChat use long polling.
 
-**Web UI**: Visit `http://localhost:9100/web/` after starting MetaBot, enter your API_SECRET.
+**Web UI**: Visit `http://localhost:9100/web/` after starting Panmira, enter your API_SECRET.
 
 ## Example Prompts
 
-New to MetaBot? Here are real prompts you can send in Feishu/Telegram:
+New to Panmira? Here are real prompts you can send in Feishu/Telegram:
 
 ### MetaMemory — Persistent Knowledge
 
@@ -325,9 +325,9 @@ Supported: text, images (Claude multimodal), files (PDF/code/docs), rich text (P
 | `WIKI_AUTO_SYNC` | true | Auto-sync on changes |
 | `VOLCENGINE_TTS_APPID` | — | Doubao voice (TTS + STT) |
 | `VOLCENGINE_TTS_ACCESS_KEY` | — | Doubao voice key |
-| `METABOT_URL` | `http://localhost:9100` | Panmira API URL. Default is local HTTP; for remote access prefer HTTPS or a private-network address |
+| `PANMIRA_URL` | `http://localhost:9100` | Panmira API URL. Default is local HTTP; for remote access prefer HTTPS or a private-network address |
 | `META_MEMORY_URL` | `http://localhost:8100` | MetaMemory server URL. Default is local HTTP; for remote access prefer HTTPS or a private-network address |
-| `METABOT_PEERS` | — | Peer Panmira URLs (comma-separated). Prefer HTTPS for internet-reachable peers |
+| `PANMIRA_PEERS` | — | Peer Panmira URLs (comma-separated). Prefer HTTPS for internet-reachable peers |
 | `LOG_LEVEL` | info | Log level |
 
 </details>
@@ -349,7 +349,7 @@ ANTHROPIC_AUTH_TOKEN=your-key
 <details>
 <summary><strong>cc-switch compatibility</strong></summary>
 
-Compatible with [cc-switch](https://github.com/farion1231/cc-switch), [cc-switch-cli](https://github.com/SaladDay/cc-switch-cli), [CCS](https://github.com/kaitranntt/ccs). Switching via `cc switch` takes effect **without restarting** MetaBot.
+Compatible with [cc-switch](https://github.com/farion1231/cc-switch), [cc-switch-cli](https://github.com/SaladDay/cc-switch-cli), [CCS](https://github.com/kaitranntt/ccs). Switching via `cc switch` takes effect **without restarting** Panmira.
 
 To pin a specific API key, set the `apiKey` field in `bots.json`.
 
@@ -415,13 +415,13 @@ Panmira runs Claude Code in `bypassPermissions` mode — no interactive approval
 <details>
 <summary><strong>CLI Tools</strong></summary>
 
-The installer places `metabot`, `mm`, `mb` in `~/.local/bin/` — available immediately.
+The installer places `panmira`, `mm`, `mb` in `~/.local/bin/` — available immediately.
 
 ```bash
 # Panmira management
-metabot update                      # pull latest, rebuild, restart
-metabot start / stop / restart      # PM2 management
-metabot logs                        # view live logs
+panmira update                      # pull latest, rebuild, restart
+panmira start / stop / restart      # PM2 management
+panmira logs                        # view live logs
 
 # MetaMemory
 mm search "deployment guide"        # full-text search
@@ -450,7 +450,7 @@ mb skills install <skill> <bot>       # install skill to a bot
 mb voice "Hello world" --play
 ```
 
-CLI supports connecting to remote MetaBot/MetaMemory servers — configure `METABOT_URL` and `META_MEMORY_URL` in `~/.panmira/.env`.
+CLI supports connecting to remote Panmira/MetaMemory servers — configure `PANMIRA_URL` and `META_MEMORY_URL` in `~/.panmira/.env`.
 
 </details>
 
@@ -458,8 +458,8 @@ CLI supports connecting to remote MetaBot/MetaMemory servers — configure `META
 <summary><strong>Manual install</strong></summary>
 
 ```bash
-git clone https://github.com/xvirobotics/metabot.git
-cd metabot && npm install
+git clone https://github.com/xvirobotics/panmira.git
+cd panmira && npm install
 cp bots.example.json bots.json   # edit with your bot configs
 cp .env.example .env              # edit global settings
 npm run dev
@@ -493,7 +493,7 @@ We open-sourced it because we believe this is how companies will work in the fut
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=xvirobotics/metabot&type=Date)](https://star-history.com/#xvirobotics/metabot&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=xvirobotics/panmira&type=Date)](https://star-history.com/#xvirobotics/panmira&Date)
 
 ## License
 

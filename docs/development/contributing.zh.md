@@ -6,8 +6,8 @@
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/xvirobotics/metabot.git
-cd metabot
+git clone https://github.com/xvirobotics/panmira.git
+cd panmira
 
 # 2. 安装依赖
 npm install
@@ -39,12 +39,12 @@ npm run build        # TypeScript 编译到 dist/
 
 ### 报告 Bug
 
-- 使用 [Bug Report](https://github.com/xvirobotics/metabot/issues/new?template=bug_report.md) 模板
+- 使用 [Bug Report](https://github.com/xvirobotics/panmira/issues/new?template=bug_report.md) 模板
 - 附上日志（脱敏处理）和复现步骤
 
 ### 功能建议
 
-- 使用 [Feature Request](https://github.com/xvirobotics/metabot/issues/new?template=feature_request.md) 模板
+- 使用 [Feature Request](https://github.com/xvirobotics/panmira/issues/new?template=feature_request.md) 模板
 - 描述使用场景，而非仅描述方案
 
 ### 提交 PR

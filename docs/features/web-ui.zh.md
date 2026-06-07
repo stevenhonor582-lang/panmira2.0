@@ -25,7 +25,7 @@ Web UI 是一个 React SPA，部署在 Panmira 服务器的 `/web/` 路径。通
 
 ## 快速开始
 
-1. 启动 MetaBot：`npm run dev` 或 `metabot start`
+1. 启动 Panmira：`npm run dev` 或 `panmira start`
 2. 打开 `http://localhost:9100/web/`
 3. 输入 `API_SECRET` 作为 Token
 4. 选择一个 Bot 开始聊天
@@ -86,17 +86,17 @@ sudo apt-get update && sudo apt-get install caddy
 
 ### 第 2 步：配置 DNS
 
-添加 A 记录指向服务器公网 IP（例如 `metabot.yourdomain.com`）。等待 DNS 生效：
+添加 A 记录指向服务器公网 IP（例如 `panmira.yourdomain.com`）。等待 DNS 生效：
 
 ```bash
-host metabot.yourdomain.com 1.1.1.1
+host panmira.yourdomain.com 1.1.1.1
 ```
 
 ### 第 3 步：配置 Caddy
 
 ```bash
 sudo tee /etc/caddy/Caddyfile > /dev/null << 'EOF'
-metabot.yourdomain.com {
+panmira.yourdomain.com {
     reverse_proxy localhost:9100
 }
 EOF
@@ -115,7 +115,7 @@ sudo journalctl -u caddy
 
 ### 第 4 步：访问
 
-打开 `https://metabot.yourdomain.com/web/`。电话按钮现在可以使用麦克风了。
+打开 `https://panmira.yourdomain.com/web/`。电话按钮现在可以使用麦克风了。
 
 !!! note
     WebSocket 连接（`/ws`）由 Caddy 自动代理，无需额外 WebSocket 配置。

@@ -39,7 +39,7 @@ Authorization: Bearer <API_SECRET>
 
 ```json
 {
-  "botName": "metabot",
+  "botName": "panmira",
   "chatId": "unique-chat-id",
   "prompt": "你的消息"
 }
@@ -71,7 +71,7 @@ Authorization: Bearer <API_SECRET>
 
 ```json
 {
-  "botName": "metabot",
+  "botName": "panmira",
   "chatId": "oc_xxx",
   "prompt": "检查服务健康状态",
   "cron": "0 8 * * 1-5",
@@ -83,7 +83,7 @@ Authorization: Bearer <API_SECRET>
 
 ```json
 {
-  "botName": "metabot",
+  "botName": "panmira",
   "chatId": "oc_xxx",
   "prompt": "提醒我关于部署的事",
   "delayMs": 1800000

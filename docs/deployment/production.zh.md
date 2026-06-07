@@ -3,8 +3,8 @@
 ## 快速启动
 
 ```bash
-metabot start                       # 用 PM2 启动
-metabot update                      # 拉取 + 构建 + 重启
+panmira start                       # 用 PM2 启动
+panmira update                      # 拉取 + 构建 + 重启
 ```
 
 ## PM2 开机自启
@@ -19,9 +19,9 @@ pm2 startup && pm2 save
 
 ```bash
 pm2 start ecosystem.config.cjs      # 启动
-pm2 restart metabot                  # 重启
-pm2 stop metabot                     # 停止
-pm2 logs metabot                     # 查看日志
+pm2 restart panmira                  # 重启
+pm2 stop panmira                     # 停止
+pm2 logs panmira                     # 查看日志
 pm2 status                           # 进程状态
 ```
 
@@ -45,7 +45,7 @@ npm start                            # 运行编译后的 dist/index.js
 
 ```bash
 # 在 ~/.panmira/.env 中
-METABOT_URL=http://your-server:9100
+PANMIRA_URL=http://your-server:9100
 META_MEMORY_URL=http://your-server:8100
 API_SECRET=your-secret
 ```
@@ -64,7 +64,7 @@ sudo apt-get update && sudo apt-get install caddy
 
 # 配置（替换为你的域名）
 sudo tee /etc/caddy/Caddyfile > /dev/null << 'EOF'
-metabot.yourdomain.com {
+panmira.yourdomain.com {
     reverse_proxy localhost:9100
 }
 EOF

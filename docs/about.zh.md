@@ -8,14 +8,14 @@ Panmira 由 [XVI Robotics](https://xvirobotics.com) 打造，我们做人形机�
 
 ## 链接
 
-- [GitHub 仓库](https://github.com/xvirobotics/metabot)
+- [GitHub 仓库](https://github.com/xvirobotics/panmira)
 - [XVI Robotics](https://xvirobotics.com)
-- [Issue 跟踪](https://github.com/xvirobotics/metabot/issues)
+- [Issue 跟踪](https://github.com/xvirobotics/panmira/issues)
 
 ## 许可证
 
-[MIT](https://github.com/xvirobotics/metabot/blob/main/LICENSE)
+[MIT](https://github.com/xvirobotics/panmira/blob/main/LICENSE)
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=xvirobotics/metabot&type=Date)](https://star-history.com/#xvirobotics/metabot&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=xvirobotics/panmira&type=Date)](https://star-history.com/#xvirobotics/panmira&Date)

@@ -6,7 +6,7 @@
 #
 set -euo pipefail
 
-URL="${1:-http://metabot-core.prod.svc/healthz}"
+URL="${1:-http://panmira-core.prod.svc/healthz}"
 
 START_MS=$(date +%s%3N)
 LIVENESS="passed"

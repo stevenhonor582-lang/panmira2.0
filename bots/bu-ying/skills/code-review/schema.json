@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://metabot.local/schemas/code-review.v1.json",
+  "$id": "https://panmira.local/schemas/code-review.v1.json",
   "title": "CodeReviewIO",
   "input": {
     "type": "object",

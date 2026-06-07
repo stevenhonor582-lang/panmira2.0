@@ -19,7 +19,7 @@ error()   { echo -e "${RED}[ERROR]${NC} $*"; }
 cmd_update() {
   if [[ ! -d "$PANMIRA_HOME/.git" ]]; then
     error "Panmira not found at $PANMIRA_HOME"
-    echo "  Run the installer first: curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh | bash"
+    echo "  Run the installer first: curl -fsSL https://raw.githubusercontent.com/xvirobotics/panmira/main/install.sh | bash"
     exit 1
   fi
 
@@ -71,7 +71,7 @@ cmd_update() {
     case "$skill" in
       metaskill)  src="$PANMIRA_HOME/src/skills/metaskill" ;;
       metamemory) src="$PANMIRA_HOME/src/memory/skill" ;;
-      panmira)    src="$PANMIRA_HOME/src/skills/metabot" ;;
+      panmira)    src="$PANMIRA_HOME/src/skills/panmira" ;;
       voice)      src="$PANMIRA_HOME/src/skills/voice" ;;
       skill-hub)  src="$PANMIRA_HOME/src/skills/skill-hub" ;;
       *)          src="" ;;

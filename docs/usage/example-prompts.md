@@ -1,6 +1,6 @@
 # Example Prompts
 
-Real prompts you can send in Feishu/Telegram to unlock MetaBot's advanced features.
+Real prompts you can send in Feishu/Telegram to unlock Panmira's advanced features.
 
 ## MetaMemory — Persistent Knowledge
 

@@ -1,8 +1,8 @@
-# MetaBot Web Platform — 完整规划
+# Panmira Web Platform — 完整规划
 
 ## 目标
 
-在 MetaBot 现有架构（Feishu + Telegram）之上，增加一个独立的 **Web 端**，包含：
+在 Panmira 现有架构（Feishu + Telegram）之上，增加一个独立的 **Web 端**，包含：
 
 1. **Chat UI** — 实时流式对话，等同甚至超越飞书体验
 2. **MetaMemory UI** — 现有文档/知识管理功能迁移到 React
@@ -20,11 +20,11 @@
 | 路由 | **React Router v7** | SPA 内页面切换 |
 | Markdown | **react-markdown + rehype** | React 生态，支持代码高亮 |
 | 样式 | **CSS Modules** | 无额外依赖，保持轻量 |
-| 打包 | **Vite → dist/web/** | 构建产物由 MetaBot HTTP server 静态服务 |
+| 打包 | **Vite → dist/web/** | 构建产物由 Panmira HTTP server 静态服务 |
 
 ## 现有架构优势
 
-MetaBot 已有优秀的平台抽象层，Web 端可以复用：
+Panmira 已有优秀的平台抽象层，Web 端可以复用：
 
 - `IMessageSender` 接口 — 实现 `WebSender` 即可接入
 - `MessageBridge` — 所有核心逻辑（命令、执行、会话）平台无关
@@ -195,7 +195,7 @@ MetaBot 已有优秀的平台抽象层，Web 端可以复用：
 ## 项目结构
 
 ```
-metabot/
+panmira/
 ├── src/                        # 后端（现有）
 │   ├── api/
 │   │   ├── http-server.ts      # 新增 WS 升级 + 静态文件服务
@@ -326,7 +326,7 @@ Phase 1-2 简单方案：复用 `API_SECRET` 作为 token。
 - OAuth（GitHub、Google）
 - 多用户权限（admin / user / viewer）
 
-目前先不做用户系统，MetaBot 定位是私人/团队工具，一个 secret 够用。
+目前先不做用户系统，Panmira 定位是私人/团队工具，一个 secret 够用。
 
 ## 执行建议
 

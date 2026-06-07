@@ -1,8 +1,8 @@
-site_name: MetaBot
-site_url: https://xvirobotics.com/metabot
+site_name: Panmira
+site_url: https://xvirobotics.com/panmira
 site_description: 构建受监督的、自我进化的 Agent 组织的基础设施
-repo_url: https://github.com/xvirobotics/metabot
-repo_name: xvirobotics/metabot
+repo_url: https://github.com/xvirobotics/panmira
+repo_name: xvirobotics/panmira
 edit_uri: edit/main/docs/
 
 theme:
@@ -92,7 +92,7 @@ plugins:
               - REST API: reference/api.md
               - mb CLI (Agent Bus): reference/cli-mb.md
               - mm CLI (MetaMemory): reference/cli-mm.md
-              - metabot CLI: reference/cli-metabot.md
+              - panmira CLI: reference/cli-panmira.md
             - 部署:
               - 生产部署: deployment/production.md
             - 开发:
@@ -104,13 +104,13 @@ plugins:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/xvirobotics/metabot
+      link: https://github.com/xvirobotics/panmira
   alternate:
     - name: English
-      link: /metabot/
+      link: /panmira/
       lang: en
     - name: 中文
-      link: /metabot/zh/
+      link: /panmira/zh/
       lang: zh
 
 nav:
@@ -144,7 +144,7 @@ nav:
     - REST API: reference/api.md
     - mb CLI (Agent Bus): reference/cli-mb.md
     - mm CLI (MetaMemory): reference/cli-mm.md
-    - metabot CLI: reference/cli-metabot.md
+    - panmira CLI: reference/cli-panmira.md
   - Deployment:
     - Production: deployment/production.md
   - Development:

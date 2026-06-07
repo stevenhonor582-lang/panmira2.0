@@ -6,7 +6,7 @@
 #
 set -euo pipefail
 
-SERVICE="${1:-metabot-core}"
+SERVICE="${1:-panmira-core}"
 VERSION="${2:-v1.0.0}"
 ENVIRONMENT="${3:-prod}"
 

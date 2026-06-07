@@ -5,7 +5,7 @@ Panmira 是 TypeScript ESM 项目（`"type": "module"`，所有导入使用 `.js
 ## 目录布局
 
 ```
-metabot/
+panmira/
 ├── src/
 │   ├── index.ts                    # 入口
 │   ├── config.ts                   # 配置加载器
@@ -39,12 +39,12 @@ metabot/
 │   │   ├── sync-store.ts           # SQLite 持久化
 │   │   └── markdown-to-blocks.ts   # MD → 飞书块
 │   ├── skills/
-│   │   └── metabot/
+│   │   └── panmira/
 │   │       └── SKILL.md            # Agent 总线 skill
 │   └── utils/
 │       └── logger.ts               # 日志
 ├── bin/
-│   ├── metabot                     # 服务管理 CLI
+│   ├── panmira                     # 服务管理 CLI
 │   ├── mb                          # Agent 总线 CLI
 │   ├── mm                          # MetaMemory CLI
 │   └── doubao-tts                  # 豆包 TTS CLI

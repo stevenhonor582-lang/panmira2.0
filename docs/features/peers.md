@@ -29,14 +29,14 @@ For peers on remote servers, prefer HTTPS URLs fronted by Caddy or another TLS r
     The simplest way — just add to your `.env` file. Works with both single-bot and multi-bot mode.
 
     ```bash
-    METABOT_PEERS=http://localhost:9200,http://192.168.1.50:9100
-    METABOT_PEER_SECRETS=alice-secret,bob-secret
-    METABOT_PEER_NAMES=alice,bob
+    PANMIRA_PEERS=http://localhost:9200,http://192.168.1.50:9100
+    PANMIRA_PEER_SECRETS=alice-secret,bob-secret
+    PANMIRA_PEER_NAMES=alice,bob
     ```
 
-    - `METABOT_PEERS` — comma-separated peer URLs (required)
-    - `METABOT_PEER_SECRETS` — comma-separated secrets, positional match with URLs (optional, needed if the peer has `API_SECRET` set)
-    - `METABOT_PEER_NAMES` — comma-separated display names (optional, auto-derived from URL if omitted, e.g. `localhost-9200`)
+    - `PANMIRA_PEERS` — comma-separated peer URLs (required)
+    - `PANMIRA_PEER_SECRETS` — comma-separated secrets, positional match with URLs (optional, needed if the peer has `API_SECRET` set)
+    - `PANMIRA_PEER_NAMES` — comma-separated display names (optional, auto-derived from URL if omitted, e.g. `localhost-9200`)
 
 === "bots.json"
 
@@ -65,7 +65,7 @@ For peers on remote servers, prefer HTTPS URLs fronted by Caddy or another TLS r
     - `secret` — the peer's `API_SECRET` (optional, needed if the peer has authentication enabled)
 
 !!! tip "You don't need bots.json"
-    If you're running a single bot, just add `METABOT_PEERS` to your `.env` — no `bots.json` needed. The `bots.json` peers field is only a convenience for multi-bot setups.
+    If you're running a single bot, just add `PANMIRA_PEERS` to your `.env` — no `bots.json` needed. The `bots.json` peers field is only a convenience for multi-bot setups.
 
 ## Qualified Names
 

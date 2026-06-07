@@ -1,6 +1,6 @@
 # Feishu App Setup Guide
 
-Step-by-step procedure to configure a Feishu bot for MetaBot.
+Step-by-step procedure to configure a Feishu bot for Panmira.
 
 ## Step 1: Create the App
 

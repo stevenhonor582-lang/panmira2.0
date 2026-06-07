@@ -4,7 +4,7 @@ Embedded knowledge store with full-text search. Agents read/write Markdown docum
 
 ## Overview
 
-MetaMemory is a **SQLite-based document store** (using FTS5 for full-text search) that provides persistent knowledge for all agents. It runs as an embedded server within MetaBot.
+MetaMemory is a **SQLite-based document store** (using FTS5 for full-text search) that provides persistent knowledge for all agents. It runs as an embedded server within Panmira.
 
 - **Documents** are Markdown files organized in a folder tree
 - **Full-text search** via SQLite FTS5

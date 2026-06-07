@@ -3,8 +3,8 @@
 ## Quick Start
 
 ```bash
-metabot start                       # start with PM2
-metabot update                      # pull + rebuild + restart
+panmira start                       # start with PM2
+panmira update                      # pull + rebuild + restart
 ```
 
 ## PM2 Auto-Start
@@ -21,9 +21,9 @@ This registers Panmira as a system service that starts automatically after reboo
 
 ```bash
 pm2 start ecosystem.config.cjs      # start
-pm2 restart metabot                  # restart
-pm2 stop metabot                     # stop
-pm2 logs metabot                     # view logs
+pm2 restart panmira                  # restart
+pm2 stop panmira                     # stop
+pm2 logs panmira                     # view logs
 pm2 status                           # process status
 ```
 
@@ -53,7 +53,7 @@ Then configure CLI tools to connect through your HTTPS reverse proxy for interne
 
 ```bash
 # In ~/.panmira/.env
-METABOT_URL=https://metabot.yourdomain.com
+PANMIRA_URL=https://panmira.yourdomain.com
 META_MEMORY_URL=https://memory.yourdomain.com
 API_SECRET=your-secret
 ```
@@ -72,7 +72,7 @@ sudo apt-get update && sudo apt-get install caddy
 
 # Configure (replace with your domain)
 sudo tee /etc/caddy/Caddyfile > /dev/null << 'EOF'
-metabot.yourdomain.com {
+panmira.yourdomain.com {
     reverse_proxy localhost:9100
 }
 
@@ -88,6 +88,6 @@ sudo systemctl restart caddy
 - A domain with an A record pointing to your server's public IP
 - Ports 80 and 443 open for Let's Encrypt validation
 
-Caddy automatically obtains and renews certificates. WebSocket connections (`/ws`) are proxied transparently — no additional configuration needed. Use the same HTTPS hostnames for `METABOT_URL`, `META_MEMORY_URL`, and remote peer entries in `METABOT_PEERS`.
+Caddy automatically obtains and renews certificates. WebSocket connections (`/ws`) are proxied transparently — no additional configuration needed. Use the same HTTPS hostnames for `PANMIRA_URL`, `META_MEMORY_URL`, and remote peer entries in `PANMIRA_PEERS`.
 
 For full setup details, see the [Web UI docs](../features/web-ui.md#https-setup).

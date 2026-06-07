@@ -1,8 +1,8 @@
-# MetaBot Installer for Windows PowerShell
+# Panmira Installer for Windows PowerShell
 # Usage:
-#   irm https://raw.githubusercontent.com/xvirobotics/metabot/main/install.ps1 | iex
-#   .\install.ps1 -Dir C:\opt\metabot
-#   $env:METABOT_HOME = "C:\opt\metabot"; irm <url> | iex
+#   irm https://raw.githubusercontent.com/xvirobotics/panmira/main/install.ps1 | iex
+#   .\install.ps1 -Dir C:\opt\panmira
+#   $env:PANMIRA_HOME = "C:\opt\panmira"; irm <url> | iex
 #Requires -Version 5.1
 
 [CmdletBinding()]
@@ -17,22 +17,22 @@ $ErrorActionPreference = "Stop"
 
 if ($Help) {
     @"
-MetaBot Installer (Windows)
+Panmira Installer (Windows)
 
 Usage:
   .\install.ps1 [-Dir <path>]
-  irm <url> | iex                        # uses default ($env:USERPROFILE\metabot) or $env:METABOT_HOME
+  irm <url> | iex                        # uses default ($env:USERPROFILE\panmira) or $env:PANMIRA_HOME
 
 Parameters:
-  -Dir, -d <path>     Install MetaBot to <path>.
-                      Priority: -Dir > `$env:METABOT_HOME > interactive prompt.
-                      Default: `$env:USERPROFILE\metabot
+  -Dir, -d <path>     Install Panmira to <path>.
+                      Priority: -Dir > `$env:PANMIRA_HOME > interactive prompt.
+                      Default: `$env:USERPROFILE\panmira
   -Help               Show this help and exit.
 
 Examples:
   .\install.ps1
-  .\install.ps1 -Dir C:\opt\metabot
-  `$env:METABOT_HOME = "C:\opt\metabot"; irm <url> | iex
+  .\install.ps1 -Dir C:\opt\panmira
+  `$env:PANMIRA_HOME = "C:\opt\panmira"; irm <url> | iex
 "@ | Write-Host
     exit 0
 }
@@ -40,10 +40,10 @@ Examples:
 # ============================================================================
 # Configuration defaults
 # ============================================================================
-$MetabotRepo = if ($env:METABOT_REPO) { $env:METABOT_REPO } else { "https://github.com/xvirobotics/metabot.git" }
-# $MetabotHome is resolved later (Phase 0.5) — priority: -Dir > env > prompt > default.
-$DefaultMetabotHome = Join-Path $env:USERPROFILE "metabot"
-$MetabotHome = $null
+$PanmiraRepo = if ($env:PANMIRA_REPO) { $env:PANMIRA_REPO } else { "https://github.com/xvirobotics/panmira.git" }
+# $PanmiraHome is resolved later (Phase 0.5) — priority: -Dir > env > prompt > default.
+$DefaultPanmiraHome = Join-Path $env:USERPROFILE "panmira"
+$PanmiraHome = $null
 
 # ============================================================================
 # Helper functions (colors via Write-Host -ForegroundColor)
@@ -51,7 +51,7 @@ $MetabotHome = $null
 function Write-Banner {
     Write-Host ""
     Write-Host "  +============================================+" -ForegroundColor Cyan
-    Write-Host "  |            MetaBot Installer                |" -ForegroundColor Cyan
+    Write-Host "  |            Panmira Installer                |" -ForegroundColor Cyan
     Write-Host "  |     Yi sheng er, er sheng san,              |" -ForegroundColor Cyan
     Write-Host "  |         san sheng wan wu                    |" -ForegroundColor Cyan
     Write-Host "  +============================================+" -ForegroundColor Cyan
@@ -141,36 +141,36 @@ if ($PSVer.Major -lt 5 -or ($PSVer.Major -eq 5 -and $PSVer.Minor -lt 1)) {
 
 # ============================================================================
 # Phase 0.5: Resolve install directory
-# Priority: -Dir parameter > $env:METABOT_HOME > interactive prompt > default.
+# Priority: -Dir parameter > $env:PANMIRA_HOME > interactive prompt > default.
 # ============================================================================
 Write-Step "Phase 0.5: Choose install directory"
 
 if ($Dir) {
-    $MetabotHome = $Dir
-    Write-Info "Using install directory from -Dir: $MetabotHome"
-} elseif ($env:METABOT_HOME) {
-    $MetabotHome = $env:METABOT_HOME
-    Write-Info "Using install directory from `$env:METABOT_HOME: $MetabotHome"
+    $PanmiraHome = $Dir
+    Write-Info "Using install directory from -Dir: $PanmiraHome"
+} elseif ($env:PANMIRA_HOME) {
+    $PanmiraHome = $env:PANMIRA_HOME
+    Write-Info "Using install directory from `$env:PANMIRA_HOME: $PanmiraHome"
 } else {
     Write-Host ""
-    Write-Host "Where should MetaBot be installed?" -ForegroundColor White
-    Write-Host "  (Override later with -Dir or `$env:METABOT_HOME.)"
-    $MetabotHome = Read-Input "Install directory" $DefaultMetabotHome
+    Write-Host "Where should Panmira be installed?" -ForegroundColor White
+    Write-Host "  (Override later with -Dir or `$env:PANMIRA_HOME.)"
+    $PanmiraHome = Read-Input "Install directory" $DefaultPanmiraHome
 }
 
 # Expand a leading ~ to $env:USERPROFILE.
-if ($MetabotHome.StartsWith("~")) {
-    $MetabotHome = Join-Path $env:USERPROFILE ($MetabotHome.Substring(1).TrimStart('\','/'))
+if ($PanmiraHome.StartsWith("~")) {
+    $PanmiraHome = Join-Path $env:USERPROFILE ($PanmiraHome.Substring(1).TrimStart('\','/'))
 }
 
-# Require a rooted path so all later $MetabotHome references are unambiguous.
-if (-not [System.IO.Path]::IsPathRooted($MetabotHome)) {
-    Write-Err "Install path must be absolute, got: $MetabotHome"
+# Require a rooted path so all later $PanmiraHome references are unambiguous.
+if (-not [System.IO.Path]::IsPathRooted($PanmiraHome)) {
+    Write-Err "Install path must be absolute, got: $PanmiraHome"
     exit 1
 }
 
 # Refuse a few obviously-bad targets that would clobber the user's profile or a system root.
-$normalized = $MetabotHome.TrimEnd('\','/')
+$normalized = $PanmiraHome.TrimEnd('\','/')
 $forbidden = @(
     $env:USERPROFILE.TrimEnd('\','/'),
     $env:SystemDrive,                          # e.g. "C:"
@@ -178,11 +178,11 @@ $forbidden = @(
     (Join-Path $env:SystemDrive 'Windows').TrimEnd('\','/')
 ) | ForEach-Object { $_.TrimEnd('\','/') }
 if ($forbidden -contains $normalized -or $normalized -eq '') {
-    Write-Err "Refusing to install directly into $MetabotHome — pick a dedicated subdirectory."
+    Write-Err "Refusing to install directly into $PanmiraHome — pick a dedicated subdirectory."
     exit 1
 }
 
-Write-Success "Install directory: $MetabotHome"
+Write-Success "Install directory: $PanmiraHome"
 
 # ============================================================================
 # Phase 1: Check prerequisites
@@ -281,36 +281,36 @@ if ($Missing -eq 1) {
 # ============================================================================
 # Phase 2: Clone or update repo
 # ============================================================================
-Write-Step "Phase 2: Setting up MetaBot at $MetabotHome"
+Write-Step "Phase 2: Setting up Panmira at $PanmiraHome"
 
-if (Test-Path (Join-Path $MetabotHome ".git")) {
+if (Test-Path (Join-Path $PanmiraHome ".git")) {
     Write-Info "Existing installation found, pulling latest..."
-    Push-Location $MetabotHome
+    Push-Location $PanmiraHome
     $OldHead = git rev-parse HEAD
     try { git pull --ff-only } catch { Write-Warn "git pull failed, continuing with existing code" }
     $NewHead = git rev-parse HEAD
 
     # Re-exec with updated install.ps1 if it changed
-    if ($OldHead -ne $NewHead -and -not $env:METABOT_REEXEC) {
+    if ($OldHead -ne $NewHead -and -not $env:PANMIRA_REEXEC) {
         Write-Info "install.ps1 updated, re-launching..."
-        $env:METABOT_REEXEC = "1"
-        & (Join-Path $MetabotHome "install.ps1")
+        $env:PANMIRA_REEXEC = "1"
+        & (Join-Path $PanmiraHome "install.ps1")
         Pop-Location
         exit 0
     }
     Pop-Location
 } else {
-    Write-Info "Cloning MetaBot..."
-    git clone $MetabotRepo $MetabotHome
+    Write-Info "Cloning Panmira..."
+    git clone $PanmiraRepo $PanmiraHome
 }
-Write-Success "MetaBot code ready at $MetabotHome"
+Write-Success "Panmira code ready at $PanmiraHome"
 
 # ============================================================================
 # Phase 3: Install dependencies
 # ============================================================================
 Write-Step "Phase 3: Installing dependencies"
 
-Push-Location $MetabotHome
+Push-Location $PanmiraHome
 Write-Info "Running npm install..."
 npm install --production=false
 Write-Success "npm dependencies installed"
@@ -343,7 +343,7 @@ Pop-Location
 # ============================================================================
 Write-Step "Phase 4: Configuration"
 
-$EnvFile = Join-Path $MetabotHome ".env"
+$EnvFile = Join-Path $PanmiraHome ".env"
 $SkipConfig = $false
 
 if (Test-Path $EnvFile) {
@@ -357,7 +357,7 @@ if (-not $SkipConfig) {
     # ------ 4a: Working directory ------
     Write-Host ""
     Write-Host "Working Directory:" -ForegroundColor White
-    $DefaultWorkDir = Join-Path $env:USERPROFILE "metabot-workspace"
+    $DefaultWorkDir = Join-Path $env:USERPROFILE "panmira-workspace"
     $WorkDir = Read-Input "Project directory for Claude to work in" $DefaultWorkDir
     if (-not (Test-Path $WorkDir)) { New-Item -ItemType Directory -Path $WorkDir -Force | Out-Null }
     Write-Success "Working directory: $WorkDir"
@@ -470,7 +470,7 @@ if (-not $SkipConfig) {
     # ------ 4d: Bot name + auto-generated settings ------
     Write-Host ""
     Write-Host "Bot Name:" -ForegroundColor White
-    $BotName = Read-Input "Name for your bot" "metabot"
+    $BotName = Read-Input "Name for your bot" "panmira"
 
     # Auto-generate API secret
     $bytes = New-Object byte[] 32
@@ -497,7 +497,7 @@ if (-not $SkipConfig) {
     # Generate .env
     $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
     $envContent = @"
-# MetaBot Configuration (generated by install.ps1)
+# Panmira Configuration (generated by install.ps1)
 # $timestamp
 
 # Bot config file (multi-bot mode)
@@ -539,7 +539,7 @@ META_MEMORY_URL=$MemoryServerUrl
     Write-Success ".env generated"
 
     # Generate bots.json (use node for safe JSON escaping)
-    $BotsJson = Join-Path $MetabotHome "bots.json"
+    $BotsJson = Join-Path $PanmiraHome "bots.json"
     $FeishuBotsJson = "[]"
     $TelegramBotsJson = "[]"
 
@@ -572,50 +572,50 @@ New-Item -ItemType Directory -Path $SkillsDir -Force | Out-Null
 Write-Info "Installing metaskill skill..."
 $metaskillDir = Join-Path $SkillsDir "metaskill\flows"
 New-Item -ItemType Directory -Path $metaskillDir -Force | Out-Null
-Copy-Item (Join-Path $MetabotHome "src\skills\metaskill\SKILL.md") (Join-Path $SkillsDir "metaskill\SKILL.md") -Force
-Copy-Item (Join-Path $MetabotHome "src\skills\metaskill\flows\team.md") (Join-Path $SkillsDir "metaskill\flows\team.md") -Force
-Copy-Item (Join-Path $MetabotHome "src\skills\metaskill\flows\agent.md") (Join-Path $SkillsDir "metaskill\flows\agent.md") -Force
-Copy-Item (Join-Path $MetabotHome "src\skills\metaskill\flows\skill.md") (Join-Path $SkillsDir "metaskill\flows\skill.md") -Force
+Copy-Item (Join-Path $PanmiraHome "src\skills\metaskill\SKILL.md") (Join-Path $SkillsDir "metaskill\SKILL.md") -Force
+Copy-Item (Join-Path $PanmiraHome "src\skills\metaskill\flows\team.md") (Join-Path $SkillsDir "metaskill\flows\team.md") -Force
+Copy-Item (Join-Path $PanmiraHome "src\skills\metaskill\flows\agent.md") (Join-Path $SkillsDir "metaskill\flows\agent.md") -Force
+Copy-Item (Join-Path $PanmiraHome "src\skills\metaskill\flows\skill.md") (Join-Path $SkillsDir "metaskill\flows\skill.md") -Force
 Write-Success "metaskill skill installed -> $(Join-Path $SkillsDir 'metaskill')"
 
 # Install metamemory skill
 Write-Info "Installing metamemory skill..."
 New-Item -ItemType Directory -Path (Join-Path $SkillsDir "metamemory") -Force | Out-Null
-Copy-Item (Join-Path $MetabotHome "src\memory\skill\SKILL.md") (Join-Path $SkillsDir "metamemory\SKILL.md") -Force
+Copy-Item (Join-Path $PanmiraHome "src\memory\skill\SKILL.md") (Join-Path $SkillsDir "metamemory\SKILL.md") -Force
 # Clean up old skill location if it exists
 $oldSkillDir = Join-Path $env:USERPROFILE ".claude\skills\memory"
 if (Test-Path $oldSkillDir) { Remove-Item $oldSkillDir -Recurse -Force }
 Write-Success "metamemory skill installed -> $(Join-Path $SkillsDir 'metamemory')"
 
-# Install metabot skill
-Write-Info "Installing metabot skill..."
-New-Item -ItemType Directory -Path (Join-Path $SkillsDir "metabot") -Force | Out-Null
-Copy-Item (Join-Path $MetabotHome "src\skills\metabot\SKILL.md") (Join-Path $SkillsDir "metabot\SKILL.md") -Force
-Write-Success "metabot skill installed -> $(Join-Path $SkillsDir 'metabot')"
+# Install panmira skill
+Write-Info "Installing panmira skill..."
+New-Item -ItemType Directory -Path (Join-Path $SkillsDir "panmira") -Force | Out-Null
+Copy-Item (Join-Path $PanmiraHome "src\skills\panmira\SKILL.md") (Join-Path $SkillsDir "panmira\SKILL.md") -Force
+Write-Success "panmira skill installed -> $(Join-Path $SkillsDir 'panmira')"
 
 # Install voice skill
 Write-Info "Installing voice skill..."
 New-Item -ItemType Directory -Path (Join-Path $SkillsDir "voice") -Force | Out-Null
-Copy-Item (Join-Path $MetabotHome "src\skills\voice\SKILL.md") (Join-Path $SkillsDir "voice\SKILL.md") -Force
+Copy-Item (Join-Path $PanmiraHome "src\skills\voice\SKILL.md") (Join-Path $SkillsDir "voice\SKILL.md") -Force
 Write-Success "voice skill installed -> $(Join-Path $SkillsDir 'voice')"
 
 # Install skill-hub skill
 Write-Info "Installing skill-hub skill..."
 New-Item -ItemType Directory -Path (Join-Path $SkillsDir "skill-hub") -Force | Out-Null
-Copy-Item (Join-Path $MetabotHome "src\skills\skill-hub\SKILL.md") (Join-Path $SkillsDir "skill-hub\SKILL.md") -Force
+Copy-Item (Join-Path $PanmiraHome "src\skills\skill-hub\SKILL.md") (Join-Path $SkillsDir "skill-hub\SKILL.md") -Force
 Write-Success "skill-hub skill installed -> $(Join-Path $SkillsDir 'skill-hub')"
 
 # Install feishu-doc skill (only when Feishu is configured)
 $HasFeishu = $false
 if (-not $SkipConfig -and $SetupFeishu) {
     $HasFeishu = $true
-} elseif ($SkipConfig -and (Test-Path (Join-Path $MetabotHome "bots.json"))) {
+} elseif ($SkipConfig -and (Test-Path (Join-Path $PanmiraHome "bots.json"))) {
     try {
-        $result = node -e "const c=JSON.parse(require('fs').readFileSync('$(Join-Path $MetabotHome "bots.json")','utf-8'));process.exit((c.feishuBots||[]).length>0?0:1)" 2>$null
+        $result = node -e "const c=JSON.parse(require('fs').readFileSync('$(Join-Path $PanmiraHome "bots.json")','utf-8'));process.exit((c.feishuBots||[]).length>0?0:1)" 2>$null
         if ($LASTEXITCODE -eq 0) { $HasFeishu = $true }
     } catch {}
 }
-$feishuDocSkill = Join-Path $MetabotHome "src\skills\feishu-doc\SKILL.md"
+$feishuDocSkill = Join-Path $PanmiraHome "src\skills\feishu-doc\SKILL.md"
 if ($HasFeishu -and (Test-Path $feishuDocSkill)) {
     Write-Info "Installing feishu-doc skill..."
     New-Item -ItemType Directory -Path (Join-Path $SkillsDir "feishu-doc") -Force | Out-Null
@@ -628,7 +628,7 @@ $DeployWorkDir = ""
 if (-not $SkipConfig) {
     $DeployWorkDir = $WorkDir
 } else {
-    $botsJsonPath = Join-Path $MetabotHome "bots.json"
+    $botsJsonPath = Join-Path $PanmiraHome "bots.json"
     if (Test-Path $botsJsonPath) {
         try {
             $DeployWorkDir = node -e "const fs=require('fs');const cfg=JSON.parse(fs.readFileSync('$botsJsonPath','utf-8'));const bots=[...(cfg.feishuBots||[]),...(cfg.telegramBots||[])];if(bots[0])console.log(bots[0].defaultWorkingDirectory)" 2>$null
@@ -641,7 +641,7 @@ if (-not $SkipConfig) {
 if ($DeployWorkDir) {
     $SkillsDest = Join-Path $DeployWorkDir ".claude\skills"
 
-    $deploySkills = @("metaskill", "metamemory", "metabot", "voice", "skill-hub")
+    $deploySkills = @("metaskill", "metamemory", "panmira", "voice", "skill-hub")
     if ($HasFeishu) { $deploySkills += "feishu-doc" }
 
     foreach ($skill in $deploySkills) {
@@ -655,7 +655,7 @@ if ($DeployWorkDir) {
     }
 
     # Deploy CLAUDE.md to working directory
-    $workspaceClaude = Join-Path $MetabotHome "src\workspace\CLAUDE.md"
+    $workspaceClaude = Join-Path $PanmiraHome "src\workspace\CLAUDE.md"
     if (Test-Path $workspaceClaude) {
         Copy-Item $workspaceClaude (Join-Path $DeployWorkDir "CLAUDE.md") -Force
         Write-Success "Deployed CLAUDE.md -> $(Join-Path $DeployWorkDir 'CLAUDE.md')"
@@ -670,12 +670,12 @@ New-Item -ItemType Directory -Path $LocalBin -Force | Out-Null
 
 $HasBash = Test-Command "bash"
 
-$cliTools = @("mm", "mb", "metabot")
+$cliTools = @("mm", "mb", "panmira")
 if ($HasFeishu) { $cliTools += "fd" }
 
 if ($HasBash) {
     foreach ($cli in $cliTools) {
-        $srcScript = Join-Path $MetabotHome "bin\$cli"
+        $srcScript = Join-Path $PanmiraHome "bin\$cli"
         if (Test-Path $srcScript) {
             # Copy the bash script
             Copy-Item $srcScript (Join-Path $LocalBin $cli) -Force
@@ -704,22 +704,22 @@ if ($HasBash) {
     }
 
     if ($HasFeishu) {
-        Write-Success "mm/mb/metabot/fd CLI tools installed to $LocalBin (with .cmd wrappers)"
+        Write-Success "mm/mb/panmira/fd CLI tools installed to $LocalBin (with .cmd wrappers)"
     } else {
-        Write-Success "mm/mb/metabot CLI tools installed to $LocalBin (with .cmd wrappers)"
+        Write-Success "mm/mb/panmira CLI tools installed to $LocalBin (with .cmd wrappers)"
     }
 } else {
-    Write-Warn "Git Bash not found. CLI tools (mm, mb, metabot) require bash."
+    Write-Warn "Git Bash not found. CLI tools (mm, mb, panmira) require bash."
     Write-Warn "Install Git for Windows (https://git-scm.com) to enable CLI tools."
 }
 
-# Persist METABOT_HOME for non-default install paths so the CLI tools
-# (mm/mb/metabot) can find the install in new shell sessions. The CLIs all
-# fall back to ~/metabot, so we only need to persist when it differs.
-if ($MetabotHome -ne $DefaultMetabotHome) {
-    [System.Environment]::SetEnvironmentVariable("METABOT_HOME", $MetabotHome, "User")
-    $env:METABOT_HOME = $MetabotHome
-    Write-Info "Persisted METABOT_HOME=$MetabotHome to user environment"
+# Persist PANMIRA_HOME for non-default install paths so the CLI tools
+# (mm/mb/panmira) can find the install in new shell sessions. The CLIs all
+# fall back to ~/panmira, so we only need to persist when it differs.
+if ($PanmiraHome -ne $DefaultPanmiraHome) {
+    [System.Environment]::SetEnvironmentVariable("PANMIRA_HOME", $PanmiraHome, "User")
+    $env:PANMIRA_HOME = $PanmiraHome
+    Write-Info "Persisted PANMIRA_HOME=$PanmiraHome to user environment"
 }
 
 # ============================================================================
@@ -729,12 +729,12 @@ Write-Step "Phase 7: MetaMemory"
 
 $MetamemoryInstalled = $false
 
-Write-Info "MetaMemory is embedded in MetaBot (no separate server needed)."
-New-Item -ItemType Directory -Path (Join-Path $MetabotHome "data") -Force | Out-Null
+Write-Info "MetaMemory is embedded in Panmira (no separate server needed)."
+New-Item -ItemType Directory -Path (Join-Path $PanmiraHome "data") -Force | Out-Null
 
 # Migrate existing database from standalone MetaMemory if found
 $OldDb = Join-Path $env:USERPROFILE ".metamemory-data\metamemory.db"
-$NewDb = Join-Path $MetabotHome "data\metamemory.db"
+$NewDb = Join-Path $PanmiraHome "data\metamemory.db"
 if ((Test-Path $OldDb) -and -not (Test-Path $NewDb)) {
     Write-Info "Migrating existing MetaMemory database..."
     Copy-Item $OldDb $NewDb -Force
@@ -764,14 +764,14 @@ try {
 } catch {}
 
 $MetamemoryInstalled = $true
-Write-Success "MetaMemory will start automatically with MetaBot on port 8100"
+Write-Success "MetaMemory will start automatically with Panmira on port 8100"
 
 # ============================================================================
-# Phase 8: Build + Start MetaBot with PM2
+# Phase 8: Build + Start Panmira with PM2
 # ============================================================================
-Write-Step "Phase 8: Starting MetaBot"
+Write-Step "Phase 8: Starting Panmira"
 
-Push-Location $MetabotHome
+Push-Location $PanmiraHome
 
 Write-Info "Building TypeScript..."
 try {
@@ -783,18 +783,18 @@ try {
 
 # Always delete + start fresh
 try {
-    $pm2Desc = pm2 describe metabot 2>$null
+    $pm2Desc = pm2 describe panmira 2>$null
     if ($LASTEXITCODE -eq 0) {
-        Write-Info "Removing old MetaBot PM2 process..."
-        pm2 delete metabot 2>$null
+        Write-Info "Removing old Panmira PM2 process..."
+        pm2 delete panmira 2>$null
     }
 } catch {}
 
-Write-Info "Starting MetaBot with PM2..."
+Write-Info "Starting Panmira with PM2..."
 pm2 start ecosystem.config.cjs
 
 try { pm2 save --force 2>$null } catch {}
-Write-Success "MetaBot is running!"
+Write-Success "Panmira is running!"
 Pop-Location
 
 # ============================================================================
@@ -802,11 +802,11 @@ Pop-Location
 # ============================================================================
 Write-Host ""
 Write-Host "  +============================================+" -ForegroundColor Green
-Write-Host "  |           MetaBot -- Ready!                |" -ForegroundColor Green
+Write-Host "  |           Panmira -- Ready!                |" -ForegroundColor Green
 Write-Host "  +============================================+" -ForegroundColor Green
 Write-Host ""
 
-Write-Host "  Installation:   " -ForegroundColor White -NoNewline; Write-Host $MetabotHome
+Write-Host "  Installation:   " -ForegroundColor White -NoNewline; Write-Host $PanmiraHome
 if (-not $SkipConfig) {
     Write-Host "  Working Dir:    " -ForegroundColor White -NoNewline; Write-Host $WorkDir
     Write-Host "  API:            " -ForegroundColor White -NoNewline; Write-Host "http://localhost:$ApiPort"
@@ -823,9 +823,9 @@ if ($MetamemoryInstalled) {
 
 Write-Host ""
 Write-Host "  Commands:" -ForegroundColor White
-Write-Host "    pm2 logs metabot          # View MetaBot logs"
-Write-Host "    pm2 restart metabot       # Restart MetaBot"
-Write-Host "    pm2 stop metabot          # Stop MetaBot"
+Write-Host "    pm2 logs panmira          # View Panmira logs"
+Write-Host "    pm2 restart panmira       # Restart Panmira"
+Write-Host "    pm2 stop panmira          # Stop Panmira"
 if ($MetamemoryInstalled) {
     Write-Host "    mm search <query>         # Search MetaMemory"
     Write-Host "    mm folders                # Browse knowledge tree"
@@ -849,6 +849,6 @@ if (-not $SkipConfig) {
         Write-Host "    $StepNum. Open Telegram and message your bot -- it's ready now!"
         $StepNum++
     }
-    Write-Host "    $StepNum. Check logs: pm2 logs metabot"
+    Write-Host "    $StepNum. Check logs: pm2 logs panmira"
 }
 Write-Host ""
