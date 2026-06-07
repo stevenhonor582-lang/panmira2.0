@@ -2,7 +2,7 @@
  * Panmira 众妙之门 — Unified Knowledge Platform
  * 
  * Integrates:
- * - MetaBot IM Bridge (Feishu multi-bot messaging)
+ * - Panmira IM Bridge (Feishu multi-bot messaging)
  * - Claude Code Agent (reasoning + execution)
  * - Memory Engine (PGVector knowledge base)
  * - RAG Pipeline (auto-retrieval + context injection)

@@ -29,7 +29,7 @@ export async function handleSkillHubRoutes(
     const query = params.get('q') || '';
     const localResults = await store.search(query);
     // Include peer skills if not a peer request
-    const isPeer = req.headers['x-metabot-origin'] === 'peer';
+    const isPeer = req.headers['x-panmira-origin'] === 'peer';
     if (!isPeer && peerManager) {
       const peerSkills = peerManager.getPeerSkills?.() ?? [];
       const filtered = query
@@ -247,7 +247,7 @@ export async function handleSkillHubRoutes(
       return true;
     }
     const localSkills = await store.list();
-    const isPeer = req.headers['x-metabot-origin'] === 'peer';
+    const isPeer = req.headers['x-panmira-origin'] === 'peer';
     if (!isPeer && peerManager?.getPeerSkills) {
       const peerSkills = peerManager.getPeerSkills();
       jsonResponse(res, 200, { skills: [...localSkills, ...peerSkills] });

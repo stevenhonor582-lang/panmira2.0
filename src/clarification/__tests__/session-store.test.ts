@@ -16,7 +16,7 @@ function getTestDbUrl(): string {
     const match = content.match(/DATABASE_URL\s*=\s*['"]?([^'"\n]+)['"]?/);
     if (match) return match[1];
   }
-  return 'postgresql://localhost/metabot_test';
+  return 'postgresql://localhost/panmira_test';
 }
 
 const TEST_DB = getTestDbUrl();

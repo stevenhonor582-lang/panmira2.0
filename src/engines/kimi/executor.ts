@@ -46,7 +46,7 @@ export class KimiExecutor {
       if (!isLoggedIn()) {
         throw new Error(
           'Kimi CLI is not logged in. Run `kimi login` in a separate terminal ' +
-          'to authenticate with your Moonshot subscription, then restart MetaBot.'
+          'to authenticate with your Moonshot subscription, then restart Panmira.'
         );
       }
     } catch (err: any) {
@@ -261,7 +261,7 @@ export class KimiExecutor {
 
     if (apiContext) {
       sections.push(
-        `## Panmira API\nYou are running as bot "${apiContext.botName}" in chat "${apiContext.chatId}".\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`,
+        `## Panmira API\nYou are running as bot "${apiContext.botName}" in chat "${apiContext.chatId}".\nUse the /panmira skill for full API documentation (agent bus, scheduling, bot management).`,
       );
 
       if (apiContext.groupMembers && apiContext.groupMembers.length > 0) {

@@ -232,7 +232,7 @@ export class WechatClient {
     opts?: { clientId?: string; messageState?: number },
   ): Promise<string> {
     const contextToken = this.contextTokens.get(toUserId);
-    const clientId = opts?.clientId || `metabot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const clientId = opts?.clientId || `panmira-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const messageState = opts?.messageState ?? 2; // default FINISH
 
     const body = {
@@ -287,7 +287,7 @@ export class WechatClient {
     const aesKeyBase64 = key.toString('base64');
 
     // Build upload request
-    const filekey = `metabot_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const filekey = `panmira_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const uploadReqBody: Record<string, unknown> = {
       filekey,
       media_type: mediaType,

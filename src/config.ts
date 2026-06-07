@@ -511,7 +511,7 @@ function buildClaudeConfig(entry: {
     downloadsDir:
       entry.downloadsDir ||
       process.env.DOWNLOADS_DIR ||
-      path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`),
+      path.join(os.tmpdir(), `panmira-downloads-${os.userInfo().username}`),
   };
 }
 
@@ -555,7 +555,7 @@ function feishuBotFromEnv(): BotConfig {
   const codex = buildCodexConfig();
   return {
     name: 'default',
-    ...(process.env.METABOT_ENGINE ? { engine: process.env.METABOT_ENGINE as EngineName } : {}),
+    ...((process.env.PANMIRA_ENGINE || process.env.METABOT_ENGINE) ? { engine: (process.env.PANMIRA_ENGINE || process.env.METABOT_ENGINE) as EngineName } : {}),
     ...(codex ? { codex } : {}),
     feishu: {
       appId: required('FEISHU_APP_ID'),
@@ -570,7 +570,7 @@ function feishuBotFromEnv(): BotConfig {
       baseUrl: undefined,
       outputsBaseDir:
         process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `panmira-outputs-${os.userInfo().username}`),
-      downloadsDir: process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`),
+      downloadsDir: process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `panmira-downloads-${os.userInfo().username}`),
     },
   };
 }
@@ -579,7 +579,7 @@ function telegramBotFromEnv(): TelegramBotConfig {
   const codex = buildCodexConfig();
   return {
     name: 'telegram-default',
-    ...(process.env.METABOT_ENGINE ? { engine: process.env.METABOT_ENGINE as EngineName } : {}),
+    ...((process.env.PANMIRA_ENGINE || process.env.METABOT_ENGINE) ? { engine: (process.env.PANMIRA_ENGINE || process.env.METABOT_ENGINE) as EngineName } : {}),
     ...(codex ? { codex } : {}),
     telegram: {
       botToken: required('TELEGRAM_BOT_TOKEN'),
@@ -593,7 +593,7 @@ function telegramBotFromEnv(): TelegramBotConfig {
       baseUrl: undefined,
       outputsBaseDir:
         process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `panmira-outputs-${os.userInfo().username}`),
-      downloadsDir: process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`),
+      downloadsDir: process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `panmira-downloads-${os.userInfo().username}`),
     },
   };
 }
@@ -602,7 +602,7 @@ function wechatBotFromEnv(): WechatBotConfig {
   const codex = buildCodexConfig();
   return {
     name: 'wechat-default',
-    ...(process.env.METABOT_ENGINE ? { engine: process.env.METABOT_ENGINE as EngineName } : {}),
+    ...((process.env.PANMIRA_ENGINE || process.env.METABOT_ENGINE) ? { engine: (process.env.PANMIRA_ENGINE || process.env.METABOT_ENGINE) as EngineName } : {}),
     ...(codex ? { codex } : {}),
     wechat: {
       botToken: process.env.WECHAT_BOT_TOKEN || undefined,
@@ -618,7 +618,7 @@ function wechatBotFromEnv(): WechatBotConfig {
         process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `panmira-outputs-${os.userInfo().username}`),
       ),
       downloadsDir: expandUserPath(
-        process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`),
+        process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `panmira-downloads-${os.userInfo().username}`),
       ),
     },
   };
