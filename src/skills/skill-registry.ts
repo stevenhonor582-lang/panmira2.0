@@ -405,6 +405,9 @@ const HARDCODED_REGISTRY: SkillMeta[] = [
   { name: 'gstack:canary', summary: 'Post-deploy monitoring — watches console errors, perf regressions', triggers: ['canary','监控','金丝雀','post deploy','部署监控'], category: 'system', platform: 'all', scope: 'global', agentRoles: ['ops'] },
   { name: 'gstack:benchmark', summary: 'Performance baseline — Core Web Vitals, page load, resource sizes', triggers: ['benchmark','性能测试','性能基准','page speed'], category: 'system', platform: 'all', scope: 'global', agentRoles: ['developer'] },
 
+  // ── Browser Automation ──
+  { name: 'browser-automation', summary: '浏览器自动化：网页导航、点击、输入、截图、数据提取，支持持久化登录和反检测', triggers: ['浏览器','发帖','发LinkedIn','发推特','发推','网页操作','网页自动化','自动化操作','browser','automate','post to','social media','LinkedIn','Twitter','Facebook','Instagram','截图网页','填表','网页点击','auto post','网页','打开网页','操控浏览器'], category: 'productivity', platform: 'all', scope: 'global', agentRoles: ['general','content'] },
+
   // ── General Tools ──
   { name: 'gstack:learn', summary: 'Manage project learnings across sessions — search, review, prune patterns', triggers: ['learn','学习','经验','lesson learned','项目经验'], category: 'system', platform: 'all', scope: 'global', agentRoles: ['general'] },
   { name: 'gstack:make-pdf', summary: 'Turn markdown into publication-quality PDF', triggers: ['make pdf','生成pdf','导出pdf','pdf'], category: 'productivity', platform: 'all', scope: 'global', agentRoles: ['general'] },
