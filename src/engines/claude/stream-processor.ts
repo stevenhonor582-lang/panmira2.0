@@ -463,6 +463,14 @@ export class StreamProcessor {
     if (model.includes("gpt-4") || model.includes("o1") || model.includes("o3")) return 128000;
     if (model.includes("GLM")) return 200000;
     if (model.includes("deepseek")) return 1000000;
+    // MiniMax M-series — empirically measured via api.minimaxi.com (2026-06-08)
+    // M1 has 1M input per MiniMax docs; M2.7/M3 limits via progressive token test:
+    //   M2.7: 300K ok, 350K fail -> 300000
+    //   M3:  600K ok, 700K fail -> 600000
+    if (model.includes("MiniMax-M3") || model.includes("MiniMax-M3-")) return 600000;
+    if (model.includes("MiniMax-M2.7") || model.includes("MiniMax-M2.7-")) return 300000;
+    if (model.includes("MiniMax-M1") || model.includes("MiniMax-M1-")) return 1000000;
+    if (model.includes("MiniMax")) return 200000; // safe fallback for unknown M-series
     return undefined;
   }
 }
