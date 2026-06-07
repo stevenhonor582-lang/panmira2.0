@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🤖 MetaBot
+# 🤖 Panmira
 
 ### Control Claude Code, Kimi Code, or Codex CLI from your phone via Feishu / Telegram / WeChat
 
@@ -34,7 +34,7 @@
 
 > **Claude Code**, **Kimi Code**, and **Codex CLI** — three first-class engines. Subscription or API key, your choice. Each bot picks its own engine.
 
-![Panmira Demo](resources/metabot-demo.gif)
+![Panmira Demo](resources/panmira-demo.gif)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh | bash
@@ -98,7 +98,7 @@ Run your frontend bot on Claude and your backend bot on Kimi? Totally fine. The 
 
 ## Multi-Platform Access
 
-![Panmira Architecture](resources/metabot.png)
+![Panmira Architecture](resources/panmira.png)
 
 ```
 Feishu/TG/WeChat → IM Bridge → Engine Router ──┬─→ Claude Code Agent SDK

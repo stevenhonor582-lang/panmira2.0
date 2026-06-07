@@ -15,7 +15,7 @@
     "lint:fix": "eslint src/ tests/ --fix",
     "format": "prettier --write 'src/**/*.ts' 'tests/**/*.ts'",
     "format:check": "prettier --check 'src/**/*.ts' 'tests/**/*.ts'",
-    "update-cli": "for cli in mb mm metabot; do [ -f bin/$cli ] && cp bin/$cli ~/.local/bin/$cli && chmod +x ~/.local/bin/$cli && echo \"Updated: $cli\"; done"
+    "update-cli": "for cli in mb mm panmira; do [ -f bin/$cli ] && cp bin/$cli ~/.local/bin/$cli && chmod +x ~/.local/bin/$cli && echo \"Updated: $cli\"; done"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.112",
@@ -28,7 +28,6 @@
     "dotenv": "^16.4.0",
     "drizzle-orm": "^0.45.2",
     "grammy": "^1.40.0",
-    "https-proxy-agent": "^7.0.6",
     "jose": "^6.2.3",
     "mammoth": "^1.12.0",
     "node-edge-tts": "^1.2.10",
@@ -37,7 +36,6 @@
     "pg": "^8.20.0",
     "pino": "^9.0.0",
     "pino-pretty": "^11.0.0",
-    "undici": "^7.24.5",
     "ws": "^8.19.0",
     "xlsx": "^0.18.5"
   },
