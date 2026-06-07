@@ -636,8 +636,18 @@ function discoverUserSkills(): SkillMeta[] {
   return discovered;
 }
 
-/** Combined registry: hardcoded + VMT + user skills. */
-export const SKILL_REGISTRY: SkillMeta[] = [...HARDCODED_REGISTRY, ...discoverVmtSkills(), ...discoverBuiltinSkills(), ...discoverUserSkills()];
+/** Deduplicate skills by name, keeping first occurrence. */
+function dedupSkills(skills: SkillMeta[]): SkillMeta[] {
+  const seen = new Set<string>();
+  return skills.filter(s => {
+    if (seen.has(s.name)) return false;
+    seen.add(s.name);
+    return true;
+  });
+}
+
+/** Combined registry: hardcoded + VMT + builtin + user skills (deduplicated). */
+export const SKILL_REGISTRY: SkillMeta[] = dedupSkills([...HARDCODED_REGISTRY, ...discoverVmtSkills(), ...discoverBuiltinSkills(), ...discoverUserSkills()]);
 
 /** Re-scan ~/.claude/skills/ and refresh the registry in-place so existing references see the update. */
 
@@ -672,7 +682,7 @@ export function validateAgentSkills(agentSkills: string[]): { missing: string[];
 }
 
 export function refreshSkillRegistry(): SkillMeta[] {
-  const fresh = [...HARDCODED_REGISTRY, ...discoverVmtSkills(), ...discoverBuiltinSkills(), ...discoverUserSkills()];
+  const fresh = dedupSkills([...HARDCODED_REGISTRY, ...discoverVmtSkills(), ...discoverBuiltinSkills(), ...discoverUserSkills()]);
   SKILL_REGISTRY.length = 0;
   SKILL_REGISTRY.push(...fresh);
   return SKILL_REGISTRY;

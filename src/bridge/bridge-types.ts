@@ -20,6 +20,7 @@ export interface PendingBatch {
 export interface RunningTask {
   abortController: AbortController;
   startTime: number;
+  prompt: string;
   executionHandle: import('../engines/index.js').ExecutionHandle;
   pendingQuestion: PendingQuestion | null;
   currentQuestionIndex: number;
@@ -29,6 +30,8 @@ export interface RunningTask {
   processor: import('../engines/index.js').StreamProcessor;
   rateLimiter: import('./rate-limiter.js').RateLimiter;
   chatId: string;
+  /** Latest response text preview, updated during streaming, used for recovery notification */
+  lastResponsePreview: string;
 }
 
 export interface ApiTaskOptions {

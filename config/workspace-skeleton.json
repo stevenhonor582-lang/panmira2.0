@@ -9,5 +9,40 @@
   "knowledgeFolders": ["知识沉淀", "专业文档", "技能库", "项目"],
   "initialFiles": {
     "docs/skill-quality-log.md": "# 技能质量追踪日志\n\n> 每次使用技能后追加一行。定期回顾，优先调用高质量路径。\n\n| 日期 | 技能 | 任务摘要 | 结果 | 备注 |\n|------|------|----------|------|------|\n"
+  },
+  "dbFolders": {
+    "org": {
+      "root": "组织公共区",
+      "categories": {
+        "navigation": "00-导航",
+        "brand": "R0-品牌规范",
+        "competitors": "R1-竞品库",
+        "customers": "R2-客户库",
+        "salesPlaybook": "R3-卖法手册",
+        "tech": "R4-技术库",
+        "products": "R5-产品库",
+        "index": "索引"
+      }
+    },
+    "bot": {
+      "root": "数字员工",
+      "categories": {
+        "knowledge": "知识沉淀",
+        "professional": "专业文档",
+        "skills": "技能库",
+        "projects": "项目",
+        "index": "索引"
+      },
+      "projectSubCategories": ["上传文件", "产出文件", "知识"]
+    },
+    "group": {
+      "root": "群协作区",
+      "categories": {
+        "projectFiles": "项目文件",
+        "collabDocs": "协作文档",
+        "knowledge": "知识沉淀",
+        "index": "索引"
+      }
+    }
   }
 }

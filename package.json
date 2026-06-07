@@ -19,7 +19,6 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.112",
-    "@anthropic-ai/sdk": "^0.78.0",
     "@larksuiteoapi/node-sdk": "^1.58.0",
     "@moonshot-ai/kimi-agent-sdk": "^0.1.8",
     "@types/ws": "^8.18.0",
@@ -29,7 +28,6 @@
     "dotenv": "^16.4.0",
     "drizzle-orm": "^0.45.2",
     "grammy": "^1.40.0",
-    "gray-matter": "^4.0.3",
     "https-proxy-agent": "^7.0.6",
     "jose": "^6.2.3",
     "mammoth": "^1.12.0",

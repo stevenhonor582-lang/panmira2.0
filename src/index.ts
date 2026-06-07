@@ -19,7 +19,7 @@ import { DocSync } from './sync/doc-sync.js';
 import { MemoryClient } from './memory/memory-client.js';
 
 import { pool } from './db/index.js';
-import { runPreflight } from './utils/preflight.js';
+import { runPreflight, validateBotConsistency } from './utils/preflight.js';
 import { SessionRegistry } from './session/session-registry.js';
 import { ChatSessionStore } from './db/chat-session-store.js';
 import { ScheduledTaskStore } from './db/scheduled-task-store.js';
@@ -324,28 +324,23 @@ async function main() {
     }
     logger.info({ botCount: allNames.length }, 'Bot/Org工作空间已初始化');
 
-    // Auto-bind: sync knowledge_folders from standard templates to custom agents
-    let boundCount = 0;
+    // Validate bot-agent consistency and auto-fix mismatches
+    await validateBotConsistency(allNames, registry, logger);
+
+    // Sync knowledgeFolders from bot_configs to agents (single source of truth)
+    let syncCount = 0;
     for (const botName of allNames) {
       const botInfo = registry.get(botName);
       const agentId = botInfo?.config.agentId;
-      if (!agentId) continue;
-      const { rows: agentRows } = await pool.query('SELECT name FROM agents WHERE id = $1', [agentId]);
-      const agentName = agentRows[0]?.name;
-      if (!agentName) continue;
-      const { rows: stdRows } = await pool.query(
-        "SELECT knowledge_folders FROM agents WHERE name = $1 AND template_type = 'standard'",
-        [agentName],
-      );
-      const folders = stdRows[0]?.knowledge_folders || [];
-      if (folders.length === 0) continue;
+      const knowledgeFolders = botInfo?.config.knowledgeFolders;
+      if (!agentId || !knowledgeFolders || knowledgeFolders.length === 0) continue;
       await pool.query('UPDATE agents SET knowledge_folders = $1 WHERE id = $2', [
-        JSON.stringify(folders),
+        JSON.stringify(knowledgeFolders),
         agentId,
       ]);
-      boundCount++;
+      syncCount++;
     }
-    logger.info({ boundCount }, '知识库文件夹已从标准模板同步到数字员工');
+    logger.info({ syncCount }, '知识库文件夹已从bot_configs同步到agents');
 
     // Backfill embeddings for existing documents without vectors (background, non-blocking)
     const { DocEmbedder } = await import('./memory/doc-embedder.js');
@@ -434,6 +429,23 @@ async function main() {
   // Resolve bots config path for API-driven bot CRUD
   // botsConfigPath removed — Panmira uses DB-only configuration
 
+  // Recover: notify chats that had tasks interrupted by a previous restart
+  const allBridgesForRecovery = [
+    ...feishuHandles.map((h) => h.bridge),
+    ...telegramHandles.map((h) => h.bridge),
+    ...wechatHandles.map((h) => h.bridge),
+  ];
+  for (const bridge of allBridgesForRecovery) {
+    try {
+      const count = await bridge.notifyOrphanedTasks();
+      if (count > 0) {
+        logger.info({ count }, 'Sent task recovery notifications');
+      }
+    } catch (err: any) {
+      logger.warn({ err: err?.message }, 'Failed to check for orphaned tasks');
+    }
+  }
+
   // Start API server
   const { server: apiServer, broadcastAll } = await startApiServer({
     port: appConfig.api.port,
@@ -466,34 +478,31 @@ async function main() {
     shuttingDown = true;
     logger.info({ signal }, 'Shutting down...');
 
-    // Notify all WebSocket clients before disconnecting
+    // Immediately notify all active chat users about restart
     broadcastAll({ type: 'server_shutdown', reason: signal, message: 'Server is restarting...' });
+
+    // Immediately destroy all bridges — sends error cards to active chats
+    // so users see "会话因重启中断" instead of a hung "thinking" state.
+    // This must happen BEFORE PM2 kill_timeout (15s) expires.
+    const allBridges = [
+      ...feishuHandles.map((h) => h.bridge),
+      ...telegramHandles.map((h) => h.bridge),
+      ...wechatHandles.map((h) => h.bridge),
+    ];
+    for (const bridge of allBridges) {
+      bridge.destroy();
+    }
 
     scheduler.destroy();
     if (peerManager) {
       peerManager.destroy();
     }
 
-    // Wait for running tasks to finish (max 30s)
-    const runningBridges = [
-      ...feishuHandles.map((h) => h.bridge),
-      ...telegramHandles.map((h) => h.bridge),
-      ...wechatHandles.map((h) => h.bridge),
-    ];
-    const busyBridges = runningBridges.filter((b) => b.getRunningTasksInfo().length > 0);
+    // Give running tasks a brief window to flush (5s max), then proceed
+    const busyBridges = allBridges.filter((b) => b.getRunningTasksInfo().length > 0);
     if (busyBridges.length > 0) {
-      logger.info({ count: busyBridges.length }, 'Waiting for running tasks to complete...');
-      await Promise.race([
-        new Promise<void>((resolve) => {
-          const check = setInterval(() => {
-            if (busyBridges.every((b) => b.getRunningTasksInfo().length === 0)) {
-              clearInterval(check);
-              resolve();
-            }
-          }, 1000);
-        }),
-        new Promise<void>((resolve) => setTimeout(resolve, 30_000)),
-      ]);
+      logger.info({ count: busyBridges.length }, 'Waiting briefly for tasks to flush...');
+      await new Promise<void>((resolve) => setTimeout(resolve, 5_000));
     }
 
     apiServer.close();
@@ -505,15 +514,10 @@ async function main() {
       memoryServer.server.close();
       memoryServer.storage.close();
     }
-    for (const handle of feishuHandles) {
-      handle.bridge.destroy();
-    }
     for (const handle of telegramHandles) {
-      handle.bridge.destroy();
       handle.bot.stop();
     }
     for (const handle of wechatHandles) {
-      handle.bridge.destroy();
       handle.stop();
     }
     try {

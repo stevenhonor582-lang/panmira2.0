@@ -1,7 +1,7 @@
 #!/bin/bash
-# Panmira server health alert — every 5 min via /etc/cron.d/metabot-alert
+# Panmira server health alert — every 5 min via cron
 set -u
-LOG="/var/log/metabot-alerts.log"
+LOG="/var/log/panmira-alerts.log"
 ENV_FILE="/home/ubuntu/panmira/.env"
 ALERTS=""
 
@@ -21,11 +21,9 @@ if [[ "$MEM_AVAIL_PCT" -lt 10 ]]; then
 fi
 
 # Check 3: Panmira process running
-# pm2-managed tsx process has full path "metabot/src/index.ts" in argv
-# Also check pm2 daemon as fallback
-if ! pgrep -f "metabot/src/index.ts" > /dev/null && ! pgrep -f "metabot/dist/index.js" > /dev/null; then
+if ! pgrep -f "panmira/src/index.ts" > /dev/null && ! pgrep -f "panmira/dist/index.js" > /dev/null; then
   sleep 5
-  if ! pgrep -f "metabot/src/index.ts" > /dev/null && ! pgrep -f "metabot/dist/index.js" > /dev/null; then
+  if ! pgrep -f "panmira/src/index.ts" > /dev/null && ! pgrep -f "panmira/dist/index.js" > /dev/null; then
     if ! pm2 ping > /dev/null 2>&1; then
       ALERTS="${ALERTS}🔴 Panmira + pm2 both down\n"
     else
@@ -42,7 +40,7 @@ if awk "BEGIN{exit !($LOAD > $CORES * 2)}" 2>/dev/null; then
 fi
 
 if [[ -n "$ALERTS" ]]; then
-  MSG="[metabot-alert $(date -Iseconds)] $ALERTS"
+  MSG="[panmira-alert $(date -Iseconds)] $ALERTS"
   echo -e "$MSG" >> "$LOG"
   if [[ -n "$WEBHOOK" ]]; then
     curl -s -X POST "$WEBHOOK" -H 'Content-Type: application/json' \

@@ -81,11 +81,13 @@ export async function fetchKnowledgeContext(
       folderUuids = botFolderIds;
     } catch {}
   }
-  // Also resolve by name for folders under the bot's workspace tree
+  // Resolve by name: bot workspace tree + organization public area
   if (knowledgeFolders.length > 0) {
     try {
       const nameResults = await pool.query(
-          "SELECT f.id FROM folders f WHERE f.name = ANY($1) AND f.path LIKE '\u6570\u5b57\u5458\u5de5/' || $2 || '%'",
+        `SELECT f.id FROM folders f
+         WHERE f.name = ANY($1)
+           AND (f.path LIKE '数字员工/' || $2 || '%' OR f.path LIKE '组织公共区/%')`,
         [knowledgeFolders, deps.config.name],
       );
       for (const row of nameResults.rows) {

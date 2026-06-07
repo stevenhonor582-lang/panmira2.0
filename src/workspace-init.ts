@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Logger } from './utils/logger.js';
 
 interface SkeletonConfig {
@@ -9,7 +10,7 @@ interface SkeletonConfig {
   initialFiles: Record<string, string>;
 }
 
-const SKELETON_PATH = new URL('../config/workspace-skeleton.json', import.meta.url);
+const SKELETON_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'config', 'workspace-skeleton.json');
 
 function loadSkeleton(): SkeletonConfig {
   const raw = fs.readFileSync(SKELETON_PATH, 'utf-8');

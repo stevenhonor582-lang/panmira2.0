@@ -19,9 +19,9 @@ module.exports = {
   apps: [
     {
       name: 'panmira',
-      // Use start-safe.sh wrapper: runs tsc --noEmit before tsx,
-      // preventing crash loops from syntax errors
-      script: 'bin/start-safe.sh',
+      // Production: run compiled dist/ output (no tsc, no tsx needed)
+      // Dev: switch to bin/start-safe.sh for tsx + type checking
+      script: 'bin/start-production.sh',
       interpreter: '/bin/bash',
       cwd: __dirname,
 

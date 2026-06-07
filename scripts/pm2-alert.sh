@@ -1,5 +1,5 @@
 #!/bin/bash
-# PM2 Crash Alert — sends notification to Feishu when metabot crashes
+# PM2 Crash Alert — sends notification when panmira crashes
 # Called by PM2 hook on process:exit
 
 APP_NAME="$1"
@@ -7,8 +7,8 @@ EVENT="$2"
 EXIT_CODE="$3"
 RESTARTS="$4"
 
-# Only alert on metabot crashes (not normal stop)
-if [ "$APP_NAME" != "metabot" ]; then
+# Only alert on panmira crashes
+if [ "$APP_NAME" != "panmira" ]; then
   exit 0
 fi
 
@@ -20,11 +20,9 @@ fi
 # Get last 10 lines of error log for context
 ERROR_TAIL=$(tail -10 /home/ubuntu/panmira/logs/error.log 2>/dev/null | sed 's/"/\\"/g' | tr '\n' '\\n')
 
-# Feishu webhook - use first bot's credentials
 TIMESTAMP=$(date -Iseconds)
 HOSTNAME=$(hostname)
 
-# Build alert message
 MESSAGE=$(cat << EOF
 {
   "msg_type": "interactive",
@@ -34,20 +32,18 @@ MESSAGE=$(cat << EOF
       "template": "red"
     },
     "elements": [
-      {"tag": "div", "text": {"tag": "lark_md", "content": "**服务：** metabot\n**事件：** ${EVENT}\n**退出码：** ${EXIT_CODE}\n**重启次数：** ${RESTARTS}\n**时间：** ${TIMESTAMP}\n**主机：** ${HOSTNAME}"}},
+      {"tag": "div", "text": {"tag": "lark_md", "content": "**服务：** panmira\n**事件：** ${EVENT}\n**退出码：** ${EXIT_CODE}\n**重启次数：** ${RESTARTS}\n**时间：** ${TIMESTAMP}\n**主机：** ${HOSTNAME}"}},
       {"tag": "hr"},
       {"tag": "div", "text": {"tag": "lark_md", "content": "**最近错误日志：**\n\`\`\`\n${ERROR_TAIL}\n\`\`\`"}},
-      {"tag": "note", "elements": [{"tag": "plain_text", "content": "PM2 Alert → MetaBot"}]}
+      {"tag": "note", "elements": [{"tag": "plain_text", "content": "PM2 Alert → Panmira"}]}
     ]
   }
 }
 EOF
 )
 
-# Read credentials from .env
 source <(grep -E "^(ANTHROPIC_AUTH_TOKEN|API_SECRET)=" /home/ubuntu/panmira/.env)
 
-# Send to metabot's own API health endpoint for logging
 curl -s -X POST "http://localhost:9100/api/internal/alert" \
   -H "Authorization: Bearer ${API_SECRET}" \
   -H "Content-Type: application/json" \

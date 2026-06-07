@@ -1,5 +1,8 @@
 import * as net from 'node:net';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { pool } from '../db/index.js';
+import { initWorkspaceSkeleton } from '../workspace-init.js';
 import type { Logger } from './logger.js';
 
 interface PreflightResult {
@@ -20,7 +23,6 @@ export async function runPreflight(logger: Logger): Promise<PreflightResult> {
   const requiredEnvVars = [
     'JWT_SECRET',
     'DATABASE_URL',
-    'ANTHROPIC_AUTH_TOKEN',
     'ANTHROPIC_BASE_URL',
     'API_SECRET',
   ];
@@ -33,6 +35,14 @@ export async function runPreflight(logger: Logger): Promise<PreflightResult> {
     } else {
       checks.push({ name: `ENV:${varName}`, status: 'ok', message: 'Set' });
     }
+  }
+
+  // 1b. Auth token: accept either ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY
+  const authToken = process.env.ANTHROPIC_AUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
+  if (!authToken) {
+    checks.push({ name: 'ENV:ANTHROPIC_AUTH', status: 'fail', message: 'Neither ANTHROPIC_AUTH_TOKEN nor ANTHROPIC_API_KEY is set' });
+  } else {
+    checks.push({ name: 'ENV:ANTHROPIC_AUTH', status: 'ok', message: 'Set' });
   }
 
   // 2. Check PostgreSQL connectivity
@@ -104,4 +114,107 @@ export async function runPreflight(logger: Logger): Promise<PreflightResult> {
   }
 
   return { pass, checks };
+}
+
+/**
+ * Validate bot-agent consistency after startup.
+ * Checks: agent existence, knowledgeFolders sync, workspace directory.
+ * Auto-fixes where possible.
+ */
+export async function validateBotConsistency(
+  allBotNames: string[],
+  registry: { get: (name: string) => { config: { agentId?: string; knowledgeFolders?: string[]; claude: { defaultWorkingDirectory: string } } } | undefined },
+  logger: Logger,
+): Promise<void> {
+  let checked = 0;
+  let warnings = 0;
+  let fixed = 0;
+
+  for (const botName of allBotNames) {
+    const botInfo = registry.get(botName);
+    if (!botInfo) continue;
+
+    // 1. Check agentId → agents table
+    const agentId = botInfo.config.agentId;
+    if (agentId) {
+      try {
+        const { rows } = await pool.query('SELECT id, knowledge_folders FROM agents WHERE id = $1', [agentId]);
+        if (rows.length === 0) {
+          logger.warn({ botName, agentId }, 'Bot references non-existent agent — check agent template');
+          warnings++;
+        }
+      } catch (err: any) {
+        logger.warn({ botName, err: err.message }, 'Agent lookup failed');
+        warnings++;
+      }
+    }
+
+    // 2. Sync knowledgeFolders: bot_configs → agents
+    const knowledgeFolders = botInfo.config.knowledgeFolders;
+    if (agentId && knowledgeFolders && knowledgeFolders.length > 0) {
+      try {
+        const { rows } = await pool.query('SELECT knowledge_folders FROM agents WHERE id = $1', [agentId]);
+        const current = rows[0]?.knowledge_folders;
+        const needsUpdate = !current || JSON.stringify(current) !== JSON.stringify(knowledgeFolders);
+        if (needsUpdate) {
+          await pool.query('UPDATE agents SET knowledge_folders = $1 WHERE id = $2', [
+            JSON.stringify(knowledgeFolders),
+            agentId,
+          ]);
+          logger.info({ botName, folders: knowledgeFolders }, 'Fixed: synced knowledgeFolders to agent');
+          fixed++;
+        }
+      } catch (err: any) {
+        logger.warn({ botName, err: err.message }, 'knowledgeFolders sync failed');
+        warnings++;
+      }
+    }
+
+    // 3. Validate workspace skeleton structure and auto-fix missing pieces
+    const workDir = botInfo.config.claude?.defaultWorkingDirectory;
+    if (workDir) {
+      if (!fs.existsSync(workDir)) {
+        logger.warn({ botName, workDir }, 'Workspace directory missing — auto-creating with skeleton');
+        try {
+          initWorkspaceSkeleton(workDir, botName, botName, logger);
+          fixed++;
+        } catch (err: any) {
+          logger.warn({ botName, err: err.message }, 'Failed to auto-create workspace');
+          warnings++;
+        }
+      } else {
+        const claudePath = path.join(workDir, 'CLAUDE.md');
+        if (!fs.existsSync(claudePath)) {
+          try {
+            initWorkspaceSkeleton(workDir, botName, botName, logger);
+            logger.info({ botName }, 'Fixed: completed missing workspace skeleton files');
+            fixed++;
+          } catch (err: any) {
+            logger.warn({ botName, err: err.message }, 'Failed to patch workspace skeleton');
+            warnings++;
+          }
+        }
+      }
+
+      const kbDir = path.join(workDir, 'knowledge-base');
+      if (fs.existsSync(workDir) && !fs.existsSync(kbDir)) {
+        try {
+          initWorkspaceSkeleton(workDir, botName, botName, logger);
+          logger.info({ botName }, 'Fixed: created missing knowledge-base directory');
+          fixed++;
+        } catch (err: any) {
+          logger.warn({ botName, err: err.message }, 'Failed to create knowledge-base');
+          warnings++;
+        }
+      }
+    }
+
+    checked++;
+  }
+
+  if (warnings > 0 || fixed > 0) {
+    logger.info({ checked, warnings, fixed }, 'Bot consistency validation complete');
+  } else {
+    logger.info({ checked }, 'Bot consistency validation passed — all bots healthy');
+  }
 }

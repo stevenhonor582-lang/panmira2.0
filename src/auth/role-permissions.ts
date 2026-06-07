@@ -119,15 +119,27 @@ export function createBashGuardHook(
 export function createFSGuardHook(
   permissions: PermissionConfig | undefined,
   workspaceDir: string,
+  role?: UserRole,
 ): (input: Record<string, unknown>) => Promise<Record<string, unknown>> {
   const fsPerms = permissions?.fileSystem ?? {};
+  const isAdmin = role === 'admin';
 
   return async (input: Record<string, unknown>) => {
+    // Admin role bypasses all FS write restrictions
+    if (isAdmin) {
+      return {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'allow',
+        },
+      };
+    }
+
     const toolInput = (input.tool_input as Record<string, unknown>) || {};
     const filePath = String(toolInput.file_path || toolInput.path || '');
 
     if (!filePath) {
-      // No file path — allow (e.g. Write with content but no path shouldn't happen normally)
+      // No file path — allow
       return {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',

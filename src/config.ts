@@ -632,24 +632,7 @@ export interface PeerJsonEntry {
   secret?: string;
 }
 
-export interface BotsJsonNewFormat {
-  feishuBots?: FeishuBotJsonEntry[];
-  telegramBots?: TelegramBotJsonEntry[];
-  webBots?: WebBotJsonEntry[];
-  wechatBots?: WechatBotJsonEntry[];
-  peers?: PeerJsonEntry[];
-}
-
-// loadAppConfig removed — Panmira uses DB-only configuration.
-// Use loadAppConfigFromDB() instead.
-export function loadAppConfig(): AppConfig {
-  throw new Error(
-    'loadAppConfig() is deprecated. Bots are now managed exclusively through Web UI + Database.\n' +
-    'Visit http://localhost:9100/web/settings to manage bots and providers.',
-  );
-}
-
-// Legacy file-based config removed. All configuration is now in PostgreSQL.
+// All configuration is in PostgreSQL. Use loadAppConfigFromDB().
 export async function loadAppConfigFromDB(): Promise<{
   config: AppConfig;
   botConfigStore: import('./db/bot-config-store.js').BotConfigStore;
@@ -726,17 +709,6 @@ export async function loadAppConfigFromDB(): Promise<{
   }
 
   // Build the rest of AppConfig from env vars (same as loadAppConfig)
-  const botsConfigPath = process.env.BOTS_CONFIG;
-  let parsedConfig: unknown;
-  if (botsConfigPath) {
-    try {
-      const raw = fs.readFileSync(path.resolve(botsConfigPath), 'utf-8');
-      parsedConfig = JSON.parse(raw);
-    } catch {
-      parsedConfig = undefined;
-    }
-  }
-
   const memoryServerUrl = process.env.MEMORY_SERVER_URL || 'http://localhost:8100';
   const apiPortRaw = process.env.API_PORT ? parseInt(process.env.API_PORT, 10) : 9100;
   const apiPort = Number.isNaN(apiPortRaw) ? 9100 : apiPortRaw;
@@ -760,14 +732,6 @@ export async function loadAppConfigFromDB(): Promise<{
   const memoryReaderToken = process.env.MEMORY_TOKEN || undefined;
 
   const peers: PeerConfig[] = [];
-  if (parsedConfig && !Array.isArray(parsedConfig)) {
-    const cfg = parsedConfig as BotsJsonNewFormat;
-    if (cfg.peers) {
-      for (const p of cfg.peers) {
-        if (p.url) peers.push({ name: p.name, url: p.url.replace(/\/+$/, ''), secret: p.secret });
-      }
-    }
-  }
   if (process.env.PANMIRA_PEERS) {
     const urls = process.env.PANMIRA_PEERS.split(',')
       .map((u) => u.trim())

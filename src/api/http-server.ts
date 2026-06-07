@@ -189,7 +189,6 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     handleMemoryRoutes,
     handleGenerateRoutes,
     handleWorkspaceRoutes,
-  handleTemplateRoutes,
     handleTemplateRoutes,
     handleKnowledgeRoutes,
   ];

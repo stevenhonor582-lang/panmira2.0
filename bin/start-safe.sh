@@ -5,10 +5,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# Quick syntax/type check (fail fast, ~2-5s)
-if ! npx tsc --noEmit --pretty false 2>/dev/null; then
-  echo "[start-safe] TypeScript compilation FAILED — aborting startup" >&2
-  npx tsc --noEmit --pretty true 2>&1 | tail -20 >&2
+# Quick syntax/type check (skip if tsc not available — deploy.sh already compiled)
+if npx tsc --noEmit --pretty false 2>/dev/null; then
+  : # tsc passed
+elif [ -f dist/index.js ]; then
+  echo "[start-safe] tsc not available, using pre-built dist/"
+else
+  echo "[start-safe] TypeScript compilation FAILED and no dist/ — aborting startup" >&2
   exit 1
 fi
 
