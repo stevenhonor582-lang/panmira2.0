@@ -466,12 +466,11 @@ export class StreamProcessor {
     // MiniMax M-series — per minimaxi.com 官方页 + 实测 (2026-06-08)
     // 官方宣称 1M (MSA 稀疏注意力), 单次 messages input 上限实测:
     //   M3:  521350 OK, 525000 FAIL — API 硬封顶 ~521K
-    // 配置值 700K (用户指定) **超出实测上限** — panmira 不会主动截断,
-    // 请求 >525K input 时 API 会直接 400, 触发 sendRetry 回路
+    //   配 512K (8K 安全边距), 安全运行
     // M2.7: 待测 (历史粗测 350K 失败, 暂保留 300K)
     // M1:  待测, 暂按官方 1M
     // 精测脚本: scripts/test-minimax-context.mjs
-    if (model.includes("MiniMax-M3") || model.includes("MiniMax-M3-")) return 700000;
+    if (model.includes("MiniMax-M3") || model.includes("MiniMax-M3-")) return 512000;
     if (model.includes("MiniMax-M2.7") || model.includes("MiniMax-M2.7-")) return 300000;
     if (model.includes("MiniMax-M1") || model.includes("MiniMax-M1-")) return 1000000;
     if (model.includes("MiniMax")) return 200000; // safe fallback for unknown M-series
