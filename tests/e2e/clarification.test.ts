@@ -9,7 +9,7 @@ import { CardBuilder } from '../../src/clarification/card-builder.js';
 import { ConfigLoader } from '../../src/clarification/config-loader.js';
 import type { FieldSchema, FieldGap } from '../../src/clarification/types.js';
 
-const DB_URL = process.env.DATABASE_URL || 'postgresql://ubuntu:ubuntu@localhost:5432/metabot';
+const DB_URL = process.env.DATABASE_URL || 'postgresql://ubuntu:ubuntu@localhost:5432/panmira';
 const TEST_USER = 'e2e-test-user-' + Date.now();
 
 describe('E2E: Clarification Flow (doc-bot write-proposal)', () => {

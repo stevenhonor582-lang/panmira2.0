@@ -32,7 +32,7 @@ describe('Codex JSONL translator', () => {
           id: 'item_1',
           type: 'command_execution',
           command: '/bin/zsh -lc pwd',
-          aggregated_output: '/Users/maxzhou/Dev/metabot\n',
+          aggregated_output: '/home/ubuntu/workspace/panmira\n',
           exit_code: 0,
           status: 'completed',
         },

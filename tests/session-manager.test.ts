@@ -13,7 +13,7 @@ describe('SessionManager', () => {
   let storeDir: string;
 
   beforeEach(() => {
-    storeDir = mkdtempSync(join(tmpdir(), 'metabot-session-test-'));
+    storeDir = mkdtempSync(join(tmpdir(), 'panmira-session-test-'));
     process.env.SESSION_STORE_DIR = storeDir;
   });
 
