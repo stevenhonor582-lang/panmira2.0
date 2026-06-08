@@ -117,8 +117,29 @@ export interface OrchestrationResult {
   totalDurationMs: number;
   totalCostUsd: number;
   error?: string;
+  /** Aggregated incomplete work (skipped steps + failed gates). Empty when success. */
+  pendingTasks?: PendingTask[];
   /** Populated when status is 'waiting_user' — the full plan for resume. */
   plan?: ExecutionPlan;
+}
+
+/** Severity hint for pending items shown in the red 看板 card. */
+export type PendingSeverity = 'high' | 'medium' | 'low';
+
+/** Source of a pending item. */
+export type PendingSource = 'step_skipped' | 'step_failed' | 'gate_failed' | 'subagent_interrupted';
+
+export interface PendingTask {
+  severity: PendingSeverity;
+  source: PendingSource;
+  /** Short title (1 line, used in the card list). */
+  title: string;
+  /** 1-2 sentence detail (rendered as sub-line). */
+  detail?: string;
+  /** Originating orchestration step name (for '回到主线' resume flow). */
+  stepName?: string;
+  /** Step index in the original plan, for sorting / resume. */
+  stepIndex?: number;
 }
 
 /** 已渲染的执行计划步骤 */

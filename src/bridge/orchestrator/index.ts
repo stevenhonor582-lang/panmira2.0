@@ -8,6 +8,7 @@ import type {
   OrchestrationProgress,
   OrchestrationStatus,
   GateResult,
+  PendingTask,
   StepResult,
   OrchestrationStep,
   ExecutionPlan,
@@ -157,7 +158,66 @@ export class Orchestrator {
   }
 
   /** Shared step execution loop — used by both execute() and resume(). */
-  private async executeSteps(params: {
+
+
+  /** Aggregate incomplete work from a finished orchestration pass. */
+  private extractPendingTasks(
+    progress: OrchestrationProgress,
+    allGateResults: GateResult[],
+  ): PendingTask[] {
+    const tasks: PendingTask[] = [];
+    const planSteps = progress.steps;
+
+    // 1. Skipped / failed steps
+    planSteps.forEach((s, i) => {
+      if (s.status === 'skipped') {
+        tasks.push({
+          severity: 'medium',
+          source: 'step_skipped',
+          title: `跳过步骤: ${s.step}`,
+          detail: s.result ? s.result.summary.slice(0, 100) || '因前置失败被跳过' : '因前置失败被跳过',
+          stepName: s.step,
+          stepIndex: i,
+        });
+      } else if (s.status === 'failed') {
+        tasks.push({
+          severity: 'high',
+          source: 'step_failed',
+          title: `失败步骤: ${s.step}`,
+          detail: s.result ? s.result.summary.slice(0, 100) || '执行返回失败' : '执行返回失败',
+          stepName: s.step,
+          stepIndex: i,
+        });
+      }
+    });
+
+    // 2. Gate results that didn't pass. Note: GateResult has no source field,
+    // so we can't reliably back-link to a specific step. Just record the
+    // gate itself; the step context can be inferred from chat history.
+    for (const g of allGateResults) {
+      if (g.passed) continue;
+      const isHighGate = g.gate === 'test_pass' || g.gate === 'docker_build_pass' || g.gate === 'health_check';
+      const isMedGate = g.gate === 'lint_pass' || g.gate === 'typecheck_pass';
+      tasks.push({
+        severity: isHighGate ? 'high' : isMedGate ? 'medium' : 'low',
+        source: 'gate_failed',
+        title: `门控未过: ${g.gate}`,
+        detail: g.error || (g.actual && g.expected ? `expected ${g.expected}, got ${g.actual}` : undefined),
+      });
+    }
+
+    // Dedupe by title+source+step (a failed step + its failed gate would otherwise
+    // produce two rows for the same concern).
+    const seen = new Set<string>();
+    return tasks.filter((t) => {
+      const key = `${t.source}|${t.title}|${t.stepName ?? ''}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+    private async executeSteps(params: {
     msg: IncomingMessage;
     agentConfig: AgentRuntimeConfig;
     plan: ExecutionPlan;
@@ -188,6 +248,7 @@ export class Orchestrator {
         return {
           success: false, progress, allGateResults,
           totalDurationMs: Date.now() - startTime, totalCostUsd,
+        pendingTasks: this.extractPendingTasks(progress, allGateResults),
           error: 'Aborted',
         };
       }
@@ -208,6 +269,7 @@ export class Orchestrator {
           allGateResults,
           totalDurationMs: Date.now() - startTime,
           totalCostUsd,
+          pendingTasks: this.extractPendingTasks(progress, allGateResults),
           plan, // include plan so caller can reconstruct resume state
           error: undefined,
         };
@@ -295,6 +357,7 @@ export class Orchestrator {
         return {
           success: false, progress, allGateResults,
           totalDurationMs: Date.now() - startTime, totalCostUsd,
+        pendingTasks: this.extractPendingTasks(progress, allGateResults),
           error: `步骤 "${step.step}" 门控未通过，重试 ${step.retry} 次后仍失败`,
         };
       }

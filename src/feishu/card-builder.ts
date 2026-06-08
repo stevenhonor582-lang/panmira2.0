@@ -532,3 +532,82 @@ export function buildConfirmationCard(state: ConfirmationState): string {
   };
   return JSON.stringify(card);
 }
+
+
+// ── Pending Tasks Card (red) ──
+
+import type { PendingTask, PendingSeverity } from '../bridge/orchestrator/types.js';
+
+export interface PendingTasksState {
+  userTask: string;
+  tasks: PendingTask[];
+  /** Originating orchestration plan name, for context. */
+  intentName?: string;
+  /** sessionId of the orchestration (Phase 3 will fill this in). */
+  sessionId?: string;
+}
+
+function severityIcon(s: PendingSeverity): string {
+  return s === 'high' ? '🔴' : s === 'medium' ? '🟡' : '🟢';
+}
+
+function severityLabel(s: PendingSeverity): string {
+  return s === 'high' ? '[高]' : s === 'medium' ? '[中]' : '[低]';
+}
+
+/**
+ * Red "📋 未完成项" card. One row per pending item,
+ * severity-tagged (高 / 中 / 低), with 3 action buttons:
+ *   - 回到主线 (orch_resume action; Phase 3 wires this up)
+ *   - 推下次   (orch_defer;  Phase 2 placeholder, no-op for now)
+ *   - 忽略       (orch_dismiss; Phase 2 placeholder, no-op for now)
+ */
+export function buildPendingTasksCard(state: PendingTasksState): string {
+  const lines: string[] = [];
+  for (const t of state.tasks) {
+    const icon = severityIcon(t.severity);
+    const label = severityLabel(t.severity);
+    const detail = t.detail ? `\n   ${truncate(t.detail, 200)}` : '';
+    lines.push(`${icon} ${label} **${t.title}**${detail}`);
+  }
+
+  const titleText = `📋 未完成项 (${state.tasks.length})`;
+
+  const card = {
+    config: { wide_screen_mode: true },
+    header: {
+      template: 'red',
+      title: { content: titleText, tag: 'plain_text' },
+    },
+    elements: [
+      { tag: 'markdown', content: `📝 **用户需求:** ${truncate(state.userTask, 200)}` },
+      { tag: 'hr' },
+      { tag: 'markdown', content: lines.join('\n') },
+      { tag: 'hr' },
+      {
+        tag: 'action',
+        actions: [
+          {
+            tag: 'button',
+            type: 'primary',
+            text: { content: '🔙 回到主线', tag: 'plain_text' },
+            value: { action: 'orch_resume', sessionId: state.sessionId ?? '' },
+          },
+          {
+            tag: 'button',
+            type: 'default',
+            text: { content: '📌 推下次', tag: 'plain_text' },
+            value: { action: 'orch_defer' },
+          },
+          {
+            tag: 'button',
+            type: 'danger',
+            text: { content: '🗑 忽略', tag: 'plain_text' },
+            value: { action: 'orch_dismiss' },
+          },
+        ],
+      },
+    ],
+  };
+  return JSON.stringify(card);
+}

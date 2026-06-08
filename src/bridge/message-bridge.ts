@@ -25,6 +25,7 @@ import { SkillRouter } from '../skills/skill-router.js';
 import { CONTEXT_USAGE_THRESHOLD } from './context-manager.js';
 import { MemoryWriter } from './memory-writer.js';
 import { ClarificationMiddleware } from '../clarification/index.js';
+import { buildPendingTasksCard, type PendingTasksState } from '../feishu/card-builder.js';
 import type { FeishuCard } from '../clarification/card-builder.js';
 import { SkillLoader } from './orchestrator/skill-loader.js';
 import { ConfigReader } from './orchestrator/config-reader.js';
@@ -2377,6 +2378,25 @@ export class MessageBridge {
         durationMs: result.totalDurationMs,
       };
       await this.sendFinalCard(cardMessageId, finalState, msg.chatId);
+    }
+
+    // Phase 2: if the orchestration surfaced any pending work, send a dedicated
+    // red "📋 未完成项" card so the user can see what still needs doing
+    // (or hit "回到主线" once Phase 3 lands).
+    if (result.pendingTasks && result.pendingTasks.length > 0) {
+      try {
+        const state: PendingTasksState = {
+          userTask: msg.text || '',
+          tasks: result.pendingTasks,
+          intentName: result.progress.intentName,
+          // sessionId is filled in by Phase 3 (orch-session-store).
+        };
+        const cardJson = buildPendingTasksCard(state);
+        await this.getSender(msg.chatId).sendRawCard(msg.chatId, cardJson);
+        this.logger.info({ count: result.pendingTasks.length, chatId: msg.chatId }, 'Sent pending tasks card');
+      } catch (err: any) {
+        this.logger.error({ err, chatId: msg.chatId }, 'Failed to send pending tasks card');
+      }
     }
 
     this.emitActivity({
