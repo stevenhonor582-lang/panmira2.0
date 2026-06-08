@@ -18,7 +18,6 @@ export class CardUpdater {
     const responseText = this.renderProgress(progress);
     const currentStep = progress.steps[progress.currentStepIndex];
     const r = currentStep?.result;
-    const contextNote = this.buildContextNote(r);
 
     const state: CardState = {
       status:
@@ -31,10 +30,18 @@ export class CardUpdater {
               : 'error',
       userPrompt: `执行: ${progress.intentName}`,
       responseText,
-      toolCalls: r?.toolCalls ?? [],
+      toolCalls: (r?.toolCalls ?? []).map((t, i) => ({
+        ...t,
+        // Phase C: tag each tool with its step index so buildToolSection
+        // can group by step. All tools in this step share the same index.
+        stepIndex: progress.currentStepIndex,
+      })),
       totalTokens: r?.totalTokens,
       contextWindow: r?.contextWindow,
-      contextNote,
+      costUsd: r?.costUsd,
+      currentSkill: r?.currentSkill,
+      intentName: progress.intentName,
+      // botName is filled by message-bridge (it knows the bot), not here.
     };
 
     try {

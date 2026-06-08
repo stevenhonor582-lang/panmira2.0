@@ -2367,7 +2367,7 @@ export class MessageBridge {
 
     const lastResult = result.progress.steps[result.progress.steps.length - 1]?.result;
     if (lastResult) {
-      const finalState = {
+      const finalState: CardState = {
         status: result.success ? "complete" as const : "error" as const,
         userPrompt: msg.text || "",
         responseText: result.success
@@ -2376,6 +2376,9 @@ export class MessageBridge {
         toolCalls: [],
         costUsd: result.totalCostUsd,
         durationMs: result.totalDurationMs,
+        botName: this.config.name,
+        intentName: result.progress.intentName,
+        sessionCostUsd: result.totalCostUsd,
       };
       await this.sendFinalCard(cardMessageId, finalState, msg.chatId);
     }

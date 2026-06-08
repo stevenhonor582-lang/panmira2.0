@@ -72,19 +72,8 @@ export function buildCard(state: CardState): string {
     elements.push({ tag: 'hr' });
   }
 
-  // Execution context (mode, MCP) — fallback when state.contextNote is
-  // absent. When the orchestrator has already computed a contextNote via
-  // CardUpdater.buildContextNote (richer: includes Skill + context% + cost),
-  // use that and skip this section to avoid rendering Mode/MCP twice.
-  if (!state.contextNote) {
-    const contextSection = buildContextSection(state);
-    if (contextSection) {
-      elements.push({ tag: 'markdown', content: contextSection });
-      elements.push({ tag: 'hr' });
-    }
-  }
-
-  // Background tasks
+  // Background tasks (rendered before context — keeps tool output stream
+  // visually close to the tool calls above)
   if (state.backgroundEvents && state.backgroundEvents.length > 0) {
     const lines = state.backgroundEvents.map((ev) => {
       const icon = BG_ICON[ev.status];
@@ -96,10 +85,26 @@ export function buildCard(state: CardState): string {
     elements.push({ tag: 'hr' });
   }
 
-  // Context note (iron laws, skills, knowledge — persistent during execution)
-  if (state.contextNote) {
-    elements.push({ tag: 'markdown', content: state.contextNote });
+  // Unified execution context (replaces 3 old blocks:
+  //   - buildContextSection (fallback Mode/MCP)
+  //   - state.contextNote string (orchestrator Skill/Mode/MCP/上下文/成本)
+  //   - buildStatsLine footer (上下文/model/成本/duration)
+  // Reads directement from CardState so orchestrator and feishu-direct
+  // paths emit the same shape. The 2 of 5 fields that the feishu path
+  // can't supply (Skill, currentSkill) just won't appear.
+  const execCtx = buildExecutionContext(state);
+  if (execCtx) {
+    elements.push({ tag: 'markdown', content: execCtx });
     elements.push({ tag: 'hr' });
+  }
+
+  // Minimal footer (model + duration) as a 'note' line at the bottom
+  const footer = buildStatsLine(state);
+  if (footer) {
+    elements.push({
+      tag: 'note',
+      elements: [{ tag: 'plain_text', content: footer }],
+    });
   }
 
   // Response content
@@ -143,14 +148,7 @@ export function buildCard(state: CardState): string {
     elements.push({ tag: 'markdown', content: `**Error:** ${state.errorMessage}` });
   }
 
-  // Stats footer
-  const statsLine = buildStatsLine(state);
-  if (statsLine) {
-    elements.push({
-      tag: 'note',
-      elements: [{ tag: 'plain_text', content: statsLine }],
-    });
-  }
+
 
   const card = {
     config: { wide_screen_mode: true, update_multi: true },
@@ -165,20 +163,24 @@ export function buildCard(state: CardState): string {
 }
 
 function buildHeaderTitle(state: CardState, config: (typeof STATUS_CONFIG)[CardStatus]): string {
+  // Phase B: enrich header with bot name + intent (when available)
+  const prefix = state.botName
+    ? `🤖 ${state.botName}${state.intentName ? ` · ${state.intentName}` : ''} · `
+    : '';
   if (state.status === 'running') {
     const activeTool = state.toolCalls.find((t) => t.status === 'running');
     if (activeTool) {
       const detail = activeTool.detail ? ` ${activeTool.detail}` : '';
-      return `${config.icon} ${activeTool.name}${detail}`;
+      return `${prefix}${config.icon} ${activeTool.name}${detail}`;
     }
   }
   if (state.status === 'complete' && state.durationMs !== undefined) {
-    return `${config.icon} 完成 · ${formatDuration(state.durationMs)}`;
+    return `${prefix}${config.icon} 完成 · ${formatDuration(state.durationMs)}`;
   }
   if (state.status === 'error') {
-    return `${config.icon} 出错`;
+    return `${prefix}${config.icon} 出错`;
   }
-  return `${config.icon} ${config.title}`;
+  return `${prefix}${config.icon} ${config.title}`;
 }
 
 function buildToolSection(state: CardState): string | null {
@@ -187,6 +189,37 @@ function buildToolSection(state: CardState): string | null {
   const total = state.toolCalls.length;
   const running = state.toolCalls.filter((t) => t.status === 'running').length;
 
+  // Phase C: if any tool has a stepIndex, group by step. Each step's
+  // heading is collapsed by default (folded markdown), with the current
+  // (running) step expanded so the user sees live progress.
+  const hasSteps = state.toolCalls.some((t) => t.stepIndex !== undefined);
+  if (hasSteps) {
+    const groups = new Map<number, typeof state.toolCalls>();
+    for (const t of state.toolCalls) {
+      const k = t.stepIndex ?? 0;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k)!.push(t);
+    }
+    const sortedKeys = Array.from(groups.keys()).sort((a, b) => a - b);
+    const blocks: string[] = [`📋 工具调用 (${total} 个${running > 0 ? `，${running} 进行中` : ''})`];
+    for (const k of sortedKeys) {
+      const tools = groups.get(k)!;
+      const stepRunning = tools.some((t) => t.status === 'running');
+      const stepIcon = stepRunning ? '⏳' : '✅';
+      const toolLines = tools.map((t) => {
+        const icon = t.status === 'running' ? '⏳' : '✅';
+        return `  ${icon} \`${t.name}\` ${t.detail}`;
+      });
+      // Live step: always expanded. Other steps: show first 2 + 折叠其余
+      const displayTools = stepRunning ? toolLines : toolLines.slice(0, 2);
+      const hidden = toolLines.length - displayTools.length;
+      const detail = displayTools.join('\n') + (hidden > 0 ? `\n  _... 还有 ${hidden} 个折叠_` : '');
+      blocks.push(`${stepIcon} **Step ${k + 1}**\n${detail}`);
+    }
+    return blocks.join('\n\n');
+  }
+
+  // Fallback: no step info (feishu direct path). Old behavior.
   if (total <= MAX_VISIBLE_TOOLS) {
     return state.toolCalls
       .map((t) => {
@@ -205,16 +238,36 @@ function buildToolSection(state: CardState): string | null {
   return [summary, ...lines].join('\n');
 }
 
-function buildContextSection(state: CardState): string | null {
+/**
+ * Unified "execution context" block. Reads directly from CardState so
+ * BOTH paths (orchestrator + feishu-direct) get the same shape:
+ *
+ *   🔧 Skill: <name>            — only if state.currentSkill
+ *   🤖 Mode: Subagent            — if any Task/Agent tool was used
+ *   🧭 Mode: Main                — otherwise
+ *   📡 MCP: mcp__a, mcp__b       — only if mcp__* tools present
+ *   📊 上下文 20k/512k (4%)     — only if totalTokens + contextWindow
+ *   💰 $0.07                     — only if costUsd > 0
+ *
+ * Replaces the old triplet: buildContextSection + CardUpdater.buildContextNote
+ * + buildStatsLine. Context cost / window / skill are now on CardState directly
+ * so the orchestrator and feishu paths emit visually identical cards.
+ */
+function buildExecutionContext(state: CardState): string | null {
   const lines: string[] = [];
 
-  // Mode: main vs subagent (Claude SDK 的 subagent 工具实际叫 'Task')
+  // 1. Current skill (orchestrator path)
+  if (state.currentSkill) {
+    lines.push(`🔧 Skill: \`${state.currentSkill}\``);
+  }
+
+  // 2. Mode: main vs subagent (inferred from tool_use names)
   const hasSub = state.toolCalls.some(
     (t) => t.name === 'Task' || t.name === 'Agent',
   );
   lines.push(hasSub ? '🤖 Mode: Subagent' : '🧭 Mode: Main');
 
-  // MCP 工具 (命名 mcp__<server>__<tool>)
+  // 3. MCP tools (de-duplicated)
   const mcpCalls = state.toolCalls.filter((t) => t.name.startsWith('mcp__'));
   if (mcpCalls.length > 0) {
     const seen = new Set<string>();
@@ -227,6 +280,19 @@ function buildContextSection(state: CardState): string | null {
       .filter((x): x is string => x !== null)
       .join(', ');
     lines.push(`📡 MCP: ${names}`);
+  }
+
+  // 4. Context usage (running AND complete — always show if data exists)
+  if (state.totalTokens && state.contextWindow) {
+    const pct = Math.round((state.totalTokens / state.contextWindow) * 100);
+    const usedK = state.totalTokens >= 1000 ? `${(state.totalTokens / 1000).toFixed(1)}k` : `${state.totalTokens}`;
+    const totalK = `${Math.round(state.contextWindow / 1000)}k`;
+    lines.push(`📊 上下文: ${usedK}/${totalK} (${pct}%)`);
+  }
+
+  // 5. Cost (running AND complete — no longer gated on terminal status)
+  if (state.costUsd != null && state.costUsd > 0) {
+    lines.push(`💰 $${state.costUsd.toFixed(4)}`);
   }
 
   return lines.length > 0 ? lines.join('\n') : null;
@@ -246,13 +312,13 @@ function buildStatsLine(state: CardState): string | null {
     parts.push(formatModelName(state.model));
   }
 
-  if (state.status === 'complete' || state.status === 'error') {
-    if (state.sessionCostUsd != null) {
-      parts.push(formatCost(state.sessionCostUsd));
-    }
-    if (state.durationMs !== undefined) {
-      parts.push(formatDuration(state.durationMs));
-    }
+  // ⑤ Cost / duration shown in all states (no longer gated on terminal)
+  // so users see burn rate during running, not just after completion.
+  if (state.sessionCostUsd != null && state.sessionCostUsd > 0) {
+    parts.push(formatCost(state.sessionCostUsd));
+  }
+  if (state.durationMs !== undefined && state.durationMs > 0) {
+    parts.push(formatDuration(state.durationMs));
   }
 
   return parts.length > 0 ? parts.join(' · ') : null;

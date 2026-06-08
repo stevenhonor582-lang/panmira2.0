@@ -6,6 +6,8 @@ export interface ToolCall {
   name: string;
   detail: string;
   status: 'running' | 'done';
+  /** Orchestration step index this tool call belongs to (undefined = single-shot feishu path). */
+  stepIndex?: number;
 }
 
 export interface PendingQuestion {
@@ -57,6 +59,12 @@ export interface CardState {
   backgroundEvents?: BackgroundEvent[];
   /** Persistent context note shown above response text (config summary, intent, etc.) */
   contextNote?: string;
+  /** Name of the current orchestration skill (set by orchestrator CardUpdater). */
+  currentSkill?: string;
+  /** Bot display name (e.g. '信言--内容创作'). Shown in card header. */
+  botName?: string;
+  /** Intent name from orchestration (e.g. 'fix-bug'). Shown in card header. */
+  intentName?: string;
 }
 
 export interface IncomingMessage {
