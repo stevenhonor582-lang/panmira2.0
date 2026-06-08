@@ -72,6 +72,13 @@ export function buildCard(state: CardState): string {
     elements.push({ tag: 'hr' });
   }
 
+  // Execution context (mode, MCP) — 可观测层升级阶段 1.1
+  const contextSection = buildContextSection(state);
+  if (contextSection) {
+    elements.push({ tag: 'markdown', content: contextSection });
+    elements.push({ tag: 'hr' });
+  }
+
   // Background tasks
   if (state.backgroundEvents && state.backgroundEvents.length > 0) {
     const lines = state.backgroundEvents.map((ev) => {
@@ -191,6 +198,33 @@ function buildToolSection(state: CardState): string | null {
   });
   const summary = `📋 共 ${total} 步${running > 0 ? `，${running} 步进行中` : '，全部完成'}`;
   return [summary, ...lines].join('\n');
+}
+
+function buildContextSection(state: CardState): string | null {
+  const lines: string[] = [];
+
+  // Mode: main vs subagent (Claude SDK 的 subagent 工具实际叫 'Task')
+  const hasSub = state.toolCalls.some(
+    (t) => t.name === 'Task' || t.name === 'Agent',
+  );
+  lines.push(hasSub ? '🤖 Mode: Subagent' : '🧭 Mode: Main');
+
+  // MCP 工具 (命名 mcp__<server>__<tool>)
+  const mcpCalls = state.toolCalls.filter((t) => t.name.startsWith('mcp__'));
+  if (mcpCalls.length > 0) {
+    const seen = new Set<string>();
+    const names = mcpCalls
+      .map((t) => {
+        if (seen.has(t.name)) return null;
+        seen.add(t.name);
+        return `\`${t.name}\``;
+      })
+      .filter((x): x is string => x !== null)
+      .join(', ');
+    lines.push(`📡 MCP: ${names}`);
+  }
+
+  return lines.length > 0 ? lines.join('\n') : null;
 }
 
 function buildStatsLine(state: CardState): string | null {
