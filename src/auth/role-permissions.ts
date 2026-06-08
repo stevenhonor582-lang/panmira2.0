@@ -18,7 +18,9 @@ const ALWAYS_BLOCKED_PATTERNS = [
   { pattern: /\bmkfs\b/, label: 'mkfs' },
   { pattern: /\bdd\s+if=/, label: 'dd' },
   { pattern: />\s*\/etc\//, label: 'write to /etc' },
-  { pattern: /\bpm2\s+(restart|stop|delete|kill)\b/, label: 'pm2 process control' },
+  { pattern: /\bpm2\s+(restart|stop|delete|kill|start|save|resurrect)\b/, label: 'pm2 process control' },
+  { pattern: /bin\/deploy\.sh/, label: 'deploy script (use Claude Code instead)' },
+  { pattern: /bin\/start-(safe|production)\.sh/, label: 'startup script (use Claude Code instead)' },
 ];
 
 /** Protected paths that non-admin roles cannot write to. */
