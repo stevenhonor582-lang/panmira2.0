@@ -35,10 +35,7 @@ export class OutputArchiver {
     const projectsId = await this.ensureFolder('项目', botRootId);
     if (!projectsId) return;
 
-    const defaultProjectId = await this.ensureFolder('默认', projectsId);
-    if (!defaultProjectId) return;
-
-    const botFolderId = await this.ensureFolder('产出文件', defaultProjectId);
+    const botFolderId = await this.ensureFolder('默认', projectsId);
     if (!botFolderId) return;
 
     for (const file of files) {

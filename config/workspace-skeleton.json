@@ -33,7 +33,7 @@
         "projects": "项目",
         "index": "索引"
       },
-      "projectSubCategories": ["上传文件", "产出文件", "知识"]
+      "projectSubCategories": []
     },
     "group": {
       "root": "群协作区",

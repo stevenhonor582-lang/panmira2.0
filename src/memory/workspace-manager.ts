@@ -147,11 +147,6 @@ export class WorkspaceManager {
     const projectsFolder = ws.categories['项目'];
     if (!projectsFolder) throw new Error('项目 folder not found');
     const projectFolder = await this.storage.createFolder(projectName, projectsFolder.id, 'shared');
-    const subCats = this.cfg.bot.projectSubCategories || [];
-    for (const sub of subCats) {
-      await this.storage.createFolder(sub, projectFolder.id, 'shared');
-    }
-    await this.storage.createFolder('索引', projectFolder.id, 'shared');
     return projectFolder;
   }
 
@@ -393,12 +388,7 @@ export class WorkspaceManager {
   async getBotOutputFolderId(botName: string, projectName?: string): Promise<string> {
     if (projectName) {
       const projectFolder = await this.ensureBotProject(botName, projectName);
-      const tree = await this.storage.getFolderTree('admin');
-      const projNode = this.findInTreeDeep(tree, projectFolder.id);
-      if (projNode) {
-        const outputNode = (projNode.children || []).find((c: any) => c.name === '产出文件');
-        if (outputNode) return outputNode.id;
-      }
+      return projectFolder.id;
     }
     const ws = await this.ensureBotWorkspace(botName);
     const folder = ws.categories['知识沉淀'];
