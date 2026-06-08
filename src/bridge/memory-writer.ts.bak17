@@ -8,42 +8,22 @@ import type { Logger } from '../utils/logger.js';
 import type { WorkspaceManager } from '../memory/workspace-manager.js';
 import { DocEmbedder } from '../memory/doc-embedder.js';
 import { SubjectNormalizer } from './subject-normalizer.js';
-import { MemoryExtractor } from './memory-extractor.js';
 import { pool } from '../db/index.js';
 
-const RATE_LIMIT_MS = 10 * 60 * 1000; // legacy 10-min rate limit (kept for backward compat)
+const RATE_LIMIT_MS = 10 * 60 * 1000; // 10 min per chat
 const MAX_CACHE_SIZE = 100;
-const WINDOW_TOKENS = 500; // v2.4: trigger extraction when buffer >= 2000 tokens
-const WINDOW_STEP = 250; // 50% overlap — keep last 1000 tokens after extraction
 
 export class MemoryWriter {
   private folderCache = new Map<string, string>();
   private lastRecordTime = new Map<string, number>();
   private workspaceManager?: WorkspaceManager;
   private normalizer: SubjectNormalizer = null!;
-  private extractor: MemoryExtractor = null!;
-  // v2.4: sliding window buffer
-  private buffer: Map<string, { messages: string; tokens: number; lastWindowIdx: number }> = new Map();
 
 
   constructor(
     private memoryClient: MemoryClient,
     private logger: Logger,
   ) {}
-
-
-  /**
-   * v2.4: rough token estimate (~1.5 chars/token for CJK mixed, ~0.25 for English)
-   */
-  private estimateTokens(s: string): number {
-    if (!s) return 0;
-    let cjk = 0, ascii = 0;
-    for (const c of s) {
-      const code = c.charCodeAt(0);
-      if (code > 0x4E00) cjk++; else ascii++;
-    }
-    return Math.ceil(cjk + ascii * 0.25);
-  }
 
   setWorkspaceManager(wm: WorkspaceManager): void {
     this.workspaceManager = wm;
@@ -135,83 +115,14 @@ export class MemoryWriter {
     metadata: { chatId: string; chatType?: string; userId?: string; durationMs?: number; costUsd?: number },
   ): Promise<void> {
     try {
-      // Resolve bot_id early for v2.5 LLM extraction
-      let agentId: string = botName;
-      try {
-        const { rows: botRows } = await pool.query(
-          'SELECT bot_id FROM bot_configs WHERE name = $1 LIMIT 1',
-          [botName],
-        );
-        if (botRows.length > 0) agentId = botRows[0].bot_id as string;
-      } catch {}
+      const now = Date.now();
+      const lastTime = this.lastRecordTime.get(metadata.chatId);
+      if (lastTime && now - lastTime < RATE_LIMIT_MS) return;
+      this.lastRecordTime.set(metadata.chatId, now);
 
-      // v2.4 sliding window: accumulate into per-chat buffer
-      // Trigger extraction when buffer token count crosses threshold
-      const chatId = metadata.chatId;
-      let buf = this.buffer.get(chatId);
-      if (!buf) {
-        buf = { messages: '', tokens: 0, lastWindowIdx: 0 };
-        this.buffer.set(chatId, buf);
-      }
-      // append this turn
-      const turn = `User: ${userMessage}\nAssistant: ${assistantResponse}\n---\n`;
-      buf.messages += turn;
-      buf.tokens += this.estimateTokens(turn);
-
-      // v2.4: trigger when buffer >= WINDOW_TOKENS
-      if (buf.tokens < WINDOW_TOKENS) {
-        return; // not yet, keep accumulating
-      }
-      // v2.5: run LLM extraction on the window snapshot
-      let candidates: any[] = [];
-      try {
-        const agentIdFinal = agentId; // bot_id already resolved
-        const windowText = buf.messages;
-        candidates = await this.extractor.extract(windowText, agentIdFinal, chatId, buf.lastWindowIdx + 1);
-        // Write each candidate as a structured memory
-        for (const cand of candidates) {
-          try {
-            let embedding: number[] | null = null;
-            try {
-              const embedder = new DocEmbedder(this.logger);
-              [embedding] = await embedder.embedBatch([cand.content]);
-            } catch {}
-            await pool.query(
-              `INSERT INTO memories (id, content, layer, user_id, agent_id, tenant_id, importance,
-                embedding, metadata_json, subject, subject_normalized, confidence, hit_count, type, polarity)
-               VALUES (gen_random_uuid()::text, $1, 1, $2, $3, 'default', $4,
-                $5::vector, $6::jsonb, $7, $8, $9, 0, $10, $11)`,
-              [cand.content, metadata.userId ?? 'anonymous', agentIdFinal, cand.confidence,
-                embedding ? '[' + embedding.join(',') + ']' : null,
-                JSON.stringify({ source: 'llm-extraction', source_quote: cand.source_quote, chatId }),
-                cand.subject, cand.subject_normalized, cand.confidence, cand.type, cand.polarity],
-            );
-          } catch (err: any) {
-            this.logger.warn({ err: err?.message, agentId }, 'Failed to insert LLM extracted memory');
-          }
-        }
-        if (candidates.length > 0) {
-          this.logger.info({ agentId, candidateCount: candidates.length }, 'LLM memories inserted');
-        }
-      } catch (err: any) {
-        this.logger.warn({ err: err?.message, agentId }, 'LLM extraction failed, falling back to raw record');
-      }
-
-      // Extract: take snapshot, keep last WINDOW_STEP for overlap
-      const snapshot = buf.messages;
-      // keep last WINDOW_STEP tokens = ~half
-      const halfChars = Math.floor(snapshot.length / 2);
-      buf.messages = snapshot.slice(snapshot.length - halfChars);
-      buf.tokens = this.estimateTokens(buf.messages);
-      const windowIdx = ++buf.lastWindowIdx;
-      this.lastRecordTime.set(chatId, Date.now());
-
-      // Use the accumulated turn as the "user message" for record
-      // Build title from first user line
-      const firstUserMatch = snapshot.match(/User: ([^\n]+)/);
-      const title = firstUserMatch ? firstUserMatch[1].slice(0, 60) : this.buildTitle(userMessage);
-      const content = this.buildContent(`[window ${windowIdx} ${buf.tokens} tokens]\n\n` + snapshot, '', metadata);
-      const tags = ['conversation-memory', botName, chatId, `window-${windowIdx}`];
+      const title = this.buildTitle(userMessage);
+      const content = this.buildContent(userMessage, assistantResponse, metadata);
+      const tags = ['conversation-memory', botName, metadata.chatId];
 
       // 1) Write document to web-visible folder
       if (this.workspaceManager) {
@@ -229,6 +140,15 @@ export class MemoryWriter {
       }
 
       // 2) v1: hard-dedup into memories (RAG §3.3)
+      let agentId = botName;
+      try {
+        const { rows: botRows } = await pool.query(
+          'SELECT bot_id FROM bot_configs WHERE name = $1 LIMIT 1',
+          [botName],
+        );
+        if (botRows.length > 0) agentId = botRows[0].bot_id;
+      } catch {}
+
       const { subject, normalized, confidence } = await this.extractSubject(userMessage, agentId);
       await this.upsertMemory(agentId, subject, normalized, content, confidence, {
         chatId: metadata.chatId,
@@ -259,18 +179,6 @@ export class MemoryWriter {
     lines.push(''); lines.push('**助手回复**:');
     lines.push(assistantResponse.slice(0, 2000));
     return lines.join('\n');
-  }
-
-
-  /**
-   * v2.4: flush remaining buffer (call on session end / cleanup)
-   */
-  async flush(chatId: string, botName: string): Promise<void> {
-    const buf = this.buffer.get(chatId);
-    if (!buf || buf.messages.length === 0) return;
-    this.buffer.delete(chatId);
-    // process remaining as a final extraction
-    // (skip for now — buffer < 2000 tokens means it was already covered)
   }
 
   private async ensureFolder(path: string): Promise<string | null> {

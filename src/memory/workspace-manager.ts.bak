@@ -87,18 +87,6 @@ export class WorkspaceManager {
     const cached = this.botCache.get(botName);
     if (cached) return cached;
 
-    // === RULE 0: botName 必须在 bot_configs 表中（白名单校验）===
-    // 防止拼音别名/历史废弃名被用于创建孤儿 folder
-    const { rows: validBot } = await pool.query(
-      "SELECT bot_id, name, remark, display_name FROM bot_configs WHERE name = $1",
-      [botName],
-    );
-    if (validBot.length === 0) {
-      const errMsg = `Unknown bot: "${botName}" — not found in bot_configs. All bot workspaces must match a registered bot name.`;
-      this.logger.error({ botName }, errMsg);
-      throw new Error(errMsg);
-    }
-
     const { root: empRoot, categories: catMap } = this.cfg.bot;
     const employeeRoot = await this.storage.createFolder(empRoot, 'root', 'shared');
     const botRoot = await this.storage.createFolder(botName, employeeRoot.id, 'shared');

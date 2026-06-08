@@ -1,6 +1,4 @@
-bot_id: shou-jing
-pinyin: shou-jing
-chinese_name: 守静
+bot_id: 守静
 role: Ops/SRE (监控 / 部署 / 应急响应 / Runbook)
 level: 3
 daodejing_ref: 第16章 - "致虚极，守静笃。万物并作，吾以观复。"

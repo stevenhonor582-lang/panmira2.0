@@ -1,7 +1,6 @@
 import type { MemoryStorage, DocumentCreateInput, DocumentUpdateInput, Role, Visibility, StaleDocument } from './memory-storage.js';
 import type { DocEmbedder } from './doc-embedder.js';
 import { memoryEvents } from './memory-events.js';
-import { pool } from '../db/index.js';
 
 interface RouteResult {
   status: number;
@@ -26,20 +25,6 @@ export async function handleCreateFolder(
   }
   const parentId = (body.parent_id as string) || 'root';
   const visibility = (body.visibility as Visibility) || 'shared';
-  // Guard: if creating under "数字员工", name must be a registered bot name
-  if (parentId !== 'root') {
-    try {
-      const { rows: parentRows } = await pool.query('SELECT path FROM folders WHERE id = $1', [parentId]);
-      if (parentRows.length > 0 && parentRows[0].path === '/数字员工') {
-        const { rows: botRows } = await pool.query('SELECT 1 FROM bot_configs WHERE name = $1', [name]);
-        if (botRows.length === 0) {
-          return { status: 400, body: { detail: `Unknown bot: "${name}". Bot names must match a registered bot in bot_configs.` } };
-        }
-      }
-    } catch (err: any) {
-      return { status: 500, body: { detail: err.message } };
-    }
-  }
   // Only admin can create private folders
   if (visibility === 'private' && role !== 'admin') {
     return { status: 403, body: { detail: 'Only admin can create private folders' } };

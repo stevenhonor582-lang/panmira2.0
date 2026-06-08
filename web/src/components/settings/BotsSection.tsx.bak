@@ -35,7 +35,6 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
   const [editBot, setEditBot] = useState<BotInfo | undefined>();
 
   const [botName, setBotName] = useState('');
-  const [botRemark, setBotRemark] = useState('');
   const [botPlatform, setBotPlatform] = useState('web');
   const [botWorkDir, setBotWorkDir] = useState('');
   const [botDesc, setBotDesc] = useState('');
@@ -91,7 +90,6 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
     setBotMode('create');
     setEditBot(undefined);
     setBotName('');
-    setBotRemark('');
     setBotPlatform('web');
     setBotDesc('');
     setBotMaxTurns('');
@@ -156,7 +154,6 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
 
     // 3. Populate ALL form fields from DB config
     setBotName(cfg.name || bot.name);
-    setBotRemark(cfg.remark || '');
     setBotPlatform(cfg.platform || bot.platform);
     setBotWorkDir(cfg.workingDirectory || bot.workingDirectory);
     setBotDesc(cfg.description || '');
@@ -348,7 +345,6 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
     setBotError('');
     const body: Record<string, unknown> = {
       name: botName.trim(),
-      remark: botRemark.trim(),
       platform: botPlatform,
       defaultWorkingDirectory: botWorkDir.trim(),
       engine: botEngine,
@@ -488,13 +484,6 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
             <span className={styles.label}>{t('bots.nameLabel')}</span>
             <input className={styles.input} value={botName} onChange={(e) => setBotName(e.target.value)} placeholder="my-bot" autoComplete="off" />
           </label>
-          <label className={styles.field}>
-            <span className={styles.label}>{t('bots.remarkLabel') || '备注'}</span>
-            <input className={styles.input} value={botRemark} onChange={(e) => setBotRemark(e.target.value)} placeholder="可选, 如: 内容创作" autoComplete="off" />
-            <div className={styles.formHint}>显示为: {botName}{botRemark ? '--' + botRemark : ''}</div>
-          </label>
-        </div>
-        <div className={styles.row}>
           <label className={styles.field}>
             <span className={styles.label}>{t('bots.platformLabel')}</span>
             <select className={styles.input} value={botPlatform} onChange={(e) => setBotPlatform(e.target.value)} disabled={botMode === 'edit'}>

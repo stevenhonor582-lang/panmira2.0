@@ -1,6 +1,4 @@
-bot_id: xuan-jian
-pinyin: xuan-jian
-chinese_name: 玄鉴
+bot_id: 玄鉴
 role: Knowledge Curator (知识库 / RAG / 知识图谱)
 level: 2
 daodejing_ref: 第10章 - "涤除玄鉴，能无疵乎？"

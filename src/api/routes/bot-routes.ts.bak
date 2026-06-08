@@ -1,4 +1,3 @@
-import { pool } from "../../db/index.js";
 import * as fs from 'node:fs';
 import type * as http from 'node:http';
 import { installSkillsToWorkDir, installSkillsWithStaging } from '../skills-installer.js';
@@ -50,22 +49,6 @@ export async function handleBotRoutes(
   if (method === 'GET' && url === '/api/bots') {
     const localBots = registry.list();
     const runningNames = new Set(localBots.map((b) => b.name));
-
-    // Enrich with bot_id/remark/display_name from DB
-    if (botConfigStore) {
-      try {
-        const allRows = await botConfigStore.listAll();
-        const rowMap = new Map(allRows.map(r => [r.name, r]));
-        for (const bot of localBots) {
-          const row = rowMap.get(bot.name);
-          if (row) {
-            (bot as any).remark = (row.configJson as any)?.remark || '';
-            (bot as any).bot_id = (row as any).bot_id || '';
-            (bot as any).display_name = (row as any).display_name || ((bot as any).remark ? bot.name + '--' + (bot as any).remark : bot.name);
-          }
-        }
-      } catch { /* best-effort */ }
-    }
     const peerBots = peerManager?.getPeerBots() ?? [];
 
     // Include paused bots from DB
@@ -81,9 +64,6 @@ export async function handleBotRoutes(
             engine: 'paused',
             workingDirectory: (r.configJson as any).defaultWorkingDirectory || '',
             description: (r.configJson as any).description || '',
-            remark: (r.configJson as any).remark || '',
-            bot_id: (r as any).bot_id || '',
-            display_name: (r as any).display_name || ((r.configJson as any).remark ? r.name + '--' + (r.configJson as any).remark : r.name),
             paused: true,
           }));
       } catch {
@@ -110,7 +90,6 @@ export async function handleBotRoutes(
     const body = await parseJsonBody(req);
     const platform = body.platform as string;
     const name = body.name as string;
-    const remark = (body.remark as string) || '';
 
     if (!platform || !name) {
       jsonResponse(res, 400, { error: 'Missing required fields: platform, name' });
@@ -132,7 +111,6 @@ export async function handleBotRoutes(
       }
       entry = {
         name,
-        remark,
         ...(body.description ? { description: body.description } : {}),
         ...(body.engine ? { engine: body.engine } : {}),
         ...(body.codex ? { codex: body.codex } : {}),
@@ -158,7 +136,6 @@ export async function handleBotRoutes(
       }
       entry = {
         name,
-        remark,
         ...(body.description ? { description: body.description } : {}),
         ...(body.engine ? { engine: body.engine } : {}),
         ...(body.codex ? { codex: body.codex } : {}),
@@ -182,7 +159,6 @@ export async function handleBotRoutes(
       }
       entry = {
         name,
-        remark,
         ...(body.description ? { description: body.description } : {}),
         ...(body.engine ? { engine: body.engine } : {}),
         ...(body.codex ? { codex: body.codex } : {}),
@@ -269,38 +245,6 @@ export async function handleBotRoutes(
         throw err;
       }
     }
-    return true;
-  }
-
-  // GET /api/memories — structured memories overview (RAG v1-v2.6)
-  if (method === "GET" && url.split("?")[0] === "/api/memories") {
-    const qp = new URL(url, `http://${req.headers.host || 'localhost'}`).searchParams;
-    const botName = qp.get('bot') || undefined;
-    try {
-      let query = `SELECT id, subject, subject_normalized, type, polarity, confidence,
-               hit_count, last_hit_at, LEFT(content,200) AS preview, created_at
-        FROM memories WHERE invalidated_at IS NULL AND subject_normalized IS NOT NULL`;
-      const params: any[] = [];
-      if (botName) { query += ` AND agent_id = $1`; params.push(botName); }
-      query += ` ORDER BY hit_count DESC, confidence DESC LIMIT 50`;
-      const { rows } = await pool.query(query, params);
-      jsonResponse(res, 200, { memories: rows });
-    } catch (err: any) { jsonResponse(res, 500, { error: err.message }); }
-    return true;
-  }
-
-  // GET /api/memories/stats — aggregate per type per bot
-  if (method === "GET" && url.split("?")[0] === "/api/memories/stats") {
-    try {
-      const { rows } = await pool.query(
-        `SELECT COALESCE(bc.name, m.agent_id) AS bot, m.type, COUNT(*) AS cnt,
-                ROUND(AVG(m.confidence)::numeric,2) AS avg_conf, SUM(m.hit_count) AS total_hits
-           FROM memories m LEFT JOIN bot_configs bc ON bc.bot_id::text = m.agent_id
-          WHERE m.invalidated_at IS NULL AND m.subject_normalized IS NOT NULL
-          GROUP BY 1,2 ORDER BY 3 DESC`
-      );
-      jsonResponse(res, 200, { stats: rows });
-    } catch (err: any) { jsonResponse(res, 500, { error: err.message }); }
     return true;
   }
 

@@ -97,61 +97,7 @@ export async function fetchKnowledgeContext(
   }
   if (folderUuids.length === 0) folderUuids = knowledgeFolders;
 
-  const results = await deps.memoryClient.searchInFolders(searchQuery, folderUuids, 20);
-
-  // v1 RAG §4.2: Re-rank by recency + hit_count + confidence
-  // score = 0.5*cosine + 0.2*recency + 0.2*hit_count + 0.1*confidence
-  let ranked = results;
-  try {
-    if (results.length > 0) {
-      // 取每条的 metadata/hit_count/confidence (从 documents 或 memories)
-      const ids = results.map(r => r.id);
-      const { rows: metaRows } = await pool.query(
-        `SELECT id, hit_count, confidence, updated_at, polarity FROM memories
-          WHERE id = ANY($1) AND invalidated_at IS NULL`,
-        [ids]
-      ).catch(() => ({ rows: [] }));
-      const metaMap = new Map(metaRows.map((r: any) => [r.id, r]));
-
-      const HALF_LIFE_DAYS = 30;
-      const now = Date.now();
-      ranked = results
-        .map(r => {
-          const meta: any = metaMap.get(r.id);
-          const cosine = 1 - (r.score || 0); // memory API: lower score = better
-          const recency = meta?.updated_at
-            ? Math.exp(-((now - new Date(meta.updated_at).getTime()) / 86400000) * Math.LN2 / HALF_LIFE_DAYS)
-            : 0.5;
-          const hitCount = Math.min(1, (meta?.hit_count || 0) / 10); // normalize
-          const confidence = meta?.confidence ?? 0.5;
-          const finalScore = 0.5*cosine + 0.2*recency + 0.2*hitCount + 0.1*confidence;
-          return { r, finalScore, meta };
-        })
-        .sort((a, b) => b.finalScore - a.finalScore)
-        .slice(0, 5)
-        .map(x => x.r);
-
-      // Bump hit_count for retrieved memories
-      if ((metaRows as any[]).length > 0) {
-        const retrievedIds = ranked.map(r => r.id);
-        await pool.query(
-          `UPDATE memories SET hit_count = hit_count + 1, last_hit_at = NOW()
-            WHERE id = ANY($1)`,
-          [retrievedIds]
-        ).catch((err: any) => deps.logger.debug({ err: err.message }, 'hit_count bump failed'));
-      }
-
-      deps.logger.info(
-        { chatId, resultCount: ranked.length, topScore: ranked.length > 0 ? (1 - (ranked[0].score || 0)) : 0 },
-        'Knowledge re-ranked (v1)',
-      );
-    }
-  } catch (err: any) {
-    deps.logger.warn({ err: err?.message }, 'Re-rank failed, using raw results');
-  }
-  const finalResults = ranked;
-  // Avoid naming conflict: replace `results` with `finalResults` below
-
+  const results = await deps.memoryClient.searchInFolders(searchQuery, folderUuids, 5);
 
   // P2.3: Search bot's own conversation history for cross-session recall
   let conversationContext = '';
@@ -159,14 +105,8 @@ export async function fetchKnowledgeContext(
     try {
       const knowledgeFolderId = await deps.workspaceManager.getBotKnowledgeFolderId(deps.config.name);
       if (knowledgeFolderId) {
-        const convResults = await deps.memoryClient.searchInFolders(searchQuery, [knowledgeFolderId], 10);
-      // v1: re-rank by hit_count + recency
-      const convRanked = convResults
-        .map(r => ({ r, hc: 0, conf: 0.5 }))  // best effort: searchInFolders doesn't return mem fields
-        .sort((a, b) => 0)  // 保持原序
-        .map(x => x.r);
-
-        const convItems = (convRanked || [])
+        const convResults = await deps.memoryClient.searchInFolders(searchQuery, [knowledgeFolderId], 3);
+        const convItems = (convResults || [])
           .filter((r: any) => {
             const tags = r.tags || [];
             return tags.some((t: string) => t === 'conversation-memory' || t === 'auto-archive');
@@ -188,14 +128,15 @@ export async function fetchKnowledgeContext(
     }
   }
 
-  if (!finalResults || finalResults.length === 0) {
+  if (!results || results.length === 0) {
     if (conversationContext) {
       return { systemPromptOverride, knowledgeContext: conversationContext, agentBoundSkills };
     }
     return { systemPromptOverride, knowledgeContext: null, agentBoundSkills };
   }
 
-  const formatted = finalResults
+  const formatted = results
+    .slice(0, 5)
     .map((r, i) => {
       const snippet = (r.snippet || '').replace(/<[^>]*>/g, '');
       const scoreTag = r.score ? ` (相关度: ${Math.round((1 - r.score) * 100)}%)` : '';
@@ -205,7 +146,7 @@ export async function fetchKnowledgeContext(
 
   const knowledgeContext = `## 相关知识参考\n\n以下是从知识库中检索到的相关资料，请参考这些信息回答用户问题：\n\n${formatted}${conversationContext}`;
   deps.logger.info(
-    { chatId, folderCount: knowledgeFolders.length, resultCount: finalResults.length },
+    { chatId, folderCount: knowledgeFolders.length, resultCount: results.length },
     'Knowledge injection applied',
   );
   return { systemPromptOverride, knowledgeContext, agentBoundSkills };

@@ -1,0 +1,22 @@
+{
+  "version": "1.0",
+  "created_at": "2026-06-09",
+  "description": "Hand-labeled test queries for RAG evaluation. Each query has expected subjects that SHOULD be in top-K.",
+  "queries": [
+    {"query": "海联智达品牌站到多少批了",           "expected": ["海联智达", "hlzd"], "type": "fact"},
+    {"query": "信言倾向用什么技术栈",                "expected": ["tech_stack", "vue"], "type": "preference"},
+    {"query": "海联智达什么时候上线的",             "expected": ["海联智达上线", "launch"], "type": "event"},
+    {"query": "为什么选独立站不选B2B",              "expected": ["独立站", "B2B", "focus"], "type": "decision"},
+    {"query": "panmira系统的技术架构",               "expected": ["panmira"], "type": "fact"},
+    {"query": "deepx.fun 官网",                      "expected": ["deepx.fun"], "type": "entity"},
+    {"query": "得一替补了谁的任务",                  "expected": ["得一", "信言"], "type": "event"},
+    {"query": "守静监控了哪些服务器",                "expected": ["守静", "mah", "若水"], "type": "fact"},
+    {"query": "不盈用了哪些技术",                    "expected": ["不盈", "full-stack"], "type": "preference"},
+    {"query": "玄鉴的知识库有哪些内容",              "expected": ["玄鉴", "knowledge"], "type": "entity"},
+    {"query": "飞书 API 怎么调认证",                 "expected": ["feishu", "飞书", "auth"], "type": "fact"},
+    {"query": "工业品外贸和B2B平台哪个好",           "expected": ["工业品", "独立站", "B2B"], "type": "decision"},
+    {"query": "2026趋势是什么",                      "expected": ["trend", "2026"], "type": "fact"},
+    {"query": "编码规范是什么",                      "expected": ["coding-standards"], "type": "fact"},
+    {"query": "服务器拓扑结构",                      "expected": ["server-topology"], "type": "entity"}
+  ]
+}
