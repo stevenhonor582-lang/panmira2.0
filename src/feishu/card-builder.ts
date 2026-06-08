@@ -299,14 +299,9 @@ function buildExecutionContext(state: CardState): string | null {
 }
 
 function buildStatsLine(state: CardState): string | null {
+  // Footer: model + cost + duration. 上下文% is NOT here anymore —
+  // it lives in buildExecutionContext above, so we don't render it twice.
   const parts: string[] = [];
-
-  if (state.totalTokens && state.contextWindow) {
-    const pct = Math.round((state.totalTokens / state.contextWindow) * 100);
-    const usedK = state.totalTokens >= 1000 ? `${(state.totalTokens / 1000).toFixed(1)}k` : `${state.totalTokens}`;
-    const totalK = `${Math.round(state.contextWindow / 1000)}k`;
-    parts.push(`上下文 ${usedK}/${totalK} (${pct}%)`);
-  }
 
   if (state.model) {
     parts.push(formatModelName(state.model));
