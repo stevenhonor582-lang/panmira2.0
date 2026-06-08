@@ -33,7 +33,6 @@ import { Orchestrator } from './orchestrator/index.js';
 import { StepExecutor } from './orchestrator/step-executor.js';
 import type { AgentRuntimeConfig } from './orchestrator/types.js';
 import { OutputArchiver } from './output-archiver.js';
-import { WorkspaceSyncer } from './workspace-syncer.js';
 import { PanmiraRAG } from '../panmira/rag.js';
 import {
   TASK_TIMEOUT_MS,
@@ -84,7 +83,6 @@ export class MessageBridge {
   private memoryWriter: MemoryWriter;
   private clarificationMw: ClarificationMiddleware | null = null;
   private outputArchiver: OutputArchiver;
-  private workspaceSyncer: WorkspaceSyncer;
   private rag: PanmiraRAG;
   private workspaceManager?: import('../memory/workspace-manager.js').WorkspaceManager;
 
@@ -109,7 +107,6 @@ export class MessageBridge {
     this.memoryClient = memoryClient;
     this.memoryWriter = new MemoryWriter(memoryClient, logger);
     this.outputArchiver = new OutputArchiver(memoryClient, logger);
-    this.workspaceSyncer = new WorkspaceSyncer(logger);
     this.rag = new PanmiraRAG(logger, { maxDocuments: 3, maxMemories: 2 });
 
     this.commandHandler = new CommandHandler(
