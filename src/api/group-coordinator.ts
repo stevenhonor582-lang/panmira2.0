@@ -11,7 +11,7 @@ import type { Logger } from '../utils/logger.js';
 import type { IncomingMessage } from '../types.js';
 import type { BindingEngine } from './routing-bindings.js';
 import type { CoordinatorConfigStore } from '../db/coordinator-config-store.js';
-import { buildCard, buildFileManifestCard, type FileManifestEntry } from '../feishu/card-builder.js';
+import { buildCard, buildFileManifestCard, buildConfirmationCard, type ConfirmationState, type FileManifestEntry } from '../feishu/card-builder.js';
 import type { CardState, ToolCall } from '../types.js';
 import type { ApiTaskResult } from '../bridge/message-bridge.js';
 import type { OutputFile } from '../bridge/outputs-manager.js';
@@ -34,6 +34,15 @@ export class GroupCoordinator {
   private groupCoordinators = new Map<string, string>();
   private outputArchiver?: OutputArchiver;
   private workspaceManager?: import('../memory/workspace-manager.js').WorkspaceManager;
+  /** confirmationId -> { resolve, timer, groupId, messageId, lastCard } */
+  private pendingConfirmations = new Map<string, {
+    resolve: (confirmed: boolean) => void;
+    timer: ReturnType<typeof setTimeout>;
+    groupId: string;
+    messageId?: string;
+  }>();
+  /** Default 60s — after which the task auto-confirms to avoid deadlocking the group. */
+  private readonly confirmationTimeoutMs = 60_000;
 
   constructor(
     private registry: BotRegistry,
@@ -192,7 +201,23 @@ export class GroupCoordinator {
 
     this.logger.info(
       { groupId, dispatchTo: validAssignments.map((a) => a.bot) },
-      'GroupCoordinator: Step 2 — dispatching to selected specialists',
+      'GroupCoordinator: Step 2a — sending confirmation card before dispatch',
+    );
+
+    // Phase 2 (snuggly): wait for user to confirm/cancel before dispatching
+    const confirmed = await this.waitForConfirmation(groupId, {
+      userTask: userText,
+      assignments: validAssignments,
+    });
+    if (!confirmed) {
+      this.logger.info({ groupId }, 'GroupCoordinator: user cancelled the dispatch');
+      await this.replyInGroup(groupId, coordinatorBot, '🚫 已取消本次任务分配。');
+      return;
+    }
+
+    this.logger.info(
+      { groupId, dispatchTo: validAssignments.map((a) => a.bot) },
+      'GroupCoordinator: Step 2b — dispatching to selected specialists',
     );
 
     await this.dispatchWithStreamingCard(groupId, coordinatorBot, validAssignments, userText);
@@ -265,7 +290,66 @@ export class GroupCoordinator {
   }
 
   /** Handle /coordinator command from ANY bot (pre-check in event-handler). */
-  async handlePreCheckCoordinatorCommand(msg: IncomingMessage, currentBotName: string): Promise<boolean> {
+
+  /**
+   * Phase 2 (snuggly): send a confirmation card and wait for the user
+   * to click confirm/cancel (or auto-confirm on timeout). Returns
+   * true if confirmed (or auto-confirmed), false if cancelled.
+   */
+  async waitForConfirmation(
+    groupId: string,
+    state: Omit<ConfirmationState, 'confirmationId' | 'timeoutSeconds'> & { confirmationId?: string; timeoutSeconds?: number },
+  ): Promise<boolean> {
+    const confirmationId = state.confirmationId ?? `confirm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const timeoutSeconds = state.timeoutSeconds ?? 60;
+    const cardState: ConfirmationState = { ...state, confirmationId, timeoutSeconds };
+    const cardJson = buildConfirmationCard(cardState);
+
+    const botName = this.findCoordinatorForGroup(groupId);
+    const bot = botName ? this.registry.get(botName) : undefined;
+    if (!bot) {
+      this.logger.warn({ groupId }, 'GroupCoordinator: no coordinator bot, auto-confirming');
+      return true;
+    }
+
+    try {
+      // sendRawCard returns Promise<void>; we just want the call to succeed.
+      await bot.sender.sendRawCard(groupId, cardJson);
+    } catch (err: any) {
+      this.logger.error({ err, groupId }, 'GroupCoordinator: failed to send confirmation card, auto-confirming');
+      return true;
+    }
+
+    return new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => {
+        if (this.pendingConfirmations.has(confirmationId)) {
+          this.pendingConfirmations.delete(confirmationId);
+          this.logger.info({ confirmationId, groupId }, 'GroupCoordinator: confirmation timed out, auto-confirming');
+          resolve(true);
+        }
+      }, timeoutSeconds * 1000);
+      this.pendingConfirmations.set(confirmationId, { resolve, timer, groupId });
+    });
+  }
+
+  /**
+   * Called by the card-action dispatcher when the user clicks
+   * confirm or cancel on a confirmation card. Resolves the
+   * matching pending promise. Unknown ids are ignored.
+   */
+  async handleConfirmationAction(confirmationId: string, confirmed: boolean): Promise<void> {
+    const entry = this.pendingConfirmations.get(confirmationId);
+    if (!entry) {
+      this.logger.warn({ confirmationId }, 'GroupCoordinator: confirmation action for unknown id (already resolved?)');
+      return;
+    }
+    clearTimeout(entry.timer);
+    this.pendingConfirmations.delete(confirmationId);
+    this.logger.info({ confirmationId, groupId: entry.groupId, confirmed }, 'GroupCoordinator: user responded to confirmation card');
+    entry.resolve(confirmed);
+  }
+
+    async handlePreCheckCoordinatorCommand(msg: IncomingMessage, currentBotName: string): Promise<boolean> {
     const text = (msg.text || '').trim();
     if (!this.isCoordinatorCommand(text)) return false;
     await this.handleCoordinatorCommand(msg.chatId, currentBotName, text);

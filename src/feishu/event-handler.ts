@@ -110,12 +110,29 @@ export function createEventDispatcher(
             logger.warn({ data }, 'Card action missing required fields');
             return { toast: { type: 'error', content: 'Invalid card action' } };
           }
-          onCardAction({
-            chatId,
-            userId,
-            messageId,
-            value: raw as Record<string, unknown>,
-          });
+          const value = raw as Record<string, unknown>;
+
+          // Phase 2 (snuggly): intercept coordinator confirmation actions
+          // BEFORE falling through to the bridge's card action handler.
+          const action = value.action;
+          if (action === 'coordinator_confirm' || action === 'coordinator_cancel') {
+            const confirmationId = value.confirmationId;
+            if (typeof confirmationId !== 'string' || !coordinator) {
+              logger.warn({ value, hasCoordinator: !!coordinator }, 'Card action: missing confirmationId or coordinator');
+              return { toast: { type: 'error', content: 'Invalid confirmation' } };
+            }
+            coordinator
+              .handleConfirmationAction(confirmationId, action === 'coordinator_confirm')
+              .catch((err) => logger.error({ err, confirmationId }, 'handleConfirmationAction failed'));
+            return {
+              toast: {
+                type: action === 'coordinator_confirm' ? 'success' : 'info',
+                content: action === 'coordinator_confirm' ? '✅ 已确认执行' : '🚫 已取消',
+              },
+            };
+          }
+
+          onCardAction({ chatId, userId, messageId, value });
           return { toast: { type: 'success', content: '已收到' } };
         } catch (err) {
           logger.error({ err }, 'Error handling card action');

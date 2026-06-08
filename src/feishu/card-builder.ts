@@ -467,3 +467,68 @@ export function buildFileManifestCard(state: FileManifestState): string {
   };
   return JSON.stringify(card);
 }
+
+
+// ── Task Confirmation Card ──
+
+export interface ConfirmationState {
+  userTask: string;
+  analysis?: string;
+  assignments: Array<{ bot: string; task: string }>;
+  confirmationId: string;
+  timeoutSeconds: number;
+}
+
+/**
+ * Yellow "task confirmation" card. Shown before a coordinator
+ * dispatches a task to specialists. User can confirm or cancel
+ * within timeoutSeconds (60s default); on timeout, the system
+ * auto-confirms to avoid deadlocking the group.
+ *
+ * Button values:
+ *   { action: 'coordinator_confirm', confirmationId }
+ *   { action: 'coordinator_cancel',  confirmationId }
+ */
+export function buildConfirmationCard(state: ConfirmationState): string {
+  const lines: string[] = [];
+  if (state.analysis) {
+    lines.push(`**分析:** ${state.analysis}`);
+  }
+  lines.push('**分配:**');
+  for (const a of state.assignments) {
+    lines.push(`- ✉️ **${a.bot}** — ${a.task}`);
+  }
+  lines.push(`\n_超过 ${state.timeoutSeconds} 秒未操作就仅自动确认。_`);
+
+  const card = {
+    config: { wide_screen_mode: true },
+    header: {
+      template: 'orange',
+      title: { content: '📋 任务确认', tag: 'plain_text' },
+    },
+    elements: [
+      { tag: 'markdown', content: `📝 **用户需求:** ${truncate(state.userTask, 200)}` },
+      { tag: 'hr' },
+      { tag: 'markdown', content: lines.join('\n') },
+      { tag: 'hr' },
+      {
+        tag: 'action',
+        actions: [
+          {
+            tag: 'button',
+            type: 'primary',
+            text: { content: '✓ 确认执行', tag: 'plain_text' },
+            value: { action: 'coordinator_confirm', confirmationId: state.confirmationId },
+          },
+          {
+            tag: 'button',
+            type: 'danger',
+            text: { content: '❌ 取消', tag: 'plain_text' },
+            value: { action: 'coordinator_cancel', confirmationId: state.confirmationId },
+          },
+        ],
+      },
+    ],
+  };
+  return JSON.stringify(card);
+}
