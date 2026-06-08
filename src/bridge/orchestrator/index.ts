@@ -13,8 +13,10 @@ import type {
   OrchestrationStep,
   ExecutionPlan,
   ExecutionStep,
+
 } from './types.js';
 import { IntentResolver } from './intent-resolver.js';
+import { saveOrchSession, loadOrchSession, type PersistedOrchSession } from './orch-session-store.js';
 import { TaskPlanner } from './task-planner.js';
 import { ContextBuilder } from './context-builder.js';
 import { GateChecker } from './gate-checker.js';
@@ -131,7 +133,46 @@ export class Orchestrator {
   }
 
   /** Resume a paused orchestration from the given state. */
-  async resume(
+
+  /**
+   * Phase 3: resume a previously-saved orchestration by sessionId.
+   * Loads the snapshot from ~/.panmira/orch-sessions/<id>.json and
+   * delegates to executeSteps() with the same params + a
+   * matching resumeSessionId (so the snapshot is overwritten
+   * in place as the run progresses).
+   */
+  async resumeById(
+    sessionId: string,
+    msg: IncomingMessage,
+    agentConfig: AgentRuntimeConfig,
+    abortController: AbortController,
+    getSender: (chatId?: string) => IMessageSender,
+  ): Promise<OrchestrationResult | null> {
+    const saved = loadOrchSession(sessionId);
+    if (!saved) {
+      this.logger.warn({ sessionId }, 'Orchestrator.resumeById: session not found (expired or unknown)');
+      return null;
+    }
+    return this.resume(
+      msg,
+      {
+        agentConfig,
+        plan: saved.plan,
+        progress: saved.progress,
+        previousOutput: '',
+        allGateResults: saved.allGateResults,
+        totalCostUsd: saved.totalCostUsd,
+        knowledgeContext: saved.knowledgeContext ?? '',
+        cwd: saved.cwd,
+        outputsDir: saved.outputsDir,
+        cardMessageId: saved.cardMessageId,
+      },
+      abortController,
+      getSender,
+    );
+  }
+
+    async resume(
     msg: IncomingMessage,
     state: OrchestrationResumeState,
     abortController: AbortController,
@@ -233,11 +274,37 @@ export class Orchestrator {
     totalCostUsd: number;
     knowledgeContext: string;
     userMessage: string;
+    /** If set, reuse this sessionId instead of generating a new one. */
+    resumeSessionId?: string;
   }): Promise<OrchestrationResult> {
     const {
       msg, agentConfig, plan, cwd, outputsDir, cardMessageId,
       abortController, getSender, startTime, knowledgeContext, userMessage,
     } = params;
+
+    // Phase 3: generate (or reuse) a sessionId for this run, and persist
+    // a snapshot so a later "回到主线" can resume.
+    const sessionId = params.resumeSessionId ?? (await import('node:crypto')).randomUUID();
+    const persistSession = () => {
+      saveOrchSession({
+        sessionId,
+        chatId: msg.chatId,
+        botName: '', // orchestrator doesn't carry botName here; left for Phase 3.1
+        intentName: progress.intentName,
+        userMessage,
+        plan,
+        progress,
+        allGateResults,
+        totalCostUsd,
+        pendingTasks: this.extractPendingTasks(progress, allGateResults),
+        cwd,
+        outputsDir,
+        cardMessageId,
+        knowledgeContext: knowledgeContext || undefined,
+        startTime: params.startTime,
+        lastUpdated: Date.now(),
+      });
+    };
     let { previousOutput, totalCostUsd } = params;
     const progress = params.progress;
     const allGateResults = params.allGateResults;
@@ -249,6 +316,7 @@ export class Orchestrator {
           success: false, progress, allGateResults,
           totalDurationMs: Date.now() - startTime, totalCostUsd,
         pendingTasks: this.extractPendingTasks(progress, allGateResults),
+          sessionId,
           error: 'Aborted',
         };
       }
@@ -270,6 +338,7 @@ export class Orchestrator {
           totalDurationMs: Date.now() - startTime,
           totalCostUsd,
           pendingTasks: this.extractPendingTasks(progress, allGateResults),
+          sessionId,
           plan, // include plan so caller can reconstruct resume state
           error: undefined,
         };
@@ -358,6 +427,7 @@ export class Orchestrator {
           success: false, progress, allGateResults,
           totalDurationMs: Date.now() - startTime, totalCostUsd,
         pendingTasks: this.extractPendingTasks(progress, allGateResults),
+          sessionId,
           error: `步骤 "${step.step}" 门控未通过，重试 ${step.retry} 次后仍失败`,
         };
       }

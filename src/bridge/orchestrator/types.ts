@@ -119,6 +119,8 @@ export interface OrchestrationResult {
   error?: string;
   /** Aggregated incomplete work (skipped steps + failed gates). Empty when success. */
   pendingTasks?: PendingTask[];
+  /** Stable per-execution ID. Persisted in orch-sessions/. Use to resume later. */
+  sessionId?: string;
   /** Populated when status is 'waiting_user' — the full plan for resume. */
   plan?: ExecutionPlan;
 }

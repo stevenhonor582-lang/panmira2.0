@@ -132,6 +132,25 @@ export function createEventDispatcher(
             };
           }
 
+          // Phase 3: orch_resume — user clicked "📋 回到主线" on a pending
+          // tasks card. Route the sessionId to the coordinator, which
+          // loads the orch-sessions/ snapshot and resumes.
+          if (action === 'orch_resume') {
+            const sessionId = value.sessionId;
+            if (typeof sessionId !== 'string' || !sessionId) {
+              logger.warn({ value }, 'orch_resume: missing sessionId');
+              return { toast: { type: 'error', content: 'Missing sessionId' } };
+            }
+            if (coordinator) {
+              coordinator
+                .handleOrchResume(sessionId, chatId, userId)
+                .catch((err) => logger.error({ err, sessionId }, 'handleOrchResume failed'));
+              return { toast: { type: 'success', content: '🔙 正在回到主线...' } };
+            }
+            logger.warn({ sessionId }, 'orch_resume: no coordinator wired');
+            return { toast: { type: 'error', content: 'No coordinator available' } };
+          }
+
           onCardAction({ chatId, userId, messageId, value });
           return { toast: { type: 'success', content: '已收到' } };
         } catch (err) {

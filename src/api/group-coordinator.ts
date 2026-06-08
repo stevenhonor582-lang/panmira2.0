@@ -12,6 +12,7 @@ import type { IncomingMessage } from '../types.js';
 import type { BindingEngine } from './routing-bindings.js';
 import type { CoordinatorConfigStore } from '../db/coordinator-config-store.js';
 import { buildCard, buildFileManifestCard, buildConfirmationCard, type ConfirmationState, type FileManifestEntry } from '../feishu/card-builder.js';
+import { loadOrchSession } from '../bridge/orchestrator/orch-session-store.js';
 import type { CardState, ToolCall } from '../types.js';
 import type { ApiTaskResult } from '../bridge/message-bridge.js';
 import type { OutputFile } from '../bridge/outputs-manager.js';
@@ -333,6 +334,37 @@ export class GroupCoordinator {
   }
 
   /**
+   * Phase 3: handle a "回到主线" click. Loads the orch-sessions
+   * snapshot and delegates to the orchestrator's resumeById.
+   * Replies in the chat with a status message (already-running
+   * / not found / resumed).
+   */
+  async handleOrchResume(sessionId: string, chatId: string, userId: string): Promise<void> {
+    const orch = (this as any).orchestrator;
+    if (!orch || typeof orch.resumeById !== 'function') {
+      this.logger.warn({ sessionId, chatId }, 'handleOrchResume: orchestrator not wired');
+      await this.replyInGroup(chatId, this.findCoordinatorForGroup(chatId) ?? '', '⚠️ 协调器未连接，无法续跑。');
+      return;
+    }
+    const saved = loadOrchSession(sessionId);
+    if (!saved) {
+      await this.replyInGroup(chatId, this.findCoordinatorForGroup(chatId) ?? '', '⚠️ 该任务已过期或不存在（7 天 TTL），无法续跑。');
+      return;
+    }
+    await this.replyInGroup(chatId, this.findCoordinatorForGroup(chatId) ?? '', `🔙 正在回到主线任务：${saved.intentName}…`);
+    // Best-effort resume; the orchestrator will update the same
+    // sessionId's snapshot as the run progresses.
+    try {
+      const msg: any = { chatId, userId, text: saved.userMessage };
+      const result = await orch.resumeById(sessionId, msg, {} as any, new AbortController(), (cid: string) => this.registry.get(this.findCoordinatorForGroup(cid) ?? '')?.sender);
+      await this.replyInGroup(chatId, this.findCoordinatorForGroup(chatId) ?? '', result?.success ? '✅ 已续跑完成' : `⚠️ 续跑未成功：${result?.error ?? '未知'}`);
+    } catch (err: any) {
+      this.logger.error({ err, sessionId }, 'handleOrchResume: orchestrator threw');
+      await this.replyInGroup(chatId, this.findCoordinatorForGroup(chatId) ?? '', `❌ 续跑失败：${err.message ?? err}`);
+    }
+  }
+
+    /**
    * Called by the card-action dispatcher when the user clicks
    * confirm or cancel on a confirmation card. Resolves the
    * matching pending promise. Unknown ids are ignored.

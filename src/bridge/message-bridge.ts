@@ -2389,7 +2389,7 @@ export class MessageBridge {
           userTask: msg.text || '',
           tasks: result.pendingTasks,
           intentName: result.progress.intentName,
-          // sessionId is filled in by Phase 3 (orch-session-store).
+          sessionId: result.sessionId,
         };
         const cardJson = buildPendingTasksCard(state);
         await this.getSender(msg.chatId).sendRawCard(msg.chatId, cardJson);
