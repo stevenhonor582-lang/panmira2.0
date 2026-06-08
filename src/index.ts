@@ -325,6 +325,18 @@ async function main() {
     }
     logger.info({ botCount: allNames.length }, 'Bot/Org工作空间已初始化');
 
+    // Build initial index documents for org + every bot so the 索引/
+    // folder always has an up-to-date _索引 entry from the first request.
+    // Without this the index is empty until a document is added (which
+    // never happens for static knowledge bases).
+    const orgWs = await workspaceManager.ensureOrgWorkspace();
+    await workspaceManager.rebuildIndex(orgWs, 'org');
+    for (const botName of allNames) {
+      const ws = await workspaceManager.ensureBotWorkspace(botName);
+      await workspaceManager.rebuildIndex(ws, `bot:${botName}`);
+    }
+    logger.info({ scope: 'org+bots' }, '索引 文档已初始化');
+
     // Validate bot-agent consistency and auto-fix mismatches
     await validateBotConsistency(allNames, registry, logger);
 
