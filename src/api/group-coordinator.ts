@@ -11,7 +11,7 @@ import type { Logger } from '../utils/logger.js';
 import type { IncomingMessage } from '../types.js';
 import type { BindingEngine } from './routing-bindings.js';
 import type { CoordinatorConfigStore } from '../db/coordinator-config-store.js';
-import { buildCard } from '../feishu/card-builder.js';
+import { buildCard, buildFileManifestCard, type FileManifestEntry } from '../feishu/card-builder.js';
 import type { CardState, ToolCall } from '../types.js';
 import type { ApiTaskResult } from '../bridge/message-bridge.js';
 import type { OutputFile } from '../bridge/outputs-manager.js';
@@ -665,6 +665,31 @@ export class GroupCoordinator {
         await coordinatorBot.sender.sendLocalFile(groupId, finalFile.filePath, `最终成果_${finalFile.fileName}`);
       } catch (err: any) {
         this.logger.error({ err, groupId }, 'GroupCoordinator: failed to send final file');
+      }
+    }
+
+    // Send a dedicated "file manifest" card (green header, one line per file,
+    // ⭐ on the final deliverable). Phase 1 of the snuggly plan: a clean
+    // inventory separate from the streaming progress card.
+    if (allFiles.length > 0) {
+      try {
+        const manifestFiles: FileManifestEntry[] = allFiles.map(({ bot, file }) => ({
+          fileName: file.fileName,
+          sizeBytes: file.sizeBytes,
+          isImage: file.isImage,
+          botName: bot,
+          isFinal: file === finalFile,
+        }));
+        const totalSizeKB = manifestFiles.reduce((sum, f) => sum + f.sizeBytes, 0) / 1024;
+        const manifestJson = buildFileManifestCard({
+          userTask,
+          files: manifestFiles,
+          totalSizeKB,
+        });
+        await coordinatorBot.sender.sendRawCard(groupId, manifestJson);
+        this.logger.info({ fileCount: manifestFiles.length, groupId }, 'GroupCoordinator: sent file manifest card');
+      } catch (err: any) {
+        this.logger.error({ err, groupId }, 'GroupCoordinator: failed to send file manifest card');
       }
     }
   }

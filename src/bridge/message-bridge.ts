@@ -1868,6 +1868,7 @@ export class MessageBridge {
         }
       }
 
+      const _outputFiles = outputsDir ? this.outputsManager.scanOutputs(outputsDir) : [];
       return {
         success: lastState.status === 'complete',
         responseText: lastState.responseText,
@@ -1875,6 +1876,11 @@ export class MessageBridge {
         costUsd: lastState.costUsd,
         durationMs: lastState.durationMs,
         error: lastState.errorMessage,
+        outputFiles: _outputFiles.map((f) => ({
+          fileName: f.fileName,
+          sizeBytes: f.sizeBytes,
+          isImage: f.isImage,
+        })),
       };
     } catch (err: any) {
       this.logger.error({ err, chatId, userId }, 'API task execution error');
@@ -1953,6 +1959,11 @@ export class MessageBridge {
             costUsd: lastState.costUsd,
             durationMs: lastState.durationMs,
             error: lastState.errorMessage,
+            outputFiles: (outputsDir ? this.outputsManager.scanOutputs(outputsDir) : []).map((f) => ({
+              fileName: f.fileName,
+              sizeBytes: f.sizeBytes,
+              isImage: f.isImage,
+            })),
           };
         } catch (retryErr: any) {
           this.logger.error({ err: retryErr, chatId }, 'API task retry after stale session also failed');

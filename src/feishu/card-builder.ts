@@ -396,3 +396,74 @@ export function buildTextCard(title: string, content: string, color: string = 'b
   };
   return JSON.stringify(card);
 }
+
+
+// ── File Manifest Card ──
+
+export interface FileManifestEntry {
+  fileName: string;
+  sizeBytes: number;
+  isImage: boolean;
+  /** Bot name that produced this file. */
+  botName: string;
+  /** True for the chosen "final deliverable" (largest non-image file by default). */
+  isFinal: boolean;
+}
+
+export interface FileManifestState {
+  /** Original user task — for context in the card header. */
+  userTask: string;
+  files: FileManifestEntry[];
+  /** Pre-computed total size in KB (sum of files.sizeBytes / 1024). */
+  totalSizeKB: number;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+}
+
+/**
+ * Green "📁 文件清单" card. One line per file, ⭐ marks the chosen
+ * "final deliverable" (largest non-image file by default). Sent after
+ * the bot's main response card to give the user a clean inventory of
+ * what the bot produced, separate from the streaming progress UI.
+ */
+export function buildFileManifestCard(state: FileManifestState): string {
+  const lines: string[] = [];
+
+  // Sort: final first, then by bot name, then by file name
+  const sorted = [...state.files].sort((a, b) => {
+    if (a.isFinal !== b.isFinal) return a.isFinal ? -1 : 1;
+    if (a.botName !== b.botName) return a.botName.localeCompare(b.botName);
+    return a.fileName.localeCompare(b.fileName);
+  });
+
+  for (const f of sorted) {
+    const star = f.isFinal ? '⭐ ' : '';
+    const size = formatFileSize(f.sizeBytes);
+    const icon = f.isImage ? '🖼️' : '📄';
+    lines.push(`${star}${icon} \`${f.fileName}\` — ${size} _(${f.botName})_`);
+  }
+
+  const finalCount = state.files.filter((f) => f.isFinal).length;
+  const fileCount = state.files.length;
+  const titleText = `📁 文件清单 (${fileCount} 个${finalCount > 0 ? '，' + finalCount + ' 个最终交付' : ''})`;
+
+  const card = {
+    config: { wide_screen_mode: true },
+    header: {
+      template: 'green',
+      title: { content: titleText, tag: 'plain_text' },
+    },
+    elements: [
+      { tag: 'markdown', content: `📋 **任务:** ${truncate(state.userTask, 200)}` },
+      { tag: 'hr' },
+      { tag: 'markdown', content: lines.join('\n') },
+      { tag: 'hr' },
+      { tag: 'markdown', content: `📦 总大小: ${state.totalSizeKB.toFixed(1)} KB` },
+    ],
+  };
+  return JSON.stringify(card);
+}

@@ -62,6 +62,8 @@ export interface ApiTaskResult {
   outputTokens?: number;
   cacheReadTokens?: number;
   cacheCreationTokens?: number;
+  /** Output files produced by this task (subset of OutputFile for the manifest card). */
+  outputFiles?: Array<{ fileName: string; sizeBytes: number; isImage: boolean }>;
 }
 
 export interface ActivityEventData {
