@@ -279,8 +279,15 @@ export class ClaudeExecutor {
       queryOptions.maxBudgetUsd = this.config.claude.maxBudgetUsd;
     }
 
-    if (this.config.claude.model) {
-      queryOptions.model = this.config.claude.model;
+    // Pick the model from the standard config.claude.model slot, with a
+    // fallback to a top-level `model` field (legacy config shape) so a
+    // bot never silently falls through to the SDK default (which is
+    // currently claude-haiku-4-5 and trips 529s on non-Anthropic
+    // proxies like GLM that don't host that model).
+    const resolvedModel = this.config.claude.model
+      ?? (this.config as unknown as { model?: string }).model;
+    if (resolvedModel) {
+      queryOptions.model = resolvedModel;
     }
 
     if (sessionId) {
