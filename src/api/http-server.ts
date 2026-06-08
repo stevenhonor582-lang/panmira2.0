@@ -237,7 +237,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     }
 
     // Rate limiting (by IP, exempt health/metrics)
-    if (url !== '/api/health' && url !== '/metrics') {
+    if (url !== '/api/health' && url !== '/metrics' && !url.startsWith('/memory/')) {
       const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
         || req.socket.remoteAddress
         || 'unknown';
