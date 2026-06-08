@@ -83,6 +83,14 @@ export interface StepResult {
   model: string;
   inputTokens: number;
   outputTokens: number;
+  /** 本 step 所有 tool 调用（含 subagent）— 供进度卡片"执行上下文"区渲染 */
+  toolCalls?: import('../../types.js').ToolCall[];
+  /** 上下文总占用（input+output+cache） */
+  totalTokens?: number;
+  /** 模型上下文窗口大小 */
+  contextWindow?: number;
+  /** 本 step 加载的 skill 名（来自 OrchestrationStep.skill） */
+  currentSkill?: string;
 }
 
 /** 编排执行状态 */

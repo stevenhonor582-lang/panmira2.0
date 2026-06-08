@@ -1,7 +1,7 @@
 import type { Logger } from '../../utils/logger.js';
 import type { CardState } from '../../types.js';
 import type { IMessageSender } from '../message-sender.interface.js';
-import type { OrchestrationProgress } from './types.js';
+import type { OrchestrationProgress, StepResult } from './types.js';
 
 export class CardUpdater {
   constructor(private logger: Logger) {}
@@ -16,6 +16,9 @@ export class CardUpdater {
     if (!sender.updateCard) return;
 
     const responseText = this.renderProgress(progress);
+    const currentStep = progress.steps[progress.currentStepIndex];
+    const r = currentStep?.result;
+    const contextNote = this.buildContextNote(r);
 
     const state: CardState = {
       status:
@@ -28,7 +31,10 @@ export class CardUpdater {
               : 'error',
       userPrompt: `执行: ${progress.intentName}`,
       responseText,
-      toolCalls: [],
+      toolCalls: r?.toolCalls ?? [],
+      totalTokens: r?.totalTokens,
+      contextWindow: r?.contextWindow,
+      contextNote,
     };
 
     try {
@@ -80,5 +86,39 @@ export class CardUpdater {
     }
 
     return lines.join('\n');
+  }
+
+  private buildContextNote(r?: StepResult): string | undefined {
+    if (!r) return undefined;
+
+    const lines: string[] = [];
+
+    if (r.currentSkill) {
+      lines.push(`🔧 Skill: \`${r.currentSkill}\``);
+    }
+
+    const hasSub = (r.toolCalls ?? []).some(
+      (t) => t.name === 'Task' || t.name === 'Agent',
+    );
+    lines.push(hasSub ? '🤖 Mode: Subagent' : '🧭 Mode: Main');
+
+    const mcpCalls = (r.toolCalls ?? []).filter((t) => t.name.startsWith('mcp__'));
+    if (mcpCalls.length > 0) {
+      const names = mcpCalls.map((t) => `\`${t.name}\``).join(', ');
+      lines.push(`📡 MCP: ${names}`);
+    }
+
+    if (r.totalTokens && r.contextWindow) {
+      const pct = Math.round((r.totalTokens / r.contextWindow) * 100);
+      const usedK = (r.totalTokens / 1000).toFixed(1);
+      const totalK = `${Math.round(r.contextWindow / 1000)}k`;
+      lines.push(`📊 上下文: ${usedK}k/${totalK} (${pct}%)`);
+    }
+
+    if (r.costUsd) {
+      lines.push(`💰 $${r.costUsd.toFixed(4)}`);
+    }
+
+    return lines.length > 0 ? lines.join('\n') : undefined;
   }
 }

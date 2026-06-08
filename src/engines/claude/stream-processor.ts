@@ -25,6 +25,7 @@ export interface DetectedTool {
 export class StreamProcessor {
   private responseText = '';
   private toolCalls: ToolCall[] = [];
+  private _toolParents: ('main' | 'sub')[] = [];
   private currentToolName: string | null = null;
   private sessionId: string | undefined;
   private costUsd: number | undefined;
@@ -189,7 +190,8 @@ export class StreamProcessor {
           this.responseText = block.text;
         }
       } else if (block.type === 'tool_use' && block.name) {
-        this.addToolCall(block.name, block.input);
+        const isSub = message.parent_tool_use_id != null;
+        this.addToolCall(block.name, block.input, isSub);
         // Detect interactive tools at top level
         if (message.parent_tool_use_id === null || message.parent_tool_use_id === undefined) {
           if (block.name === 'AskUserQuestion' && block.id && block.input) {
@@ -233,7 +235,7 @@ export class StreamProcessor {
     if (event.type === 'content_block_start') {
       const block = event.content_block;
       if (block?.type === 'tool_use' && block.name) {
-        this.addToolCall(block.name, undefined);
+        this.addToolCall(block.name, undefined, false);
       }
       if (block?.type === 'text') {
         // Reset for new text block
@@ -339,13 +341,14 @@ export class StreamProcessor {
     };
   }
 
-  private addToolCall(name: string, input: unknown): void {
+  private addToolCall(name: string, input: unknown, isSub: boolean): void {
     // Complete previous tool
     this.completeCurrentTool();
 
     this.currentToolName = name;
     const detail = formatToolDetail(name, input);
     this.toolCalls.push({ name, detail, status: 'running' });
+    this._toolParents.push(isSub ? 'sub' : 'main');
 
     // Track image file paths and plan file paths from Write tool
     if (name === 'Write' && input && typeof input === 'object') {
@@ -450,6 +453,11 @@ export class StreamProcessor {
 
   getImagePaths(): string[] {
     return [...this._imagePaths];
+  }
+
+  /** Snapshot of all tool calls made during this step (main + sub). */
+  getToolCallsSnapshot(): ToolCall[] {
+    return [...this.toolCalls];
   }
 
   getPlanFilePath(): string | null {

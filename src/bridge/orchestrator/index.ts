@@ -245,6 +245,7 @@ export class Orchestrator {
         stepResult = await this.stepExecutor.execute({
           prompt: stepContext, cwd, outputsDir,
           abortController: stepAbortController, chatId: msg.chatId,
+          currentSkill: step.skill,
         });
 
         clearTimeout(stepTimeoutId);

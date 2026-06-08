@@ -72,11 +72,16 @@ export function buildCard(state: CardState): string {
     elements.push({ tag: 'hr' });
   }
 
-  // Execution context (mode, MCP) — 可观测层升级阶段 1.1
-  const contextSection = buildContextSection(state);
-  if (contextSection) {
-    elements.push({ tag: 'markdown', content: contextSection });
-    elements.push({ tag: 'hr' });
+  // Execution context (mode, MCP) — fallback when state.contextNote is
+  // absent. When the orchestrator has already computed a contextNote via
+  // CardUpdater.buildContextNote (richer: includes Skill + context% + cost),
+  // use that and skip this section to avoid rendering Mode/MCP twice.
+  if (!state.contextNote) {
+    const contextSection = buildContextSection(state);
+    if (contextSection) {
+      elements.push({ tag: 'markdown', content: contextSection });
+      elements.push({ tag: 'hr' });
+    }
   }
 
   // Background tasks

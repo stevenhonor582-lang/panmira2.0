@@ -11,6 +11,8 @@ export interface ExecuteStepInput {
   abortController: AbortController;
   chatId: string;
   model?: string;
+  /** Current step's skill name (from OrchestrationStep.skill) — passed through to StepResult for card display */
+  currentSkill?: string;
 }
 
 export class StepExecutor {
@@ -67,6 +69,7 @@ export class StepExecutor {
         model,
         inputTokens: 0,
         outputTokens: 0,
+        currentSkill: input.currentSkill,
       };
     }
 
@@ -81,6 +84,10 @@ export class StepExecutor {
       model: lastState.model || model,
       inputTokens: lastState.inputTokens || 0,
       outputTokens: lastState.outputTokens || 0,
+      toolCalls: lastState.toolCalls,
+      totalTokens: lastState.totalTokens,
+      contextWindow: lastState.contextWindow,
+      currentSkill: input.currentSkill,
     };
   }
 
