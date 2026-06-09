@@ -2,6 +2,8 @@ import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useStore } from '../../store';
 import { SensitiveField } from '../SensitiveField';
+import { PROVIDER_TEMPLATES } from '../../utils/models';
+import type { AIProvider } from '../../utils/models';
 import { SlideOverPanel } from '../SlideOverPanel';
 import styles from '../SettingsView.module.css';
 
