@@ -35,12 +35,10 @@ export function LoginPage() {
     setLoading(true);
     try {
       await loginWithEmail(email, password);
-      showToast(t('login.success'), 'success');
       requestNotificationPermission();
     } catch (err: any) {
       const msg = err.message || t('login.authFailed');
       setError(msg);
-      showToast(msg, 'error');
     } finally {
       setLoading(false);
     }
