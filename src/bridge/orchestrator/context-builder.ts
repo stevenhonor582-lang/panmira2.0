@@ -78,8 +78,6 @@ export class ContextBuilder {
               return '- Docker 镜像构建必须成功';
             case 'health_check':
               return `- 健康检查 ${g.endpoint} 必须返回 ${g.expect || 200}`;
-              return '- 产出必须满足原始需求目标';
-              return '';
             case 'rollback_available':
               return '- 必须确认回滚版本已保留';
             case 'requirement_verify':
@@ -111,9 +109,15 @@ export class ContextBuilder {
     // Compress to fit within max chars, trimming from last section if needed
     let result = extracted.join('\n\n');
     if (result.length > MAX_REFERENCE_CHARS) {
-      result = result.slice(0, MAX_REFERENCE_CHARS);
-      const lastNewline = result.lastIndexOf('\n');
-      if (lastNewline > 0) result = result.slice(0, lastNewline);
+      const truncated = result.slice(0, MAX_REFERENCE_CHARS);
+      // Truncate at paragraph boundary (double newline) to avoid cutting rules mid-way
+      const lastParagraph = truncated.lastIndexOf('\n\n');
+      if (lastParagraph > MAX_REFERENCE_CHARS * 0.5) {
+        result = truncated.slice(0, lastParagraph);
+      } else {
+        const lastNewline = truncated.lastIndexOf('\n');
+        if (lastNewline > 0) result = truncated.slice(0, lastNewline);
+      }
     }
 
     return result;

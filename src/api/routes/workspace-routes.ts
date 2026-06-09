@@ -11,6 +11,9 @@ export const handleWorkspaceRoutes: RouteHandler = async (ctx, req, res, method,
 
   const urlPath = url.split('?')[0];
   const qp = new URL(url, 'http://localhost').searchParams;
+  // URL path captures are not auto-decoded by Node http — bot/project names like 信言
+  // arrive as %E4%BF%A1%E8%A8%80 and must be decoded before DB lookup.
+  const safeDecode = (s: string) => { try { return decodeURIComponent(s); } catch { return s; } };
 
   // ── Org endpoints ──
 
@@ -219,7 +222,7 @@ export const handleWorkspaceRoutes: RouteHandler = async (ctx, req, res, method,
 
   const initMatch = method === 'POST' && urlPath.match(/^\/api\/workspace\/([^/]+)\/init$/);
   if (initMatch) {
-    const ws = await wm.ensureBotWorkspace(initMatch[1]);
+    const ws = await wm.ensureBotWorkspace(safeDecode(initMatch[1]));
     jsonResponse(res, 200, {
       rootFolderId: ws.rootFolderId,
       rootPath: ws.rootPath,
@@ -230,7 +233,7 @@ export const handleWorkspaceRoutes: RouteHandler = async (ctx, req, res, method,
 
   const botMatch = method === 'GET' && urlPath.match(/^\/api\/workspace\/([^/]+)$/);
   if (botMatch) {
-    const botName = botMatch[1];
+    const botName = safeDecode(botMatch[1]);
     const ws = await wm.ensureBotWorkspace(botName);
     const catMap = wm.getBotCategoryMap();
     const docCounts: Record<string, number> = {};
@@ -256,7 +259,7 @@ export const handleWorkspaceRoutes: RouteHandler = async (ctx, req, res, method,
     const category = qp.get('category') || undefined;
     const limit = parseInt(qp.get('limit') || '50', 10);
     const offset = parseInt(qp.get('offset') || '0', 10);
-    const docs = await wm.listBotDocs(docsMatch[1], category, limit, offset);
+    const docs = await wm.listBotDocs(safeDecode(docsMatch[1]), category, limit, offset);
     jsonResponse(res, 200, { documents: docs });
     return true;
   }
@@ -269,7 +272,7 @@ export const handleWorkspaceRoutes: RouteHandler = async (ctx, req, res, method,
       return true;
     }
     const doc = await wm.createBotDoc(
-      createDocMatch[1],
+      safeDecode(createDocMatch[1]),
       body.category,
       body.title,
       body.content || '',
@@ -282,7 +285,7 @@ export const handleWorkspaceRoutes: RouteHandler = async (ctx, req, res, method,
   const updateDocMatch = method === 'PUT' && urlPath.match(/^\/api\/workspace\/([^/]+)\/documents\/([^/]+)$/);
   if (updateDocMatch) {
     const body = JSON.parse(await readBody(req));
-    const doc = await wm.updateDoc(updateDocMatch[2], body);
+    const doc = await wm.updateDoc(safeDecode(updateDocMatch[2]), body);
     if (!doc) {
       jsonResponse(res, 404, { error: 'Document not found' });
       return true;
@@ -293,7 +296,7 @@ export const handleWorkspaceRoutes: RouteHandler = async (ctx, req, res, method,
 
   const delDocMatch = method === 'DELETE' && urlPath.match(/^\/api\/workspace\/([^/]+)\/documents\/([^/]+)$/);
   if (delDocMatch) {
-    const ok = await wm.deleteDoc(delDocMatch[2]);
+    const ok = await wm.deleteDoc(safeDecode(delDocMatch[2]));
     jsonResponse(res, ok ? 200 : 404, ok ? { ok: true } : { error: 'Document not found' });
     return true;
   }
@@ -306,7 +309,7 @@ export const handleWorkspaceRoutes: RouteHandler = async (ctx, req, res, method,
       jsonResponse(res, 400, { error: 'category, fileName, and content are required' });
       return true;
     }
-    const doc = await wm.createBotDoc(importMatch[1], category, fileName, content, tags || []);
+    const doc = await wm.createBotDoc(safeDecode(importMatch[1]), category, fileName, content, tags || []);
     jsonResponse(res, 201, { document: doc });
     return true;
   }
@@ -316,7 +319,7 @@ export const handleWorkspaceRoutes: RouteHandler = async (ctx, req, res, method,
   // GET /api/workspace/:botName/projects
   const projectsMatch = method === 'GET' && urlPath.match(/^\/api\/workspace\/([^/]+)\/projects$/);
   if (projectsMatch) {
-    const projects = await wm.listBotProjects(projectsMatch[1]);
+    const projects = await wm.listBotProjects(safeDecode(projectsMatch[1]));
     jsonResponse(res, 200, { projects });
     return true;
   }
@@ -330,8 +333,8 @@ export const handleWorkspaceRoutes: RouteHandler = async (ctx, req, res, method,
       return true;
     }
     const doc = await wm.createBotProjectDoc(
-      projDocCreate[1],
-      decodeURIComponent(projDocCreate[2]),
+      safeDecode(projDocCreate[1]),
+      safeDecode(projDocCreate[2]),
       body.title,
       body.content || '',
       body.tags || [],
@@ -345,7 +348,7 @@ export const handleWorkspaceRoutes: RouteHandler = async (ctx, req, res, method,
   if (projDocsMatch) {
     const limit = parseInt(qp.get('limit') || '50', 10);
     const offset = parseInt(qp.get('offset') || '0', 10);
-    const docs = await wm.listBotProjectDocs(projDocsMatch[1], decodeURIComponent(projDocsMatch[2]), limit, offset);
+    const docs = await wm.listBotProjectDocs(safeDecode(projDocsMatch[1]), safeDecode(projDocsMatch[2]), limit, offset);
     jsonResponse(res, 200, { documents: docs });
     return true;
   }

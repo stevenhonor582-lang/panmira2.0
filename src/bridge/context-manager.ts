@@ -12,7 +12,7 @@ export enum ContextLayer {
   HISTORY = 5,
 }
 
-const CHARS_PER_TOKEN = 4;
+
 
 export interface LayerContent {
   layer: ContextLayer;
@@ -31,9 +31,13 @@ export class ContextManager {
     return this;
   }
 
-  /** Estimate token count from character length. */
+  /** Estimate token count, accounting for CJK characters. */
   private estimateTokens(text: string): number {
-    return Math.ceil(text.length / CHARS_PER_TOKEN);
+    if (!text) return 0;
+    const cjkCount = (text.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length;
+    const nonCjkCount = text.length - cjkCount;
+    // CJK: ~1.5 chars/token, English: ~4 chars/token
+    return Math.ceil(cjkCount / 1.5 + nonCjkCount / 4);
   }
 
   /** Total estimated tokens across all layers. */
@@ -68,12 +72,12 @@ export class ContextManager {
         continue;
       } else if (remainingBudget > 100) {
         // Truncate non-trimmable layer to fit
-        const charBudget = remainingBudget * CHARS_PER_TOKEN;
+        // Use upper-bound char estimate (CJK-safe: 1.5 chars/token worst case)
+        const charBudget = remainingBudget * 1.5;
         kept.push(layer.content.slice(0, charBudget) + '\n...[truncated]');
         remainingBudget = 0;
+        // Don't break — continue to skip trimmable layers, preserving budget for future non-trimmable ones
       }
-      // If no budget left, stop adding
-      if (remainingBudget <= 0) break;
     }
 
     return kept.join('\n\n');

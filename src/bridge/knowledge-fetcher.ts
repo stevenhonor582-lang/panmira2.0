@@ -61,7 +61,7 @@ export async function fetchKnowledgeContext(
   // Skip knowledge search for short continuation messages (续接、确认、闲聊)
   const trimmed = text.trim();
   if (trimmed.length < 15) {
-    const contPat = /^(继续|检查|排查|修一下|怎么样|好了吗|完成了吗|接着|看看|查一下|测一下|试一下|好的|ok|嗯|哦|知道了|收到|明白|懂了|对|可以|行|好|谢谢|再见)\b/i;
+    const contPat = /^(继续|检查|排查|修一下|怎么样|好了吗|完成了吗|接着|看看|查一下|测一下|试一下|好的|ok|嗯|哦|知道了|收到|明白|懂了|对|可以|行|好|谢谢|再见)$/i;
     if (contPat.test(trimmed)) {
       return { systemPromptOverride, knowledgeContext: null, agentBoundSkills };
     }
@@ -99,7 +99,10 @@ export async function fetchKnowledgeContext(
       }
     } catch {}
   }
-  if (folderUuids.length === 0) folderUuids = knowledgeFolders;
+  if (folderUuids.length === 0) {
+    deps.logger.warn({ knowledgeFolders }, 'Folder UUID resolution failed, skipping knowledge search');
+    return { systemPromptOverride, knowledgeContext: null, agentBoundSkills };
+  }
 
   const results = await deps.memoryClient.searchInFolders(searchQuery, folderUuids, 20);
   // v22.3: also search structured memories
@@ -111,7 +114,7 @@ export async function fetchKnowledgeContext(
          FROM memories WHERE invalidated_at IS NULL AND agent_id = $1
           AND (content ILIKE '%' || $2 || '%' OR subject ILIKE '%' || $2 || '%')
         ORDER BY hit_count DESC, confidence DESC LIMIT 8`,
-      [deps.config.name, searchQuery.slice(0, 50)],
+      [deps.config.name, Array.from(searchQuery).slice(0, 50).join('')],
     );
     memoryResults = memRows || [];
   } catch (err: any) { deps.logger.debug({ err: err?.message }, 'Memories search skipped'); }
@@ -178,10 +181,9 @@ export async function fetchKnowledgeContext(
       if (knowledgeFolderId) {
         const convResults = await deps.memoryClient.searchInFolders(searchQuery, [knowledgeFolderId], 10);
       // v1: re-rank by hit_count + recency
-      const convRanked = convResults
-        .map(r => ({ r, hc: 0, conf: 0.5 }))  // best effort: searchInFolders doesn't return mem fields
-        .sort((a, b) => 0)  // 保持原序
-        .map(x => x.r);
+      const convRanked = [...convResults]
+        .sort((a, b) => (a.score ?? 0) - (b.score ?? 0))  // memory API: lower score = better match
+        .slice(0, 5);
 
         const convItems = (convRanked || [])
           .filter((r: any) => {

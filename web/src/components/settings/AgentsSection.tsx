@@ -24,6 +24,9 @@ export interface AgentTemplate {
   orchestration?: any;
   boundary?: any;
   ironLaws?: string[];
+  defaultEngine?: string | null;
+  defaultModel?: string | null;
+  complexityLevel?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -214,6 +217,9 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
               default_engine: t.default_engine,
               default_model: t.default_model,
               version: t.version,
+              boundary: t.boundary || {},
+              ironLaws: t.iron_laws || [],
+              orchestration: t.orchestration || {},
             }));
           }
         } catch { /* templates fetch failed, continue with agents only */ }
@@ -290,6 +296,8 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
     const full = (await fetchAgentDetail(agent.id)) || agent;
     setAgentMode('create');
     setEditingAgent(null);
+    // Track the source template for lineage
+    (window as any).__sourceTemplateId = agent.isTemplate ? agent.id : (agent as any).sourceTemplateId || null;
     setAgentName(t('agents.nameCopy', { name: full.name }));
     setAgentRole(full.roleTemplate || '');
     setAgentDesc(full.description || '');
@@ -345,6 +353,7 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
         description: agentDesc.trim() || null,
         systemPrompt: agentPrompt || null,
         templateType: 'custom' as const,
+        sourceTemplateId: agentMode === 'create' ? (window as any).__sourceTemplateId || undefined : undefined,
         knowledgeFolders,
         skills: agentSkills,
         orchestration: orchestrationParsed,

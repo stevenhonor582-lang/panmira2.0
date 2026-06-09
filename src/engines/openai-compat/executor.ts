@@ -197,8 +197,8 @@ export class OpenAICompatExecutor {
 
     const inputTokens = usageData?.prompt_tokens ?? 0;
     const outputTokens = usageData?.completion_tokens ?? 0;
-    // Simple CNY cost estimation: input ¥0.005/1K tokens, output ¥0.015/1K tokens
-    const costCny = (inputTokens / 1000) * 0.005 + (outputTokens / 1000) * 0.015;
+    // Cost estimation: input $0.005/1K tokens, output $0.015/1K tokens (approximate USD equivalent)
+    const costUsd = (inputTokens / 1000) * 0.005 + (outputTokens / 1000) * 0.015;
 
     yield {
       type: 'result',
@@ -206,13 +206,13 @@ export class OpenAICompatExecutor {
       result: fullContent,
       duration_ms: durationMs,
       num_turns: 1,
-      total_cost_usd: costCny,
+      total_cost_usd: costUsd,
       modelUsage: {
         [modelName]: {
           inputTokens,
           outputTokens,
           contextWindow: 0,
-          costUSD: costCny,
+          costUSD: costUsd,
         },
       },
     };

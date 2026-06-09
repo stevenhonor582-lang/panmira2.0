@@ -75,9 +75,9 @@ export async function sendCompletionNotice(
   const durationStr =
     durationMs >= 60_000 ? `${(durationMs / 60_000).toFixed(1)}min` : `${(durationMs / 1000).toFixed(0)}s`;
   const costStr = state.sessionCostUsd
-    ? ` · ¥${state.sessionCostUsd.toFixed(2)}`
+    ? ` · $${state.sessionCostUsd.toFixed(2)}`
     : state.costUsd
-      ? ` · ¥${state.costUsd.toFixed(2)}`
+      ? ` · $${state.costUsd.toFixed(2)}`
       : '';
   const statusWord = state.status === 'complete' ? 'Done' : 'Failed';
 

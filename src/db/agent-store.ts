@@ -18,6 +18,11 @@ export interface AgentTemplate {
   ironLaws: string[];
   knowledgeFolders: string[];
   skills: string[];
+  defaultEngine: string | null;
+  defaultModel: string | null;
+  defaultContextWindow: number;
+  defaultMaxTurns: number | null;
+  complexityLevel: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -30,7 +35,7 @@ export class AgentStore {
 
   async listSummary(): Promise<AgentTemplate[]> {
     const result = await pool.query(
-      'SELECT id, tenant_id, name, role_template, description, capabilities, tools, is_active, category, template_type, source_template_id, knowledge_folders, skills, created_at, updated_at FROM agents ORDER BY created_at DESC',
+      'SELECT id, tenant_id, name, role_template, description, capabilities, tools, is_active, category, template_type, source_template_id, knowledge_folders, skills, default_engine, default_model, default_context_window, default_max_turns, complexity_level, created_at, updated_at FROM agents ORDER BY created_at DESC',
     );
     return result.rows.map((r: any) => this.mapRow(r));
   }
@@ -199,6 +204,11 @@ export class AgentStore {
       orchestration: typeof row.orchestration === 'string' ? JSON.parse(row.orchestration) : row.orchestration || {},
       boundary: typeof row.boundary === 'string' ? JSON.parse(row.boundary) : row.boundary || {},
       ironLaws: typeof row.iron_laws === 'string' ? JSON.parse(row.iron_laws) : row.iron_laws || [],
+      defaultEngine: row.default_engine || null,
+      defaultModel: row.default_model || null,
+      defaultContextWindow: row.default_context_window || 200000,
+      defaultMaxTurns: row.default_max_turns || null,
+      complexityLevel: row.complexity_level || 'L1',
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
