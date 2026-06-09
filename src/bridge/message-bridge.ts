@@ -2430,10 +2430,13 @@ export class MessageBridge {
   }
 
   destroy(): void {
-    // Persist active tasks FIRST so they survive the restart
+    // Persist active tasks FIRST so they survive the restart.
+    // Tag with 'restart' so the recovery card can show the real reason
+    // instead of a misleading generic message.
     const tasks = this.collectPersistableTasks();
     if (tasks.length > 0) {
-      saveActiveTasks(tasks, this.config.name);
+      const tagged = tasks.map((t) => ({ ...t, interruptionReason: 'restart' }));
+      saveActiveTasks(tagged, this.config.name);
       this.logger.info({ count: tasks.length }, 'Persisted active tasks before shutdown');
     }
 

@@ -17,6 +17,9 @@ export interface PersistedTask {
   cardMessageId: string;
   /** What the bot had produced so far before interruption */
   lastResponsePreview?: string;
+  /** Why the task was stopped. 'restart' | 'crash' | 'timeout' | 'oom' | 'unknown'.
+   *  When unset the recovery card uses a neutral default. */
+  interruptionReason?: string;
 }
 
 const FILENAME = 'active-tasks.json';
@@ -99,6 +102,7 @@ export async function recoverAndNotify(
         elapsed: elapsedStr,
         responsePreview: responsePreview || undefined,
         botName,
+        reason: task.interruptionReason,
       });
       try {
         const snd = sender as any;

@@ -683,6 +683,8 @@ export interface TaskRecoveryState {
   responsePreview?: string;
   /** The bot name that was running this task. */
   botName: string;
+  /** Why the task was stopped. Falls back to a neutral phrase when unset. */
+  reason?: string;
 }
 
 /**
@@ -692,7 +694,18 @@ export interface TaskRecoveryState {
  */
 export function buildTaskRecoveryCard(state: TaskRecoveryState): string {
   const lines: string[] = [
-    `上次任务因服务重启中断，已运行 **${state.elapsed}**。`,
+    (() => {
+      const reasonMap: Record<string, string> = {
+        restart: '因服务重启中断',
+        crash: '因异常崩溃中断',
+        timeout: '因超时中断',
+        oom: '因内存不足中断',
+      };
+      const cause = state.reason
+        ? (reasonMap[state.reason] || '因服务中断')
+        : '因服务中断';
+      return `上次任务${cause}，已运行 **${state.elapsed}**。`;
+    })(),
     '',
     `📝 **原始需求:** ${truncate(state.originalPrompt, 200)}`,
   ];
