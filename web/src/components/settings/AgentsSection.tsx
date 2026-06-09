@@ -139,16 +139,20 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
       if (res.ok) {
         const data = await res.json();
         const flat: { id: string; name: string }[] = [];
-        const walk = (node: any, prefix: string = '') => {
-          if (node.id && node.id !== 'root') {
-            const label = prefix ? `${prefix}/${node.name}` : node.name;
-            flat.push({ id: node.id, name: label, shortName: node.name });
-          }
+        const findNode = (node: any, target: string): any => {
+          if (node.name === target) return node;
           for (const child of node.children || []) {
-            walk(child, node.id === 'root' ? '' : (node.name || ''));
+            const found = findNode(child, target);
+            if (found) return found;
           }
+          return null;
         };
-        walk(data);
+        const orgNode = findNode(data, t('memory.orgPublic'));
+        if (orgNode) {
+          for (const child of orgNode.children || []) {
+            if (child.id) flat.push({ id: child.id, name: child.name });
+          }
+        }
         setAvailableFolders(flat);
       }
     } catch { /* ignore */ }
@@ -622,7 +626,7 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
             <div className={styles.formHint} style={{ marginBottom: 8 }}>{t('agents.knowledgeBindingHint')}</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {availableFolders.map((f) => {
-                const selected = knowledgeFolders.includes(f.id) || knowledgeFolders.includes(f.name) || ((f as any).shortName && knowledgeFolders.includes((f as any).shortName));
+                const selected = knowledgeFolders.includes(f.name);
                 return (
                   <button
                     key={f.id}
@@ -630,8 +634,8 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
                     className={`${styles.btn} ${styles.btnSmall} ${selected ? styles.btnAccent : styles.btnOutline}`}
                     onClick={() => {
                       setKnowledgeFolders(selected
-                        ? knowledgeFolders.filter((v) => v !== f.id && v !== f.name)
-                        : [...knowledgeFolders.filter((v) => v !== f.name), f.id]);
+                        ? knowledgeFolders.filter((v) => v !== f.name)
+                        : [...knowledgeFolders, f.name]);
                     }}
                     disabled={agentRefining}
                   >
