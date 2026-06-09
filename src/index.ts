@@ -105,6 +105,14 @@ async function main() {
     process.exit(1);
   }
 
+  // Auto-migrate: sync DB schema with schema.ts definitions
+  try {
+    const { runAutoMigrate } = await import('./db/auto-migrate.js');
+    await runAutoMigrate(logger);
+  } catch (err: any) {
+    logger.warn({ err: err.message }, 'Auto-migrate failed (non-critical)');
+  }
+
   // Seed default agent templates on first startup
   await seedDefaultAgents(logger);
 
