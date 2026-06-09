@@ -371,7 +371,7 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
     } finally {
       setAgentSaving(false);
     }
-  }, [agentMode, editingAgent, agentName, agentRole, agentDesc, agentPrompt, agentOrchestration, agentBoundary, agentIronLaws, token, fetchAgents]);
+  }, [agentMode, editingAgent, agentName, agentRole, agentDesc, agentPrompt, agentOrchestration, agentBoundary, agentIronLaws, knowledgeFolders, agentSkills, token, fetchAgents]);
 
   const handleDelete = useCallback(async (agent: AgentTemplate) => {
     if (!window.confirm(t('agents.deleteConfirm', { name: agent.name }))) return;
