@@ -633,14 +633,16 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
             <div className={styles.formHint} style={{ marginBottom: 8 }}>{t('agents.knowledgeBindingHint')}</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {availableFolders.map((f) => {
-                const selected = knowledgeFolders.includes(f.id);
+                const selected = knowledgeFolders.includes(f.id) || knowledgeFolders.includes(f.name);
                 return (
                   <button
                     key={f.id}
                     type="button"
                     className={`${styles.btn} ${styles.btnSmall} ${selected ? styles.btnAccent : styles.btnOutline}`}
                     onClick={() => {
-                      setKnowledgeFolders(selected ? knowledgeFolders.filter((id) => id !== f.id) : [...knowledgeFolders, f.id]);
+                      setKnowledgeFolders(selected
+                        ? knowledgeFolders.filter((v) => v !== f.id && v !== f.name)
+                        : [...knowledgeFolders.filter((v) => v !== f.name), f.id]);
                     }}
                     disabled={agentRefining}
                   >
