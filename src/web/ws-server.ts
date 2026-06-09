@@ -975,7 +975,7 @@ export function serveStaticFiles(req: HttpIncomingMessage, res: ServerResponse, 
       const content = fs.readFileSync(fullPath);
       // Hashed assets get long cache; index.html gets no-cache
       const isHashed = filePath.startsWith('assets/') && /-[a-zA-Z0-9]{8,}\./.test(filePath);
-      const cacheControl = isHashed ? 'public, max-age=31536000, immutable' : 'no-cache';
+      const cacheControl = isHashed ? 'public, max-age=31536000, immutable' : 'no-store';
       res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': cacheControl });
       res.end(content);
       return true;

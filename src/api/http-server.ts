@@ -495,6 +495,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
         if (method === 'PUT' && putMatch) {
           const raw = await readBody(req);
           const body = JSON.parse(raw);
+          logger.info({ agentId: putMatch[1], kf: body.knowledgeFolders, allKeys: Object.keys(body) }, '[TRACE] PUT /api/agents body');
           const agent = await agentStore.update(putMatch[1], body);
           if (!agent) {
             jsonResponse(res, 404, { error: 'Agent not found' });
