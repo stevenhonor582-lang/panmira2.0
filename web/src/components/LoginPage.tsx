@@ -2,7 +2,6 @@ import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useStore } from '../store';
 import { requestNotificationPermission } from '../utils/notifications';
-import { showToast } from '../utils/toast';
 import { Button, Input } from './ui';
 import { ParticleNetwork } from './login/ParticleNetwork';
 import styles from './login/LoginPage.module.css';

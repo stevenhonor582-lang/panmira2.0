@@ -3,8 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { useStore } from '../../store';
 import { SensitiveField } from '../SensitiveField';
 import { SlideOverPanel } from '../SlideOverPanel';
-import { PROVIDER_TEMPLATES } from '../../utils/models';
-import type { AIProvider } from '../../utils/models';
 import styles from '../SettingsView.module.css';
 
 export function ProvidersSection() {

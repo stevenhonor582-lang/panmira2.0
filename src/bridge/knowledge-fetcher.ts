@@ -82,6 +82,10 @@ export async function fetchKnowledgeContext(
     } catch {}
   }
   // Resolve by name: bot workspace tree + organization public area
+  // v22.3 fixed: knowledge_folders supports both personal + org folder names.
+  // Agent template defines the list: ["知识沉淀","专业文档","R4-技术库",...]
+  // If knowledge_folders is empty → default to 4 personal folders only.
+  // Public area folders are searched ONLY if explicitly listed in knowledge_folders.
   if (knowledgeFolders.length > 0) {
     try {
       const nameResults = await pool.query(
@@ -95,15 +99,6 @@ export async function fetchKnowledgeContext(
       }
     } catch {}
   }
-    // v22.3: include 组织公共区 folders
-  try {
-    const orgResults = await pool.query(
-      `SELECT f.id FROM folders f WHERE f.path LIKE '组织公共区/%' AND f.name NOT IN ('索引','00-导航')`,
-    );
-    for (const row of orgResults.rows) { if (!folderUuids.includes(row.id)) folderUuids.push(row.id); }
-    deps.logger.info({ orgFolderCount: orgResults.rows.length }, 'Public knowledge folders included');
-  } catch (err: any) { deps.logger.debug({ err: err?.message }, 'Org folder skipped'); }
-
   if (folderUuids.length === 0) folderUuids = knowledgeFolders;
 
   const results = await deps.memoryClient.searchInFolders(searchQuery, folderUuids, 20);
@@ -226,12 +221,6 @@ export async function fetchKnowledgeContext(
   const docs = finalResults.slice(0,3).map((r,i) => `### ${i+1}. ${r.title}\n${(r.snippet||'').replace(/<[^>]*>/g,'')}`).join('\n\n');
   if (docs) docParts.push('### 工作区文档\n' + docs);
   const formatted = docParts.join('\n\n');
-      const snippet = (r.snippet || '').replace(/<[^>]*>/g, '');
-      const scoreTag = r.score ? ` (相关度: ${Math.round((1 - r.score) * 100)}%)` : '';
-      return `### ${i + 1}. ${r.title}${scoreTag}\n${snippet}`;
-    })
-    .join('\n\n');
-
   const knowledgeContext = `## 相关知识参考\n\n以下是从知识库中检索到的相关资料，请参考这些信息回答用户问题：\n\n${formatted}${conversationContext}`;
   deps.logger.info(
     { chatId, folderCount: knowledgeFolders.length, resultCount: finalResults.length },
