@@ -460,6 +460,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
             jsonResponse(res, 404, { error: 'Agent not found' });
             return;
           }
+          logger.info({ agentId: getMatch[1], name: agent.name, knowledgeFolders: agent.knowledgeFolders }, '[DEBUG] GET /api/agents/:id response');
           jsonResponse(res, 200, { agent });
           return;
         }
@@ -495,6 +496,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
         if (method === 'PUT' && putMatch) {
           const raw = await readBody(req);
           const body = JSON.parse(raw);
+          logger.info({ agentId: putMatch[1], knowledgeFolders: body.knowledgeFolders, bodyKeys: Object.keys(body) }, '[DEBUG] PUT /api/agents body');
           const agent = await agentStore.update(putMatch[1], body);
           if (!agent) {
             jsonResponse(res, 404, { error: 'Agent not found' });

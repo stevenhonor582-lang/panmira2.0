@@ -139,27 +139,16 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
       if (res.ok) {
         const data = await res.json();
         const flat: { id: string; name: string }[] = [];
-        const findAndWalk = (node: any, target: string): any => {
-          if (node.name === target) return node;
-          for (const child of node.children || []) {
-            const found = findAndWalk(child, target);
-            if (found) return found;
-          }
-          return null;
-        };
         const walk = (node: any, prefix: string = '') => {
-          const label = prefix ? `${prefix}/${node.name}` : node.name;
           if (node.id && node.id !== 'root') {
-            flat.push({ id: node.id, name: label });
+            const label = prefix ? `${prefix}/${node.name}` : node.name;
+            flat.push({ id: node.id, name: label, shortName: node.name });
           }
           for (const child of node.children || []) {
-            walk(child, node.id === 'root' ? '' : label);
+            walk(child, node.id === 'root' ? '' : (node.name || ''));
           }
         };
-        const orgNode = findAndWalk(data, t('memory.orgPublic'));
-        if (orgNode) {
-          walk(orgNode);
-        }
+        walk(data);
         setAvailableFolders(flat);
       }
     } catch { /* ignore */ }
@@ -633,7 +622,7 @@ export function AgentsSection({ onAgentsLoaded }: AgentsSectionProps) {
             <div className={styles.formHint} style={{ marginBottom: 8 }}>{t('agents.knowledgeBindingHint')}</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {availableFolders.map((f) => {
-                const selected = knowledgeFolders.includes(f.id) || knowledgeFolders.includes(f.name);
+                const selected = knowledgeFolders.includes(f.id) || knowledgeFolders.includes(f.name) || ((f as any).shortName && knowledgeFolders.includes((f as any).shortName));
                 return (
                   <button
                     key={f.id}
