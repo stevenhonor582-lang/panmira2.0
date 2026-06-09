@@ -151,14 +151,16 @@ export async function fetchKnowledgeContext(
         .slice(0, 5)
         .map(x => x.r);
 
-      // Bump hit_count for retrieved memories
+      // Bump hit_count only for docs actually injected into context (top 3)
       if ((metaRows as any[]).length > 0) {
-        const retrievedIds = ranked.map(r => r.id);
-        await pool.query(
-          `UPDATE memories SET hit_count = hit_count + 1, last_hit_at = NOW()
-            WHERE id = ANY($1)`,
-          [retrievedIds]
-        ).catch((err: any) => deps.logger.debug({ err: err.message }, 'hit_count bump failed'));
+        const injectedIds = ranked.slice(0, 3).map(r => r.id);
+        if (injectedIds.length > 0) {
+          await pool.query(
+            `UPDATE memories SET hit_count = hit_count + 1, last_hit_at = NOW()
+              WHERE id = ANY($1)`,
+            [injectedIds]
+          ).catch((err: any) => deps.logger.debug({ err: err.message }, 'hit_count bump failed'));
+        }
       }
 
       deps.logger.info(
