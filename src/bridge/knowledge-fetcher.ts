@@ -95,9 +95,31 @@ export async function fetchKnowledgeContext(
       }
     } catch {}
   }
+    // v22.3: include 组织公共区 folders
+  try {
+    const orgResults = await pool.query(
+      `SELECT f.id FROM folders f WHERE f.path LIKE '组织公共区/%' AND f.name NOT IN ('索引','00-导航')`,
+    );
+    for (const row of orgResults.rows) { if (!folderUuids.includes(row.id)) folderUuids.push(row.id); }
+    deps.logger.info({ orgFolderCount: orgResults.rows.length }, 'Public knowledge folders included');
+  } catch (err: any) { deps.logger.debug({ err: err?.message }, 'Org folder skipped'); }
+
   if (folderUuids.length === 0) folderUuids = knowledgeFolders;
 
   const results = await deps.memoryClient.searchInFolders(searchQuery, folderUuids, 20);
+  // v22.3: also search structured memories
+  let memoryResults: any[] = [];
+  try {
+    const { rows: memRows } = await pool.query(
+      `SELECT id, type, subject, subject_normalized, confidence, polarity, hit_count,
+              LEFT(content, 300) AS snippet, last_hit_at
+         FROM memories WHERE invalidated_at IS NULL AND agent_id = $1
+          AND (content ILIKE '%' || $2 || '%' OR subject ILIKE '%' || $2 || '%')
+        ORDER BY hit_count DESC, confidence DESC LIMIT 8`,
+      [deps.config.name, searchQuery.slice(0, 50)],
+    );
+    memoryResults = memRows || [];
+  } catch (err: any) { deps.logger.debug({ err: err?.message }, 'Memories search skipped'); }
 
   // v1 RAG §4.2: Re-rank by recency + hit_count + confidence
   // score = 0.5*cosine + 0.2*recency + 0.2*hit_count + 0.1*confidence
@@ -195,8 +217,15 @@ export async function fetchKnowledgeContext(
     return { systemPromptOverride, knowledgeContext: null, agentBoundSkills };
   }
 
-  const formatted = finalResults
-    .map((r, i) => {
+  // v22.3: render by type
+  const prefDec = (memoryResults || []).filter((r: any) => ['preference','decision'].includes(r.type));
+  const factsEv = (memoryResults || []).filter((r: any) => ['fact','event'].includes(r.type));
+  const docParts: string[] = [];
+  if (prefDec.length > 0) docParts.push('### 偏好与决策\n' + prefDec.map((r: any) => `- [${r.type}] ${r.subject} (${(r.confidence*100).toFixed(0)}%)\n  > ${(r.snippet||r.content||'').slice(0,150)}`).join('\n'));
+  if (factsEv.length > 0) docParts.push('### 事实与事件\n' + factsEv.map((r: any) => `- [${r.type}] ${r.subject}`).join('\n'));
+  const docs = finalResults.slice(0,3).map((r,i) => `### ${i+1}. ${r.title}\n${(r.snippet||'').replace(/<[^>]*>/g,'')}`).join('\n\n');
+  if (docs) docParts.push('### 工作区文档\n' + docs);
+  const formatted = docParts.join('\n\n');
       const snippet = (r.snippet || '').replace(/<[^>]*>/g, '');
       const scoreTag = r.score ? ` (相关度: ${Math.round((1 - r.score) * 100)}%)` : '';
       return `### ${i + 1}. ${r.title}${scoreTag}\n${snippet}`;

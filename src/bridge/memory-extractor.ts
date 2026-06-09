@@ -149,6 +149,20 @@ content_payload 按类型:
     }
   }
 
+
+  // v22.1: rule-based chunking
+  private chunkText(text: string): string[] {
+    const blocks = text.split(/\n\s*\n/).filter((b: string) => b.trim().length > 30);
+    if (blocks.length === 0) return [text.slice(0, 4000)];
+    const chunks: string[] = []; let buf = '';
+    for (const b of blocks) {
+      if (buf.length + b.length < 500) { buf += (buf ? '\n\n' : '') + b; }
+      else { if (buf) chunks.push(buf.slice(0, 3000)); buf = b; }
+    }
+    if (buf) chunks.push(buf.slice(0, 3000));
+    return chunks.length > 0 ? chunks : [text.slice(0, 4000)];
+  }
+
   clearCache(): void {
     this.processedWindows.clear();
     this.callCount.clear();
