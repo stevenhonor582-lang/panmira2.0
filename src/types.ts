@@ -35,6 +35,7 @@ export interface CardState {
   userPrompt: string;
   responseText: string;
   toolCalls: ToolCall[];
+  /** @deprecated Use sessionCostUsd. Kept for backward compat. */
   costUsd?: number;
   durationMs?: number;
   errorMessage?: string;

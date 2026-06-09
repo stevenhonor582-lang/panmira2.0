@@ -101,7 +101,7 @@ export class StreamProcessor {
       userPrompt: this.userPrompt,
       responseText: this.responseText,
       toolCalls: [...this.toolCalls],
-      costUsd: this.costUsd,
+      sessionCostUsd: this.costUsd,
       durationMs: this.durationMs,
       pendingQuestion: this._pendingQuestions[0] || undefined,
       backgroundEvents: this._backgroundEvents.size > 0 ? [...this._backgroundEvents.values()] : undefined,
@@ -322,7 +322,7 @@ export class StreamProcessor {
       userPrompt: this.userPrompt,
       responseText: isApiError ? '' : resultText,
       toolCalls: [...this.toolCalls],
-      costUsd: this.costUsd,
+      sessionCostUsd: this.costUsd,
       durationMs: this.durationMs,
       errorMessage: isError
         ? message.errors?.join('; ') || `Ended with: ${message.subtype}`
@@ -439,7 +439,7 @@ export class StreamProcessor {
       userPrompt: this.userPrompt,
       responseText: this.responseText,
       toolCalls: [...this.toolCalls],
-      costUsd: this.costUsd,
+      sessionCostUsd: this.costUsd,
       durationMs: this.durationMs,
       pendingQuestion: this._pendingQuestions[0] || undefined,
       backgroundEvents: this._backgroundEvents.size > 0 ? [...this._backgroundEvents.values()] : undefined,

@@ -291,8 +291,8 @@ function buildExecutionContext(state: CardState): string | null {
   }
 
   // 5. Cost (running AND complete — no longer gated on terminal status)
-  if (state.costUsd != null && state.costUsd > 0) {
-    lines.push(`💰 $${state.costUsd.toFixed(4)}`);
+  if (state.sessionCostUsd != null && state.sessionCostUsd > 0) {
+    lines.push(`💰 $${state.sessionCostUsd.toFixed(4)}`);
   }
 
   return lines.length > 0 ? lines.join('\n') : null;
@@ -665,6 +665,67 @@ export function buildPendingTasksCard(state: PendingTasksState): string {
             type: 'danger',
             text: { content: '🗑 忽略', tag: 'plain_text' },
             value: { action: 'orch_dismiss' },
+          },
+        ],
+      },
+    ],
+  };
+  return JSON.stringify(card);
+}
+// ── Task Recovery Card ──
+
+export interface TaskRecoveryState {
+  /** Original user prompt before the interruption. */
+  originalPrompt: string;
+  /** How long the task ran before being interrupted (e.g. "12min"). */
+  elapsed: string;
+  /** Last response preview, if the bot had already produced output. */
+  responsePreview?: string;
+  /** The bot name that was running this task. */
+  botName: string;
+}
+
+/**
+ * Orange "task interrupted" card shown on startup when orphaned tasks
+ * are detected. Two buttons: "继续" (re-sends the original prompt) and
+ * "知道了" (dismisses). Clear Chinese text, no mixed-language noise.
+ */
+export function buildTaskRecoveryCard(state: TaskRecoveryState): string {
+  const lines: string[] = [
+    `上次任务因服务重启中断，已运行 **${state.elapsed}**。`,
+    '',
+    `📝 **原始需求:** ${truncate(state.originalPrompt, 200)}`,
+  ];
+  if (state.responsePreview) {
+    lines.push('');
+    lines.push(`📄 **已产出:** ${truncate(state.responsePreview, 200)}`);
+  }
+  lines.push('');
+  lines.push('点击"继续"重新发送上次的需求，或点"知道了"忽略。');
+
+  const card = {
+    config: { wide_screen_mode: true },
+    header: {
+      template: 'orange',
+      title: { content: `⏠ 任务中断 · ${state.botName}`, tag: 'plain_text' },
+    },
+    elements: [
+      { tag: 'markdown', content: lines.join('\n') },
+      { tag: 'hr' },
+      {
+        tag: 'action',
+        actions: [
+          {
+            tag: 'button',
+            type: 'primary',
+            text: { content: '➡️ 继续', tag: 'plain_text' },
+            value: { action: 'task_resume', prompt: state.originalPrompt, botName: state.botName },
+          },
+          {
+            tag: 'button',
+            type: 'default',
+            text: { content: '✅ 知道了', tag: 'plain_text' },
+            value: { action: 'task_dismiss' },
           },
         ],
       },

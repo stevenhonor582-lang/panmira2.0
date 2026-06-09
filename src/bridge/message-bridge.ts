@@ -2377,7 +2377,6 @@ export class MessageBridge {
           ? `✅ 编排完成: ${result.progress.intentName} (${result.progress.totalSteps}步, 费用: $${result.totalCostUsd.toFixed(4)})`
           : `❌ 编排失败: ${result.error || "未知错误"}`,
         toolCalls: [],
-        costUsd: result.totalCostUsd,
         durationMs: result.totalDurationMs,
         botName: this.config.name,
         intentName: result.progress.intentName,

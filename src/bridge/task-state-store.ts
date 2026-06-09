@@ -6,6 +6,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import type { Logger } from '../utils/logger.js';
+import { buildTaskRecoveryCard } from '../feishu/card-builder.js';
 
 export interface PersistedTask {
   chatId: string;
@@ -92,17 +93,20 @@ export async function recoverAndNotify(
           : task.lastResponsePreview
         : null;
       const elapsedStr = elapsed >= 60 ? `${Math.floor(elapsed / 60)}h${elapsed % 60}m` : `${elapsed}min`;
-      let body = `📋 Task interrupted after ${elapsedStr} due to restart:\n\n❓ Original request: ${promptPreview}`;
-      if (responsePreview) {
-        body += `\n\n📝 Response so far (excerpt):\n${responsePreview}`;
+      // Use a proper card with buttons instead of text-only notice
+      const cardJson = buildTaskRecoveryCard({
+        originalPrompt: task.prompt,
+        elapsed: elapsedStr,
+        responsePreview: responsePreview || undefined,
+        botName,
+      });
+      try {
+        const snd = sender as any;
+        if (snd.sendRawCard) await snd.sendRawCard(task.chatId, cardJson);
+        else await sender.sendTextNotice(task.chatId, '⏠ 任务中断', `上次任务因重启中断（已运行 ${elapsedStr}）。\n需求: ${promptPreview}\n\n重新发送即可继续。`, 'orange');
+      } catch {
+        logger.warn({ chatId: task.chatId }, 'Failed to send recovery card');
       }
-      body += `\n\n💡 Please resend to continue. You can say "continue the previous task".`;
-      await sender.sendTextNotice(
-        task.chatId,
-        '⏠ 任务因重启中断',
-        body,
-        'orange',
-      );
       notified++;
     } catch (err: any) {
       logger.warn({ chatId: task.chatId, err: err?.message }, 'Failed to send recovery notification');

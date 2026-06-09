@@ -38,7 +38,7 @@ export class CardUpdater {
       })),
       totalTokens: r?.totalTokens,
       contextWindow: r?.contextWindow,
-      costUsd: r?.costUsd,
+      sessionCostUsd: r?.costUsd,
       currentSkill: r?.currentSkill,
       intentName: progress.intentName,
       // botName is filled by message-bridge (it knows the bot), not here.

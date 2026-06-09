@@ -132,6 +132,31 @@ export function createEventDispatcher(
             };
           }
 
+          // task_resume / task_dismiss — handle recovery card buttons
+          // sent by recoverAndNotify on startup. "继续" re-sends the
+          // original prompt; "知道了" just shows a confirmation toast.
+          if (action === 'task_dismiss') {
+            return { toast: { type: 'info', content: '已忽略' } };
+          }
+          if (action === 'task_resume') {
+            const prompt = value.prompt;
+            const botName = value.botName;
+            if (typeof prompt !== 'string' || !prompt || typeof botName !== 'string' || !botName) {
+              logger.warn({ value }, 'task_resume: missing prompt or botName');
+              return { toast: { type: 'error', content: 'Missing data' } };
+            }
+            // Fire-and-forget: the bridge will pick this up as a new message
+            if (messageSender) {
+              messageSender.sendText(chatId, prompt).catch(() => {});
+            }
+            onMessage({
+              messageId, chatId, chatType: 'group', userId,
+              text: prompt, botName,
+              imageKey: undefined, fileKey: undefined, fileName: undefined,
+            } as any);
+            return { toast: { type: 'success', content: '➡️ 正在继续...' } };
+          }
+
           // Phase 3: orch_resume — user clicked "📋 回到主线" on a pending
           // tasks card. Route the sessionId to the coordinator, which
           // loads the orch-sessions/ snapshot and resumes.
