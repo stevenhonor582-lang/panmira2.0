@@ -1,83 +1,120 @@
 /**
  * auto-migrate.ts — Startup schema sync
- * Reads schema.ts table definitions and adds missing tables/columns.
+ * Reads schema.ts Drizzle table definitions and adds missing tables/columns.
  * Safe: only ADDs, never drops or alters existing columns.
  */
 import type { Logger } from '../utils/logger.js';
 import { pool } from './index.js';
 
-// Drizzle column type → SQL type mapping
-function drizzleToSql(col: any): string {
-  const type = col.columnType ?? col.dataType ?? '';
-  if (type.includes('uuid')) return 'uuid';
-  if (type.includes('varchar') || type.includes('text')) {
-    const len = col?.config?.length;
-    return len ? `varchar(${len})` : 'text';
-  }
-  if (type.includes('integer') || type.includes('serial')) return 'integer';
-  if (type.includes('bigint')) return 'bigint';
-  if (type.includes('real') || type.includes('numeric')) return 'real';
-  if (type.includes('boolean')) return 'boolean';
-  if (type.includes('timestamp')) return 'timestamptz';
-  if (type.includes('date')) return 'date';
-  if (type.includes('jsonb')) return 'jsonb';
-  if (type.includes('vector')) return 'vector(1024)';
-  if (type.includes('bytea')) return 'bytea';
-  return 'text'; // fallback
-}
-
-function drizzleDefault(col: any): string | null {
-  const type = col.columnType ?? col.dataType ?? '';
-  // Check for .default() values
-  if (col.defaultFn !== undefined || col.default !== undefined) {
-    const def = col.defaultFn ?? col.default;
-    if (typeof def === 'function') return null; // runtime function like gen_random_uuid
-    if (def === true) return 'true';
-    if (def === false) return 'false';
-    if (typeof def === 'number') return String(def);
-    if (typeof def === 'string') return `'${def}'`;
-    if (Array.isArray(def)) return def.length === 0 ? "'[]'::jsonb" : null;
-    if (typeof def === 'object' && def !== null) {
-      const keys = Object.keys(def);
-      return keys.length === 0 ? "'{}'::jsonb" : null;
-    }
-  }
-  return null;
+interface ColDef {
+  name: string;
+  sqlType: string;
+  nullable: boolean;
+  defaultVal: string | null;
+  primaryKey: boolean;
 }
 
 interface TableDef {
   name: string;
-  columns: { name: string; sqlType: string; nullable: boolean; defaultVal: string | null; primaryKey: boolean }[];
+  columns: ColDef[];
 }
 
-// Build table definitions from raw drizzle schema export
+// Drizzle columnType → PostgreSQL type
+function drizzleToSql(col: any): string {
+  const ct: string = col.columnType ?? '';
+
+  if (ct === 'PgUUID') return 'uuid';
+  if (ct === 'PgVarchar') {
+    const len = col.config?.length;
+    return len ? `varchar(${len})` : 'varchar';
+  }
+  if (ct === 'PgText') return 'text';
+  if (ct === 'PgBoolean') return 'boolean';
+  if (ct === 'PgInteger') return 'integer';
+  if (ct === 'PgSerial') return 'serial';
+  if (ct === 'PgBigInt53') return 'bigint';
+  if (ct === 'PgReal') return 'real';
+  if (ct === 'PgNumeric') return 'numeric';
+  if (ct === 'PgTimestamp') return 'timestamptz';
+  if (ct === 'PgDateString') return 'date';
+  if (ct === 'PgJsonb') return 'jsonb';
+  if (ct === 'PgEnumColumn') return 'text';
+  // Custom (vector, bytea, etc.) and Array — use getSQLType()
+  if (typeof col.getSQLType === 'function') return col.getSQLType();
+
+  return 'text';
+}
+
+function drizzleDefault(col: any): string | null {
+  if (!col.hasDefault) return null;
+  const def = col.default;
+  if (def === undefined || def === null) return null;
+
+  // SQL function default (gen_random_uuid, now, etc.)
+  if (def?.queryChunks) {
+    const raw: string = def.queryChunks
+      .map((c: any) => (c?.value ? c.value.join('') : String(c)))
+      .join('');
+    if (raw.toLowerCase().includes('gen_random_uuid')) return 'gen_random_uuid()';
+    if (raw.toLowerCase().includes('now()')) return 'now()';
+    return null;
+  }
+
+  if (typeof def === 'boolean') return def ? 'true' : 'false';
+  if (typeof def === 'number') return String(def);
+  if (typeof def === 'string') return `'${def.replace(/'/g, "''")}'`;
+
+  // jsonb defaults — plain JS arrays / objects
+  if (Array.isArray(def)) return def.length === 0 ? "'[]'::jsonb" : null;
+  if (typeof def === 'object') {
+    const keys = Object.keys(def as Record<string, unknown>);
+    return keys.length === 0 ? "'{}'::jsonb" : null;
+  }
+
+  return null;
+}
+
 function extractTables(schema: Record<string, any>): TableDef[] {
   const tables: TableDef[] = [];
+
   for (const [, val] of Object.entries(schema)) {
-    if (!val || typeof val !== 'object' || !val._.name) continue;
-    const tableName: string = val._.name;
-    const cols: TableDef['columns'] = [];
-    // Drizzle stores columns in _.cols or directly on the symbol
-    const colEntries = val._.cols ?? {};
-    for (const [colName, colDef] of Object.entries(colEntries)) {
-      const c = colDef as any;
+    if (!val || typeof val !== 'object') continue;
+
+    const syms = Object.getOwnPropertySymbols(val);
+    const nameSym = syms.find(s => s.description === 'drizzle:Name');
+    if (!nameSym) continue;
+
+    const tableName: string = val[nameSym];
+    if (typeof tableName !== 'string') continue;
+
+    const colsSym = syms.find(s => s.description === 'drizzle:Columns');
+    if (!colsSym) continue;
+
+    const colsObj = val[colsSym];
+    if (!colsObj || typeof colsObj !== 'object') continue;
+
+    const cols: ColDef[] = [];
+    for (const [, col] of Object.entries(colsObj)) {
+      const c = col as any;
+      if (!c?.name) continue;
       cols.push({
-        name: colName,
+        name: c.name,
         sqlType: drizzleToSql(c),
         nullable: !c.notNull,
         defaultVal: drizzleDefault(c),
         primaryKey: !!c.primary,
       });
     }
+
     if (cols.length > 0) {
       tables.push({ name: tableName, columns: cols });
     }
   }
+
   return tables;
 }
 
 export async function runAutoMigrate(logger: Logger): Promise<void> {
-  // Import schema dynamically to get all table definitions
   const schema = await import('./schema.js');
   const tables = extractTables(schema);
   if (tables.length === 0) {
@@ -89,16 +126,15 @@ export async function runAutoMigrate(logger: Logger): Promise<void> {
   let columnsAdded = 0;
 
   for (const table of tables) {
-    // Check if table exists
     const { rows: tableCheck } = await pool.query(
       `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1)`,
       [table.name],
     );
 
     if (!tableCheck[0].exists) {
-      // Create table with all columns
       const colDefs = table.columns.map(c => {
         let def = `"${c.name}" ${c.sqlType}`;
+        if (c.primaryKey) def += ' PRIMARY KEY';
         if (c.defaultVal) def += ` DEFAULT ${c.defaultVal}`;
         return def;
       });
@@ -108,7 +144,6 @@ export async function runAutoMigrate(logger: Logger): Promise<void> {
       continue;
     }
 
-    // Table exists — check for missing columns
     const { rows: existingCols } = await pool.query(
       `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1`,
       [table.name],
