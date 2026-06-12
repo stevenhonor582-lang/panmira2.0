@@ -8,20 +8,33 @@ on:
 
 jobs:
   # Build Windows .exe installer. Uses GitHub-hosted windows-latest
-  # runner (native Node 22, no Wine needed). 
+  # runner (native Node 22, no Wine needed).
   #
   # sparse-checkout is required: the panmira repo has files with `:` in
-  # their names (skills/superpowers:brainstorming/SKILL.md) which are
-  # illegal on Windows filesystems. We only need desktop/ for the
-  # build, so we checkout only that subdirectory.
+  # their names (skills/superpowers:brainstorming/SKILL.md) which
+  # Windows filesystems reject at checkout time. We only need
+  # desktop/ for the build.
+  #
+  # The `--no-cone` mode + `--filter=blob:none` combo is used because
+  # the default cone mode still touches the offending paths in the
+  # index. With blob:none, git fetch doesn't download those blobs,
+  # and with --no-cone + the explicit `/*!/skills/*` exclusion, the
+  # working tree is built without them.
   build-windows:
     name: Build Windows .exe
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          sparse-checkout: desktop
           fetch-depth: 1
+          filter: blob:none
+
+      - name: Configure sparse-checkout
+        shell: bash
+        run: |
+          git sparse-checkout init --no-cone
+          git sparse-checkout set '/*' '!/.git' '!/.github' '!/bin' '!/config' '!/data' '!/db' '!/dist' '!/docker*' '!/docs' '!/logs' '!/migrations' '!/node_modules' '!/scripts' '!/setup.sh' '!/src' '!/templates' '!/tests' '!/tools' '!/tsconfig*' '!/uninstall.sh' '!/web' '/desktop' '/desktop/**'
+          git checkout HEAD --
 
       - uses: pnpm/action-setup@v4
         with:
@@ -51,8 +64,6 @@ jobs:
 
       - name: Package Windows installer
         working-directory: desktop
-        # --publish never: skip release provider upload. We handle the
-        # GitHub release below via softprops/action-gh-release.
         run: pnpm exec electron-builder --win --x64 --publish never
 
       - name: Upload installer as workflow artifact
