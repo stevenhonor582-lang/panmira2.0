@@ -14,7 +14,7 @@ export class KbUploader {
 
   async upload(content: Buffer, filename: string): Promise<{ id: string }> {
     const form = new FormData();
-    form.append('file', new Blob([content]), filename);
+    form.append('file', new Blob([new Uint8Array(content)]), filename);
     const token = await this.config.getToken();
     const response = await this.client.post<{ id: string }>(
       '/api/kb/documents',

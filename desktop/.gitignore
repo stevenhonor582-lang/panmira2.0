@@ -5,3 +5,6 @@ out/
 .env
 .env.test
 .superpowers/
+test-results/
+release/
+tests/**/package-lock.json

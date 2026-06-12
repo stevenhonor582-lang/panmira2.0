@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MahAuthClient } from '../mah-auth-client';
 
 const mockPost = vi.fn();
