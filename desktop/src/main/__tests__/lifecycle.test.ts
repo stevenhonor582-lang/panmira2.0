@@ -13,7 +13,14 @@ vi.mock('electron', () => ({
     show: vi.fn(),
     isDestroyed: vi.fn(() => false),
     webContents: { send: vi.fn() }
-  }))
+  })),
+  protocol: {
+    registerSchemesAsPrivileged: vi.fn(),
+    handle: vi.fn(() => Promise.resolve())
+  },
+  net: {
+    fetch: vi.fn(() => Promise.resolve({}))
+  }
 }));
 
 vi.mock('../auth/token-store', () => ({
@@ -46,13 +53,15 @@ vi.mock('../ws/ipc-bridge', () => ({
 describe('app lifecycle', () => {
   it('creates a BrowserWindow when app is ready', async () => {
     const { createMainWindow } = await import('../lifecycle');
-    const { app, BrowserWindow } = await import('electron');
+    const { app, BrowserWindow, protocol, net } = await import('electron');
     const { registerAuthIpc } = await import('../auth/ipc-handlers');
     const { registerWsIpcBridge } = await import('../ws/ipc-bridge');
 
     await createMainWindow();
 
     expect(app.whenReady).toHaveBeenCalled();
+    expect(protocol.handle).toHaveBeenCalledWith('app', expect.any(Function));
+    expect(net.fetch).toBeDefined();
     expect(BrowserWindow).toHaveBeenCalled();
     expect(registerAuthIpc).toHaveBeenCalled();
     expect(registerWsIpcBridge).toHaveBeenCalled();

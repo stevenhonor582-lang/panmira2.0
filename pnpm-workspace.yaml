@@ -1,0 +1,11 @@
+packages:
+  - "."
+  - "desktop"
+
+# pnpm 11 config: allowBuilds is a map of package -> bool.
+# Setting true runs the package's build script (e.g. native compile).
+allowBuilds:
+  electron: true
+  esbuild: true
+  keytar: true
+  protobufjs: true
