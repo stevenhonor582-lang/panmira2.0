@@ -74,7 +74,11 @@ function createSpawnFn(explicitApiKey?: string, explicitBaseUrl?: string): (opti
   const filterAuthVars = !!(explicitApiKey || hasCredentialsFile());
 
   return (options: SpawnOptions): SpawnedProcess => {
-    const nodePath = process.execPath;
+    // Use the command from the SDK (the binary path it resolved), not
+    // process.execPath. The SDK now ships a native binary (claude.exe)
+    // instead of a cli.js entrypoint, so spawning Node would fail with
+    // "Cannot find module cli.js".
+    const exec = options.command;
 
     // Merge provided env with process.env for a complete environment
     const baseEnv =
@@ -102,7 +106,7 @@ function createSpawnFn(explicitApiKey?: string, explicitBaseUrl?: string): (opti
       env.ANTHROPIC_BASE_URL = explicitBaseUrl;
     }
 
-    const child = spawn(nodePath, options.args, {
+    const child = spawn(exec, options.args, {
       cwd: options.cwd,
       env,
       signal: options.signal,
@@ -221,13 +225,13 @@ export class ClaudeExecutor {
       includePartialMessages: true,
       // Load MCP servers and settings from user/project config files
       settingSources: this.config.claude.baseUrl ? ['project'] : ['user', 'project'],
-      // Cross-platform spawn: custom spawn filters CLAUDE* env vars and uses
-      // process.execPath to avoid PATH issues on Windows; fileURLToPath converts
-      // file:// URLs to native paths for the SDK CLI entrypoint.
+      // Cross-platform spawn: custom spawn filters CLAUDE* env vars to
+      // prevent nested-session errors. The SDK 0.2.141+ ships a native
+      // binary (claude.exe) instead of a cli.js entrypoint, so:
+      // - executable = the binary path (not node)
+      // - executableArgs = empty (no JS entrypoint to inject)
       spawnClaudeCodeProcess: createSpawnFn(this.config.claude.apiKey, this.config.claude.baseUrl),
-      executableArgs: [
-        path.join(path.dirname(fileURLToPath(import.meta.resolve('@anthropic-ai/claude-agent-sdk'))), 'cli.js'),
-      ],
+      executable: CLAUDE_EXECUTABLE,
       pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE,
     };
 
