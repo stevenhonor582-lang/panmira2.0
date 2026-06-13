@@ -4,7 +4,8 @@ vi.mock('electron', () => ({
   app: {
     on: vi.fn(),
     quit: vi.fn(),
-    whenReady: vi.fn(() => Promise.resolve())
+    whenReady: vi.fn(() => Promise.resolve()),
+    getPath: vi.fn(() => '/tmp/panmira-userdata')
   },
   BrowserWindow: vi.fn(() => ({
     loadURL: vi.fn(),
@@ -14,6 +15,9 @@ vi.mock('electron', () => ({
     isDestroyed: vi.fn(() => false),
     webContents: { send: vi.fn() }
   })),
+  ipcMain: {
+    handle: vi.fn()
+  },
   protocol: {
     registerSchemesAsPrivileged: vi.fn(),
     handle: vi.fn(() => Promise.resolve())
@@ -48,6 +52,57 @@ vi.mock('../ws/ws-client', () => ({
 
 vi.mock('../ws/ipc-bridge', () => ({
   registerWsIpcBridge: vi.fn()
+}));
+
+vi.mock('../kb-search/embedder', () => ({
+  Embedder: vi.fn().mockImplementation(() => ({}))
+}));
+
+vi.mock('../kb-search/retriever', () => ({
+  Retriever: vi.fn().mockImplementation(() => ({}))
+}));
+
+vi.mock('../kb-search/ipc', () => ({
+  createKbSearchHandlers: vi.fn(() => ({
+    'kb-search:retrieve': vi.fn()
+  }))
+}));
+
+vi.mock('../browser/browser-engine', () => ({
+  BrowserEngine: vi.fn().mockImplementation(() => ({}))
+}));
+
+vi.mock('../browser/browser-actions', () => ({
+  BrowserActions: vi.fn().mockImplementation(() => ({}))
+}));
+
+vi.mock('../browser/browser-relay', () => ({
+  createBrowserHandlers: vi.fn(() => ({}))
+}));
+
+vi.mock('../templates/loader', () => ({
+  createDefaultRegistry: vi.fn(() => ({}))
+}));
+
+vi.mock('../templates/template-runner', () => ({
+  TemplateRunner: vi.fn().mockImplementation(() => ({}))
+}));
+
+vi.mock('../templates/ipc', () => ({
+  createTemplateHandlers: vi.fn(() => ({
+    'templates:list': vi.fn(),
+    'templates:run': vi.fn()
+  }))
+}));
+
+vi.mock('../agent/stream-router', () => ({
+  StreamRouter: vi.fn().mockImplementation(() => ({
+    emit: vi.fn()
+  }))
+}));
+
+vi.mock('../agent/stream-to-string', () => ({
+  streamToString: vi.fn(() => Promise.resolve(''))
 }));
 
 describe('app lifecycle', () => {
