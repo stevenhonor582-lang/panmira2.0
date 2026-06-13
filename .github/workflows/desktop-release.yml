@@ -72,7 +72,7 @@ jobs:
         with:
           node-version: '22.19.0'
           cache: 'pnpm'
-          cache-dependency-path: desktop/pnpm-lock.yaml
+          cache-dependency-path: desktop/package-lock.json
 
       - name: Install dependencies
         working-directory: desktop
