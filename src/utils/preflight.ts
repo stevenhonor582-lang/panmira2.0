@@ -87,7 +87,49 @@ export async function runPreflight(logger: Logger): Promise<PreflightResult> {
     checks.push({ name: 'Config:Bots', status: 'fail', message: `DB query failed: ${err.message}` });
   }
 
-  // 5. Check MetaMemory connectivity
+  // 5. Check Claude Code binary + SDK compatibility
+  //    Defensive guard against the SDK 0.2.141 regression where cli.js was
+  //    removed but code still referenced it (commit b637c5c6 / e3252884).
+  try {
+    const { execSync } = await import('node:child_process');
+    const claudePath = process.env.CLAUDE_EXECUTABLE_PATH
+      || execSync('which claude', { encoding: 'utf-8' }).trim().split(/\r?\n/)[0];
+    if (claudePath && fs.existsSync(claudePath)) {
+      checks.push({ name: 'SDK:ClaudeBinary', status: 'ok', message: `Found at ${claudePath}` });
+      try {
+        const versionOut = execSync(`${claudePath} --version`, { encoding: 'utf-8', timeout: 5000 }).trim();
+        checks.push({ name: 'SDK:ClaudeVersion', status: 'ok', message: versionOut });
+      } catch (err: any) {
+        checks.push({ name: 'SDK:ClaudeVersion', status: 'warn', message: `Cannot run --version: ${err.message}` });
+      }
+    } else {
+      checks.push({ name: 'SDK:ClaudeBinary', status: 'fail', message: 'claude binary not found in PATH' });
+    }
+  } catch (err: any) {
+    checks.push({ name: 'SDK:ClaudeBinary', status: 'fail', message: `which claude failed: ${err.message}` });
+  }
+
+  try {
+    const sdkResolve = import.meta.resolve('@anthropic-ai/claude-agent-sdk');
+    const sdkDir = path.dirname(new URL(sdkResolve).pathname);
+    const cliJs = path.join(sdkDir, 'cli.js');
+    const sdkMjs = path.join(sdkDir, 'sdk.mjs');
+    if (fs.existsSync(cliJs)) {
+      checks.push({
+        name: 'SDK:SpawnCompat',
+        status: 'warn',
+        message: `SDK ships cli.js (${sdkDir}) — old SDK. Code expects 0.2.141+ native binary. May cause "Claude Code process exited with code 1".`,
+      });
+    } else if (fs.existsSync(sdkMjs)) {
+      checks.push({ name: 'SDK:SpawnCompat', status: 'ok', message: 'SDK 0.2.141+ (no cli.js, native binary mode)' });
+    } else {
+      checks.push({ name: 'SDK:SpawnCompat', status: 'warn', message: `Cannot find sdk.mjs in ${sdkDir}` });
+    }
+  } catch (err: any) {
+    checks.push({ name: 'SDK:SpawnCompat', status: 'warn', message: `Cannot resolve SDK: ${err.message}` });
+  }
+
+  // 6. Check MetaMemory connectivity
   const memoryUrl = process.env.META_MEMORY_URL;
   if (memoryUrl) {
     try {
