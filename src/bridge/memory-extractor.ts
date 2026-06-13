@@ -6,6 +6,8 @@
 
 import type { Logger } from '../utils/logger.js';
 import { SubjectNormalizer } from './subject-normalizer.js';
+import { pool } from '../db/index.js';
+import { decrypt } from '../db/crypto.js';
 
 export interface CandidateMemory {
   type: 'fact' | 'event' | 'preference' | 'entity' | 'decision';
@@ -25,9 +27,46 @@ export class MemoryExtractor {
   private readonly DAILY_LIMIT = 50;
   private processedWindows = new Set<string>(); // dedup key set
 
+  // Provider config loaded from provider_configs (default LLM), mirroring AutoTagger.
+  private apiKey = '';
+  private baseUrl = '';
+  private model = 'claude-haiku-4-5-20251001';
+  private isAnthropic = true;
+  private initPromise: Promise<void> | null = null;
+
   constructor(logger: Logger, normalizer: SubjectNormalizer) {
     this.logger = logger;
     this.normalizer = normalizer;
+  }
+
+  private async ensureInit(): Promise<void> {
+    if (this.apiKey) return;
+    if (!this.initPromise) {
+      this.initPromise = this.loadProvider();
+    }
+    await this.initPromise;
+  }
+
+  private async loadProvider(): Promise<void> {
+    try {
+      const { rows } = await pool.query(
+        "SELECT api_key_encrypted, base_url, model FROM provider_configs WHERE type = 'LLM' ORDER BY is_default DESC, name LIMIT 1",
+      );
+      if (rows[0]?.api_key_encrypted) {
+        this.apiKey = decrypt(rows[0].api_key_encrypted);
+        this.baseUrl = (rows[0].base_url || '').replace(/\/+$/, '');
+        this.model = rows[0].model || 'claude-haiku-4-5-20251001';
+        this.isAnthropic = /\/anthropic/i.test(this.baseUrl);
+        this.logger.info(
+          { baseUrl: this.baseUrl, model: this.model, isAnthropic: this.isAnthropic },
+          'MemoryExtractor: loaded LLM provider',
+        );
+        return;
+      }
+      this.logger.warn('MemoryExtractor: no LLM provider configured');
+    } catch (err: any) {
+      this.logger.error({ err: err.message }, 'MemoryExtractor: failed to load provider');
+    }
   }
 
   /**
@@ -52,10 +91,9 @@ export class MemoryExtractor {
       return [];
     }
 
-    const baseUrl = process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com';
-    const apiKey = process.env.ANTHROPIC_AUTH_TOKEN;
-    if (!apiKey) {
-      this.logger.warn('ANTHROPIC_AUTH_TOKEN not set, skipping LLM extraction');
+    await this.ensureInit();
+    if (!this.apiKey) {
+      this.logger.warn('No LLM provider configured, skipping LLM extraction');
       return [];
     }
 
@@ -90,28 +128,51 @@ content_payload 按类型:
 只输出 JSON 数组, 不要其他文字.`;
 
     try {
-      const resp = await fetch(`${baseUrl}/v1/messages`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 1000,
-          temperature: 0,
-          messages: [{ role: 'user', content: prompt }],
-        }),
-      });
-
-      if (!resp.ok) {
-        this.logger.warn({ status: resp.status, agentId }, 'MemoryExtractor API error');
-        return [];
+      let text = '';
+      if (this.isAnthropic) {
+        const resp = await fetch(`${this.baseUrl}/v1/messages`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-api-key': this.apiKey,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: this.model,
+            max_tokens: 1000,
+            temperature: 0,
+            messages: [{ role: 'user', content: prompt }],
+          }),
+        });
+        if (!resp.ok) {
+          this.logger.warn({ status: resp.status, agentId, baseUrl: this.baseUrl }, 'MemoryExtractor API error');
+          return [];
+        }
+        const data = await resp.json() as any;
+        text = data.content?.[0]?.text || '';
+      } else {
+        // OpenAI-compatible ChatCompletion
+        const resp = await fetch(`${this.baseUrl}/v1/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'authorization': `Bearer ${this.apiKey}`,
+          },
+          body: JSON.stringify({
+            model: this.model,
+            max_tokens: 1000,
+            temperature: 0,
+            messages: [{ role: 'user', content: prompt }],
+          }),
+        });
+        if (!resp.ok) {
+          this.logger.warn({ status: resp.status, agentId, baseUrl: this.baseUrl }, 'MemoryExtractor API error');
+          return [];
+        }
+        const data = await resp.json() as any;
+        text = data.choices?.[0]?.message?.content || '';
       }
 
-      const data = await resp.json() as any;
-      const text = data.content?.[0]?.text || '';
       const jsonMatch = text.match(/\[[\s\S]*\]/);
       if (!jsonMatch) {
         this.logger.debug({ text: text.slice(0, 200), agentId }, 'No JSON array in LLM response');
