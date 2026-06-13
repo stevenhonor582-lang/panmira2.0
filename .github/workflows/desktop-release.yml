@@ -55,28 +55,23 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          filter: blob:none
 
-      - name: Configure sparse-checkout
-        shell: bash
+      - name: Install Wine (for electron-builder NSIS step)
         run: |
-          git sparse-checkout init --no-cone
-          git sparse-checkout set '/*' '!/.git' '!/.github' '!/bin' '!/config' '!/data' '!/db' '!/dist' '!/docker*' '!/docs' '!/logs' '!/migrations' '!/node_modules' '!/scripts' '!/setup.sh' '!/src' '!/templates' '!/tests' '!/tools' '!/tsconfig*' '!/uninstall.sh' '!/web' '/desktop' '/desktop/**'
-          git checkout HEAD --
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y wine64 wine32 xvfb
+          wine --version
 
       - uses: actions/setup-node@v4
         with:
           node-version: '22.19.0'
-          cache: 'pnpm'
+          cache: 'npm'
           cache-dependency-path: desktop/package-lock.json
 
       - name: Install dependencies
         working-directory: desktop
-        run: pnpm install --frozen-lockfile
+        run: npm ci
 
       - name: Type check (main)
         working-directory: desktop
