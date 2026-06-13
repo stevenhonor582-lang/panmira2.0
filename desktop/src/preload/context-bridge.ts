@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { BrowserApi, TemplatesApi, KbSearchApi } from '../shared/ipc-contract';
 
 type ApiSurface = {
   auth: {
@@ -14,8 +15,11 @@ type ApiSurface = {
     chat: (message: string) => Promise<AsyncIterable<string>>;
   };
   browser: {
+    // v0.1 — keep for backwards compatibility with existing callers
     publish: (contentId: string, platform: string) => Promise<{ ok: boolean }>;
-  };
+  } & BrowserApi;
+  templates: TemplatesApi;
+  kbSearch: KbSearchApi;
 };
 
 export function buildApiSurface(): ApiSurface {
@@ -33,8 +37,26 @@ export function buildApiSurface(): ApiSurface {
       chat: (message) => ipcRenderer.invoke('agent:chat', message)
     },
     browser: {
+      // v0.1 — unchanged
       publish: (contentId, platform) =>
-        ipcRenderer.invoke('browser:publish', { contentId, platform })
+        ipcRenderer.invoke('browser:publish', { contentId, platform }),
+      // v0.2 — browser automation
+      open: (taskId, url) => ipcRenderer.invoke('browser:open', taskId, url),
+      screenshot: (viewportId) => ipcRenderer.invoke('browser:screenshot', viewportId),
+      click: (viewportId, selector) =>
+        ipcRenderer.invoke('browser:click', viewportId, selector),
+      fill: (viewportId, selector, text) =>
+        ipcRenderer.invoke('browser:fill', viewportId, selector, text),
+      extract: (viewportId, selector) =>
+        ipcRenderer.invoke('browser:extract', viewportId, selector),
+      close: (viewportId) => ipcRenderer.invoke('browser:close', viewportId)
+    },
+    templates: {
+      run: (args) => ipcRenderer.invoke('templates:run', args),
+      list: () => ipcRenderer.invoke('templates:list')
+    },
+    kbSearch: {
+      retrieve: (args) => ipcRenderer.invoke('kb-search:retrieve', args)
     }
   };
 }
