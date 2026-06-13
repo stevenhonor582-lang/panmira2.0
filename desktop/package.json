@@ -1,6 +1,6 @@
 {
   "name": "@panmira/desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Panmira Desktop — Electron client for B2B foreign trade",
   "main": "dist/main/index.js",
   "type": "module",
