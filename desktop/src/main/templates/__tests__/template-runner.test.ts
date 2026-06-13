@@ -20,7 +20,13 @@ const buildTemplate = (overrides: Partial<AnyTemplate>): AnyTemplate => ({
 
 describe('TemplateRunner', () => {
   it('validates params and throws on bad input', async () => {
-    const runner = new TemplateRunner({ registry: { get: () => buildTemplate({}) } as any, retriever: {} as any, browser: {} as any, streamAgent: vi.fn() });
+    const runner = new TemplateRunner({
+      registry: { get: () => buildTemplate({}) } as any,
+      retriever: {} as any,
+      browser: {} as any,
+      engine: { launch: vi.fn(), close: vi.fn() } as any,
+      streamAgent: vi.fn(),
+    });
     await expect(runner.run({ templateId: 't1', params: { x: 123 } as any })).rejects.toThrow();
   });
 
@@ -31,6 +37,7 @@ describe('TemplateRunner', () => {
       registry: { get: () => tpl } as any,
       retriever: {} as any,
       browser: {} as any,
+      engine: { launch: vi.fn(), close: vi.fn() } as any,
       streamAgent,
     });
     const result = await runner.run({ templateId: 't1', params: { x: 'hi' } });
@@ -44,15 +51,18 @@ describe('TemplateRunner', () => {
       prompt: vi.fn().mockReturnValue('p2'),
     });
     const browser = { click: vi.fn(), fill: vi.fn(), screenshot: vi.fn(), extract: vi.fn() } as unknown as BrowserActions;
+    const engine = { launch: vi.fn().mockResolvedValue({ sessionId: 's1' }), close: vi.fn().mockResolvedValue(undefined) };
     const runner = new TemplateRunner({
       registry: { get: () => tpl } as any,
       retriever: {} as any,
       browser,
+      engine,
       streamAgent: vi.fn().mockResolvedValue('ok'),
     });
     await runner.run({ templateId: 't1', params: { x: 'hi' } });
     expect(tpl.browserActions).toHaveBeenCalled();
     expect(tpl.prompt).toHaveBeenCalledWith({ x: 'hi' }, 'browser-text', undefined);
+    expect(engine.close).toHaveBeenCalledWith('s1');
   });
 
   it('retrieves KB context when kbRequired and passes to prompt', async () => {
@@ -62,6 +72,7 @@ describe('TemplateRunner', () => {
       registry: { get: () => tpl } as any,
       retriever,
       browser: {} as any,
+      engine: { launch: vi.fn(), close: vi.fn() } as any,
       streamAgent: vi.fn().mockResolvedValue('done'),
     });
     await runner.run({ templateId: 't1', params: { x: 'hi' } });

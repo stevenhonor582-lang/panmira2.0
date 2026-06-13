@@ -26,7 +26,7 @@ describe('built-in templates 02-07', () => {
 
   it('ColdOutreach.kbRequired and uses KB context', () => {
     expect(ColdOutreach.kbRequired).toBe(true);
-    const p = ColdOutreach.prompt({ recipient: 'John', company: 'Acme', product: 'pumps' }, undefined, 'OUR PRODUCT IS GREAT');
+    const p = ColdOutreach.prompt({ recipient: 'John', company: 'Acme', product: 'pumps', tone: 'formal' }, undefined, 'OUR PRODUCT IS GREAT');
     expect(p).toContain('Acme');
     expect(p).toContain('OUR PRODUCT IS GREAT');
   });

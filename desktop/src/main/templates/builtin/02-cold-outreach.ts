@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import type { Template } from '../types.js';
+import { defineTemplate } from '../types.js';
 
-export const ColdOutreach: Template = {
+export const ColdOutreach = defineTemplate({
   id: 'cold-outreach',
   name: '英文开发信',
   description: '基于产品资料生成一封专业的英文开发信。',
@@ -33,4 +33,4 @@ ${kbContext ?? '(无)'}
 - 结尾有明确 CTA（call to action）
     `.trim();
   },
-};
+});

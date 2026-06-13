@@ -2,7 +2,7 @@ export type SessionId = string;
 
 export interface SessionContext {
   profileDir: string;
-  launchedAt: number;
+  launchedAt?: number;
 }
 
 export interface Session extends SessionContext {

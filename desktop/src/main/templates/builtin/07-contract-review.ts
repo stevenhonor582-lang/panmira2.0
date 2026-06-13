@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import type { Template } from '../types.js';
+import { defineTemplate } from '../types.js';
 
-export const ContractReview: Template = {
+export const ContractReview = defineTemplate({
   id: 'contract-review',
   name: '合同审核',
   description: '基于合同模板审核条款，标出风险点。',
@@ -33,4 +33,4 @@ ${kbContext ?? '(无)'}
 4. 总评（可签 / 需改 / 拒签）
     `.trim();
   },
-};
+});

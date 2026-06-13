@@ -102,6 +102,7 @@ export async function createMainWindow(): Promise<BrowserWindow> {
     registry,
     retriever,
     browser: browserActions,
+    engine: browserEngine,
     streamAgent: (prompt: string) => streamToString(prompt, streamRouter)
   });
   const tplHandlers = createTemplateHandlers({ registry, runner });

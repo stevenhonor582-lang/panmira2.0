@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import type { Template } from '../types.js';
+import { defineTemplate } from '../types.js';
 
-export const Competitor: Template = {
+export const Competitor = defineTemplate({
   id: 'competitor',
   name: '竞品分析',
   description: '抓取竞品官网 + 价格页，输出结构化对比。',
@@ -15,9 +15,9 @@ export const Competitor: Template = {
     competitorUrl: z.string().url(),
   }),
 
-  async browserActions(browser, params) {
-    await browser.navigate(params.competitorUrl);
-    return browser.extract('body');
+  async browserActions(browser, sessionId, params) {
+    await browser.navigate(sessionId, params.competitorUrl);
+    return browser.extract(sessionId, 'body');
   },
 
   prompt(params, browserOutput) {
@@ -34,4 +34,4 @@ ${browserOutput ?? '(无)'}
 5. 与我方产品的差异化建议
     `.trim();
   },
-};
+});

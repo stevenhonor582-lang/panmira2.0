@@ -1,12 +1,19 @@
 import type { TemplateRegistry } from './template-registry.js';
 import type { Retriever } from '../kb-search/retriever.js';
 import type { BrowserActions } from '../browser/browser-actions.js';
+import type { BrowserEngine } from '../browser/browser-engine.js';
+import type { SessionId } from '../browser/session-store.js';
 import type { TemplateRunParams, TemplateRunResult } from '../../shared/ipc-contract.js';
 
 export interface TemplateRunnerDeps {
   registry: Pick<TemplateRegistry, 'get'>;
   retriever: Pick<Retriever, 'retrieve'>;
   browser: BrowserActions;
+  /**
+   * Engine used to launch/close a temporary browser session for the
+   * template's `browserActions` step.
+   */
+  engine: Pick<BrowserEngine, 'launch' | 'close'>;
   streamAgent: (prompt: string) => Promise<string>;
 }
 
@@ -34,10 +41,23 @@ export class TemplateRunner {
       }
     }
 
-    // 3. Optional browser actions
+    // 3. Optional browser actions (launch + try/finally close a temp session)
     let browserOutput: string | undefined;
     if (tpl.browserActions) {
-      browserOutput = await tpl.browserActions(this.deps.browser, parsed);
+      const { sessionId } = await this.deps.engine.launch(`template-${args.templateId}`);
+      let sid: SessionId | undefined = sessionId;
+      try {
+        browserOutput = await tpl.browserActions(this.deps.browser, sessionId, parsed);
+      } finally {
+        if (sid) {
+          try {
+            await this.deps.engine.close(sid);
+          } catch {
+            // ignore close errors
+          }
+          sid = undefined;
+        }
+      }
     }
 
     // 4. Compose prompt

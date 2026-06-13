@@ -16,7 +16,7 @@ describe('IPC contract types', () => {
 
   it('TemplatesApi has run + list', () => {
     const mock: TemplatesApi = {
-      run: async () => ({ taskId: 't1' }),
+      run: async () => ({ taskId: 't1', outputFormat: 'markdown' }),
       list: async () => [],
     };
     expect(mock.run).toBeDefined();

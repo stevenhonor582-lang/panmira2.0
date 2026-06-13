@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import type { Template } from '../types.js';
+import { defineTemplate } from '../types.js';
 
-export const CustomerProfile: Template = {
+export const CustomerProfile = defineTemplate({
   id: 'customer-profile',
   name: '客户画像',
   description: '结合客户官网 + 内部资料，输出 360° 客户画像。',
@@ -15,10 +15,10 @@ export const CustomerProfile: Template = {
     website: z.string().url().optional(),
   }),
 
-  async browserActions(browser, params) {
+  async browserActions(browser, sessionId, params) {
     if (!params.website) return '';
-    await browser.navigate(params.website);
-    return browser.extract('body');
+    await browser.navigate(sessionId, params.website);
+    return browser.extract(sessionId, 'body');
   },
 
   prompt(params, browserOutput, kbContext) {
@@ -39,4 +39,4 @@ ${kbContext || '(无)'}
 5. 风险点（不感兴趣的可能原因）
     `.trim();
   },
-};
+});

@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import type { Template } from '../types.js';
+import { defineTemplate } from '../types.js';
 
-export const Quotation: Template = {
+export const Quotation = defineTemplate({
   id: 'quotation',
   name: '报价单生成',
   description: '基于产品资料 + 客户需求生成结构化报价单。',
@@ -30,4 +30,4 @@ ${kbContext ?? '(无)'}
 末尾加：总计、付款条件、有效期 (14 天)、联系窗口。
     `.trim();
   },
-};
+});

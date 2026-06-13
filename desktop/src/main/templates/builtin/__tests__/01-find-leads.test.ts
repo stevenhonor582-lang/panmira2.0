@@ -23,7 +23,7 @@ describe('FindLeads template', () => {
       navigate: vi.fn().mockResolvedValue(undefined),
       extract: vi.fn().mockResolvedValue('John Doe - Acme Corp'),
     } as any;
-    const out = await FindLeads.browserActions!(browser, { industry: 'auto', region: 'DE' });
+    const out = await FindLeads.browserActions!(browser, 's1', { industry: 'auto', region: 'DE' });
     expect(browser.navigate).toHaveBeenCalled();
     expect(out).toContain('Acme');
   });

@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import type { Template } from '../types.js';
+import { defineTemplate } from '../types.js';
 
-export const FindLeads: Template = {
+export const FindLeads = defineTemplate({
   id: 'find-leads',
   name: 'LinkedIn 找客户',
   description: '在 LinkedIn 搜索目标行业的潜在客户，输出 10 个带姓名、职位、公司的表格。',
@@ -16,11 +16,11 @@ export const FindLeads: Template = {
     jobTitles: z.string().optional(),
   }),
 
-  async browserActions(browser, params) {
+  async browserActions(browser, sessionId, params) {
     const query = encodeURIComponent(`${params.industry} ${params.jobTitles ?? ''}`.trim());
     const url = `https://www.linkedin.com/search/results/people/?keywords=${query}&geoUrn=:${encodeURIComponent(params.region)}`;
-    await browser.navigate(url);
-    return browser.extract('.search-results');
+    await browser.navigate(sessionId, url);
+    return browser.extract(sessionId, '.search-results');
   },
 
   prompt(params, browserOutput) {
@@ -37,4 +37,4 @@ ${browserOutput ?? '(无浏览器结果)'}
 输出 markdown 表格，列：姓名 | 职位 | 公司 | LinkedIn URL | 备注（为什么是潜在客户）。
     `.trim();
   },
-};
+});

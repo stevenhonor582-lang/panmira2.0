@@ -1,6 +1,7 @@
 // Shared TypeScript types for IPC bridges.
 // Imported by both main (implementations) and renderer (consumers via preload).
 
+import type { Template } from '../main/templates/types.js';
 export type ViewportId = string;
 export type TaskId = string;
 
@@ -69,3 +70,7 @@ declare global {
     api: PanmiraApi;
   }
 }
+
+// Loose alias for cross-module type imports (the main template registry
+// stores templates of any param shape; consumers index by id).
+export type AnyTemplate = Template<any>;

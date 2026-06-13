@@ -8,6 +8,11 @@ export class BrowserActions {
     return this.engine.getPage(sessionId);
   }
 
+  async navigate(sessionId: SessionId, url: string): Promise<void> {
+    const page = this.getPage(sessionId);
+    await page.goto(url, { timeout: 30_000 });
+  }
+
   async screenshot(sessionId: SessionId): Promise<string> {
     const page = this.getPage(sessionId);
     const buffer = await page.screenshot({ type: 'png' });

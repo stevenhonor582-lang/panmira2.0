@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import type { Template } from '../types.js';
+import { defineTemplate } from '../types.js';
 
-export const Followup: Template = {
+export const Followup = defineTemplate({
   id: 'followup',
   name: '客户跟进',
   description: '基于历史邮件和最新情况生成跟进邮件。',
@@ -34,4 +34,4 @@ ${params.newContext}
 - 提出具体下一步（call / demo / sample）
     `.trim();
   },
-};
+});

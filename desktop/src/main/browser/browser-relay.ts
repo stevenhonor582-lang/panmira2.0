@@ -11,7 +11,15 @@ export interface BrowserHandlersDeps {
   actions: Pick<BrowserActions, 'screenshot' | 'click' | 'fill' | 'extract'>;
 }
 
-export type BrowserHandlers = Record<keyof BrowserApi, (...args: any[]) => Promise<any>>;
+export type BrowserHandlers = Record<
+  | 'browser:open'
+  | 'browser:screenshot'
+  | 'browser:click'
+  | 'browser:fill'
+  | 'browser:extract'
+  | 'browser:close',
+  (...args: any[]) => Promise<any>
+>;
 
 /**
  * IPC relay: wraps engine + actions behind namespaced IPC channel keys.
