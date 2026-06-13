@@ -1,4 +1,6 @@
 import axios, { type AxiosInstance } from 'axios';
+import { triggerBackgroundIndexing } from '../kb-search/indexer.js';
+import type { Embedder } from '../kb-search/embedder.js';
 
 interface UploaderConfig {
   baseUrl: string;
@@ -29,4 +31,32 @@ export class KbUploader {
     );
     return response.data;
   }
+}
+
+/**
+ * Hook the upload router into the local indexer.
+ * After a successful upload + local save, kick off background indexing
+ * so the new document becomes searchable without blocking the upload flow.
+ *
+ * NOTE: Caller is responsible for persisting `rawPath` to disk before invoking
+ * this. We do not write the file here — we only fire off the indexer.
+ */
+export interface IndexingHookOptions {
+  kbDir: string;
+  rawPath: string;
+  filename: string;
+  embedder: Pick<Embedder, 'embedBatch'>;
+}
+
+export function scheduleIndexingAfterUpload(
+  uploadedDocId: string,
+  hookOpts: IndexingHookOptions,
+): void {
+  triggerBackgroundIndexing({
+    kbDir: hookOpts.kbDir,
+    docId: uploadedDocId,
+    docName: hookOpts.filename,
+    rawPath: hookOpts.rawPath,
+    embedder: hookOpts.embedder,
+  });
 }
