@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Logger } from '../utils/logger.js';
 import { pool } from '../db/index.js';
+import { decrypt } from '../db/crypto.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = join(__filename, '..', '..');
@@ -55,8 +56,45 @@ export class SubjectNormalizer {
   private cache = new Map<string, CacheEntry>();
   private readonly CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
+  // Provider config loaded from provider_configs (default LLM), mirroring MemoryExtractor.
+  private apiKey = '';
+  private baseUrl = '';
+  private model = 'claude-haiku-4-5-20251001';
+  private isAnthropic = true;
+  private initPromise: Promise<void> | null = null;
+
   constructor(logger: Logger) {
     this.logger = logger;
+  }
+
+  private async ensureInit(): Promise<void> {
+    if (this.apiKey) return;
+    if (!this.initPromise) {
+      this.initPromise = this.loadProvider();
+    }
+    await this.initPromise;
+  }
+
+  private async loadProvider(): Promise<void> {
+    try {
+      const { rows } = await pool.query(
+        "SELECT api_key_encrypted, base_url, model FROM provider_configs WHERE type = 'LLM' ORDER BY is_default DESC, name LIMIT 1",
+      );
+      if (rows[0]?.api_key_encrypted) {
+        this.apiKey = decrypt(rows[0].api_key_encrypted);
+        this.baseUrl = (rows[0].base_url || '').replace(/\/+$/, '');
+        this.model = rows[0].model || 'claude-haiku-4-5-20251001';
+        this.isAnthropic = /\/anthropic/i.test(this.baseUrl);
+        this.logger.info(
+          { baseUrl: this.baseUrl, model: this.model, isAnthropic: this.isAnthropic },
+          'SubjectNormalizer: loaded LLM provider',
+        );
+        return;
+      }
+      this.logger.warn('SubjectNormalizer: no LLM provider configured');
+    } catch (err: any) {
+      this.logger.error({ err: err.message }, 'SubjectNormalizer: failed to load provider');
+    }
   }
 
   /**
@@ -149,34 +187,54 @@ ${existingList || '(空)'}
 {"canonical": "规范名", "is_existing": true/false, "confidence": 0-1}`;
 
     try {
-      const baseUrl = process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com';
-      const apiKey = process.env.ANTHROPIC_AUTH_TOKEN;
-      if (!apiKey) {
-        this.logger.warn('ANTHROPIC_AUTH_TOKEN not set, skipping LLM normalize');
+      await this.ensureInit();
+      if (!this.apiKey) {
+        this.logger.warn('No LLM provider configured, skipping LLM normalize');
         return null;
       }
 
-      const resp = await fetch(`${baseUrl}/v1/messages`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 200,
-          messages: [{ role: 'user', content: prompt }],
-        }),
-      });
-
-      if (!resp.ok) {
-        this.logger.warn({ status: resp.status, candidate }, 'LLM normalize API error');
-        return null;
+      let text = '';
+      if (this.isAnthropic) {
+        const resp = await fetch(`${this.baseUrl}/v1/messages`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-api-key': this.apiKey,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: this.model,
+            max_tokens: 200,
+            messages: [{ role: 'user', content: prompt }],
+          }),
+        });
+        if (!resp.ok) {
+          this.logger.warn({ status: resp.status, candidate, baseUrl: this.baseUrl }, 'LLM normalize API error');
+          return null;
+        }
+        const data = await resp.json() as any;
+        text = data.content?.[0]?.text || '';
+      } else {
+        const resp = await fetch(`${this.baseUrl}/v1/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'authorization': `Bearer ${this.apiKey}`,
+          },
+          body: JSON.stringify({
+            model: this.model,
+            max_tokens: 200,
+            messages: [{ role: 'user', content: prompt }],
+          }),
+        });
+        if (!resp.ok) {
+          this.logger.warn({ status: resp.status, candidate, baseUrl: this.baseUrl }, 'LLM normalize API error');
+          return null;
+        }
+        const data = await resp.json() as any;
+        text = data.choices?.[0]?.message?.content || '';
       }
 
-      const data = await resp.json() as any;
-      const text = data.content?.[0]?.text || '';
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
         this.logger.warn({ text, candidate }, 'LLM response no JSON');
