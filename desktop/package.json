@@ -1,7 +1,7 @@
 {
   "name": "@panmira/desktop",
   "version": "0.1.0",
-  "description": "Panmira Desktop — Electron client for B2B foreign trade",
+  "description": "Panmira Desktop \u2014 Electron client for B2B foreign trade",
   "main": "dist/main/index.js",
   "type": "module",
   "scripts": {
@@ -13,6 +13,8 @@
     "build:renderer": "vite build",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:cov": "vitest run --coverage",
+    "test:e2e": "playwright test",
     "lint": "eslint src/ tests/",
     "format": "prettier --write 'src/**/*.ts'"
   },
