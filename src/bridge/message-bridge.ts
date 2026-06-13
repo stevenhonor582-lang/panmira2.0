@@ -24,6 +24,8 @@ import type { ChatSessionStore } from '../db/chat-session-store.js';
 import { SkillRouter } from '../skills/skill-router.js';
 import { CONTEXT_USAGE_THRESHOLD } from './context-manager.js';
 import { MemoryWriter } from './memory-writer.js';
+import { SubjectNormalizer } from './subject-normalizer.js';
+import { MemoryExtractor } from './memory-extractor.js';
 import { ClarificationMiddleware } from '../clarification/index.js';
 import { buildPendingTasksCard, type PendingTasksState } from '../feishu/card-builder.js';
 import type { FeishuCard } from '../clarification/card-builder.js';
@@ -107,7 +109,9 @@ export class MessageBridge {
 
     const memoryClient = new MemoryClient(memoryServerUrl, logger, memorySecret);
     this.memoryClient = memoryClient;
-    this.memoryWriter = new MemoryWriter(memoryClient, logger);
+    const normalizer = new SubjectNormalizer(logger);
+    const extractor = new MemoryExtractor(logger, normalizer);
+    this.memoryWriter = new MemoryWriter(memoryClient, logger, extractor, normalizer);
     this.outputArchiver = new OutputArchiver(memoryClient, logger);
     this.workspaceSyncer = new WorkspaceSyncer(logger);
     this.rag = new PanmiraRAG(logger, { maxDocuments: 3, maxMemories: 2 });

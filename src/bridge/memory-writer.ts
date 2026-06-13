@@ -20,8 +20,8 @@ export class MemoryWriter {
   private folderCache = new Map<string, string>();
   private lastRecordTime = new Map<string, number>();
   private workspaceManager?: WorkspaceManager;
-  private normalizer: SubjectNormalizer = null!;
-  private extractor: MemoryExtractor = null!;
+  private normalizer: SubjectNormalizer;
+  private extractor: MemoryExtractor;
   // v2.4: sliding window buffer
   private buffer: Map<string, { messages: string; tokens: number; lastWindowIdx: number }> = new Map();
 
@@ -29,7 +29,12 @@ export class MemoryWriter {
   constructor(
     private memoryClient: MemoryClient,
     private logger: Logger,
-  ) {}
+    extractor: MemoryExtractor,
+    normalizer: SubjectNormalizer,
+  ) {
+    this.extractor = extractor;
+    this.normalizer = normalizer;
+  }
 
 
   /**
