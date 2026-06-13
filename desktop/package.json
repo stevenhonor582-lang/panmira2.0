@@ -1,7 +1,7 @@
 {
   "name": "@panmira/desktop",
   "version": "0.1.0",
-  "description": "Panmira Desktop \u2014 Electron client for B2B foreign trade",
+  "description": "Panmira Desktop — Electron client for B2B foreign trade",
   "main": "dist/main/index.js",
   "type": "module",
   "scripts": {
@@ -21,10 +21,12 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "axios": "^1.7.0",
+    "better-sqlite3": "^12.10.0",
     "electron-updater": "^6.3.0",
     "keytar": "^7.9.0",
     "pino": "^9.0.0",
     "playwright": "^1.47.0",
+    "sqlite-vec": "^0.1.9",
     "ws": "^8.18.0"
   },
   "devDependencies": {
