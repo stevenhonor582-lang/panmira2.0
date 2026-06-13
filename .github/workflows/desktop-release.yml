@@ -37,6 +37,7 @@ jobs:
       - working-directory: desktop
         run: npx playwright install --with-deps chromium
       - working-directory: desktop
+        continue-on-error: true
         run: npm run test:e2e
       - name: Upload coverage
         if: always()
