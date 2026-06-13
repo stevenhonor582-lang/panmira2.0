@@ -73,13 +73,9 @@ jobs:
         working-directory: desktop
         run: npm ci
 
-      - name: Type check (main)
+      - name: Build main (compiles src/main + src/preload + src/shared → dist/)
         working-directory: desktop
         run: npx tsc -p tsconfig.main.json
-
-      - name: Type check (preload, emits CJS)
-        working-directory: desktop
-        run: npx tsc -p tsconfig.preload.json
 
       - name: Build renderer
         working-directory: desktop
