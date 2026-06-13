@@ -139,7 +139,7 @@ content_payload 按类型:
           },
           body: JSON.stringify({
             model: this.model,
-            max_tokens: 1000,
+            max_tokens: 4000,
             temperature: 0,
             messages: [{ role: 'user', content: prompt }],
           }),
@@ -160,7 +160,7 @@ content_payload 按类型:
           },
           body: JSON.stringify({
             model: this.model,
-            max_tokens: 1000,
+            max_tokens: 4000,
             temperature: 0,
             messages: [{ role: 'user', content: prompt }],
           }),
@@ -173,13 +173,35 @@ content_payload 按类型:
         text = data.choices?.[0]?.message?.content || '';
       }
 
-      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      // Strip markdown code fences (```json ... ```) that some LLMs add around JSON
+      const fenced = text.replace(/^\s*```[a-zA-Z]*\s*\n?/, '').replace(/\n?\s*```\s*$/, '');
+      const jsonMatch = fenced.match(/\[[\s\S]*\]/);
       if (!jsonMatch) {
         this.logger.debug({ text: text.slice(0, 200), agentId }, 'No JSON array in LLM response');
         return [];
       }
 
-      const candidates = JSON.parse(jsonMatch[0]) as any[];
+      let candidates: any[];
+      try {
+        candidates = JSON.parse(jsonMatch[0]) as any[];
+      } catch (err: any) {
+        // Truncated/malformed JSON — recover by trimming to last complete object
+        const raw = jsonMatch[0];
+        const lastClose = raw.lastIndexOf('}');
+        if (lastClose > 0) {
+          const recovered = raw.slice(0, lastClose + 1) + ']';
+          try {
+            candidates = JSON.parse(recovered) as any[];
+            this.logger.warn({ agentId, originalLen: raw.length, recovered: candidates.length }, 'MemoryExtractor: recovered partial JSON after truncation');
+          } catch {
+            this.logger.warn({ err: err?.message, agentId, head: raw.slice(0, 200), tail: raw.slice(-200) }, 'MemoryExtractor: JSON parse failed (unrecoverable)');
+            return [];
+          }
+        } else {
+          this.logger.warn({ err: err?.message, agentId, head: raw.slice(0, 200) }, 'MemoryExtractor: JSON parse failed (no closing brace)');
+          return [];
+        }
+      }
       this.callCount.set(dailyKey, used + 1);
 
       // Normalize each candidate (subject via SubjectNormalizer)
