@@ -20,8 +20,35 @@ jobs:
   # index. With blob:none, git fetch doesn't download those blobs,
   # and with --no-cone + the explicit `/*!/skills/*` exclusion, the
   # working tree is built without them.
+  test:
+    name: Unit + E2E tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+          cache: 'npm'
+          cache-dependency-path: desktop/package-lock.json
+      - working-directory: desktop
+        run: npm ci
+      - working-directory: desktop
+        run: npm test
+      - working-directory: desktop
+        run: npx playwright install --with-deps chromium
+      - working-directory: desktop
+        run: npm run test:e2e
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: desktop/coverage/
+          retention-days: 7
+
   build-windows:
     name: Build Windows .exe
+    needs: test
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
