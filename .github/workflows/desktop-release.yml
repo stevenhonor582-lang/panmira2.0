@@ -75,19 +75,19 @@ jobs:
 
       - name: Type check (main)
         working-directory: desktop
-        run: pnpm exec tsc -p tsconfig.main.json
+        run: npx tsc -p tsconfig.main.json
 
       - name: Type check (preload, emits CJS)
         working-directory: desktop
-        run: pnpm exec tsc -p tsconfig.preload.json
+        run: npx tsc -p tsconfig.preload.json
 
       - name: Build renderer
         working-directory: desktop
-        run: pnpm exec vite build
+        run: npx vite build
 
       - name: Package Windows installer
         working-directory: desktop
-        run: pnpm exec electron-builder --win --x64 --publish never
+        run: npx electron-builder --win --x64 --publish never
 
       - name: Upload installer as workflow artifact
         uses: actions/upload-artifact@v4
