@@ -73,9 +73,13 @@ jobs:
         working-directory: desktop
         run: npm ci
 
-      - name: Build main (clean + compile src/main + src/preload + src/shared → dist/)
+      - name: Build main (clean + compile src/main + src/shared → dist/)
         working-directory: desktop
         run: rm -rf dist && npx tsc -p tsconfig.main.json
+
+      - name: Build preload (CJS) — Electron sandbox requires CommonJS, not ESM
+        working-directory: desktop
+        run: npx tsc -p tsconfig.preload.json
 
       - name: Build renderer
         working-directory: desktop
