@@ -94,7 +94,7 @@ export const memories = pgTable('memories', {
   importance: real('importance').default(0.5),
   accessCount: integer('access_count').default(0),
   lastAccessed: timestamp('last_accessed', { withTimezone: true }),
-  embedding: vectorColumn('embedding'),
+  embedding: vectorColumn('embedding', 1024),
   metadataJson: jsonb('metadata_json'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
@@ -220,7 +220,7 @@ export const documents = pgTable('documents', {
   createdBy: varchar('created_by', { length: 255 }).default(''),
   createdAt: varchar('created_at', { length: 100 }),
   updatedAt: varchar('updated_at', { length: 100 }),
-  embedding: vectorColumn('embedding'),
+  embedding: vectorColumn('embedding', 1024),
   contentHash: text('content_hash'),
   summary: text('summary'),
   qualityScore: integer('quality_score'),
@@ -239,7 +239,7 @@ export const documentChunks = pgTable('document_chunks', {
   chunkIndex: integer('chunk_index').notNull(),
   content: text('content').notNull(),
   heading: varchar('heading', { length: 500 }),
-  embedding: vectorColumn('embedding'),
+  embedding: vectorColumn('embedding', 1024),
   createdAt: varchar('created_at', { length: 100 }),
 });
 
