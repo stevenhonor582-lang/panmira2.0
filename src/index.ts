@@ -68,20 +68,33 @@ async function seedDefaultAgents(logger: Logger): Promise<void> {
 
   try {
     const agents = JSON.parse(fs.readFileSync(seedPath, 'utf-8'));
+
+    // Map knowledge_folders names → folder UUIDs (agents.knowledge_folders must be UUIDs).
+    // Falls back to the original name string if the folder is not yet created.
+    const { rows: folderRows } = await pool.query(
+      "SELECT id, name FROM folders WHERE visibility = 'shared'",
+    );
+    const nameToId = new Map<string, string>();
+    for (const f of folderRows) nameToId.set(f.name, f.id);
+
     for (const agent of agents) {
+      const folderIds: string[] = [];
+      for (const name of agent.knowledge_folders || []) {
+        const id = nameToId.get(name);
+        if (id) folderIds.push(id);
+        else logger.warn({ agent: agent.name, folder: name }, 'seedDefaultAgents: folder not found, skipping');
+      }
+
       await pool.query(
-        `INSERT INTO agents (name, display_name, description, role, system_prompt, skills, knowledge_folders, model_preferences)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         ON CONFLICT (name) DO NOTHING`,
+        `INSERT INTO agents (name, description, role_template, system_prompt, skills, knowledge_folders)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
         [
           agent.name,
-          agent.display_name,
           agent.description,
-          agent.role,
+          agent.role_template ?? agent.role ?? null,
           agent.system_prompt,
           JSON.stringify(agent.skills),
-          JSON.stringify(agent.knowledge_folders),
-          JSON.stringify(agent.model_preferences || {}),
+          JSON.stringify(folderIds),
         ],
       );
     }

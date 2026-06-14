@@ -288,7 +288,17 @@ export class MemoryStorage {
     const result = await pool.query('SELECT path FROM folders WHERE id = $1', [folderId]);
     if (result.rows.length === 0) throw new Error(`Folder not found: ${folderId}`);
     const folderPath = result.rows[0].path.replace(/\/+$/, '');
-    return `${folderPath}/${slugify(title)}`;
+    const basePath = `${folderPath}/${slugify(title)}`;
+    const conflictCheck = await pool.query(
+      'SELECT path FROM documents WHERE path = $1 OR path LIKE $2',
+      [basePath, `${basePath}-%`],
+    );
+    if (conflictCheck.rows.length === 0) return basePath;
+    const taken = new Set(conflictCheck.rows.map((r: any) => r.path as string));
+    if (!taken.has(basePath)) return basePath;
+    let suffix = 2;
+    while (taken.has(`${basePath}-${suffix}`)) suffix++;
+    return `${basePath}-${suffix}`;
   }
 
   async createDocument(data: DocumentCreateInput, role: Role = 'admin'): Promise<Document> {

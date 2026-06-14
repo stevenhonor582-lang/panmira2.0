@@ -2157,8 +2157,12 @@ export class MessageBridge {
    */
   private async generateSessionSummary(prompt: string, lastState: CardState): Promise<string | undefined> {
     try {
+      // Accept any provider whose type indicates an LLM (LLM / openai / anthropic).
+      // panmira web UI does not enforce a type enum, so users may pick "openai" for
+      // an openai-compatible base_url. We treat all such rows as LLM candidates and
+      // pick the default one (or first by name) as the active provider.
       const { rows } = await pool.query(
-        "SELECT api_key_encrypted, base_url, model FROM provider_configs WHERE type = 'LLM' AND is_default = true LIMIT 1",
+        "SELECT api_key_encrypted, base_url, model FROM provider_configs WHERE type IN ('LLM', 'openai', 'anthropic') AND is_default = true LIMIT 1",
       );
       if (!rows[0]?.api_key_encrypted) return undefined;
 
