@@ -153,7 +153,11 @@ content_payload 按类型:
           return [];
         }
         const data = await resp.json() as any;
-        text = data.content?.[0]?.text || '';
+        // Anthropic /v1/messages may return multiple content blocks (text,
+        // thinking, tool_use, ...). We want the text block specifically —
+        // e.g. MiniMax models emit a {"type":"thinking"} block first.
+        const textBlock = (data.content || []).find((b: any) => b.type === 'text');
+        text = textBlock?.text || '';
       } else {
         // OpenAI-compatible ChatCompletion
         const resp = await fetch(`${this.baseUrl}/v1/chat/completions`, {

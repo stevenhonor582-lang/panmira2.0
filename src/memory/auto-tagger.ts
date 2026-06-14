@@ -113,7 +113,7 @@ export class AutoTagger {
         max_tokens: 200,
         stream: false,
       }),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(30000),
     });
 
     if (!res.ok) return '';
@@ -122,7 +122,7 @@ export class AutoTagger {
   }
 
   private async callAnthropicSummary(text: string): Promise<string> {
-    const res = await fetch(`${this.baseUrl}/messages`, {
+    const res = await fetch(`${this.baseUrl}/v1/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -131,10 +131,15 @@ export class AutoTagger {
       },
       body: JSON.stringify({
         model: this.model,
-        max_tokens: 200,
+        // 1500 leaves room for both the model's internal thinking
+        // (MiniMax-M2.7, GLM-thinking, etc. emit a thinking block
+        // that can consume 100-500 tokens) and the final JSON reply.
+        // 200 was too low: thinking consumed the entire budget and
+        // produced stop_reason=max_tokens with no text block.
+        max_tokens: 1500,
         messages: [{ role: 'user', content: `${SUMMARIZE_PROMPT}\n\n${text}` }],
       }),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(30000),
     });
 
     if (!res.ok) return '';
@@ -189,7 +194,7 @@ export class AutoTagger {
         max_tokens: 100,
         stream: false,
       }),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(30000),
     });
 
     if (!res.ok) return [];
@@ -198,7 +203,7 @@ export class AutoTagger {
   }
 
   private async callAnthropic(text: string, systemPrompt: string): Promise<string[]> {
-    const res = await fetch(`${this.baseUrl}/messages`, {
+    const res = await fetch(`${this.baseUrl}/v1/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -207,10 +212,15 @@ export class AutoTagger {
       },
       body: JSON.stringify({
         model: this.model,
-        max_tokens: 100,
+        // 1500 leaves room for both the model's internal thinking
+        // (MiniMax-M2.7, GLM-thinking, etc. emit a thinking block
+        // that can consume 100-500 tokens) and the final tag list.
+        // 100 was too low: thinking consumed the entire budget and
+        // produced stop_reason=max_tokens with no text block.
+        max_tokens: 1500,
         messages: [{ role: 'user', content: `${systemPrompt}\n\n${text}` }],
       }),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(30000),
     });
 
     if (!res.ok) return [];

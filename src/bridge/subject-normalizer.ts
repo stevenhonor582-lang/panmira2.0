@@ -208,7 +208,12 @@ ${existingList || '(空)'}
           },
           body: JSON.stringify({
             model: this.model,
-            max_tokens: 200,
+            // 1500 leaves room for both the model's internal thinking
+            // (MiniMax-M2.7, GLM-thinking, etc. emit a thinking block
+            // that can consume 100-500 tokens) and the final JSON reply.
+            // 200 was too low: thinking consumed the entire budget and
+            // produced stop_reason=max_tokens with no text block.
+            max_tokens: 1500,
             messages: [{ role: 'user', content: prompt }],
           }),
         });
@@ -217,7 +222,11 @@ ${existingList || '(空)'}
           return null;
         }
         const data = await resp.json() as any;
-        text = data.content?.[0]?.text || '';
+        // Anthropic /v1/messages may return multiple content blocks (text,
+        // thinking, tool_use, ...). We want the text block specifically —
+        // e.g. MiniMax models emit a {"type":"thinking"} block first.
+        const textBlock = (data.content || []).find((b: any) => b.type === 'text');
+        text = textBlock?.text || '';
       } else {
         const resp = await fetch(`${this.baseUrl}/v1/chat/completions`, {
           method: 'POST',
