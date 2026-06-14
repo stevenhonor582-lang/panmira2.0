@@ -73,9 +73,9 @@ jobs:
         working-directory: desktop
         run: npm ci
 
-      - name: Build main (compiles src/main + src/preload + src/shared → dist/)
+      - name: Build main (clean + compile src/main + src/preload + src/shared → dist/)
         working-directory: desktop
-        run: npx tsc -p tsconfig.main.json
+        run: rm -rf dist && npx tsc -p tsconfig.main.json
 
       - name: Build renderer
         working-directory: desktop
