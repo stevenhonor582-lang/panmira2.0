@@ -53,7 +53,8 @@ export interface Memory {
   content: string;
   layer: MemoryLayer;
   userId: string;
-  agentId?: string;
+  // 2026-06-17: was agentId (text), now botId (uuid FK)
+  botId?: string;
   tenantId: string;
   createdAt: Date;
   importance: number;

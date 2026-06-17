@@ -89,7 +89,8 @@ export const memories = pgTable('memories', {
   content: text('content').notNull(),
   layer: integer('layer').notNull().default(1),
   userId: text('user_id').notNull(),
-  agentId: text('agent_id'),
+  // 2026-06-17: agent_id column DROPPED. Use botId (uuid FK to bot_configs.bot_id).
+  botId: uuid('bot_id'),
   tenantId: text('tenant_id').notNull(),
   importance: real('importance').default(0.5),
   accessCount: integer('access_count').default(0),

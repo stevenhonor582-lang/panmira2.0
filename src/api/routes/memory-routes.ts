@@ -35,7 +35,8 @@ export const handleMemoryRoutes: RouteHandler = async (_ctx, req, res, method, u
     const body = await parseJsonBody(req);
     const id = await mgr.store(body.content as string, userId, tenantId, {
       layer: (body.layer as MemoryLayer) ?? MemoryLayer.USER,
-      agentId: body.agent_id as string,
+      // 2026-06-17: was agentId (text), now botId (uuid)
+      botId: body.bot_id as string,
       importance: body.importance as number,
     });
     jsonResponse(res, 200, { id, status: 'stored' });

@@ -277,11 +277,15 @@ export async function handleBotRoutes(
     const qp = new URL(url, `http://${req.headers.host || 'localhost'}`).searchParams;
     const botName = qp.get('bot') || undefined;
     try {
+      // 2026-06-17: use bot_id (uuid) with name->bot_id subquery instead of deprecated agent_id.
       let query = `SELECT id, subject, subject_normalized, type, polarity, confidence,
                hit_count, last_hit_at, LEFT(content,200) AS preview, created_at
         FROM memories WHERE invalidated_at IS NULL AND subject_normalized IS NOT NULL`;
       const params: any[] = [];
-      if (botName) { query += ` AND agent_id = $1`; params.push(botName); }
+      if (botName) {
+        query += ` AND bot_id = (SELECT bot_id FROM bot_configs WHERE name = $1 LIMIT 1)`;
+        params.push(botName);
+      }
       query += ` ORDER BY hit_count DESC, confidence DESC LIMIT 50`;
       const { rows } = await pool.query(query, params);
       jsonResponse(res, 200, { memories: rows });
@@ -292,10 +296,11 @@ export async function handleBotRoutes(
   // GET /api/memories/stats — aggregate per type per bot
   if (method === "GET" && url.split("?")[0] === "/api/memories/stats") {
     try {
+      // 2026-06-17: use bot_id (uuid FK) instead of the deprecated agent_id (text).
       const { rows } = await pool.query(
-        `SELECT COALESCE(bc.name, m.agent_id) AS bot, m.type, COUNT(*) AS cnt,
+        `SELECT COALESCE(bc.name, m.bot_id::text) AS bot, m.type, COUNT(*) AS cnt,
                 ROUND(AVG(m.confidence)::numeric,2) AS avg_conf, SUM(m.hit_count) AS total_hits
-           FROM memories m LEFT JOIN bot_configs bc ON bc.bot_id::text = m.agent_id
+           FROM memories m LEFT JOIN bot_configs bc ON bc.bot_id = m.bot_id
           WHERE m.invalidated_at IS NULL AND m.subject_normalized IS NOT NULL
           GROUP BY 1,2 ORDER BY 3 DESC`
       );

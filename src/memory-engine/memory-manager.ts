@@ -17,7 +17,7 @@ export class MemoryManager {
     this.retriever = new VectorRetriever(storage, embedder);
   }
 
-  async store(content: string, userId: string, tenantId: string, options?: { layer?: MemoryLayer; agentId?: string; importance?: number }): Promise<string> {
+  async store(content: string, userId: string, tenantId: string, options?: { layer?: MemoryLayer; botId?: string; importance?: number }): Promise<string> {
     let embedding: number[] | undefined;
     try {
       [embedding] = await this.embedder.embedBatch([content]);
@@ -28,7 +28,7 @@ export class MemoryManager {
       content,
       layer: options?.layer ?? MemoryLayer.USER,
       userId,
-      agentId: options?.agentId,
+      botId: options?.botId,
       tenantId,
       importance: options?.importance ?? 0.5,
       accessCount: 0,
