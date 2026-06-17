@@ -1,6 +1,7 @@
 /**
  * MemoryWriter — v1 (RAG §3.3 hard dedup by subject)
- * Hard-dedup by (agent_id, subject_normalized) — bump hit_count on hit.
+ * Hard-dedup by (bot_id, subject_normalized) — bump hit_count on hit.
+ * (migrated 2026-06-17 from agent_id text -> bot_id uuid)
  */
 
 import type { MemoryClient } from '../memory/memory-client.js';
@@ -11,6 +12,9 @@ import { SubjectNormalizer } from './subject-normalizer.js';
 import { MemoryExtractor } from './memory-extractor.js';
 import { pool } from '../db/index.js';
 
+// DEPRECATION 2026-06-17: agent_id (text) is deprecated. Use bot_id (uuid FK to bot_configs.bot_id).
+// All write paths below now write to bot_id. The agent_id column is left in place for read-only
+// backward compat and will be dropped in a future migration. Do NOT use agent_id in new code.
 const RATE_LIMIT_MS = 10 * 60 * 1000; // legacy 10-min rate limit (kept for backward compat)
 const MAX_CACHE_SIZE = 100;
 const WINDOW_TOKENS = 500; // v2.4: trigger extraction when buffer >= 2000 tokens
@@ -73,7 +77,7 @@ export class MemoryWriter {
   }
 
   /**
-   * v1: hard dedup by (agent_id, subject_normalized).
+   * v1: hard dedup by (bot_id, subject_normalized).
    * Returns: 'merged' (bumped existing), 'inserted' (new), or 'skipped' (failed).
    */
   private async upsertMemory(
@@ -88,7 +92,7 @@ export class MemoryWriter {
       // Check existing
       const { rows } = await pool.query(
         `SELECT id, hit_count, confidence FROM memories
-          WHERE agent_id = $1 AND subject_normalized = $2
+          WHERE bot_id = $1::uuid AND subject_normalized = $2
             AND invalidated_at IS NULL
           ORDER BY created_at DESC LIMIT 1`,
         [agentId, subjectNormalized],
@@ -116,9 +120,9 @@ export class MemoryWriter {
         [embedding] = await embedder.embedBatch([content]);
       } catch {}
       await pool.query(
-        `INSERT INTO memories (id, content, layer, user_id, agent_id, tenant_id, importance,
+        `INSERT INTO memories (id, content, layer, user_id, bot_id, tenant_id, importance,
           embedding, metadata_json, subject, subject_normalized, confidence, hit_count, type)
-         VALUES (gen_random_uuid()::text, $1, 1, $2, $3, 'default', $4,
+         VALUES (gen_random_uuid()::text, $1, 1, $2, $3::uuid, 'default', $4,
           $5::vector, $6::jsonb, $7, $8, $9, 0, 'event')`,
         [content, metadata.userId ?? 'anonymous', agentId, confidence,
           embedding ? '[' + embedding.join(',') + ']' : null,
@@ -168,11 +172,15 @@ export class MemoryWriter {
         return; // not yet, keep accumulating
       }
       // v2.5: run LLM extraction on the window snapshot
+      // P1-fix 2026-06-17: track whether LLM path ran without exception. If yes, skip legacy v1 path below
+      // (which used to inject raw text as "subject", creating 25% garbage in memories table).
       let candidates: any[] = [];
+      let llmSucceeded = false;
       try {
         const agentIdFinal = agentId; // bot_id already resolved
         const windowText = buf.messages;
         candidates = await this.extractor.extract(windowText, agentIdFinal, chatId, buf.lastWindowIdx + 1);
+        llmSucceeded = true;
         // Write each candidate as a structured memory
         for (const cand of candidates) {
           try {
@@ -182,9 +190,9 @@ export class MemoryWriter {
               [embedding] = await embedder.embedBatch([cand.content]);
             } catch {}
             await pool.query(
-              `INSERT INTO memories (id, content, layer, user_id, agent_id, tenant_id, importance,
+              `INSERT INTO memories (id, content, layer, user_id, bot_id, tenant_id, importance,
                 embedding, metadata_json, subject, subject_normalized, confidence, hit_count, type, polarity)
-               VALUES (gen_random_uuid()::text, $1, 1, $2, $3, 'default', $4,
+               VALUES (gen_random_uuid()::text, $1, 1, $2, $3::uuid, 'default', $4,
                 $5::vector, $6::jsonb, $7, $8, $9, 0, $10, $11)`,
               [cand.content, metadata.userId ?? 'anonymous', agentIdFinal, cand.confidence,
                 embedding ? '[' + embedding.join(',') + ']' : null,
@@ -234,13 +242,20 @@ export class MemoryWriter {
       }
 
       // 2) v1: hard-dedup into memories (RAG §3.3)
-      const { subject, normalized, confidence } = await this.extractSubject(userMessage, agentId);
-      await this.upsertMemory(agentId, subject, normalized, content, confidence, {
-        chatId: metadata.chatId,
-        userId: metadata.userId,
-      });
-
-      this.logger.debug({ botName, chatId: metadata.chatId, subject: normalized }, 'Memory recorded (v1)');
+      // P1-fix 2026-06-17: skip when LLM extraction already produced candidates.
+      // LLM returns 0 candidates only when content is "not worth remembering" — legacy path
+      // would just inject raw text as a low-quality event (conf 0.5), polluting the table.
+      if (llmSucceeded) {
+        this.logger.debug({ botName, chatId: metadata.chatId, candidateCount: candidates.length },
+          'LLM path ok, skipped legacy v1 extraction');
+      } else {
+        const { subject, normalized, confidence } = await this.extractSubject(userMessage, agentId);
+        await this.upsertMemory(agentId, subject, normalized, content, confidence, {
+          chatId: metadata.chatId,
+          userId: metadata.userId,
+        });
+        this.logger.debug({ botName, chatId: metadata.chatId, subject: normalized }, 'Memory recorded (v1 fallback)');
+      }
     } catch (err: any) {
       this.logger.warn({ err: err?.message, botName }, 'Failed to record conversation memory');
     }

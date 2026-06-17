@@ -106,12 +106,14 @@ export async function fetchKnowledgeContext(
 
   const results = await deps.memoryClient.searchInFolders(searchQuery, folderUuids, 20);
   // v22.3: also search structured memories
+  // P0-fix 2026-06-17: use memories.bot_id (uuid FK to bot_configs.bot_id), not the broken agent_id (text) column.
   let memoryResults: any[] = [];
   try {
     const { rows: memRows } = await pool.query(
       `SELECT id, type, subject, subject_normalized, confidence, polarity, hit_count,
               LEFT(content, 300) AS snippet, last_hit_at
-         FROM memories WHERE invalidated_at IS NULL AND agent_id = $1
+         FROM memories WHERE invalidated_at IS NULL
+          AND bot_id = (SELECT bot_id FROM bot_configs WHERE name = $1 LIMIT 1)
           AND (content ILIKE '%' || $2 || '%' OR subject ILIKE '%' || $2 || '%')
         ORDER BY hit_count DESC, confidence DESC LIMIT 8`,
       [deps.config.name, Array.from(searchQuery).slice(0, 50).join('')],
