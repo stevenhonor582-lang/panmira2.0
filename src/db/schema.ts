@@ -7,6 +7,7 @@ import {
   boolean,
   integer,
   real,
+  doublePrecision,
   timestamp,
   jsonb,
   pgEnum,
@@ -65,6 +66,8 @@ export const users = pgTable('users', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   passwordHash: varchar('password_hash', { length: 255 }),
+
+  avatarUrl: text('avatar_url'),
 });
 
 export const agents = pgTable('agents', {
@@ -84,6 +87,8 @@ export const agents = pgTable('agents', {
   isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  displayName: text('display_name'),
+  version: integer('version').default(1),
 });
 
 export const memories = pgTable('memories', {
@@ -100,6 +105,16 @@ export const memories = pgTable('memories', {
   embedding: vectorColumn('embedding', 1024),
   metadataJson: jsonb('metadata_json'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+
+  type: text('type').default('event'),
+  polarity: text('polarity').default('affirm'),
+  confidence: doublePrecision('confidence').default(0.5).notNull(),
+  hitCount: integer('hit_count').default(0),
+  lastHitAt: timestamp('last_hit_at', { withTimezone: true }),
+  supersededBy: text('superseded_by'),
+  invalidatedAt: timestamp('invalidated_at', { withTimezone: true }),
+  subject: text('subject'),
+  subjectNormalized: text('subject_normalized'),
 });
 
 export const auditLogs = pgTable('audit_logs', {
@@ -184,6 +199,10 @@ export const skills = pgTable('skills', {
   referencesTar: byteaColumn('references_tar'),
   publishedAt: varchar('published_at', { length: 100 }).notNull(),
   updatedAt: varchar('updated_at', { length: 100 }).notNull(),
+
+  scope: text('scope').default('global'),
+  ownerBot: text('owner_bot'),
+  enabledByDefault: boolean('enabled_by_default').default(false),
 });
 
 // ── bot_skill_bindings ───────────────────────────────────────────────────────
@@ -534,4 +553,66 @@ export const circuitBreakerStates = pgTable('circuit_breaker_states', {
   lastFailure: bigint('last_failure', { mode: 'number' }).notNull().default(0),
   halfOpenSuccesses: integer('half_open_successes').notNull().default(0),
   updatedAt: bigint('updated_at', { mode: 'number' }).notNull().default(0),
+});
+
+
+// ── clarification_sessions ────────────────────────────────────────────────
+
+export const clarificationSessions = pgTable('clarification_sessions', {
+  id: serial('id').primaryKey(),
+  userId: text('user_id').notNull(),
+  botId: text('bot_id').notNull(),
+  targetSkill: text('target_skill').notNull(),
+  payload: jsonb('payload').default({}),
+  missingFields: jsonb('missing_fields').default([]),
+  status: text('status').notNull().default('pending'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ── extracted_memories ────────────────────────────────────────────────────
+
+export const extractedMemories = pgTable('extracted_memories', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  runId: text('run_id').notNull().default('auto'),
+  type: text('type').notNull(),
+  subject: text('subject').notNull(),
+  subjectNormalized: text('subject_normalized').notNull(),
+  payload: jsonb('payload').notNull().default({}),
+  sourceQuote: text('source_quote'),
+  confidence: real('confidence').notNull().default(0.5),
+  polarity: text('polarity').default('affirm'),
+  memoryId: text('memory_id'),
+  lifecycleState: text('lifecycle_state').notNull().default('active'),
+  supersededBy: uuid('superseded_by'),
+  invalidatedAt: timestamp('invalidated_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ── extraction_audit_log ──────────────────────────────────────────────────
+
+export const extractionAuditLog = pgTable('extraction_audit_log', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
+  runId: text('run_id').default('auto'),
+  windowIdx: integer('window_idx'),
+  step: text('step').notNull(),
+  eventType: text('event_type').notNull(),
+  subject: text('subject'),
+  confidence: real('confidence'),
+  payload: jsonb('payload').default({}),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+// ── memories_eval ─────────────────────────────────────────────────────────
+
+export const memoriesEval = pgTable('memories_eval', {
+  id: serial('id').primaryKey(),
+  runAt: timestamp('run_at', { withTimezone: true }).defaultNow(),
+  recall5Avg: doublePrecision('recall5_avg'),
+  recall10Avg: doublePrecision('recall10_avg'),
+  mrrAvg: doublePrecision('mrr_avg'),
+  queryCount: integer('query_count'),
+  details: jsonb('details'),
 });
