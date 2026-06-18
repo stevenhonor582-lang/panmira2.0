@@ -71,6 +71,13 @@ export class BotConfigStore {
     for (const [k, v] of Object.entries(merged)) {
       if (v === undefined || v === null || v === '') delete merged[k];
     }
+    // Phase 2: when a bot is bound to a provider, strip duplicated model/
+    // baseUrl fields so the runtime always reads from provider_configs.
+    // (apiKey was moved to provider_configs, never stored in bot_configs.)
+    if (merged.providerId) {
+      delete merged.model;
+      delete merged.baseUrl;
+    }
 
     const result = await pool.query(
       'UPDATE bot_configs SET config_json = $1, updated_at = now() WHERE name = $2 RETURNING *',
@@ -166,7 +173,7 @@ export class BotConfigStore {
     const secretMap: Record<string, string> = {
       feishuAppSecret: 'feishu_app_secret',
       openaiApiKey: 'openai_api_key',
-      apiKey: 'api_key',
+      // apiKey removed: belongs to provider_configs (Phase 2 refactor).
       telegramBotToken: 'telegram_bot_token',
       wechatBotToken: 'wechat_bot_token',
     };

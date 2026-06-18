@@ -11,8 +11,12 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: '../dist/web',
-    emptyOutDir: false,
+    // Output to a staging dir first, then copy to dist/web/ via the build
+    // script (which also runs tsc, so dist/web/ already has the backend's
+    // ws-server.js etc.). This avoids vite deleting backend files when
+    // emptyOutDir is true, and avoids stale chunks accumulating.
+    outDir: '../dist/web-staging',
+    emptyOutDir: true,
     rollupOptions: {
       output: {
         manualChunks: {

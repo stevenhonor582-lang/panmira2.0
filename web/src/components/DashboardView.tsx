@@ -463,12 +463,21 @@ export function DashboardView() {
             </div>
             {showMemories && memoryStats.length > 0 && (
               <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {memoryStats.map((r:any,i:number) => (
-                  <span key={i} style={{ padding: '2px 8px', fontSize: 11, borderRadius: 10,
-                    background: {fact:'#dbeafe',event:'#fef3c7',preference:'#d1fae5',entity:'#fce7f3',decision:'#e0e7ff'}[r.type]||'#f3f4f6',
-                    color: {fact:'#1e40af',event:'#92400e',preference:'#065f46',entity:'#9d174d',decision:'#3730a3'}[r.type]||'#374151'
-                  }}>[{r.type}] {r.bot}: {r.cnt}条</span>
-                ))}
+                {memoryStats.map((r:any,i:number) => {
+                  const palette: Record<string, {bg:string,fg:string}> = {
+                    fact:      {bg:'#dbeafe',fg:'#1e40af'},
+                    event:     {bg:'#fef3c7',fg:'#92400e'},
+                    preference:{bg:'#d1fae5',fg:'#065f46'},
+                    entity:    {bg:'#fce7f3',fg:'#9d174d'},
+                    decision:  {bg:'#e0e7ff',fg:'#3730a3'},
+                  };
+                  const c = palette[r.type] || {bg:'#f3f4f6',fg:'#374151'};
+                  return (
+                    <span key={i} style={{ padding: '2px 8px', fontSize: 11, borderRadius: 10,
+                      background: c.bg, color: c.fg
+                    }}>[{r.type}] {r.bot}: {r.cnt}条</span>
+                  );
+                })}
               </div>
             )}
           </div>

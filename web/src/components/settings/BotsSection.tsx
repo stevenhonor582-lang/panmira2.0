@@ -171,11 +171,23 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
     setBotEngine(engine);
     setBotModel(cfg.model || bot.model || '');
 
-    // 4. Match AI provider by baseUrl (most reliable) then model
+    // 4. Match AI provider — prefer explicit providerId (handles duplicate
+    // model+baseUrl like MiniMax vs MiniMax-luoxuan), then baseUrl, then model.
     const botBaseUrl = cfg.baseUrl || bot.claudeBaseUrl || bot.openaiCompat?.baseUrl;
     const botApiKey = cfg.apiKey || '';
     let matchedProviderId = '';
-    if (botBaseUrl) {
+    if (cfg.providerId) {
+      const exact = aiProviders.find((p) => p.id === cfg.providerId);
+      if (exact) matchedProviderId = exact.id;
+    }
+    if (!matchedProviderId && botBaseUrl && cfg.model) {
+      // Disambiguate by both baseUrl AND model — only match providers that
+      // match on BOTH fields. (Previously matched on either, causing two
+      // providers with identical model+baseUrl to fight for selection.)
+      const match = aiProviders.find((p) => p.baseUrl === botBaseUrl && p.model === cfg.model);
+      if (match) matchedProviderId = match.id;
+    }
+    if (!matchedProviderId && botBaseUrl) {
       const match = aiProviders.find((p) => p.baseUrl === botBaseUrl);
       if (match) matchedProviderId = match.id;
     }
@@ -366,8 +378,9 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
       if (Object.keys(openaiCompat).length > 0) body.openaiCompat = openaiCompat;
     }
     if (botEngine === 'claude') {
-      if (oaiBaseUrl.trim()) body.baseUrl = oaiBaseUrl.trim();
-      if (oaiApiKey.trim()) body.apiKey = oaiApiKey.trim();
+      // Phase 2: bot only references the provider. model/apiKey/baseUrl are
+      // resolved at runtime from provider_configs — no need to copy them here.
+      if (selectedProviderId) body.providerId = selectedProviderId;
     }
     if (botPlatform === 'feishu') {
       if (feishuAppId.trim()) body.feishuAppId = feishuAppId.trim();
@@ -534,17 +547,31 @@ export function BotsSection({ agents: propAgents }: BotsSectionProps) {
           {aiProviders.length === 0 ? (
             <div className={styles.formHint}>{t('bots.noProviderConfigured')}</div>
           ) : (
+            <>
             <label className={styles.field}>
               <span className={styles.label}>{t('bots.selectProvider')}</span>
               <select className={styles.input} value={selectedProviderId} onChange={(e) => handleProviderChange(e.target.value)}>
                 <option value="">{t('bots.noUse')}</option>
-                {aiProviders.map((p) => (
+                {aiProviders.map((p) => {
+                  // Use first 8 chars of provider id as a short fingerprint so
+                  // users can distinguish providers with identical model+baseUrl
+                  // (e.g. MiniMax vs MiniMax-luoxuan — both api.minimaxi.com/MiniMax-M3).
+                  const hint = ` · #${p.id.slice(0, 8)}`;
+                  return (
                   <option key={p.id} value={p.id}>
-                    {p.name} · {p.model || t('bots.modelNotSet')}{p.id === defaultProviderId ? t('bots.defaultLabel') : ''}
+                    {p.name} · {p.model || t('bots.modelNotSet')}{hint}{p.id === defaultProviderId ? t('bots.defaultLabel') : ''}
                   </option>
-                ))}
+                );
+                })}
               </select>
             </label>
+            {/* Phase 2: read-only display of resolved provider config */}
+            {selectedProvider && (
+              <div className={styles.formHint} style={{ marginTop: '-8px', marginBottom: '8px' }}>
+                {t('bots.providerLockedHint', { model: selectedProvider.model, baseUrl: selectedProvider.baseUrl })}
+              </div>
+            )}
+            </>
           )}
           {(selectedProvider || (botModel && botEngine)) && (
             <div className={styles.formHint} style={{ color: 'var(--accent)' }}>

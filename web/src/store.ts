@@ -801,7 +801,9 @@ function mapServerProvider(p: { id: string; name: string; baseUrl: string; model
     id: p.id,
     name: p.name,
     baseUrl: p.baseUrl,
-    apiKey: p.apiKeyEncrypted || '',
+    // Placeholder only — server never returns plaintext key.
+    // handleSave() in ProvidersSection skips update if apiKey starts with ****.
+    apiKey: p.apiKeyEncrypted ? '****' : '',
     model: p.model,
     type: (p.type === 'embedding' ? 'embedding' : 'LLM') as import('./utils/models').AIProvider['type'],
   };

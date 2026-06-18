@@ -543,5 +543,8 @@
   "agents.ironLawsPlaceholder": "e.g. Never modify production data without confirmation",
   "agents.boundary": "Boundary",
   "agents.orchestration": "Orchestration",
-  "agents.invalidJson": "Invalid JSON in {field}"
+  "agents.invalidJson": "Invalid JSON in {field}",
+  "bots": {
+    "providerLockedHint": "🔒 Provider-controlled: model={{model}}, baseUrl={{baseUrl}}. Edit in Settings → AI Providers."
+  }
 }

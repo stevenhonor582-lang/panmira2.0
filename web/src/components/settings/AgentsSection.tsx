@@ -26,6 +26,8 @@ export interface AgentTemplate {
   ironLaws?: string[];
   defaultEngine?: string | null;
   defaultModel?: string | null;
+  /** True if this agent came from /api/templates (read-only template source). */
+  isTemplate?: boolean;
   complexityLevel?: string;
   createdAt: string;
   updatedAt: string;

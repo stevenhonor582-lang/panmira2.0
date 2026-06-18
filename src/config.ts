@@ -244,6 +244,9 @@ interface EngineJsonFields {
   openaiCompat?: OpenAICompatConfig;
   /** Knowledge base folder IDs for automatic context injection. */
   knowledgeFolders?: string[];
+  /** Phase 2: reference to provider_configs row. Canonical source for
+   *  model/apiKey/baseUrl. When present, entry.model/baseUrl are ignored. */
+  providerId?: string;
 }
 
 export interface FeishuBotJsonEntry extends EngineJsonFields {
@@ -318,10 +321,31 @@ function escapeRegex(str: string): string {
   return str.replace(/[.*+?^\${}()|[\]\\]/g, '\\$&');
 }
 
-export function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
+/** Phase 2: resolve a provider by id and decrypt its apiKey.
+ *  Returns null when no providerId, or provider missing — callers should
+ *  fall back to entry fields / env vars in that case. */
+async function resolveProvider(
+  providerId: string | undefined,
+  providerConfigStore?: ProviderLookup | null,
+): Promise<{ model: string; baseUrl: string; apiKey: string | null } | null> {
+  if (!providerId || !providerConfigStore) return null;
+  const p = await providerConfigStore.findById(providerId);
+  if (!p) return null;
+  const apiKey = await providerConfigStore.getDecryptedApiKey(providerId);
+  return { model: p.model, baseUrl: p.baseUrl, apiKey };
+}
+
+type ProviderLookup = { findById: (id: string) => Promise<{ model: string; baseUrl: string; apiKeyEncrypted?: string | null } | null>; getDecryptedApiKey: (id: string) => Promise<string | null> } | null;
+
+export async function feishuBotFromJson(
+  entry: FeishuBotJsonEntry,
+  providerConfigStore?: ProviderLookup | null,
+): Promise<BotConfig> {
   // Auto-correct working directory: each bot must have its own isolated directory
   entry = { ...entry, defaultWorkingDirectory: ensureIsolatedWorkspace(entry.name, entry.defaultWorkingDirectory) };
   const codex = buildCodexConfig(entry.codex);
+  // Phase 2: resolve provider (canonical source) when providerId is present.
+  const provider = await resolveProvider(entry.providerId, providerConfigStore);
   return {
     name: entry.name,
     ...(entry.description ? { description: entry.description } : {}),
@@ -336,7 +360,7 @@ export function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
     ...(entry.kimi ? { kimi: entry.kimi } : {}),
     ...(codex ? { codex } : {}),
     ...(() => {
-      const o = buildOpenaiCompatConfig(entry);
+      const o = buildOpenaiCompatConfig(entry, provider);
       return o ? { openaiCompat: o } : {};
     })(),
     feishu: {
@@ -347,7 +371,7 @@ export function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
     ...(entry.agentId ? { agentId: entry.agentId } : {}),
     ...(entry.knowledgeFolders?.length ? { knowledgeFolders: entry.knowledgeFolders } : {}),
     ...(entry.permissions ? { permissions: entry.permissions } : {}),
-    claude: buildClaudeConfig(entry),
+    claude: buildClaudeConfig(entry, provider),
   };
 }
 
@@ -372,8 +396,12 @@ export interface TelegramBotJsonEntry extends EngineJsonFields {
   permissions?: PermissionConfig;
 }
 
-export function telegramBotFromJson(entry: TelegramBotJsonEntry): TelegramBotConfig {
+export async function telegramBotFromJson(
+  entry: TelegramBotJsonEntry,
+  providerConfigStore?: ProviderLookup | null,
+): Promise<TelegramBotConfig> {
   const codex = buildCodexConfig(entry.codex);
+  const provider = await resolveProvider(entry.providerId, providerConfigStore);
   return {
     name: entry.name,
     ...(entry.description ? { description: entry.description } : {}),
@@ -386,7 +414,7 @@ export function telegramBotFromJson(entry: TelegramBotJsonEntry): TelegramBotCon
     ...(entry.kimi ? { kimi: entry.kimi } : {}),
     ...(codex ? { codex } : {}),
     ...(() => {
-      const o = buildOpenaiCompatConfig(entry);
+      const o = buildOpenaiCompatConfig(entry, provider);
       return o ? { openaiCompat: o } : {};
     })(),
     telegram: {
@@ -395,7 +423,7 @@ export function telegramBotFromJson(entry: TelegramBotJsonEntry): TelegramBotCon
     ...(entry.systemPrompt ? { systemPrompt: entry.systemPrompt } : {}),
     ...(entry.agentId ? { agentId: entry.agentId } : {}),
     ...(entry.permissions ? { permissions: entry.permissions } : {}),
-    claude: buildClaudeConfig(entry),
+    claude: buildClaudeConfig(entry, provider),
   };
 }
 
@@ -418,8 +446,12 @@ export interface WebBotJsonEntry extends EngineJsonFields {
   permissions?: PermissionConfig;
 }
 
-export function webBotFromJson(entry: WebBotJsonEntry): BotConfigBase {
+export async function webBotFromJson(
+  entry: WebBotJsonEntry,
+  providerConfigStore?: ProviderLookup | null,
+): Promise<BotConfigBase> {
   const codex = buildCodexConfig(entry.codex);
+  const provider = await resolveProvider(entry.providerId, providerConfigStore);
   return {
     name: entry.name,
     ...(entry.description ? { description: entry.description } : {}),
@@ -432,14 +464,14 @@ export function webBotFromJson(entry: WebBotJsonEntry): BotConfigBase {
     ...(entry.kimi ? { kimi: entry.kimi } : {}),
     ...(codex ? { codex } : {}),
     ...(() => {
-      const o = buildOpenaiCompatConfig(entry);
+      const o = buildOpenaiCompatConfig(entry, provider);
       return o ? { openaiCompat: o } : {};
     })(),
     ...(entry.systemPrompt ? { systemPrompt: entry.systemPrompt } : {}),
     ...(entry.agentId ? { agentId: entry.agentId } : {}),
     ...(entry.knowledgeFolders?.length ? { knowledgeFolders: entry.knowledgeFolders } : {}),
     ...(entry.permissions ? { permissions: entry.permissions } : {}),
-    claude: buildClaudeConfig(entry),
+    claude: buildClaudeConfig(entry, provider),
   };
 }
 
@@ -460,8 +492,12 @@ export interface WechatBotJsonEntry extends EngineJsonFields {
   permissions?: PermissionConfig;
 }
 
-export function wechatBotFromJson(entry: WechatBotJsonEntry): WechatBotConfig {
+export async function wechatBotFromJson(
+  entry: WechatBotJsonEntry,
+  providerConfigStore?: ProviderLookup | null,
+): Promise<WechatBotConfig> {
   const codex = buildCodexConfig(entry.codex);
+  const provider = await resolveProvider(entry.providerId, providerConfigStore);
   return {
     name: entry.name,
     ...(entry.description ? { description: entry.description } : {}),
@@ -469,7 +505,7 @@ export function wechatBotFromJson(entry: WechatBotJsonEntry): WechatBotConfig {
     ...(entry.kimi ? { kimi: entry.kimi } : {}),
     ...(codex ? { codex } : {}),
     ...(() => {
-      const o = buildOpenaiCompatConfig(entry);
+      const o = buildOpenaiCompatConfig(entry, provider);
       return o ? { openaiCompat: o } : {};
     })(),
     wechat: {
@@ -479,7 +515,7 @@ export function wechatBotFromJson(entry: WechatBotJsonEntry): WechatBotConfig {
     ...(entry.systemPrompt ? { systemPrompt: entry.systemPrompt } : {}),
     ...(entry.agentId ? { agentId: entry.agentId } : {}),
     ...(entry.permissions ? { permissions: entry.permissions } : {}),
-    claude: buildClaudeConfig(entry),
+    claude: buildClaudeConfig(entry, provider),
   };
 }
 
@@ -494,16 +530,22 @@ function buildClaudeConfig(entry: {
   baseUrl?: string;
   outputsBaseDir?: string;
   downloadsDir?: string;
-}): BotConfigBase['claude'] {
+}, provider?: { model: string; baseUrl: string; apiKey: string | null } | null): BotConfigBase['claude'] {
+  // Phase 2: prefer provider record (canonical source). Fall back to entry
+  // fields (legacy data) then env vars. This way a single provider change
+  // updates every bot that references it.
+  const model = provider?.model || entry.model || process.env.CLAUDE_MODEL || process.env.ANTHROPIC_MODEL || 'claude-opus-4-7';
+  const baseUrl = provider?.baseUrl || entry.baseUrl || undefined;
+  const apiKey = provider?.apiKey || entry.apiKey || undefined;
   return {
     defaultWorkingDirectory: expandUserPath(entry.defaultWorkingDirectory),
     maxTurns: entry.maxTurns ?? (process.env.CLAUDE_MAX_TURNS ? parseInt(process.env.CLAUDE_MAX_TURNS, 10) : undefined),
     maxBudgetUsd:
       entry.maxBudgetUsd ??
       (process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined),
-    model: entry.model || process.env.CLAUDE_MODEL || process.env.ANTHROPIC_MODEL || 'claude-opus-4-7',
-    apiKey: entry.apiKey || undefined,
-    baseUrl: entry.baseUrl || undefined,
+    model,
+    apiKey,
+    baseUrl,
     outputsBaseDir:
       entry.outputsBaseDir ||
       process.env.OUTPUTS_BASE_DIR ||
@@ -520,8 +562,12 @@ function buildOpenaiCompatConfig(entry: {
   apiKey?: string;
   baseUrl?: string;
   model?: string;
-}): OpenAICompatConfig | undefined {
+}, provider?: { model: string; baseUrl: string; apiKey: string | null } | null): OpenAICompatConfig | undefined {
   if (entry.openaiCompat) return entry.openaiCompat;
+  // Phase 2: provider takes precedence
+  if (provider) {
+    return { baseUrl: provider.baseUrl, apiKey: provider.apiKey || '', model: provider.model };
+  }
   if (!entry.baseUrl || !entry.model) return undefined;
   return {
     baseUrl: entry.baseUrl,
@@ -633,12 +679,23 @@ export interface PeerJsonEntry {
 }
 
 // All configuration is in PostgreSQL. Use loadAppConfigFromDB().
-export async function loadAppConfigFromDB(): Promise<{
+export async function loadAppConfigFromDB(providerConfigStore?: import('./db/provider-config-store.js').ProviderConfigStore | null): Promise<{
   config: AppConfig;
   botConfigStore: import('./db/bot-config-store.js').BotConfigStore;
 }> {
   const { BotConfigStore } = await import('./db/bot-config-store.js');
   const store = new BotConfigStore();
+  // Phase 2: if caller didn't pass a providerConfigStore, try to load one
+  if (!providerConfigStore) {
+    try {
+      const { ProviderConfigStore } = await import('./db/provider-config-store.js');
+      providerConfigStore = new ProviderConfigStore();
+      await providerConfigStore.init();
+    } catch (err) {
+      // Best-effort: legacy path (env-var fallback) still works
+      console.warn('[config] could not init ProviderConfigStore:', (err as Error).message);
+    }
+  }
 
   const rows = await store.list();
   if (rows.length === 0) {
@@ -690,21 +747,20 @@ export async function loadAppConfigFromDB(): Promise<{
     const secrets = await store.getAllSecrets(row.name);
     const entry = { ...row.configJson };
 
-    // Inject secrets back into config
+    // Inject platform secrets back into config (api_key removed in Phase 2 — now lives in provider_configs)
     if (secrets.feishu_app_secret) (entry as any).feishuAppSecret = secrets.feishu_app_secret;
     if (secrets.openai_api_key) (entry as any).openaiApiKey = secrets.openai_api_key;
-    if (secrets.api_key) (entry as any).apiKey = secrets.api_key;
     if (secrets.telegram_bot_token) (entry as any).telegramBotToken = secrets.telegram_bot_token;
     if (secrets.wechat_bot_token) (entry as any).wechatBotToken = secrets.wechat_bot_token;
 
     if (row.platform === 'feishu') {
-      feishuBots.push(feishuBotFromJson(entry as unknown as FeishuBotJsonEntry));
+      feishuBots.push(await feishuBotFromJson(entry as unknown as FeishuBotJsonEntry, providerConfigStore));
     } else if (row.platform === 'telegram') {
-      telegramBots.push(telegramBotFromJson(entry as unknown as TelegramBotJsonEntry));
+      telegramBots.push(await telegramBotFromJson(entry as unknown as TelegramBotJsonEntry, providerConfigStore));
     } else if (row.platform === 'web') {
-      webBots.push(webBotFromJson(entry as unknown as WebBotJsonEntry));
+      webBots.push(await webBotFromJson(entry as unknown as WebBotJsonEntry, providerConfigStore));
     } else if (row.platform === 'wechat') {
-      wechatBots.push(wechatBotFromJson(entry as unknown as WechatBotJsonEntry));
+      wechatBots.push(await wechatBotFromJson(entry as unknown as WechatBotJsonEntry, providerConfigStore));
     }
   }
 

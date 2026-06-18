@@ -215,7 +215,7 @@ export async function handleBotRoutes(
 
       let activated = false;
       if (platform === 'web') {
-        const config = webBotFromJson(entry as any);
+        const config = await webBotFromJson(entry as any, ctx.providerConfigStore ?? null);
         const sender = new NullSender();
         const bridge = new MessageBridge(
           config,
@@ -232,7 +232,7 @@ export async function handleBotRoutes(
         ws.handle?.broadcastBotList();
       } else if (platform === 'feishu') {
         try {
-          const config = feishuBotFromJson(entry as any);
+          const config = await feishuBotFromJson(entry as any, ctx.providerConfigStore ?? null);
           const handle = await startFeishuBot(
             config,
             logger,
@@ -352,7 +352,7 @@ export async function handleBotRoutes(
 
     try {
       if (row.platform === 'feishu') {
-        const config = feishuBotFromJson(merged as any);
+        const config = await feishuBotFromJson(merged as any, ctx.providerConfigStore ?? null);
         const handle = await startFeishuBot(
           config,
           logger,
@@ -370,7 +370,7 @@ export async function handleBotRoutes(
         });
         wireActivityEvents(name, ctx);
       } else if (row.platform === 'web') {
-        const config = webBotFromJson(merged as any);
+        const config = await webBotFromJson(merged as any, ctx.providerConfigStore ?? null);
         const sender = new NullSender();
         const bridge = new MessageBridge(
           config,
@@ -424,17 +424,18 @@ export async function handleBotRoutes(
           const merged = { ...row.configJson };
           if (secrets.feishu_app_secret) (merged as any).feishuAppSecret = secrets.feishu_app_secret;
           if (secrets.openai_api_key) (merged as any).openaiApiKey = secrets.openai_api_key;
-          if (secrets.api_key) (merged as any).apiKey = secrets.api_key;
+          // api_key removed from bot_secrets in Phase 2 (now in provider_configs)
           if (secrets.telegram_bot_token) (merged as any).telegramBotToken = secrets.telegram_bot_token;
           if (secrets.wechat_bot_token) (merged as any).wechatBotToken = secrets.wechat_bot_token;
 
           let newConfig: import('../../config.js').BotConfigBase | undefined;
+          // Phase 2: pass providerConfigStore so providerId resolves to provider record
           if (row.platform === 'feishu') {
-            newConfig = feishuBotFromJson(merged as any);
+            newConfig = await feishuBotFromJson(merged as any, ctx.providerConfigStore ?? null);
           } else if (row.platform === 'telegram') {
-            newConfig = telegramBotFromJson(merged as any);
+            newConfig = await telegramBotFromJson(merged as any, ctx.providerConfigStore ?? null);
           } else if (row.platform === 'web') {
-            newConfig = webBotFromJson(merged as any);
+            newConfig = await webBotFromJson(merged as any, ctx.providerConfigStore ?? null);
           }
           if (newConfig) {
             registry.updateConfig(name, newConfig);

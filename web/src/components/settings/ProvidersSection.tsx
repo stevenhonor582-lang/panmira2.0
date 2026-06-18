@@ -61,7 +61,11 @@ export function ProvidersSection() {
       baseUrl: provBaseUrl.trim(),
       model: provModel.trim(),
     };
-    if (provApiKey.trim()) data.apiKey = provApiKey.trim();
+    // Skip apiKey if it's the placeholder returned by mapServerProvider
+    // to avoid overwriting the real encrypted key with the placeholder.
+    if (provApiKey.trim() && provApiKey.trim() !== '****') {
+      data.apiKey = provApiKey.trim();
+    }
     if (provWorkDir.trim()) data.workDir = provWorkDir.trim();
     if (editingProvider) {
       await updateProvider(editingProvider.id, data);

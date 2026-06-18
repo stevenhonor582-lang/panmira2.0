@@ -105,11 +105,16 @@ async function seedDefaultAgents(logger: Logger): Promise<void> {
 }
 
 async function main() {
-  const { config: appConfig, botConfigStore } = await loadAppConfigFromDB();
+  const logger = createLogger(process.env.LOG_LEVEL || 'info');
+  // Phase 2: init ProviderConfigStore first so bot config can resolve providers
+  const { ProviderConfigStore } = await import('./db/provider-config-store.js');
+  const providerConfigStore = new ProviderConfigStore();
+  await providerConfigStore.init();
+
+  const { config: appConfig, botConfigStore } = await loadAppConfigFromDB(providerConfigStore);
   const chatSessionStore = new ChatSessionStore();
   const scheduledTaskStore = new ScheduledTaskStore();
   const discoveredGroupsStore = new DiscoveredGroupStore();
-  const logger = createLogger(appConfig.log.level);
 
   // ── Preflight: validate environment before starting ──
   const preflight = await runPreflight(logger);
