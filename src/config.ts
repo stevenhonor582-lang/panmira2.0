@@ -279,41 +279,52 @@ export interface FeishuBotJsonEntry extends EngineJsonFields {
  * Ensure each bot has its own isolated workspace directory.
  * Prevents accidental sharing when configs are copied between bots.
  *
+ * Canonical layout (since 2026-06-18): each bot gets its own subdirectory
+ * under a single shared `~/workspace/` root.
+ *   bot "海联测试" -> ~/workspace/海联测试/
+ *   bot "sales-1"  -> ~/workspace/sales-1/
+ *   bot "守静"     -> ~/workspace/守静/
+ *
  * Rules:
- * 1. If configured dir matches ~/workspace-{botName}, keep it (correct).
- * 2. If configured dir is the generic ~/workspace (shared by many bots), redirect to own dir.
- * 3. If configured dir belongs to ANOTHER bot (e.g. workspace-foo for bot "bar"), redirect to own dir.
- * 4. Otherwise (custom path, env-specific), keep the configured value.
+ * 1. If configured dir matches ~/workspace/{botName}, keep it (canonical).
+ * 2. If configured dir is the generic ~/workspace (shared by many bots),
+ *    redirect to own subdirectory ~/workspace/{botName}.
+ * 3. If configured dir is a subdirectory of ~/workspace/ (but not the
+ *    canonical one), keep it - bots may legitimately live in deeper paths.
+ * 4. If configured dir is the legacy form ~/workspace-{botName} (v1.0.0
+ *    and earlier generated this automatically), redirect to the canonical
+ *    ~/workspace/{botName}.
+ * 5. Otherwise (custom path, env-specific), keep the configured value.
  */
 function ensureIsolatedWorkspace(botName: string, configuredDir: string): string {
   const expanded = expandUserPath(configuredDir);
-  const expectedDir = path.join(os.homedir(), `workspace-${botName}`);
-  const genericDir = path.join(os.homedir(), 'workspace');
+  const workspaceRoot = path.join(os.homedir(), 'workspace');
+  const expectedDir = path.join(workspaceRoot, botName);
+  // Legacy form: ~/workspace-{botName} (v1.0.0 and earlier default)
+  const legacyPattern = new RegExp(`^${escapeRegex(path.join(os.homedir(), 'workspace-'))}([^/]+)$`);
 
-  // Already correct: matches expected pattern
+  // Canonical: already ~/workspace/{botName} - keep
   if (expanded === expectedDir) return expanded;
 
-  // Generic shared workspace root — must redirect to isolated
-  if (expanded === genericDir) {
+  // Generic shared workspace root - must redirect to isolated subdirectory
+  if (expanded === workspaceRoot) {
     try { fs.mkdirSync(expectedDir, { recursive: true }); } catch {}
     return expectedDir;
   }
 
-  // Subdirectory of workspace (e.g. ~/workspace/botName/) — keep as-is.
-  // Bot subdirectories under shared workspace are the canonical layout.
-  if (expanded.startsWith(genericDir + path.sep)) {
+  // Legacy form ~/workspace-{botName} - redirect to canonical
+  const legacyMatch = expanded.match(legacyPattern);
+  if (legacyMatch) {
+    try { fs.mkdirSync(expectedDir, { recursive: true }); } catch {}
+    return expectedDir;
+  }
+
+  // Subdirectory of ~/workspace/ (e.g. ~/workspace/foo/bar/) - keep as-is.
+  if (expanded.startsWith(workspaceRoot + path.sep)) {
     return expanded;
   }
 
-  // Another bot's workspace-xxx directory — must redirect
-  const workspacePattern = new RegExp(`^${escapeRegex(path.join(os.homedir(), 'workspace-'))}(.+)$`);
-  const match = expanded.match(workspacePattern);
-  if (match && match[1] !== botName) {
-    try { fs.mkdirSync(expectedDir, { recursive: true }); } catch {}
-    return expectedDir;
-  }
-
-  // Custom path — keep as-is
+  // Custom path - keep as-is
   return expanded;
 }
 
