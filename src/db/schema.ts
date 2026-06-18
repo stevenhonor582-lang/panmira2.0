@@ -1,5 +1,6 @@
 import {
   pgTable,
+  uniqueIndex,
   uuid,
   varchar,
   text,
@@ -63,6 +64,7 @@ export const users = pgTable('users', {
   isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  passwordHash: varchar('password_hash', { length: 255 }),
 });
 
 export const agents = pgTable('agents', {
@@ -136,7 +138,9 @@ export const botConfigs = pgTable('bot_configs', {
   botId: uuid('bot_id').defaultRandom(),
   remark: text('remark').default(''),
   displayName: text('display_name'),
-});
+}, (t) => ({
+  nameIdx: uniqueIndex('bot_configs_name_unique').on(t.name),
+}));
 
 // ── bot_secrets ──────────────────────────────────────────────────────────────
 
@@ -147,7 +151,9 @@ export const botSecrets = pgTable('bot_secrets', {
   encryptedValue: text('encrypted_value').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
-});
+}, (t) => ({
+  botKeyIdx: uniqueIndex('bot_secrets_bot_name_key_type_unique').on(t.botName, t.keyType),
+}));
 
 // ── bot_budgets ──────────────────────────────────────────────────────────────
 

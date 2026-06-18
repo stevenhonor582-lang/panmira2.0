@@ -81,7 +81,7 @@ export async function runPreflight(logger: Logger): Promise<PreflightResult> {
     if (botCount > 0) {
       checks.push({ name: 'Config:Bots', status: 'ok', message: `${botCount} bots in database` });
     } else {
-      checks.push({ name: 'Config:Bots', status: 'fail', message: 'No bots configured. Use Web UI: /web/settings' });
+      checks.push({ name: 'Config:Bots', status: 'warn', message: 'No bots configured. Use Web UI: /web/settings' });
     }
   } catch (err: any) {
     checks.push({ name: 'Config:Bots', status: 'fail', message: `DB query failed: ${err.message}` });
