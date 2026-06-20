@@ -69,3 +69,6 @@ src/**/*.d.ts
 src/**/*.d.ts.map
 src/**/*.js.map
 .cache/
+
+# Local DB backups (DO NOT COMMIT)
+.backup/
