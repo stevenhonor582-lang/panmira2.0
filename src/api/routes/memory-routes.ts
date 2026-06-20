@@ -28,8 +28,14 @@ export const handleMemoryRoutes: RouteHandler = async (_ctx, req, res, method, u
   }
 
   const mgr = getManager();
-  const tenantId = (req.headers['x-tenant-id'] as string) ?? 'default';
-  const userId = (req.headers['x-user-id'] as string) ?? 'anonymous';
+  // D-followup 2026-06-20: require x-tenant-id (was 'default' fallback).
+  // CHECK constraint rejects 'default' on active memories.
+  const tenantId = (req.headers['x-tenant-id'] as string);
+  const userId = (req.headers['x-user-id'] as string);
+  if (!tenantId || !userId) {
+    jsonResponse(res, 400, { error: 'Missing required header: x-tenant-id and x-user-id' });
+    return true;
+  }
 
   if (url === '/api/v1/memory/store' && method === 'POST') {
     const body = await parseJsonBody(req);
