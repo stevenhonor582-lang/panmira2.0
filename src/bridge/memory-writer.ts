@@ -44,6 +44,13 @@ export class MemoryWriter {
   /**
    * v2.4: rough token estimate (~1.5 chars/token for CJK mixed, ~0.25 for English)
    */
+  /** D-follow-up 2026-06-20: derive tenant_id from metadata (replaces hardcoded 'default') */
+  private deriveTenant(metadata: any): string {
+    if (metadata.chatType === 'group' && metadata.chatId) return `group:${metadata.chatId}`;
+    if (metadata.userId) return `user:${metadata.userId}`;
+    return 'tenant:legacy';
+  }
+
   private estimateTokens(s: string): number {
     if (!s) return 0;
     let cjk = 0, ascii = 0;
@@ -122,12 +129,12 @@ export class MemoryWriter {
       await pool.query(
         `INSERT INTO memories (id, content, layer, user_id, bot_id, tenant_id, importance,
           embedding, metadata_json, subject, subject_normalized, confidence, hit_count, type)
-         VALUES (gen_random_uuid()::text, $1, 1, $2, $3::uuid, 'default', $4,
+         VALUES (gen_random_uuid()::text, $1, 1, $2, $3::uuid, $10, $4,
           $5::vector, $6::jsonb, $7, $8, $9, 0, 'event')`,
         [content, metadata.userId ?? 'anonymous', agentId, confidence,
           embedding ? '[' + embedding.join(',') + ']' : null,
           JSON.stringify({ source: 'conversation-memory', chatId: metadata.chatId }),
-          subject, subjectNormalized, confidence],
+          subject, subjectNormalized, confidence, this.deriveTenant(metadata)],
       );
       this.logger.info({ agentId, subjectNormalized, confidence }, 'New memory inserted (v1)');
       return 'inserted';
@@ -198,7 +205,7 @@ export class MemoryWriter {
             await pool.query(
               `INSERT INTO memories (id, content, layer, user_id, bot_id, tenant_id, importance,
                 embedding, metadata_json, subject, subject_normalized, confidence, hit_count, type, polarity)
-               VALUES (gen_random_uuid()::text, $1, $12, $2, $3::uuid, 'default', $4,
+               VALUES (gen_random_uuid()::text, $1, $12, $2, $3::uuid, $13, $4,
                 $5::vector, $6::jsonb, $7, $8, $9, 0, $10, $11)
                ON CONFLICT (bot_id, subject_normalized) WHERE invalidated_at IS NULL
                DO UPDATE SET
@@ -211,7 +218,8 @@ export class MemoryWriter {
               [cand.content, metadata.userId ?? 'anonymous', agentIdFinal, cand.confidence,
                 embedding ? '[' + embedding.join(',') + ']' : null,
                 JSON.stringify({ source: 'llm-extraction', source_quote: cand.source_quote, chatId }),
-                cand.subject, cand.subject_normalized, cand.confidence, cand.type, cand.polarity, layer],
+                cand.subject, cand.subject_normalized, cand.confidence, cand.type, cand.polarity, layer,
+                this.deriveTenant(metadata)],
             );
           } catch (err: any) {
             this.logger.warn({ err: err?.message, agentId }, 'Failed to insert LLM extracted memory');
