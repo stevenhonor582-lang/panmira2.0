@@ -60,5 +60,26 @@ module.exports = {
 
       env: Object.assign({ NODE_ENV: 'production' }, envVars),
     },
+    {
+      // Extraction worker: 6h-window health check + sync verification
+      // Schedule: every 6 hours at minute 0 (avoids collision with monitor-extraction)
+      name: 'extraction-worker',
+      script: 'scripts/extraction-worker.mjs',
+      interpreter: 'node',
+      cwd: __dirname,
+
+      cron_restart: '0 */6 * * *',
+      autorestart: false,
+      watch: false,
+      max_restarts: 0,
+      kill_timeout: 60000,
+
+      error_file: path.join(__dirname, 'logs', 'extraction-error.log'),
+      out_file: path.join(__dirname, 'logs', 'extraction-out.log'),
+      merge_logs: true,
+      log_date_format: 'YYYY-MM-DD HH:mm:ss',
+
+      env: Object.assign({ NODE_ENV: 'production' }, envVars),
+    },
   ],
 };
