@@ -121,7 +121,7 @@ export async function fetchKnowledgeContext(
               1 - (embedding <=> $1::vector) AS relevance
          FROM memories
          WHERE invalidated_at IS NULL
-           AND bot_id = (SELECT id FROM bot_configs WHERE name = $2 LIMIT 1)
+           AND bot_id = (SELECT bot_id FROM bot_configs WHERE name = $2 LIMIT 1)
            AND embedding IS NOT NULL
          ORDER BY embedding <=> $1::vector ASC LIMIT 8`,
       [vecStr, deps.config.name],
@@ -136,7 +136,7 @@ export async function fetchKnowledgeContext(
         `SELECT id, type, subject, subject_normalized, confidence, polarity, hit_count,
                 LEFT(content, 300) AS snippet, last_hit_at
            FROM memories WHERE invalidated_at IS NULL
-            AND bot_id = (SELECT id FROM bot_configs WHERE name = $1 LIMIT 1)
+            AND bot_id = (SELECT bot_id FROM bot_configs WHERE name = $1 LIMIT 1)
             AND (content ILIKE '%' || $2 || '%' OR subject ILIKE '%' || $2 || '%')
           ORDER BY hit_count DESC, confidence DESC LIMIT 8`,
         [deps.config.name, Array.from(searchQuery).slice(0, 50).join('')],
