@@ -89,7 +89,7 @@ await runTest('T4: SQL type safety (memories query with panmira keyword)', async
 await runTest('T5: CHECK constraint (layer=99 rejected)', async () => {
   try {
     await pool.query(
-      "INSERT INTO memories (id, content, layer, user_id, tenant_id, type, bot_id, subject_normalized) VALUES ('test-bad-layer-constraint', 'test', 99, 'test', 'default', 'event', (SELECT bot_id FROM bot_configs WHERE name = $1 LIMIT 1), 'test.bad.layer.99')",
+      "INSERT INTO memories (id, content, layer, user_id, tenant_id, type, bot_id, subject_normalized) VALUES ('test-bad-layer-constraint', 'test', 99, 'test', 'tenant:fake-test', 'event', (SELECT bot_id FROM bot_configs WHERE name = $1 LIMIT 1), 'test.bad.layer.99')",
       ['得一']
     );
     throw new Error('insert succeeded - CHECK not enforced');
@@ -106,7 +106,7 @@ await runTest('T6: UNIQUE constraint (duplicate subject rejected)', async () => 
   if (!existing.length) throw new Error('no existing memory');
   try {
     await pool.query(
-      "INSERT INTO memories (id, content, layer, user_id, tenant_id, type, bot_id, subject_normalized) VALUES ('test-dup-constraint', 'test', 1, 'test', 'default', 'event', $1, $2)",
+      "INSERT INTO memories (id, content, layer, user_id, tenant_id, type, bot_id, subject_normalized) VALUES ('test-dup-constraint', 'test', 1, 'test', 'tenant:fake-test', 'event', $1, $2)",
       [existing[0].bot_id, existing[0].subject_normalized]
     );
     throw new Error('dup insert succeeded');

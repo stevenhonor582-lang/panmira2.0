@@ -44,7 +44,7 @@ if [ ${#pending[@]} -eq 0 ]; then
   exit 0
 fi
 
-echo "Pending migrations: ${{#pending[@]}}"
+echo "Pending migrations: ${#pending[@]}"
 for f in "${pending[@]}"; do
   echo "  - $(basename "$f")"
 done
