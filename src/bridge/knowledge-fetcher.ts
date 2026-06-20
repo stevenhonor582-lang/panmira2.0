@@ -3,6 +3,9 @@ import type { Logger } from '../utils/logger.js';
 import { MemoryClient } from '../memory/memory-client.js';
 import type { WorkspaceManager } from '../memory/workspace-manager.js';
 import { pool } from '../db/index.js';
+import { DocEmbedder } from '../memory/doc-embedder.js';
+
+const MEMORY_VECTOR_THRESHOLD = 0.6;
 
 export interface KnowledgeFetcherDeps {
   config: BotConfigBase;
@@ -105,21 +108,45 @@ export async function fetchKnowledgeContext(
   }
 
   const results = await deps.memoryClient.searchInFolders(searchQuery, folderUuids, 20);
-  // v22.3: also search structured memories
-  // P0-fix 2026-06-17: use memories.bot_id (uuid FK to bot_configs.bot_id), not the broken agent_id (text) column.
+  // B-fix 2026-06-20: vector search for memories (semantic recall) with ILIKE fallback
+  // Mirrors VMT 得一 N-1/N-2 fix: vector first, threshold decision, ILIKE as backup
   let memoryResults: any[] = [];
   try {
-    const { rows: memRows } = await pool.query(
+    const queryEmb = await new DocEmbedder(deps.logger as any).embed(searchQuery);
+    const vecStr = JSON.stringify(queryEmb);
+    // Use (SELECT id ...) not (SELECT bot_id ...) — fix VMT bug N-2 uuid/varchar type mismatch
+    const { rows: vecRows } = await pool.query(
       `SELECT id, type, subject, subject_normalized, confidence, polarity, hit_count,
-              LEFT(content, 300) AS snippet, last_hit_at
-         FROM memories WHERE invalidated_at IS NULL
-          AND bot_id = (SELECT bot_id FROM bot_configs WHERE name = $1 LIMIT 1)
-          AND (content ILIKE '%' || $2 || '%' OR subject ILIKE '%' || $2 || '%')
-        ORDER BY hit_count DESC, confidence DESC LIMIT 8`,
-      [deps.config.name, Array.from(searchQuery).slice(0, 50).join('')],
+              LEFT(content, 300) AS snippet, last_hit_at,
+              1 - (embedding <=> $1::vector) AS relevance
+         FROM memories
+         WHERE invalidated_at IS NULL
+           AND bot_id = (SELECT id FROM bot_configs WHERE name = $2 LIMIT 1)
+           AND embedding IS NOT NULL
+         ORDER BY embedding <=> $1::vector ASC LIMIT 8`,
+      [vecStr, deps.config.name],
     );
-    memoryResults = memRows || [];
-  } catch (err: any) { deps.logger.debug({ err: err?.message }, 'Memories search skipped'); }
+    const topRel = vecRows[0]?.relevance ?? 0;
+    if (topRel >= MEMORY_VECTOR_THRESHOLD) {
+      memoryResults = vecRows;
+      deps.logger.info({ topRel, count: vecRows.length }, 'Memory vector search hit');
+    } else {
+      // Fallback: ILIKE (also fixed to use id not bot_id)
+      const { rows: ilikeRows } = await pool.query(
+        `SELECT id, type, subject, subject_normalized, confidence, polarity, hit_count,
+                LEFT(content, 300) AS snippet, last_hit_at
+           FROM memories WHERE invalidated_at IS NULL
+            AND bot_id = (SELECT id FROM bot_configs WHERE name = $1 LIMIT 1)
+            AND (content ILIKE '%' || $2 || '%' OR subject ILIKE '%' || $2 || '%')
+          ORDER BY hit_count DESC, confidence DESC LIMIT 8`,
+        [deps.config.name, Array.from(searchQuery).slice(0, 50).join('')],
+      );
+      memoryResults = ilikeRows || [];
+      deps.logger.info({ topRel, count: memoryResults.length, fallback: 'ilike' }, 'Memory search fell back to ILIKE');
+    }
+  } catch (err: any) {
+    deps.logger.debug({ err: err?.message }, 'Memories search skipped');
+  }
 
   // v1 RAG §4.2: Re-rank by recency + hit_count + confidence
   // score = 0.5*cosine + 0.2*recency + 0.2*hit_count + 0.1*confidence
