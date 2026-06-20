@@ -184,20 +184,34 @@ export class MemoryWriter {
         // Write each candidate as a structured memory
         for (const cand of candidates) {
           try {
+          // M4-fix 2026-06-20: derive layer from type
+          // event=1, fact/entity/preference=2, decision=3
+          const layerByType: Record<string, number> = { event: 1, fact: 2, entity: 2, preference: 2, decision: 3 };
+          const layer = layerByType[cand.type] || 1;
             let embedding: number[] | null = null;
             try {
               const embedder = new DocEmbedder(this.logger);
               [embedding] = await embedder.embedBatch([cand.content]);
             } catch {}
+            // LLM-extract-dedup 2026-06-20: ON CONFLICT upsert prevents duplicate memories
+            // when same (bot_id, subject_normalized) is extracted multiple times across windows.
             await pool.query(
               `INSERT INTO memories (id, content, layer, user_id, bot_id, tenant_id, importance,
                 embedding, metadata_json, subject, subject_normalized, confidence, hit_count, type, polarity)
-               VALUES (gen_random_uuid()::text, $1, 1, $2, $3::uuid, 'default', $4,
-                $5::vector, $6::jsonb, $7, $8, $9, 0, $10, $11)`,
+               VALUES (gen_random_uuid()::text, $1, $12, $2, $3::uuid, 'default', $4,
+                $5::vector, $6::jsonb, $7, $8, $9, 0, $10, $11)
+               ON CONFLICT (bot_id, subject_normalized) WHERE invalidated_at IS NULL
+               DO UPDATE SET
+                 content = EXCLUDED.content,
+                 confidence = GREATEST(memories.confidence, EXCLUDED.confidence),
+                 importance = GREATEST(memories.importance, EXCLUDED.importance),
+                 hit_count = memories.hit_count + 1,
+                 last_hit_at = NOW(),
+                 metadata_json = EXCLUDED.metadata_json`,
               [cand.content, metadata.userId ?? 'anonymous', agentIdFinal, cand.confidence,
                 embedding ? '[' + embedding.join(',') + ']' : null,
                 JSON.stringify({ source: 'llm-extraction', source_quote: cand.source_quote, chatId }),
-                cand.subject, cand.subject_normalized, cand.confidence, cand.type, cand.polarity],
+                cand.subject, cand.subject_normalized, cand.confidence, cand.type, cand.polarity, layer],
             );
           } catch (err: any) {
             this.logger.warn({ err: err?.message, agentId }, 'Failed to insert LLM extracted memory');

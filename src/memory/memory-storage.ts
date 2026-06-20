@@ -664,7 +664,7 @@ export class MemoryStorage {
   }
 
   private static readonly RRF_K = 60;
-  private static readonly SIMILARITY_THRESHOLD = 0.6;
+  private static readonly SIMILARITY_THRESHOLD = 0.8;
 
   private async expandFolderIds(folderIds: string[]): Promise<string[]> {
     if (folderIds.length === 0) return [];
@@ -709,26 +709,42 @@ export class MemoryStorage {
       return vecResults.slice(0, limit);
     }
 
-    const scoreMap = new Map<string, { result: SearchResult; score: number }>();
-    for (let i = 0; i < kwResults.length; i++) {
-      scoreMap.set(kwResults[i].id, { result: kwResults[i], score: 1 / (MemoryStorage.RRF_K + i + 1) });
-    }
+    // M3-fix 2026-06-20: replace RRF-only ranking (which compressed all scores to ~0.0164)
+    // with real cosine similarity for vector hits + recency decay to fix hot-data dominance.
+    const HALF_LIFE_DAYS = 14;
+    const now = Date.now();
+    const merged = new Map<string, { result: SearchResult; cosSim: number; kwRank: number | null }>();
+
+    // 1. Vector results: use real cosine similarity (1 - distance)
     for (let i = 0; i < vecResults.length; i++) {
       const r = vecResults[i];
-      const existing = scoreMap.get(r.id);
+      const cosSim = (r.score !== undefined && r.score !== null) ? r.score : (1 - ((r as any).distance || 1));
+      merged.set(r.id, { result: r, cosSim, kwRank: null });
+    }
+    // 2. Keyword results: merge with vector or create new entry with rank-based score
+    for (let i = 0; i < kwResults.length; i++) {
+      const r = kwResults[i];
+      const kwScore = 1 / (MemoryStorage.RRF_K + i + 1) * 2; // amplify keyword so it's not crushed
+      const existing = merged.get(r.id);
       if (existing) {
-        existing.score += 1 / (MemoryStorage.RRF_K + i + 1);
+        existing.kwRank = i;
         existing.result.source = 'hybrid';
       } else {
-        scoreMap.set(r.id, { result: r, score: 1 / (MemoryStorage.RRF_K + i + 1) });
+        merged.set(r.id, { result: r, cosSim: kwScore, kwRank: i });
       }
     }
-
-    return [...scoreMap.values()]
+    // 3. Apply quality boost + recency decay + final ranking
+    return [...merged.values()]
       .map((item) => {
         const quality = Number(item.result.quality_score) || 0;
-        item.score = item.score * (1 + quality * 0.2);
-        return item;
+        let score = item.cosSim * (1 + quality * 0.2);
+        // Recency decay (fix hot-data dominance like audit reports ranking top1)
+        if (item.result.updated_at) {
+          const ageDays = (now - new Date(item.result.updated_at).getTime()) / 86400000;
+          const decay = Math.exp(-ageDays * Math.LN2 / HALF_LIFE_DAYS);
+          score = score * (0.3 + 0.7 * decay); // floor at 30% so old docs aren't fully buried
+        }
+        return { ...item, score };
       })
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)

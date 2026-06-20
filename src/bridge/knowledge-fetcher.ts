@@ -154,11 +154,13 @@ export async function fetchKnowledgeContext(
         .map(x => x.r);
 
       // Bump hit_count only for docs actually injected into context (top 3)
+      // M1-fix 2026-06-20: was UPDATE memories (wrong table) — IDs are document UUIDs not memory UUIDs.
+      // Changed to UPDATE documents, plus added last_hit_at writeback.
       if ((metaRows as any[]).length > 0) {
         const injectedIds = ranked.slice(0, 3).map(r => r.id);
         if (injectedIds.length > 0) {
           await pool.query(
-            `UPDATE memories SET hit_count = hit_count + 1, last_hit_at = NOW()
+            `UPDATE documents SET hit_count = COALESCE(hit_count, 0) + 1, last_hit_at = NOW()
               WHERE id = ANY($1)`,
             [injectedIds]
           ).catch((err: any) => deps.logger.debug({ err: err.message }, 'hit_count bump failed'));
