@@ -57,7 +57,9 @@ export async function fetchKnowledgeContext(
     }
   }
 
-  if (knowledgeFolders.length === 0 || !text) {
+  // Only return early if text is empty. knowledgeFolders can be empty -
+  // workspaceManager fallback will populate folderUuids below.
+  if (!text) {
     return { systemPromptOverride, knowledgeContext: null, agentBoundSkills };
   }
 
