@@ -72,3 +72,8 @@ src/**/*.js.map
 
 # Local DB backups (DO NOT COMMIT)
 .backup/
+
+# Backup files (auto-created during patches)
+*.bak.*
+*.pre
+.env.bak.*

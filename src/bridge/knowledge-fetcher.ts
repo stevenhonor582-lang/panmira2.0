@@ -94,7 +94,7 @@ export async function fetchKnowledgeContext(
       const nameResults = await pool.query(
         `SELECT f.id FROM folders f
          WHERE f.name = ANY($1)
-           AND (f.path LIKE '数字员工/' || $2 || '%' OR f.path LIKE '组织公共区/%')`,
+           AND (f.path LIKE '%/数字员工/' || $2 || '/%' OR f.path LIKE '%/组织公共区/%')`,
         [knowledgeFolders, deps.config.name],
       );
       for (const row of nameResults.rows) {

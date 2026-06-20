@@ -1,0 +1,3 @@
+-- DOWN: DROP TRIGGER + FUNCTION
+-- DROP TRIGGER IF EXISTS memories_l3_self_iterate_trigger ON memories;
+-- DROP FUNCTION IF EXISTS l3_self_iterate();

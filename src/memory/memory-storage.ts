@@ -779,7 +779,7 @@ export class MemoryStorage {
          ORDER BY document_id, ($1::vector <=> embedding) ASC
        ) ch
        JOIN documents d ON ch.document_id = d.id${joinClause}
-       WHERE ch.distance < $${params.length + 1}${visibilityFilter}${folderFilter}
+       WHERE ch.distance < $${params.length + 1}${visibilityFilter}${folderFilter} AND NOT (d.tags ?| array['conversation-memory','auto-archive'])
        ORDER BY ch.distance
        LIMIT $2`,
       [...params, MemoryStorage.SIMILARITY_THRESHOLD],
@@ -802,7 +802,7 @@ export class MemoryStorage {
       `SELECT d.id, d.title, d.path, d.tags, d.summary, d.quality_score, d.created_by, d.updated_at,
               substring(d.content from position($1 in d.content) - 50 for 200) as snippet
        FROM documents d${joinClause}
-       WHERE (d.title ILIKE $1 OR d.content ILIKE $1 OR d.tags::text ILIKE $1)${visibilityFilter}${folderFilter}
+       WHERE (d.title ILIKE $1 OR d.content ILIKE $1 OR d.tags::text ILIKE $1)${visibilityFilter}${folderFilter} AND NOT (d.tags ?| array['conversation-memory','auto-archive'])
        ORDER BY CASE WHEN d.title ILIKE $1 THEN 0 ELSE 1 END, d.updated_at DESC
        LIMIT $2`,
       params,

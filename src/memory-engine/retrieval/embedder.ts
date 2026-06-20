@@ -14,8 +14,8 @@ export class OpenAIEmbedder implements Embedder {
 
   constructor(config?: { apiKey?: string; model?: string; baseUrl?: string }) {
     this.apiKey = config?.apiKey ?? process.env.OPENAI_API_KEY ?? '';
-    this.model = config?.model ?? 'text-embedding-3-small';
-    this.baseUrl = config?.baseUrl ?? 'https://api.openai.com/v1';
+    this.model = config?.model ?? process.env.OPENAI_EMBEDDING_MODEL ?? 'text-embedding-3-small';
+    this.baseUrl = (config?.baseUrl ?? process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/+$/, '');
   }
 
   async embed(text: string): Promise<number[]> {

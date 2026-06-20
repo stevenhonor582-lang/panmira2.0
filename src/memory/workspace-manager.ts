@@ -302,12 +302,12 @@ export class WorkspaceManager {
     const path = doc.path;
     if (path.includes('/索引/') || path.endsWith('/索引')) return;
     let scope: string;
-    if (path.startsWith('/Root/组织公共区/') || path === '/Root/组织公共区') {
+    if (path.startsWith('/组织公共区/') || path === '/组织公共区') {
       scope = 'org';
-    } else if (path.startsWith('/Root/数字员工/')) {
+    } else if (path.startsWith('/数字员工/')) {
       const botName = path.slice('/Root/数字员工/'.length).split('/')[0];
       scope = 'bot:' + botName;
-    } else if (path.startsWith('/Root/群协作区/')) {
+    } else if (path.startsWith('/群协作区/')) {
       const groupId = path.slice('/Root/群协作区/'.length).split('/')[0];
       scope = 'group:' + groupId;
     } else {
