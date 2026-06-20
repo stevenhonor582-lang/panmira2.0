@@ -39,5 +39,26 @@ module.exports = {
 
       env: Object.assign({ NODE_ENV: 'production' }, envVars),
     },
+    {
+      // C-fix 2026-06-20: hourly memory system health check
+      // Schedule: every hour at :05 (avoid collision with extraction cron)
+      name: 'monitor-extraction',
+      script: 'scripts/monitor-extraction.mjs',
+      interpreter: 'node',
+      cwd: __dirname,
+
+      cron_restart: '5 * * * *',
+      autorestart: false,
+      watch: false,
+      max_restarts: 0,
+      kill_timeout: 60000,
+
+      error_file: path.join(__dirname, 'logs', 'monitor-error.log'),
+      out_file: path.join(__dirname, 'logs', 'monitor-out.log'),
+      merge_logs: true,
+      log_date_format: 'YYYY-MM-DD HH:mm:ss',
+
+      env: Object.assign({ NODE_ENV: 'production' }, envVars),
+    },
   ],
 };
