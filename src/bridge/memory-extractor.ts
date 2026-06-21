@@ -6,8 +6,7 @@
 
 import type { Logger } from '../utils/logger.js';
 import { SubjectNormalizer } from './subject-normalizer.js';
-import { pool } from '../db/index.js';
-import { decrypt } from '../db/crypto.js';
+import type { BotConfigBase } from '../config.js';
 
 export interface CandidateMemory {
   type: 'fact' | 'event' | 'preference' | 'entity' | 'decision';
@@ -27,16 +26,34 @@ export class MemoryExtractor {
   private readonly DAILY_LIMIT = 50;
   private processedWindows = new Set<string>(); // dedup key set
 
-  // Provider config loaded from provider_configs (default LLM), mirroring AutoTagger.
+  // Provider config from bot's own config (NOT a 'default' fallback from provider_configs).
+  // The bot's model/apiKey/baseUrl are resolved at config-load time from entry.providerId.
   private apiKey = '';
   private baseUrl = '';
-  private model = 'claude-haiku-4-5-20251001';
+  private model = '';
   private isAnthropic = true;
   private initPromise: Promise<void> | null = null;
+  private botName: string;
 
-  constructor(logger: Logger, normalizer: SubjectNormalizer) {
+  constructor(logger: Logger, normalizer: SubjectNormalizer, botConfig: BotConfigBase) {
     this.logger = logger;
     this.normalizer = normalizer;
+    this.botName = botConfig.name;
+    this.apiKey = botConfig.claude.apiKey || '';
+    this.baseUrl = (botConfig.claude.baseUrl || '').replace(/\/+$/, '');
+    this.model = botConfig.claude.model || '';
+    this.isAnthropic = /\/anthropic/i.test(this.baseUrl);
+    if (!this.apiKey || !this.baseUrl || !this.model) {
+      this.logger.warn(
+        { botName: this.botName },
+        'MemoryExtractor: bot has incomplete provider config (apiKey/baseUrl/model missing) — LLM extraction will be skipped',
+      );
+    } else {
+      this.logger.info(
+        { botName: this.botName, baseUrl: this.baseUrl, model: this.model, isAnthropic: this.isAnthropic },
+        'MemoryExtractor: initialized with bot provider config',
+      );
+    }
   }
 
   private async ensureInit(): Promise<void> {
@@ -47,30 +64,11 @@ export class MemoryExtractor {
     await this.initPromise;
   }
 
+  // loadProvider() is now a no-op. Provider config is injected at construction time
+  // from the bot's own config (NOT a 'default' fallback from provider_configs).
+  // Kept as an empty method so existing ensureInit() callers continue to work.
   private async loadProvider(): Promise<void> {
-    try {
-      // Accept any provider whose type indicates an LLM (LLM / openai / anthropic).
-      // panmira web UI does not enforce a type enum, so users may pick "openai" for
-      // an openai-compatible base_url. We treat all such rows as LLM candidates and
-      // pick the default one (or first by name) as the active provider.
-      const { rows } = await pool.query(
-        "SELECT api_key_encrypted, base_url, model FROM provider_configs WHERE type IN ('LLM', 'openai', 'anthropic') ORDER BY is_default DESC, name LIMIT 1",
-      );
-      if (rows[0]?.api_key_encrypted) {
-        this.apiKey = decrypt(rows[0].api_key_encrypted);
-        this.baseUrl = (rows[0].base_url || '').replace(/\/+$/, '');
-        this.model = rows[0].model || 'claude-haiku-4-5-20251001';
-        this.isAnthropic = /\/anthropic/i.test(this.baseUrl);
-        this.logger.info(
-          { baseUrl: this.baseUrl, model: this.model, isAnthropic: this.isAnthropic },
-          'MemoryExtractor: loaded LLM provider',
-        );
-        return;
-      }
-      this.logger.warn('MemoryExtractor: no LLM provider configured');
-    } catch (err: any) {
-      this.logger.error({ err: err.message }, 'MemoryExtractor: failed to load provider');
-    }
+    return;
   }
 
   /**

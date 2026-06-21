@@ -110,7 +110,7 @@ export class MessageBridge {
     const memoryClient = new MemoryClient(memoryServerUrl, logger, memorySecret);
     this.memoryClient = memoryClient;
     const normalizer = new SubjectNormalizer(logger);
-    const extractor = new MemoryExtractor(logger, normalizer);
+    const extractor = new MemoryExtractor(logger, normalizer, this.config);
     this.memoryWriter = new MemoryWriter(memoryClient, logger, extractor, normalizer);
     this.outputArchiver = new OutputArchiver(memoryClient, logger);
     this.workspaceSyncer = new WorkspaceSyncer(logger);
@@ -2157,19 +2157,19 @@ export class MessageBridge {
    */
   private async generateSessionSummary(prompt: string, lastState: CardState): Promise<string | undefined> {
     try {
-      // Accept any provider whose type indicates an LLM (LLM / openai / anthropic).
-      // panmira web UI does not enforce a type enum, so users may pick "openai" for
-      // an openai-compatible base_url. We treat all such rows as LLM candidates and
-      // pick the default one (or first by name) as the active provider.
-      const { rows } = await pool.query(
-        "SELECT api_key_encrypted, base_url, model FROM provider_configs WHERE type IN ('LLM', 'openai', 'anthropic') AND is_default = true LIMIT 1",
-      );
-      if (!rows[0]?.api_key_encrypted) return undefined;
-
-      const { decrypt } = await import('../db/crypto.js');
-      const apiKey = decrypt(rows[0].api_key_encrypted);
-      const baseUrl = (rows[0].base_url || '').replace(/\/+$/, '');
-      const model = rows[0].model || 'GLM-5.1';
+      // Use the bot's own provider config (NOT a 'default' fallback from provider_configs).
+      // Bot's model/apiKey/baseUrl are already resolved at config-load time from
+      // entry.providerId via resolveProvider() in config.ts.
+      const apiKey = this.config.claude.apiKey;
+      const baseUrl = this.config.claude.baseUrl;
+      const model = this.config.claude.model;
+      if (!apiKey || !baseUrl || !model) {
+        this.logger.warn(
+          { botName: this.config.name },
+          'generateSessionSummary: bot has incomplete provider config (missing apiKey/baseUrl/model) — skipping summary',
+        );
+        return undefined;
+      }
       const isAnthropic = /\/anthropic/i.test(baseUrl);
 
       const summaryPrompt = this.buildSummaryInput(prompt, lastState);
