@@ -323,9 +323,35 @@ export class MessageBridge {
     value: Record<string, unknown>;
   }): Promise<void> {
     const { chatId, userId, messageId, value } = event;
+
+    // Helper: tell the user the card is stale by updating the card itself in place.
+    // Without this feedback, users keep clicking dead buttons and assume the bot is broken.
+    const notifyStale = async (reason: string): Promise<void> => {
+      this.logger.warn({ chatId, userId, messageId, reason }, 'Card action rejected — updating card to explain');
+      const staleState: CardState = {
+        status: 'error',
+        userPrompt: '',
+        responseText: `⚠️ **这张卡片已过期**
+
+原因：${reason}
+
+请在最新的对话里重新选择或重新发送你的问题。`,
+        toolCalls: [],
+        errorMessage: 'card_action_stale',
+      };
+      try {
+        await this.getSender(chatId).updateCard(messageId, staleState);
+      } catch (err) {
+        // Fallback: send a plain text notice if updateCard fails (e.g. message deleted).
+        this.logger.warn({ err, chatId }, 'updateCard failed; falling back to sendText');
+        await this.getSender(chatId).sendText(chatId,
+          `⚠️ 这张卡片已过期（${reason}）。请重新发送你的问题。`);
+      }
+    };
+
     const task = this.runningTasks.get(chatId);
     if (!task || !task.pendingQuestion) {
-      this.logger.debug({ chatId, userId }, 'Card action but no pending question — ignoring');
+      await notifyStale('机器人刚重启或会话已结束');
       return;
     }
     if (value.action !== 'answer_question') {
@@ -333,10 +359,7 @@ export class MessageBridge {
       return;
     }
     if (value.toolUseId !== task.pendingQuestion.toolUseId) {
-      this.logger.warn(
-        { chatId, expected: task.pendingQuestion.toolUseId, got: value.toolUseId },
-        'Card action targets a stale question — ignoring',
-      );
+      await notifyStale('这张卡片来自更早的对话，toolUseId 已不匹配当前会话');
       return;
     }
     const optionIndex = typeof value.optionIndex === 'number' ? value.optionIndex : -1;
