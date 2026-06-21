@@ -10,7 +10,7 @@ import type { DocSync } from '../sync/doc-sync.js';
 import type { Engine, Executor, ExecutionHandle, EngineName } from '../engines/index.js';
 import { createEngine, resolveEngineName, StreamProcessor, SessionManager } from '../engines/index.js';
 import { RateLimiter } from './rate-limiter.js';
-import { saveActiveTasks, recoverAndNotify, clearActiveTasks, type PersistedTask } from './task-state-store.js';
+import { saveActiveTasks, recoverAndNotify, clearActiveTasks, findRecentInterruptedTask, type PersistedTask } from './task-state-store.js';
 import { OutputsManager } from './outputs-manager.js';
 import { MemoryClient } from '../memory/memory-client.js';
 import { AuditLogger } from '../utils/audit-logger.js';
@@ -250,7 +250,9 @@ export class MessageBridge {
     }));
   }
 
-  /** Collect current running tasks in a persistable format. */
+  /** Collect current running tasks in a persistable format.
+   *  Includes AskUserQuestion state so cards from interrupted sessions can be
+   *  recognized on restart (see findRecentInterruptedTask). */
   private collectPersistableTasks(): PersistedTask[] {
     return Array.from(this.runningTasks.entries()).map(([chatId, task]) => ({
       chatId,
@@ -259,6 +261,17 @@ export class MessageBridge {
       prompt: task.prompt,
       cardMessageId: task.cardMessageId,
       lastResponsePreview: task.lastResponsePreview || undefined,
+      pendingQuestion: task.pendingQuestion
+        ? {
+            toolUseId: task.pendingQuestion.toolUseId,
+            questions: task.pendingQuestion.questions,
+          }
+        : undefined,
+      currentQuestionIndex: task.currentQuestionIndex,
+      collectedAnswers:
+        task.collectedAnswers && Object.keys(task.collectedAnswers).length > 0
+          ? { ...task.collectedAnswers }
+          : undefined,
     }));
   }
 
@@ -351,7 +364,25 @@ export class MessageBridge {
 
     const task = this.runningTasks.get(chatId);
     if (!task || !task.pendingQuestion) {
-      await notifyStale('机器人刚重启或会话已结束');
+      // Task is gone — likely a recent SIGINT/restart. Look up the persisted
+      // snapshot so we can give a more precise reason than a generic "expired".
+      const stale = findRecentInterruptedTask(chatId, this.config.name);
+      if (stale && stale.pendingQuestion) {
+        if (value.toolUseId === stale.pendingQuestion.toolUseId) {
+          // Tool-use id matches the question we had — recognize it as "just-restarted"
+          // instead of "expired long ago". User still has to resend because the SDK
+          // session is gone, but the message is accurate.
+          await notifyStale(
+            '机器人刚重启，你之前的会话被中断了。\n\n请在最新对话里重新发送你的问题，bot 会接着来。',
+          );
+        } else {
+          await notifyStale(
+            '机器人刚重启；这张卡片来自更早的会话（toolUseId 不匹配）。\n\n请重新发送你的问题。',
+          );
+        }
+      } else {
+        await notifyStale('机器人刚重启或会话已结束，且超过恢复窗口。请重新发送你的问题。');
+      }
       return;
     }
     if (value.action !== 'answer_question') {
@@ -1026,6 +1057,9 @@ export class MessageBridge {
             runningTask.pendingQuestion = state.pendingQuestion;
             runningTask.currentQuestionIndex = 0;
             runningTask.collectedAnswers = {};
+            // Persist immediately so a SIGINT right after the question card is
+            // sent still leaves a recoverable snapshot on disk.
+            this.persistTaskSnapshot();
           }
 
           await rateLimiter.flush();

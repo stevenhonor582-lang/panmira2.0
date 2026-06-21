@@ -7,6 +7,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import type { Logger } from '../utils/logger.js';
 import { buildTaskRecoveryCard } from '../feishu/card-builder.js';
+import type { PendingQuestion } from '../types.js';
 
 export interface PersistedTask {
   chatId: string;
@@ -20,6 +21,15 @@ export interface PersistedTask {
   /** Why the task was stopped. 'restart' | 'crash' | 'timeout' | 'oom' | 'unknown'.
    *  When unset the recovery card uses a neutral default. */
   interruptionReason?: string;
+  /** Pending AskUserQuestion state — survives SIGINT/restart so old cards can be
+   *  recognized and given a precise stale-card message instead of a generic
+   *  "expired" response. executionHandle is NOT serialized (it dies with the
+   *  process); only the static question metadata is saved. */
+  pendingQuestion?: PendingQuestion;
+  /** Index into pendingQuestion.questions for multi-question AskUserQuestion calls. */
+  currentQuestionIndex?: number;
+  /** Map of header → answer for questions already answered before interruption. */
+  collectedAnswers?: Record<string, string>;
 }
 
 const FILENAME = 'active-tasks.json';
@@ -119,4 +129,20 @@ export async function recoverAndNotify(
 
   clearActiveTasks(botName);
   return notified;
+}
+
+/**
+ * Look up a recently-interrupted task for a chat (within maxAgeMs).
+ * Used by handleCardAction to recognize cards from just-before-SIGINT sessions
+ * and distinguish them from genuinely old cards. Returns null if no recent
+ * task snapshot exists.
+ */
+export function findRecentInterruptedTask(
+  chatId: string,
+  botName?: string,
+  maxAgeMs = 5 * 60 * 1000,
+): PersistedTask | null {
+  const cutoff = Date.now() - maxAgeMs;
+  const tasks = loadActiveTasks(botName);
+  return tasks.find((t) => t.chatId === chatId && t.startTime >= cutoff) ?? null;
 }
