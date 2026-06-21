@@ -1,4 +1,3 @@
-import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import type * as lark from '@larksuiteoapi/node-sdk';
 import type { Logger } from '../utils/logger.js';
@@ -32,21 +31,15 @@ export class MessageSender {
   }
 
   async updateCard(messageId: string, cardContent: string): Promise<boolean> {
+    // Pass the card content through unchanged. Feishu identifies a card by
+    // messageId (the path here) — adding or mutating a top-level uuid in the
+    // JSON caused Feishu to treat every patch as a new card, which silently
+    // invalidated the buttons the user had just clicked. See commit message
+    // for the original symptom report.
     try {
-      let content = cardContent;
-      try {
-        const parsed = JSON.parse(cardContent);
-        if (!parsed.uuid) {
-          parsed.uuid = crypto.randomUUID();
-        }
-        content = JSON.stringify(parsed);
-      } catch {
-        // Keep original content if not valid JSON
-      }
-
       const resp = await this.client.im.v1.message.patch({
         path: { message_id: messageId },
-        data: { content },
+        data: { content: cardContent },
       });
       this.logger.debug({ messageId, resp }, 'Card updated');
       return true;
