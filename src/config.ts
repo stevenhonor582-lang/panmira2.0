@@ -382,7 +382,7 @@ export async function feishuBotFromJson(
     ...(entry.agentId ? { agentId: entry.agentId } : {}),
     ...(entry.knowledgeFolders?.length ? { knowledgeFolders: entry.knowledgeFolders } : {}),
     ...(entry.permissions ? { permissions: entry.permissions } : {}),
-    claude: buildClaudeConfig(entry, provider),
+    claude: buildClaudeConfig(entry, provider, entry.name),
   };
 }
 
@@ -434,7 +434,7 @@ export async function telegramBotFromJson(
     ...(entry.systemPrompt ? { systemPrompt: entry.systemPrompt } : {}),
     ...(entry.agentId ? { agentId: entry.agentId } : {}),
     ...(entry.permissions ? { permissions: entry.permissions } : {}),
-    claude: buildClaudeConfig(entry, provider),
+    claude: buildClaudeConfig(entry, provider, entry.name),
   };
 }
 
@@ -482,7 +482,7 @@ export async function webBotFromJson(
     ...(entry.agentId ? { agentId: entry.agentId } : {}),
     ...(entry.knowledgeFolders?.length ? { knowledgeFolders: entry.knowledgeFolders } : {}),
     ...(entry.permissions ? { permissions: entry.permissions } : {}),
-    claude: buildClaudeConfig(entry, provider),
+    claude: buildClaudeConfig(entry, provider, entry.name),
   };
 }
 
@@ -526,7 +526,7 @@ export async function wechatBotFromJson(
     ...(entry.systemPrompt ? { systemPrompt: entry.systemPrompt } : {}),
     ...(entry.agentId ? { agentId: entry.agentId } : {}),
     ...(entry.permissions ? { permissions: entry.permissions } : {}),
-    claude: buildClaudeConfig(entry, provider),
+    claude: buildClaudeConfig(entry, provider, entry.name),
   };
 }
 
@@ -541,13 +541,26 @@ function buildClaudeConfig(entry: {
   baseUrl?: string;
   outputsBaseDir?: string;
   downloadsDir?: string;
-}, provider?: { model: string; baseUrl: string; apiKey: string | null } | null): BotConfigBase['claude'] {
-  // Phase 2: prefer provider record (canonical source). Fall back to entry
-  // fields (legacy data) then env vars. This way a single provider change
-  // updates every bot that references it.
-  const model = provider?.model || entry.model || process.env.CLAUDE_MODEL || process.env.ANTHROPIC_MODEL || 'claude-opus-4-7';
-  const baseUrl = provider?.baseUrl || entry.baseUrl || undefined;
-  const apiKey = provider?.apiKey || entry.apiKey || undefined;
+}, provider?: { model: string; baseUrl: string; apiKey: string | null } | null, botName?: string): BotConfigBase['claude'] {
+  // Fail-fast (2026-06-22): never silently fall through to SDK default model.
+  // Previously missing model/baseUrl/apiKey → 'claude-opus-4-7' + env.ANTHROPIC_BASE_URL,
+  // which on ruoshui pointed to open.bigmodel.cn and produced silent 529/1305
+  // floods (智谱 GLM-5.2 was the actual is_default LLM provider). Every bot
+  // must now declare its providerId OR explicit (model, baseUrl, apiKey).
+  const model = (provider?.model || entry.model || '').trim();
+  const baseUrl = (provider?.baseUrl || entry.baseUrl || '').trim();
+  const apiKey = (provider?.apiKey || entry.apiKey || '').trim();
+  const missing: string[] = [];
+  if (!model) missing.push('model');
+  if (!baseUrl) missing.push('baseUrl');
+  if (!apiKey) missing.push('apiKey');
+  if (missing.length > 0) {
+    throw new Error(
+      `Bot "${botName || 'unknown'}" is missing required claude config: ${missing.join(', ')}. ` +
+      `Set providerId (pointing to provider_configs) or explicit (model, baseUrl, apiKey) on the bot entry. ` +
+      `Falling back silently was removed because it caused 529/1305 floods on ruoshui (智谱 GLM-5.2 was the default).`,
+    );
+  }
   return {
     defaultWorkingDirectory: expandUserPath(entry.defaultWorkingDirectory),
     maxTurns: entry.maxTurns ?? (process.env.CLAUDE_MAX_TURNS ? parseInt(process.env.CLAUDE_MAX_TURNS, 10) : undefined),
@@ -764,14 +777,25 @@ export async function loadAppConfigFromDB(providerConfigStore?: import('./db/pro
     if (secrets.telegram_bot_token) (entry as any).telegramBotToken = secrets.telegram_bot_token;
     if (secrets.wechat_bot_token) (entry as any).wechatBotToken = secrets.wechat_bot_token;
 
-    if (row.platform === 'feishu') {
-      feishuBots.push(await feishuBotFromJson(entry as unknown as FeishuBotJsonEntry, providerConfigStore));
-    } else if (row.platform === 'telegram') {
-      telegramBots.push(await telegramBotFromJson(entry as unknown as TelegramBotJsonEntry, providerConfigStore));
-    } else if (row.platform === 'web') {
-      webBots.push(await webBotFromJson(entry as unknown as WebBotJsonEntry, providerConfigStore));
-    } else if (row.platform === 'wechat') {
-      wechatBots.push(await wechatBotFromJson(entry as unknown as WechatBotJsonEntry, providerConfigStore));
+    // 2026-06-22: fail-fast config validation (C-fix for 529/1305 floods) is
+    // intentionally strict per-bot, but a single bad config must NOT take down
+    // the whole gateway. Catch here, log loudly with bot name + reason, skip.
+    try {
+      if (row.platform === 'feishu') {
+        feishuBots.push(await feishuBotFromJson(entry as unknown as FeishuBotJsonEntry, providerConfigStore));
+      } else if (row.platform === 'telegram') {
+        telegramBots.push(await telegramBotFromJson(entry as unknown as TelegramBotJsonEntry, providerConfigStore));
+      } else if (row.platform === 'web') {
+        webBots.push(await webBotFromJson(entry as unknown as WebBotJsonEntry, providerConfigStore));
+      } else if (row.platform === 'wechat') {
+        wechatBots.push(await wechatBotFromJson(entry as unknown as WechatBotJsonEntry, providerConfigStore));
+      }
+    } catch (botErr: any) {
+      console.error(
+        `[config] SKIPPING bot "${row.name}" (platform=${row.platform}): ${botErr?.message || botErr}`,
+        '\n  Fix: set providerId (pointing to provider_configs) or explicit (model, baseUrl, apiKey) in bot_configs.config_json.',
+        '\n  See: fail-fast-claude-config-2026-06-22',
+      );
     }
   }
 

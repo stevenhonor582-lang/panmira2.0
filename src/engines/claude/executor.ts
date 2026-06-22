@@ -284,15 +284,22 @@ export class ClaudeExecutor {
     }
 
     // Pick the model from the standard config.claude.model slot, with a
-    // fallback to a top-level `model` field (legacy config shape) so a
-    // bot never silently falls through to the SDK default (which is
-    // currently claude-haiku-4-5 and trips 529s on non-Anthropic
-    // proxies like GLM that don't host that model).
-    const resolvedModel = this.config.claude.model
-      ?? (this.config as unknown as { model?: string }).model;
-    if (resolvedModel) {
-      queryOptions.model = resolvedModel;
+    // fallback to a top-level `model` field (legacy config shape).
+    // 2026-06-22: throw if still missing instead of letting the SDK default
+    // (claude-haiku-4-5) slip through, which trips 529s on non-Anthropic
+    // proxies like 智谱 that do not host that model. buildClaudeConfig
+    // already fails-fast at config-load time, but defense in depth.
+    const resolvedModel = (this.config.claude.model
+      ?? (this.config as unknown as { model?: string }).model
+      ?? '').trim();
+    if (!resolvedModel) {
+      throw new Error(
+        `Executor for '${this.config.name || 'unknown'}' has no resolved model. ` +
+        `buildClaudeConfig should have caught this at config-load. ` +
+        `Check bot config providerId / explicit (model, baseUrl, apiKey).`,
+      );
     }
+    queryOptions.model = resolvedModel;
 
     if (sessionId) {
       queryOptions.resume = sessionId;
