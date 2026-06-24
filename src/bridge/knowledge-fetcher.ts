@@ -89,7 +89,7 @@ export async function fetchKnowledgeContext(
     '- 如需澄清多个独立问题，**分多次调用** AskUserQuestion，每次只问 1 个\n' +
     '- **禁止**一次调用多问题（多问题卡片会让用户逐个点选，panmira-飞书桥接层会错配 Q2 答案到 Q1）\n' +
     '- 如果你有 3 个相关问题，弹 3 张卡片（每张 1 个问题）比 1 张卡片（3 个问题）好\n' +
-    '- 唯一例外：如果多个问题的选项完全互斥且必须同时选（如「选 A 还是 B」），可以放 1 张多问题卡片，但**必须**在 prompt 里明确告诉用户「每个问题都要点选」';
+    '- 唯一例外：如果多个问题的选项完全互斥且必须同时选（如「选 A 还是 B」），可以放 1 张多问题卡片，但**必须**在 prompt 里明确告诉用户「每个问题都要点选」' + '\n\n' + '### 6. 卡片选择场景（必须遵守）\n' + '- 当 bot 调用 AskUserQuestion 后，用户的卡片点击答案（collectedAnswers）**100% 优先于任何 memory preference/decision**\n' + '- **禁止**用记忆里的 preference/decision 覆盖用户当前选择\n' + '- **禁止**用 confidence > 任何阈值（如 85%、95%）的逻辑跳过用户输入\n' + '- **禁止**「已问 N 次无答复」等自动推荐逻辑 —— 用户没点就等用户，不要凭偏好替用户选\n' + '- 用户点了 → **直接按用户选项执行**，不要说「按 X 执行」或「按推荐 X 落地」\n' + '- 用户没点 → 等用户；如确需等，告诉用户「卡片已弹出，请点击」而不是「按 X 落地」\n' + '- 决策来源声明（如有 audit）：必须显式说「按用户选项 X 执行」，**禁止**说「按 NN% 推荐执行」';
   if (systemPromptOverride) {
     systemPromptOverride = systemPromptOverride + GUIDANCE_BLOCK;
   }
@@ -287,7 +287,11 @@ export async function fetchKnowledgeContext(
   }
 
   // v22.3: render by type
-  const prefDec = (memoryResults || []).filter((r: any) => ['preference','decision'].includes(r.type));
+  // 2026-06-24 fix-11: filter out 'decision' type so bot cannot auto-pick
+//   using memory confidence (e.g. "按 85% 推荐执行"). decision memories are
+//   historical records of past decisions — they must NOT override the user's
+//   current input. preference memories (style/tone) are still injected.
+const prefDec = (memoryResults || []).filter((r: any) => r.type === 'preference');
   const factsEv = (memoryResults || []).filter((r: any) => ['fact','event'].includes(r.type));
   const docParts: string[] = [];
   if (prefDec.length > 0) docParts.push('### 偏好与决策\n' + prefDec.map((r: any) => `- [${r.type}] ${r.subject} (${(r.confidence*100).toFixed(0)}%)\n  > ${(r.snippet||r.content||'').slice(0,150)}`).join('\n'));
