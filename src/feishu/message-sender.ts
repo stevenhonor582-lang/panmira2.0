@@ -9,6 +9,7 @@ export class MessageSender {
   ) {}
 
   async sendCard(chatId: string, cardContent: string): Promise<string | undefined> {
+    this.logger.info({ chatId, msgType: 'interactive' }, 'sendCard attempted');
     try {
       const resp = await this.client.im.v1.message.create({
         params: { receive_id_type: 'chat_id' },
@@ -111,6 +112,7 @@ export class MessageSender {
   }
 
   async sendImage(chatId: string, imageKey: string): Promise<boolean> {
+    this.logger.info({ chatId, imageKey, msgType: 'image' }, 'sendImage attempted');
     try {
       await this.client.im.v1.message.create({
         params: { receive_id_type: 'chat_id' },
@@ -120,6 +122,7 @@ export class MessageSender {
           msg_type: 'image',
         },
       });
+      this.logger.info({ chatId, imageKey, msgType: 'image' }, 'sendImage success');
       return true;
     } catch (err) {
       this.logger.error({ err, chatId, imageKey }, 'Failed to send image');
@@ -154,6 +157,7 @@ export class MessageSender {
   }
 
   async sendFile(chatId: string, fileKey: string): Promise<boolean> {
+    this.logger.info({ chatId, fileKey, msgType: 'file' }, 'sendFile attempted');
     try {
       await this.client.im.v1.message.create({
         params: { receive_id_type: 'chat_id' },
@@ -163,6 +167,7 @@ export class MessageSender {
           msg_type: 'file',
         },
       });
+      this.logger.info({ chatId, fileKey, msgType: 'file' }, 'sendFile success');
       return true;
     } catch (err) {
       this.logger.error({ err, chatId, fileKey }, 'Failed to send file');
@@ -191,6 +196,7 @@ export class MessageSender {
   }
 
   async sendText(chatId: string, text: string): Promise<void> {
+    this.logger.info({ chatId, textLen: text.length, msgType: 'text' }, 'sendText attempted');
     try {
       await this.client.im.v1.message.create({
         params: { receive_id_type: 'chat_id' },
