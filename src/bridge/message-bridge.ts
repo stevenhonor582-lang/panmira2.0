@@ -466,15 +466,38 @@ export class MessageBridge {
       return;
     }
 
-    // Check if there's a pending question waiting for an answer
+    // commit-13 (2026-06-24): strict msgType gate — only card_action is a real
+    //   answer; p2p text messages override the card and become a new prompt.
+    //   Background: before this fix, ANY incoming message (including p2p text)
+    //   was routed to handleAnswer, causing bot to misinterpret user text as
+    //   a card option selection. Observed at 22:57-22:59, 22:59:09, 23:34
+    //   — user typed free text while card was up; bot mis-handled it.
+    //   Contract: card_action → handleAnswer (real answer);
+    //             p2p text → autoAnswer card with reason, then let the text
+    //                        flow into the queue as a new prompt.
     const task = this.runningTasks.get(chatId);
     if (task && task.pendingQuestion) {
-      this.logger.debug(
-        { chatId, userId: msg.userId, hasPending: true, currentQuestionIndex: task.currentQuestionIndex, toolUseId: task.pendingQuestion.toolUseId, textPreview: msg.text.slice(0, 50) },
-        'handleMessage routing to handleAnswer (pending question)',
-      );
-      await this.handleAnswer(msg, task);
-      return;
+      if (msg.chatType === 'card_action') {
+        this.logger.debug(
+          { chatId, userId: msg.userId, hasPending: true, currentQuestionIndex: task.currentQuestionIndex, toolUseId: task.pendingQuestion.toolUseId, textPreview: msg.text.slice(0, 50) },
+          'handleMessage routing to handleAnswer (card_action)',
+        );
+        await this.handleAnswer(msg, task);
+        return;
+      } else {
+        // p2p text / image / file / other: user is giving a new directive, not
+        //   answering the card. Cancel the card (autoAnswer with "user override"
+        //   semantics) and let the message flow through the normal path below
+        //   (queue or executeQuery).
+        this.logger.info(
+          { chatId, userId: msg.userId, hasPending: true, msgType: msg.chatType, textPreview: msg.text.slice(0, 50), pendingToolUseId: task.pendingQuestion.toolUseId },
+          'p2p message overrides pending card — cancelling card, treating as new prompt',
+        );
+        await this.autoAnswerRemainingQuestions(task).catch((err) =>
+          this.logger.error({ err, chatId }, 'autoAnswerRemainingQuestions failed (p2p text override)'),
+        );
+        // do NOT return — fall through to the message-queue / executeQuery path
+      }
     }
 
     // If a task is running, queue the message instead of rejecting
