@@ -77,7 +77,13 @@ export async function fetchKnowledgeContext(
     '### 3. 引用规范\n' +
     '- 引用检索到的文档时，每条附 [来源: title, confidence: 0.82, 时间: 2026-06-15]\n' +
     '- 没有 confidence >= 0.5 的引用就别说「基于已有资料」\n' +
-    '- 知识库没有的内容就是没有，不要补全';
+    '- 知识库没有的内容就是没有，不要补全\n\n' +
+    '### 4. 多版本处理（重要）\n' +
+    '- 当检索返回 ≥2 个相似文档（可能是同一材料的不同版本或重复上传）时，必须在回复里列出**所有版本**（含时间、来源 folder）\n' +
+    '- 必须明确问用户「用哪个版本」\n' +
+    '- **禁止**默认挑第一个 / 最新的 / 最高 quality_score 的回答\n' +
+    '- **禁止**自己合并/综合多个版本的内容（版本可能互斥，合并会失真）\n' +
+    '- 如果用户已指定版本（例如「用 v3」「用 final」），按用户说的来；否则列出全部候选';
   if (systemPromptOverride) {
     systemPromptOverride = systemPromptOverride + GUIDANCE_BLOCK;
   }
@@ -280,10 +286,27 @@ export async function fetchKnowledgeContext(
   const docParts: string[] = [];
   if (prefDec.length > 0) docParts.push('### 偏好与决策\n' + prefDec.map((r: any) => `- [${r.type}] ${r.subject} (${(r.confidence*100).toFixed(0)}%)\n  > ${(r.snippet||r.content||'').slice(0,150)}`).join('\n'));
   if (factsEv.length > 0) docParts.push('### 事实与事件\n' + factsEv.map((r: any) => `- [${r.type}] ${r.subject}`).join('\n'));
-  const docs = finalResults.slice(0,3).map((r,i) => `### ${i+1}. ${r.title}\n${(r.snippet||'').replace(/<[^>]*>/g,'')}`).join('\n\n');
+  // Multi-version rendering: list ALL similar docs (don't truncate to 3),
+  // each with updated_at + folder name from path, so the bot can see all
+  // versions side-by-side and ask the user which one to use.
+  const docs = finalResults.map((r: any, i: number) => {
+    const title = r.title || '(untitled)';
+    const updated = r.updated_at ? String(r.updated_at).slice(0, 10) : 'unknown';
+    const folderName = r.path ? String(r.path).split('/').filter(Boolean).slice(-2, -1)[0] || 'unknown' : 'unknown';
+    const snippet = String(r.snippet || '').replace(/<[^>]*>/g, '').slice(0, 250);
+    return `### ${i + 1}. ${title}\n> 时间: ${updated} | 来源: ${folderName}\n> ${snippet}`;
+  }).join('\n\n');
   if (docs) docParts.push('### 工作区文档\n' + docs);
   const formatted = docParts.join('\n\n');
-  const knowledgeContext = `## 相关知识参考\n\n以下是从知识库中检索到的相关资料，请参考这些信息回答用户问题：\n\n${formatted}${conversationContext}`;
+
+  // Multi-version hint: when 2+ similar docs returned, append an explicit
+  // reminder to the bot to list versions to the user (don't pick one).
+  let versionHint = '';
+  if (finalResults.length >= 2) {
+    versionHint = `\n\n> ⚠️ **本检索返回 ${finalResults.length} 个相关文档**（可能是同一材料的不同版本或重复上传）。你**必须**在回复里列出所有版本（含时间），让用户选择用哪个；**禁止**默认挑第一个回答，**禁止**自己合并/综合。`;
+  }
+
+  const knowledgeContext = `## 相关知识参考\n\n以下是从知识库中检索到的相关资料，请参考这些信息回答用户问题：\n\n${formatted}${versionHint}${conversationContext}`;
   deps.logger.info(
     { chatId, folderCount: knowledgeFolders.length, resultCount: finalResults.length },
     'Knowledge injection applied',
