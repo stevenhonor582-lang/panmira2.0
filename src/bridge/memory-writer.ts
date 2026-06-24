@@ -120,6 +120,17 @@ export class MemoryWriter {
         );
         return 'merged';
       }
+      // Quality gate: skip writing low-confidence memories
+      // (filtered out short conversational filler like "好"/"谢谢" that
+      // pollutes the RAG index and gets cited back as false evidence)
+      if (confidence < 0.5) {
+        this.logger.debug(
+          { agentId, subjectNormalized, confidence, contentLen: content.length },
+          'Memory skipped: confidence below threshold (0.5)',
+        );
+        return 'skipped';
+      }
+
       // INSERT new
       let embedding: number[] | null = null;
       try {

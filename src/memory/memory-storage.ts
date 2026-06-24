@@ -734,7 +734,11 @@ export class MemoryStorage {
       }
     }
     // 3. Apply quality boost + recency decay + final ranking
+    // Quality floor: drop documents below MIN_QUALITY_SCORE — they rank by tag
+    // match but carry no signal, and historically get cited as false evidence.
+    const MIN_QUALITY_SCORE = 0.3;
     return [...merged.values()]
+      .filter((item) => (Number(item.result.quality_score) || 0) >= MIN_QUALITY_SCORE)
       .map((item) => {
         const quality = Number(item.result.quality_score) || 0;
         let score = item.cosSim * (1 + quality * 0.2);
