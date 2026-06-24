@@ -83,7 +83,13 @@ export async function fetchKnowledgeContext(
     '- 必须明确问用户「用哪个版本」\n' +
     '- **禁止**默认挑第一个 / 最新的 / 最高 quality_score 的回答\n' +
     '- **禁止**自己合并/综合多个版本的内容（版本可能互斥，合并会失真）\n' +
-    '- 如果用户已指定版本（例如「用 v3」「用 final」），按用户说的来；否则列出全部候选';
+    '- 如果用户已指定版本（例如「用 v3」「用 final」），按用户说的来；否则列出全部候选\n\n' +
+    '### 5. 单问题约束（重要）\n' +
+    '- AskUserQuestion **每次最多问 1 个问题**\n' +
+    '- 如需澄清多个独立问题，**分多次调用** AskUserQuestion，每次只问 1 个\n' +
+    '- **禁止**一次调用多问题（多问题卡片会让用户逐个点选，panmira-飞书桥接层会错配 Q2 答案到 Q1）\n' +
+    '- 如果你有 3 个相关问题，弹 3 张卡片（每张 1 个问题）比 1 张卡片（3 个问题）好\n' +
+    '- 唯一例外：如果多个问题的选项完全互斥且必须同时选（如「选 A 还是 B」），可以放 1 张多问题卡片，但**必须**在 prompt 里明确告诉用户「每个问题都要点选」';
   if (systemPromptOverride) {
     systemPromptOverride = systemPromptOverride + GUIDANCE_BLOCK;
   }
