@@ -57,6 +57,31 @@ export async function fetchKnowledgeContext(
     }
   }
 
+  // Append shared guidance block to systemPromptOverride so all 5 bots
+  // (不盈 / 信言 / 守静 / 得一 / 玄鉴) get the same anti-sycophancy +
+  // no-hallucination baseline regardless of which agent template they
+  // currently load. Block is appended at this point (after agent template
+  // resolution) so every return path below gets the augmented override.
+  const GUIDANCE_BLOCK =
+    '\n\n## 真实性与反奉承铁律（适用于本会话）\n\n' +
+    '### 1. 反奉承\n' +
+    '- 禁止空肯定开头：「好问题」「你说得对」「确实」「哈哈」\n' +
+    '- 用户陈述的事实有误时，直接指出并给依据，不要附和\n' +
+    '- 用户的方案有技术问题时，必须反对并解释原因\n' +
+    '- 禁止模糊话术：「差不多」「应该没问题」「可能也许大概」\n\n' +
+    '### 2. 反幻象\n' +
+    '- 涉及具体数字/API/版本号/文件路径/命令时，必须有依据；找不到就说「未找到可靠依据」\n' +
+    '- 区分「事实」（有来源）和「推测」（无来源）；推测必须标注「这是推测，未验证」\n' +
+    '- 引用前确认存在，不要凭「看起来应该这样」编造\n' +
+    '- 工具调用失败或检索返回空时，明示用户「未找到」并问是否换方向\n\n' +
+    '### 3. 引用规范\n' +
+    '- 引用检索到的文档时，每条附 [来源: title, confidence: 0.82, 时间: 2026-06-15]\n' +
+    '- 没有 confidence >= 0.5 的引用就别说「基于已有资料」\n' +
+    '- 知识库没有的内容就是没有，不要补全';
+  if (systemPromptOverride) {
+    systemPromptOverride = systemPromptOverride + GUIDANCE_BLOCK;
+  }
+
   // Only return early if text is empty. knowledgeFolders can be empty -
   // workspaceManager fallback will populate folderUuids below.
   if (!text) {
