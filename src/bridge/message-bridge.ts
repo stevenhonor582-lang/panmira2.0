@@ -393,10 +393,21 @@ export class MessageBridge {
       await notifyStale('这张卡片来自更早的对话，toolUseId 已不匹配当前会话');
       return;
     }
+    this.logger.info(
+      { chatId, userId, messageId, value, taskQuestionIndex: task.currentQuestionIndex, pendingQuestions: task.pendingQuestion.questions.length },
+      'Card action received',
+    );
     const optionIndex = typeof value.optionIndex === 'number' ? value.optionIndex : -1;
-    const currentQ = task.pendingQuestion.questions[task.currentQuestionIndex];
+    // Prefer the questionIndex baked into the button value (race-safe);
+    // fall back to task state only if the button omits it.
+    const qiFromButton = typeof value.questionIndex === 'number' ? value.questionIndex : null;
+    const qi = qiFromButton !== null ? qiFromButton : task.currentQuestionIndex;
+    const currentQ = task.pendingQuestion.questions[qi];
     if (!currentQ || optionIndex < 0 || optionIndex >= currentQ.options.length) {
-      this.logger.warn({ chatId, optionIndex }, 'Card action has invalid optionIndex — ignoring');
+      this.logger.warn(
+        { chatId, optionIndex, qiFromButton, taskQuestionIndex: task.currentQuestionIndex, questionsLen: task.pendingQuestion.questions.length },
+        'Card action has invalid question/option index — ignoring',
+      );
       return;
     }
     const syntheticMsg: IncomingMessage = {
@@ -406,6 +417,12 @@ export class MessageBridge {
       userId,
       text: String(optionIndex + 1),
     };
+    if (qiFromButton !== null && qiFromButton !== task.currentQuestionIndex) {
+      this.logger.warn(
+        { chatId, qiFromButton, taskQuestionIndex: task.currentQuestionIndex },
+        'Race condition: button questionIndex differs from task state — used button value',
+      );
+    }
     await this.handleAnswer(syntheticMsg, task);
   }
 
@@ -443,6 +460,10 @@ export class MessageBridge {
     // Check if there's a pending question waiting for an answer
     const task = this.runningTasks.get(chatId);
     if (task && task.pendingQuestion) {
+      this.logger.debug(
+        { chatId, userId: msg.userId, hasPending: true, currentQuestionIndex: task.currentQuestionIndex, toolUseId: task.pendingQuestion.toolUseId, textPreview: msg.text.slice(0, 50) },
+        'handleMessage routing to handleAnswer (pending question)',
+      );
       await this.handleAnswer(msg, task);
       return;
     }
@@ -532,6 +553,11 @@ export class MessageBridge {
     const { chatId, text, imageKey } = msg;
     const pending = task.pendingQuestion!;
 
+    this.logger.info(
+      { chatId, msgType: msg.chatType, text: text.slice(0, 100), currentQuestionIndex: task.currentQuestionIndex, questionsLen: pending.questions.length },
+      'handleAnswer called',
+    );
+
     if (imageKey) {
       await this.getSender(chatId).sendText(chatId, '请用文字回复选择，或直接输入自定义答案。');
       return;
@@ -539,7 +565,10 @@ export class MessageBridge {
 
     const trimmed = text.trim();
     const currentQuestion = pending.questions[task.currentQuestionIndex];
-    if (!currentQuestion) return;
+    if (!currentQuestion) {
+      this.logger.warn({ chatId, currentQuestionIndex: task.currentQuestionIndex, questionsLen: pending.questions.length }, 'handleAnswer: currentQuestion is undefined — task state stale');
+      return;
+    }
 
     // Parse answer for the current question
     let answerText: string;
@@ -572,7 +601,9 @@ export class MessageBridge {
         clearTimeout(task.questionTimeoutId);
       }
       task.questionTimeoutId = setTimeout(() => {
-        this.autoAnswerRemainingQuestions(task);
+        this.autoAnswerRemainingQuestions(task).catch((err) =>
+          this.logger.error({ err, chatId }, "autoAnswerRemainingQuestions failed"),
+        );
       }, QUESTION_TIMEOUT_MS);
 
       // Update card to show next question
@@ -631,7 +662,9 @@ export class MessageBridge {
       };
       const progress = nextPending.questions.length > 1 ? ` (1/${nextPending.questions.length})` : '';
       task.questionTimeoutId = setTimeout(() => {
-        this.autoAnswerRemainingQuestions(task);
+        this.autoAnswerRemainingQuestions(task).catch((err) =>
+          this.logger.error({ err, chatId }, "autoAnswerRemainingQuestions failed"),
+        );
       }, QUESTION_TIMEOUT_MS);
 
       await this.getSender(chatId).updateCard(task.cardMessageId, {
@@ -645,7 +678,8 @@ export class MessageBridge {
       return;
     }
 
-    // No more questions — resume normal execution
+    // No more questions - resume normal execution. Update card to give
+    // the user explicit feedback that the bot is now generating, not stuck.
     const answerSummary =
       Object.values(task.collectedAnswers).length > 0 ? Object.values(task.collectedAnswers).join(', ') : answerText;
     const currentState = task.processor.getCurrentState();
@@ -653,20 +687,40 @@ export class MessageBridge {
       ...currentState,
       status: 'running',
       responseText: currentState.responseText
-        ? currentState.responseText + `\n\n> **Reply:** ${answerSummary}\n\n_Continuing..._`
-        : `> **Reply:** ${answerSummary}\n\n_Continuing..._`,
+        ? currentState.responseText + '\n\n> ✅ 已收到所有答案: ${answerSummary}\n\n⏳ 正在生成，请稍候...'
+        : '> ✅ 已收到所有答案: ${answerSummary}\n\n⏳ 正在生成，请稍候...',
     });
   }
 
   /** Auto-answer remaining questions when timeout fires. */
-  private autoAnswerRemainingQuestions(task: RunningTask): void {
+  private async autoAnswerRemainingQuestions(task: RunningTask): Promise<void> {
     const pending = task.pendingQuestion;
     if (!pending) return;
 
     this.logger.warn(
-      { chatId: task.chatId, toolUseId: pending.toolUseId },
+      { chatId: task.chatId, toolUseId: pending.toolUseId, unanswered: pending.questions.length - task.currentQuestionIndex },
       'Question timeout, auto-answering remaining questions',
     );
+
+    // NOTIFY USER: don't silently default — they should know the card timed out
+    const unansweredHeaders = pending.questions
+      .slice(task.currentQuestionIndex)
+      .map((q) => q.header)
+      .filter((h) => !task.collectedAnswers[h]);
+    if (unansweredHeaders.length > 0) {
+      try {
+        const timeoutMsg = [
+          '⏱️ 卡片已超时（5 分钟未操作）',
+          '',
+          '未回答的问题（' + unansweredHeaders.join('、') + '）已按 "用户未及时回复，请自行判断继续" 自动处理。',
+          '',
+          '如果你想重新选择，请重新发送问题。',
+        ].join('\n');
+        await this.getSender(task.chatId).sendText(task.chatId, timeoutMsg);
+      } catch (err) {
+        this.logger.error({ err, chatId: task.chatId }, 'Failed to notify user about question timeout');
+      }
+    }
 
     // Fill remaining unanswered questions with timeout message
     for (let i = task.currentQuestionIndex; i < pending.questions.length; i++) {
@@ -1089,7 +1143,9 @@ export class MessageBridge {
             clearTimeout(runningTask.questionTimeoutId);
           }
           runningTask.questionTimeoutId = setTimeout(() => {
-            this.autoAnswerRemainingQuestions(runningTask);
+            this.autoAnswerRemainingQuestions(runningTask).catch((err) =>
+              this.logger.error({ err, chatId }, "autoAnswerRemainingQuestions failed"),
+            );
           }, QUESTION_TIMEOUT_MS);
 
           continue;
