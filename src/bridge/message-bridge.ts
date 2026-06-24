@@ -398,10 +398,25 @@ export class MessageBridge {
       'Card action received',
     );
     const optionIndex = typeof value.optionIndex === 'number' ? value.optionIndex : -1;
-    // Prefer the questionIndex baked into the button value (race-safe);
-    // fall back to task state only if the button omits it.
+    // CORRECTION (commit 9): trust task state, not the button's questionIndex.
+    //
+    // Feishu's card action protocol re-uses the SAME messageId+toolUseId for
+    // every click on a given card, but the SDK sends value.questionIndex=0 for
+    // every click regardless of which question within a multi-question card
+    // the user actually meant. Trusting the button value (commit 1 b078d607)
+    // therefore silently misrouted the user's Q2 answer to Q1's slot.
+    //
+    // Use task.currentQuestionIndex (the source of truth for "which question
+    // we're currently asking") and only consult value.questionIndex as a
+    // diagnostic log field. optionIndex on the button is still trustworthy.
+    const qi = task.currentQuestionIndex;
     const qiFromButton = typeof value.questionIndex === 'number' ? value.questionIndex : null;
-    const qi = qiFromButton !== null ? qiFromButton : task.currentQuestionIndex;
+    if (qiFromButton !== null && qiFromButton !== task.currentQuestionIndex) {
+      this.logger.warn(
+        { chatId, qiFromButton, taskQuestionIndex: task.currentQuestionIndex, optionIndex },
+        'Card action questionIndex mismatch (using task state)',
+      );
+    }
     const currentQ = task.pendingQuestion.questions[qi];
     if (!currentQ || optionIndex < 0 || optionIndex >= currentQ.options.length) {
       this.logger.warn(
@@ -417,12 +432,6 @@ export class MessageBridge {
       userId,
       text: String(optionIndex + 1),
     };
-    if (qiFromButton !== null && qiFromButton !== task.currentQuestionIndex) {
-      this.logger.warn(
-        { chatId, qiFromButton, taskQuestionIndex: task.currentQuestionIndex },
-        'Race condition: button questionIndex differs from task state — used button value',
-      );
-    }
     await this.handleAnswer(syntheticMsg, task);
   }
 
