@@ -20,8 +20,23 @@ export class OutputHandler {
   ): Promise<void> {
     const sentPaths = new Set<string>();
 
+    // Guard: chatId should be the trailing segment of outputsDir
+    // outputsDir = <base>/<chatId>/, so trailing path segment should equal chatId.
+    // If they diverge, the bot is about to send files written for chat X to chat Y
+    // (a known P2P-vs-group misroute bug).
+    const dirTail = outputsDir.replace(/\/$/, '').split('/').pop() || '';
+    if (dirTail && dirTail !== chatId) {
+      this.logger.error(
+        { chatId, outputsDir, dirTail, mismatch: true },
+        'CRITICAL: sendOutputFiles chatId does not match outputsDir tail — files would be sent to wrong chat. Aborting sends.',
+      );
+      return;
+    }
+    this.logger.info({ chatId, outputsDir, fileCount: 0 }, 'sendOutputFiles starting');
+
     // 1. Scan the outputs directory for any files Claude placed there
     const outputFiles = this.outputsManager.scanOutputs(outputsDir);
+    this.logger.info({ chatId, outputsDir, fileCount: outputFiles.length, files: outputFiles.map((f) => f.fileName) }, 'sendOutputFiles scanned output files');
     for (const file of outputFiles) {
       try {
         if (file.isImage && file.sizeBytes < 10 * 1024 * 1024) {
