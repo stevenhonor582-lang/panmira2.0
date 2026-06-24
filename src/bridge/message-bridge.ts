@@ -103,7 +103,7 @@ export class MessageBridge {
     const defaultEngineName = resolveEngineName(config);
     this.engineCache.set(defaultEngineName, { engine: this.engine, executor: this.executor });
     this.sessionManager = new SessionManager(config.claude.defaultWorkingDirectory, logger, config.name, sessionStore);
-    this.outputsManager = new OutputsManager(config.claude.outputsBaseDir, logger);
+    this.outputsManager = new OutputsManager(config.claude.outputsBaseDir, config.name, logger);
     this.audit = new AuditLogger(logger);
     this.costTracker = new CostTracker();
 
@@ -874,7 +874,7 @@ export class MessageBridge {
     }
 
     // Prepare per-chat outputs directory
-    const outputsDir = this.outputsManager.prepareDir(chatId);
+    const outputsDir = this.outputsManager.prepareDir(chatId);  // bot name fixed at construction
 
     // Send initial "thinking" card
     const mediaCount = 1 + (msg.extraMedia?.length || 0);
@@ -1614,7 +1614,7 @@ export class MessageBridge {
     const cwd = session.workingDirectory;
     const abortController = new AbortController();
 
-    const outputsDir = this.outputsManager.prepareDir(chatId);
+    const outputsDir = this.outputsManager.prepareDir(chatId);  // bot name fixed at construction
 
     const displayPrompt = prompt;
     const processor = new StreamProcessor(displayPrompt, this.config.contextWindow, this.config.claude.model);

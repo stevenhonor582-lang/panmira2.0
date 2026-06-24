@@ -21,12 +21,15 @@ export class OutputsManager {
 
   constructor(
     private baseDir: string,
+    private botName: string,
     private logger: Logger,
   ) {}
 
-  /** Create a fresh per-chat outputs directory, clearing all files from previous tasks. */
+  /** Create a fresh per-bot, per-chat outputs directory: <baseDir>/<botName>/<chatId>/.
+   *  Bot isolation prevents bot-A's outputs from being scanned/sent by bot-B
+   *  (which previously could happen if chatId collided or was misrouted). */
   prepareDir(chatId: string): string {
-    const dir = path.join(this.baseDir, chatId);
+    const dir = path.join(this.baseDir, this.botName, chatId);
 
     // Cancel any pending deferred cleanup for this directory
     const pending = this.pendingCleanups.get(dir);
