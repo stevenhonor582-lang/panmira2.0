@@ -294,7 +294,20 @@ export async function fetchKnowledgeContext(
 const prefDec = (memoryResults || []).filter((r: any) => r.type === 'preference');
   const factsEv = (memoryResults || []).filter((r: any) => ['fact','event'].includes(r.type));
   const docParts: string[] = [];
-  if (prefDec.length > 0) docParts.push('### 偏好与决策\n' + prefDec.map((r: any) => `- [${r.type}] ${r.subject} (${(r.confidence*100).toFixed(0)}%)\n  > ${(r.snippet||r.content||'').slice(0,150)}`).join('\n'));
+  // commit-15 (2026-06-25): strip confidence + relabel as [历史]
+  //   so LLM cannot use these as decision basis. Per user.bot.behavior.no_auto_recommend 95%:
+  //   - bot must NOT auto-pick based on memory
+  //   - bot must NOT recommend X is 90% preference so do X
+  //   - if no user input, bot says I dont know instead of guessing
+  if (prefDec.length > 0) docParts.push(
+    '### 历史风格参考（Warning 不替代用户当前输入，不能作为决策依据）\n' +
+    prefDec.map((r: any) =>
+      '- [历史] ' + r.subject + '\n' +
+      '  > ' + (r.snippet || r.content || '').slice(0, 150) + '\n' +
+      '  > Warning 这是历史记录，不是用户当前输入。bot 看到这条 memory 时，不能自动用其做决策。\n' +
+      '  > 用户有输入就用用户输入；用户没输入就说不知道，不要凭这条 memory 推荐方案。'
+    ).join('\n')
+  );
   if (factsEv.length > 0) docParts.push('### 事实与事件\n' + factsEv.map((r: any) => `- [${r.type}] ${r.subject}`).join('\n'));
   // Multi-version rendering: list ALL similar docs (don't truncate to 3),
   // each with updated_at + folder name from path, so the bot can see all
