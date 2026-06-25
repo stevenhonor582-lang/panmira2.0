@@ -299,16 +299,33 @@ const prefDec = (memoryResults || []).filter((r: any) => r.type === 'preference'
   //   - bot must NOT auto-pick based on memory
   //   - bot must NOT recommend X is 90% preference so do X
   //   - if no user input, bot says I dont know instead of guessing
+  // commit-16 (2026-06-25): 事实呈现模式
+  // 整个 knowledgeContext 框架重写为 '事实呈现'
+  // Per user.bot_autonomy 95% + user.bot.behavior.no_auto_recommend 95%:
+  //  - 决策权永远在用户
+  //  - bot 看到 risk/issue -> 告诉用户，让用户决定
+  //  - bot 不能说 '我推荐 X'，只能说 '我看到 X 事实'
   if (prefDec.length > 0) docParts.push(
-    '### 历史风格参考（Warning 不替代用户当前输入，不能作为决策依据）\n' +
+    '### 相关事实（⚠️ 供参考，决策权在用户）\n' +
+    'bot 看到这些事实后必须告诉用户，不能基于这些事实自主决策。\n' +
+    'bot 不能说「我推荐 X」，只能说「我看到 X 事实」。\n\n' +
     prefDec.map((r: any) =>
       '- [历史] ' + r.subject + '\n' +
       '  > ' + (r.snippet || r.content || '').slice(0, 150) + '\n' +
-      '  > Warning 这是历史记录，不是用户当前输入。bot 看到这条 memory 时，不能自动用其做决策。\n' +
-      '  > 用户有输入就用用户输入；用户没输入就说不知道，不要凭这条 memory 推荐方案。'
+      '  > （仅供参考，不替代用户当前决策）'
     ).join('\n')
   );
-  if (factsEv.length > 0) docParts.push('### 事实与事件\n' + factsEv.map((r: any) => `- [${r.type}] ${r.subject}`).join('\n'));
+  // commit-16: facts/events 也用 '事实呈现' 模式
+  if (factsEv.length > 0) docParts.push(
+    '### 相关事实（⚠️ 供参考，决策权在用户）\n' +
+    'bot 看到这些事实后必须告诉用户，不能基于这些事实自主决策。\n' +
+    'bot 不能说「我推荐 X」，只能说「我看到 X 事实」。\n\n' +
+    factsEv.map((r: any) =>
+      '- [事实] ' + r.subject + '\n' +
+      '  > ' + (r.snippet || r.content || '').slice(0, 200) + '\n' +
+      '  > （仅供参考，不替代用户当前决策）'
+    ).join('\n')
+  );
   // Multi-version rendering: list ALL similar docs (don't truncate to 3),
   // each with updated_at + folder name from path, so the bot can see all
   // versions side-by-side and ask the user which one to use.

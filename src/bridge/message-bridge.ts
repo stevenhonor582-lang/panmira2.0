@@ -2187,7 +2187,54 @@ export class MessageBridge {
    * sends a plain text fallback so the user at least sees the result.
    */
   private async sendFinalCard(messageId: string, state: CardState, chatId?: string): Promise<void> {
+    // commit-17 (2026-06-25): audit bot autonomy violations
+    // Per user.bot_autonomy 95% + user.bot.behavior.no_auto_recommend 95%:
+    //   - bot must NOT auto-recommend
+    //   - bot must NOT say "我推荐 X" / "我建议 X" / "按 X 落地" / "默认推荐 X"
+    //   - bot 看到 risk/issue -> 告诉用户，让用户决定
+    this.auditBotAutonomy(state, chatId);
     return sendFinalCard(this._cardDeps, messageId, state, chatId);
+  }
+
+  /**
+   * commit-17: detect bot autonomous recommendation in final output.
+   * commit-18: metrics counter + detailed audit log.
+   * Per user.bot_autonomy 95% + user.bot.behavior.no_auto_recommend 95%:
+   *   - bot must NOT auto-recommend
+   *   - bot 看到 risk/issue -> 告诉用户，让用户决定
+   *
+   * Returns: { violations: string[], count: number } for metrics tracking
+   */
+  private _autonomyViolationCount: number = 0;
+  public getAutonomyViolationCount(): number { return this._autonomyViolationCount; }
+  public resetAutonomyViolationCount(): void { this._autonomyViolationCount = 0; }
+
+  private auditBotAutonomy(state: CardState, chatId?: string): { violations: string[], count: number } {
+    const text = state.responseText || '';
+    // Detect autonomous recommendation patterns
+    const recommendPattern = /我推荐[：:]?|我建议[：:]?|按\s*[\w\s]+\s*落地|默认推荐|建议\s*(你|您)/g;
+    const matches = text.match(recommendPattern);
+    if (matches && matches.length > 0) {
+      this._autonomyViolationCount += matches.length;
+
+      this.logger.warn({
+        chatId,
+        bot: this.config.name,
+        matches,
+        matchCount: matches.length,
+        textLen: text.length,
+        totalViolationsThisSession: this._autonomyViolationCount,
+        // commit-18: structured audit fields
+        auditType: 'bot_autonomy_violation',
+        detectedAt: new Date().toISOString(),
+        rule: 'user.bot_autonomy 95% + user.bot.behavior.no_auto_recommend 95%',
+      }, 'commit-18 AUDIT: bot output contains autonomous recommendation - violates user.bot_autonomy');
+
+      // Append explicit reminder to responseText (before final card send)
+      const warningBanner = '\n\n---\n⚠️ **决策权在用户**：以上是 bot 看到的事实 + 你之前的输入。bot 不替你决策，请你自己决定。';
+      state.responseText = text + warningBanner;
+    }
+    return { violations: matches || [], count: matches?.length || 0 };
   }
 
   /**
