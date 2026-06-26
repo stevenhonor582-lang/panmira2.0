@@ -1342,7 +1342,20 @@ export class MessageBridge {
         durationMs,
         costUsd: lastState.costUsd,
         error: lastState.errorMessage,
+        // commit-19: track user additional input length
+        meta: {
+          userAdditionalInputLen: runningTask?.userAdditionalInput?.length || 0,
+        },
       });
+      if (runningTask?.userAdditionalInput) {
+        this.logger.info({
+          chatId,
+          userId,
+          taskDurationMs: durationMs,
+          userAdditionalInputLen: runningTask.userAdditionalInput.length,
+          userAdditionalPreview: runningTask.userAdditionalInput.slice(0, 200),
+        }, 'commit-19: task completed with user additional input');
+      }
       this.emitActivity({
         type: lastState.status === 'complete' ? 'task_completed' : 'task_failed',
         botName: this.config.name,

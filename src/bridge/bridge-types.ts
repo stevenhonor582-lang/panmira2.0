@@ -32,6 +32,9 @@ export interface RunningTask {
   chatId: string;
   /** Latest response text preview, updated during streaming, used for recovery notification */
   lastResponsePreview: string;
+  /** commit-19 (2026-06-26): user text sent during running task. NOT queued as new task.
+   *  Instead appended to running task so bot sees it as user "补充" in next round. */
+  userAdditionalInput?: string;
 }
 
 export interface ApiTaskOptions {
