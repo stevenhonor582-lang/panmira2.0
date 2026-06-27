@@ -61,6 +61,19 @@ module.exports = {
       env: Object.assign({ NODE_ENV: 'production' }, envVars),
     },
     {
+      // 2026-06-27 commit 4: 真正的 batch extraction worker
+      // 之前 extraction-worker.mjs 只是健康检查, 不实际抽取
+      // 这个 worker 才真的调 LLM 抽取 + 飞书告警 + auto-restart
+      {
+        name: batch-extract-worker,
+        script: scripts/batch-extract-worker.mjs,
+        interpreter: node,
+        cwd: __dirname,
+        cron_restart: 0 */6 ✅ CLAUDE.md config db docs knowledge-base output **Reply:** scripts 马户-panmira-测试计划-2026-06-24.md ✅ CLAUDE.md config db docs knowledge-base output **Reply:** scripts 马户-panmira-测试计划-2026-06-24.md *,
+        autorestart: false,
+        max_memory_restart: 500M,
+        env: Object.assign({ NODE_ENV: production }, envVars),
+      },
       // Extraction worker: 6h-window health check + sync verification
       // Schedule: every 6 hours at minute 0 (avoids collision with monitor-extraction)
       name: 'extraction-worker',
