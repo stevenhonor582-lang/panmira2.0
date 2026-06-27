@@ -7,6 +7,27 @@ import { DocEmbedder } from '../memory/doc-embedder.js';
 
 const MEMORY_VECTOR_THRESHOLD = 0.6;
 
+// 2026-06-27: jieba 风格 bigram 分词
+const STOP_CHARS = new Set([
+  "的","了","在","是","我","有","和","就","不","都","一","上","也","很",
+  "到","要","去","你","会","着","看","好","这","吗","呢","吧","把",
+  "被","让","给","对","从","向","与","以","及","或","但","而","且","所",
+  "其","之","中","下","能","做","用","那","类","还","再","已","没","可",
+  "后","前","因","为","与","此","哪","里"
+]);
+
+function extractBigrams(text: string, maxKeywords = 20): string[] {
+  const cleaned = text.replace(/[\s,，。！？、；：""\\（）【】\[\](){}0-9a-zA-Z_]+/g, "");
+  const bigrams: string[] = [];
+  for (let i = 0; i < cleaned.length - 1; i++) {
+    const b = cleaned.substring(i, i + 2);
+    if (STOP_CHARS.has(b[0]) || STOP_CHARS.has(b[1])) continue;
+    bigrams.push(b);
+  }
+  return [...new Set(bigrams)].slice(0, maxKeywords);
+}
+
+
 export interface KnowledgeFetcherDeps {
   config: BotConfigBase;
   logger: Logger;
@@ -171,16 +192,24 @@ export async function fetchKnowledgeContext(
       deps.logger.info({ topRel, count: vecRows.length }, 'Memory vector search hit');
     } else {
       // Fallback: ILIKE (also fixed to use id not bot_id)
-      const { rows: ilikeRows } = await pool.query(
-        `SELECT id, type, subject, subject_normalized, confidence, polarity, hit_count,
-                LEFT(content, 300) AS snippet, last_hit_at
-           FROM memories WHERE invalidated_at IS NULL
-            AND bot_id = (SELECT bot_id FROM bot_configs WHERE name = $1 LIMIT 1)
-            AND (content ILIKE '%' || $2 || '%' OR subject ILIKE '%' || $2 || '%')
-          ORDER BY hit_count DESC, confidence DESC LIMIT 8`,
-        [deps.config.name, Array.from(searchQuery).slice(0, 50).join('')],
-      );
-      memoryResults = ilikeRows || [];
+      const keywords = extractBigrams(searchQuery);
+      let ilikeRows: any[] = [];
+      if (keywords.length > 0) {
+        const whereClauses = keywords.map((_, i) =>
+          `(content ILIKE '%' || $${i + 2} || '%' OR subject ILIKE '%' || $${i + 2} || '%')`
+        ).join(" OR ");
+        const { rows } = await pool.query(
+          `SELECT id, type, subject, subject_normalized, confidence, polarity, hit_count,
+                  LEFT(content, 300) AS snippet, last_hit_at
+             FROM memories WHERE invalidated_at IS NULL
+              AND bot_id = (SELECT bot_id FROM bot_configs WHERE name = $1 LIMIT 1)
+              AND (${whereClauses})
+            ORDER BY hit_count DESC, confidence DESC LIMIT 8`,
+          [deps.config.name, ...keywords]
+        );
+        ilikeRows = rows || [];
+      }
+      memoryResults = ilikeRows;
       deps.logger.info({ topRel, count: memoryResults.length, fallback: 'ilike' }, 'Memory search fell back to ILIKE');
     }
   } catch (err: any) {
@@ -212,7 +241,13 @@ export async function fetchKnowledgeContext(
             : 0.5;
           const hitCount = Math.min(1, (meta?.hit_count || 0) / 10); // normalize
           const confidence = meta?.confidence ?? 0.5;
-          const finalScore = 0.5*cosine + 0.2*recency + 0.2*hitCount + 0.1*confidence;
+          // 2026-06-27: 加 ageBoost 让 7 天内新 memory 有机会排前
+      const createdTs = meta?.created_at
+        ? Math.exp(-((now - new Date(meta.created_at).getTime()) / 86400000) * Math.LN2 / HALF_LIFE_DAYS)
+        : 0.5;
+      const recency = Math.max(updatedTs, 0.5);
+      const ageBoost = createdTs > 0.7 ? 0.3 : 0;
+      const finalScore = 0.45*cosine + 0.15*recency + 0.15*hitCount + 0.1*confidence + 0.15*ageBoost;
           return { r, finalScore, meta };
         })
         .sort((a, b) => b.finalScore - a.finalScore)
@@ -226,15 +261,20 @@ export async function fetchKnowledgeContext(
         const injectedIds = ranked.slice(0, 3).map(r => r.id);
         if (injectedIds.length > 0) {
           await pool.query(
-            `UPDATE documents SET hit_count = COALESCE(hit_count, 0) + 1, last_hit_at = NOW()
-              WHERE id = ANY($1)`,
+            `UPDATE memories SET hit_count = COALESCE(hit_count, 0) + 1, last_hit_at = NOW(), updated_at = NOW()
+              WHERE id = ANY($1) AND invalidated_at IS NULL`,
             [injectedIds]
           ).catch((err: any) => deps.logger.debug({ err: err.message }, 'hit_count bump failed'));
         }
       }
 
       deps.logger.info(
-        { chatId, resultCount: ranked.length, topScore: ranked.length > 0 ? (1 - (ranked[0].score || 0)) : 0 },
+        { 
+          chatId, 
+          resultCount: ranked.length, 
+          topScore: rankedWithScore[0]?.finalScore ?? 0,
+          topCosine: ranked.length > 0 ? (1 - (ranked[0].score || 0)) : 0,
+        },
         'Knowledge re-ranked (v1)',
       );
     }
