@@ -257,17 +257,30 @@ export async function fetchKnowledgeContext(
         .slice(0, 5);
       ranked = rankedWithScore.map(x => x.r);
 
-      // Bump hit_count only for docs actually injected into context (top 3)
-      // M1-fix 2026-06-20: was UPDATE memories (wrong table) — IDs are document UUIDs not memory UUIDs.
-      // Changed to UPDATE documents, plus added last_hit_at writeback.
-      if ((metaRows as any[]).length > 0) {
-        const injectedIds = ranked.slice(0, 3).map(r => r.id);
-        if (injectedIds.length > 0) {
-          await pool.query(
-            `UPDATE memories SET hit_count = COALESCE(hit_count, 0) + 1, last_hit_at = NOW(), updated_at = NOW()
-              WHERE id = ANY($1) AND invalidated_at IS NULL`,
-            [injectedIds]
-          ).catch((err: any) => deps.logger.debug({ err: err.message }, 'hit_count bump failed'));
+      // 2026-06-27 commit 7: UPDATE memoryResults (not ranked) — ranked is folder documents, memoryResults is memories.
+      // Previous bug: ranked.slice(0,3).map(r=>r.id) returned document UUIDs, UPDATE memories matched 0 rows,
+      // metaRows.length === 0 caused the whole block to be skipped. hit_count never grew.
+      const memoryInjectedIds = (memoryResults as any[]).slice(0, 3).map((m: any) => m.id);
+      if (memoryInjectedIds.length > 0) {
+        try {
+          const { rowCount } = await pool.query(
+            `UPDATE memories
+             SET hit_count = COALESCE(hit_count, 0) + 1,
+                 last_hit_at = NOW(),
+                 last_accessed = NOW()
+             WHERE id = ANY($1) AND invalidated_at IS NULL`,
+            [memoryInjectedIds]
+          );
+          if ((rowCount ?? 0) === 0) {
+            deps.logger.warn(
+              { memoryInjectedIds, topRel, recallPath: topRel >= MEMORY_VECTOR_THRESHOLD ? 'vector' : 'ilike' },
+              'hit_count UPDATE matched 0 rows (memoryResults ids not in memories table?)',
+            );
+          } else {
+            deps.logger.debug({ rowCount, memoryInjectedIds }, 'hit_count bumped');
+          }
+        } catch (err: any) {
+          deps.logger.error({ err: err?.message, memoryInjectedIds }, 'hit_count bump failed');
         }
       }
 

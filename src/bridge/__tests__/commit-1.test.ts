@@ -1,12 +1,13 @@
-// 2026-06-27 commit 1 静态检查测试
+// 2026-06-27 commit 1 静态检查测试 (updated for commit 7 multi-line UPDATE)
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 
 describe("commit 1: knowledge-fetcher 修复静态检查", () => {
   const src = readFileSync("src/bridge/knowledge-fetcher.ts", "utf-8");
 
-  it("B1: UPDATE 的是 memories 不是 documents", () => {
-    expect(src).toMatch(/UPDATE memories SET hit_count/);
+  it("B1: UPDATE 的是 memories 不是 documents (supports multi-line)", () => {
+    // commit 7 改成多行格式: UPDATE memories\n SET hit_count...
+    expect(src).toMatch(/UPDATE\s+memories[\s\S]{0,200}SET\s+hit_count/);
     expect(src.includes("UPDATE documents SET hit_count")).toBe(false);
   });
 

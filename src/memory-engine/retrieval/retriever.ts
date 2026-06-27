@@ -39,7 +39,9 @@ export class VectorRetriever {
     const vec = vectorResults.status === 'fulfilled' ? vectorResults.value : [];
 
     if (vec.length === 0) {
-      for (const r of kw) await this.storage.updateAccess(r.memory.id).catch(() => {});
+      for (const r of kw) await this.storage
+        .updateAccess(r.memory.id)
+        .catch((err: any) => console.error('[retriever] updateAccess failed', { id: r.memory.id, err: err?.message }));
       return kw;
     }
 
@@ -66,7 +68,9 @@ export class VectorRetriever {
         rank: i + 1,
       }));
 
-    for (const r of fused) await this.storage.updateAccess(r.memory.id).catch(() => {});
+    for (const r of fused) await this.storage
+        .updateAccess(r.memory.id)
+        .catch((err: any) => console.error('[retriever] updateAccess failed', { id: r.memory.id, err: err?.message }));
     return fused;
   }
 }

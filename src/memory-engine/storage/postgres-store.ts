@@ -55,7 +55,7 @@ export class PostgresStore implements StorageBackend {
         sql`${memories.confidence} >= 0.5`,             // 2026-06-27: 质量门
         or(...ilikeConditions)
       ))
-      .orderBy(desc(memories.confidence), desc(memories.hitCount))  // 2026-06-27: conf 排序
+      .orderBy(desc(memories.hitCount), desc(memories.confidence), desc(memories.importance))  // 2026-06-27 commit 7: hit_count 优先 (popularity 业务直觉), confidence+importance tiebreaker
       .limit(limit * 3);
 
     const scored = rows
@@ -67,7 +67,11 @@ export class PostgresStore implements StorageBackend {
         }
         return { row, matchCount };
       })
-      .sort((a: any, b: any) => b.matchCount - a.matchCount || (b.row.importance ?? 0) - (a.row.importance ?? 0));
+      .sort((a: any, b: any) =>
+        b.matchCount - a.matchCount
+        || (b.row.hitCount ?? 0) - (a.row.hitCount ?? 0)
+        || (b.row.importance ?? 0) - (a.row.importance ?? 0),
+      );
 
     return scored.slice(0, limit).map((item: any, i: any) => ({
       memory: this.rowToMemory(item.row),
