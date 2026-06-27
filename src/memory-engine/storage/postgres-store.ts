@@ -32,22 +32,30 @@ export class PostgresStore implements StorageBackend {
   async retrieve(
     query: string,
     userId: string,
+    botId?: string,  // 2026-06-27 commit 3: 加 botId 做隔离
     options?: { layers?: number[]; limit?: number; threshold?: number },
   ): Promise<MemoryResult[]> {
     const limit = options?.limit ?? 5;
-    const layers = options?.layers ?? [MemoryLayer.USER];
+    const layers = options?.layers ?? [MemoryLayer.RAW, MemoryLayer.USER, MemoryLayer.AGENT, MemoryLayer.SHARED];  // 2026-06-27: 默认全 layer
     const keywords = this.extractKeywords(query);
 
     if (keywords.length === 0) {
-      return this.fallbackSearch(userId, layers, limit);
+      return this.fallbackSearch(userId, layers, limit, botId);
     }
 
     const ilikeConditions = keywords.map((kw) => sql`${memories.content} ILIKE ${'%' + kw + '%'}`);
     const rows = await db
       .select()
       .from(memories)
-      .where(and(eq(memories.userId, userId), inArray(memories.layer, layers), or(...ilikeConditions)))
-      .orderBy(desc(memories.importance))
+      .where(and(
+        eq(memories.userId, userId),
+        botId ? eq(memories.botId, botId) : sql`1=1`,  // 2026-06-27: botId 过滤
+        inArray(memories.layer, layers),
+        sql`${memories.invalidatedAt} IS NULL`,         // 2026-06-27: 过滤废弃
+        sql`${memories.confidence} >= 0.5`,             // 2026-06-27: 质量门
+        or(...ilikeConditions)
+      ))
+      .orderBy(desc(memories.confidence), desc(memories.hitCount))  // 2026-06-27: conf 排序
       .limit(limit * 3);
 
     const scored = rows
@@ -71,10 +79,11 @@ export class PostgresStore implements StorageBackend {
   async retrieveVector(
     embedding: number[],
     userId: string,
+    botId?: string,  // 2026-06-27 commit 3
     options?: { layers?: number[]; limit?: number; threshold?: number },
   ): Promise<MemoryResult[]> {
     const limit = options?.limit ?? 5;
-    const layers = options?.layers ?? [MemoryLayer.USER];
+    const layers = options?.layers ?? [MemoryLayer.RAW, MemoryLayer.USER, MemoryLayer.AGENT, MemoryLayer.SHARED];  // 2026-06-27: 默认全 layer
     const threshold = options?.threshold ?? 0.5;
 
     const rows = await db
@@ -93,7 +102,14 @@ export class PostgresStore implements StorageBackend {
         distance: sql<number>`(${sql.raw(JSON.stringify(embedding))}::vector <=> ${memories.embedding})`,
       })
       .from(memories)
-      .where(and(eq(memories.userId, userId), inArray(memories.layer, layers), sql`${memories.embedding} IS NOT NULL`))
+      .where(and(
+        eq(memories.userId, userId),
+        botId ? eq(memories.botId, botId) : sql`1=1`,  // 2026-06-27
+        inArray(memories.layer, layers),
+        sql`${memories.embedding} IS NOT NULL`,
+        sql`${memories.invalidatedAt} IS NULL`,         // 2026-06-27
+        sql`${memories.confidence} >= 0.5`              // 2026-06-27
+      ))
       .orderBy(sql`(${sql.raw(JSON.stringify(embedding))}::vector <=> ${memories.embedding})`)
       .limit(limit);
 
@@ -107,9 +123,14 @@ export class PostgresStore implements StorageBackend {
   }
 
   async updateAccess(id: string): Promise<void> {
+    // 2026-06-27 commit 3 B18: 修 hit_count (之前写 access_count 是字段混乱)
     await db
       .update(memories)
-      .set({ accessCount: sql`${memories.accessCount} + 1`, lastAccessed: new Date() })
+      .set({
+        hitCount: sql`${memories.hitCount} + 1`,
+        lastHitAt: new Date(),
+        lastAccessed: new Date(),  // 保留 access_count 同步
+      })
       .where(eq(memories.id, id));
   }
 
@@ -182,12 +203,17 @@ export class PostgresStore implements StorageBackend {
     return [...new Set(keywords)];
   }
 
-  private async fallbackSearch(userId: string, layers: number[], limit: number): Promise<MemoryResult[]> {
+  private async fallbackSearch(userId: string, layers: number[], limit: number, botId?: string): Promise<MemoryResult[]> {
     const rows = await db
       .select()
       .from(memories)
-      .where(and(eq(memories.userId, userId), inArray(memories.layer, layers)))
-      .orderBy(desc(memories.importance))
+      .where(and(
+        eq(memories.userId, userId),
+        botId ? eq(memories.botId, botId) : sql`1=1`,
+        inArray(memories.layer, layers),
+        sql`${memories.invalidatedAt} IS NULL`
+      ))
+      .orderBy(desc(memories.confidence), desc(memories.hitCount))
       .limit(limit);
 
     return rows.map((row: any, i: any) => ({

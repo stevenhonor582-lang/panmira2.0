@@ -12,21 +12,23 @@ export class VectorRetriever {
   ) {}
 
   async retrieve(query: MemoryQuery): Promise<MemoryResult[]> {
-    const { query: text, userId, layers, limit, threshold } = query;
-    const layerValues = layers ?? [MemoryLayer.USER];
+    const { query: text, userId, botId, layers, limit, threshold } = query;
+    // 2026-06-27 commit 3: 默认搜全部 layer (之前只搜 layer=1 导致 254/264 scraper-kit 永远召回不到)
+    const layerValues = layers ?? [MemoryLayer.RAW, MemoryLayer.USER, MemoryLayer.AGENT, MemoryLayer.SHARED];
     const opts = {
       layers: layerValues.map((l) => l as number),
       limit: limit ?? 5,
       threshold: threshold ?? DEFAULT_SIMILARITY_THRESHOLD,
-    };
+      botId,  // 2026-06-27: 透传 botId
+    } as any;
 
     const [keywordResults, vectorResults] = await Promise.allSettled([
-      this.storage.retrieve(text, userId, opts),
+      this.storage.retrieve(text, userId, botId, opts),
       (async () => {
         try {
           const [embedding] = await this.embedder.embedBatch([text]);
           if (embedding.every((v) => v === 0)) return [];
-          return this.storage.retrieveVector(embedding, userId, opts);
+          return this.storage.retrieveVector(embedding, userId, botId, opts);
         } catch {
           return [];
         }
