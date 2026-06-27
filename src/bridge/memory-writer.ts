@@ -211,7 +211,14 @@ export class MemoryWriter {
                  metadata_json = EXCLUDED.metadata_json`,
               [cand.content, metadata.userId ?? 'anonymous', agentIdFinal, cand.confidence,
                 embedding ? '[' + embedding.join(',') + ']' : null,
-                JSON.stringify({ source: 'llm-extraction', source_quote: cand.source_quote, chatId }),
+                JSON.stringify({
+                  source: 'llm-extraction',
+                  source_quote: cand.source_quote,
+                  original_window_text: windowText.slice(0, 5000),  // 2026-06-27 commit 8: 保留完整对话窗口 (5KB 截断)
+                  original_window_truncated: windowText.length > 5000,
+                  original_window_length: windowText.length,
+                  chatId,
+                }),
                 cand.subject, cand.subject_normalized, cand.confidence, cand.type, cand.polarity, layer,
                 this.deriveTenant(metadata)],
             );

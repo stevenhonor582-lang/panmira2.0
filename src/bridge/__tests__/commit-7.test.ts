@@ -5,8 +5,9 @@ import { readFileSync } from "node:fs";
 describe("commit 7: UPDATE 块修 memoryResults", () => {
   const src = readFileSync("src/bridge/knowledge-fetcher.ts", "utf-8");
 
-  it("UPDATE 用 memoryResults.slice(0,3) 不是 ranked.slice(0,3)", () => {
-    expect(src).toMatch(/memoryResults[^\n]*\.slice\(0, 3\)/);
+  it("UPDATE 用 memoryResults.slice (commit 7: 3, commit 8: 20) 不是 ranked.slice", () => {
+    // commit 7: 3, commit 8: 20 (跟 ranked top 一致)
+    expect(src).toMatch(/memoryResults as any\[\]\)\.slice\(0, 20\)/);
   });
 
   it("旧 metaRows.length > 0 闸门已删除", () => {

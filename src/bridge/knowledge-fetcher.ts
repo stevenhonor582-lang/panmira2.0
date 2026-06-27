@@ -254,13 +254,13 @@ export async function fetchKnowledgeContext(
           return { r, finalScore, meta };
         })
         .sort((a, b) => b.finalScore - a.finalScore)
-        .slice(0, 5);
+        .slice(0, 20);  // 2026-06-27 commit 8: 5 -> 20 (per user)
       ranked = rankedWithScore.map(x => x.r);
 
       // 2026-06-27 commit 7: UPDATE memoryResults (not ranked) — ranked is folder documents, memoryResults is memories.
       // Previous bug: ranked.slice(0,3).map(r=>r.id) returned document UUIDs, UPDATE memories matched 0 rows,
       // metaRows.length === 0 caused the whole block to be skipped. hit_count never grew.
-      const memoryInjectedIds = (memoryResults as any[]).slice(0, 3).map((m: any) => m.id);
+      const memoryInjectedIds = (memoryResults as any[]).slice(0, 20).map((m: any) => m.id);  // 2026-06-27 commit 8: 3 -> 20 (跟 ranked top 20 一致)
       if (memoryInjectedIds.length > 0) {
         try {
           const { rowCount } = await pool.query(
