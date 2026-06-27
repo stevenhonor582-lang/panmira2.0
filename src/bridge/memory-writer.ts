@@ -17,8 +17,8 @@ import { pool } from '../db/index.js';
 // backward compat and will be dropped in a future migration. Do NOT use agent_id in new code.
 const RATE_LIMIT_MS = 10 * 60 * 1000; // legacy 10-min rate limit (kept for backward compat)
 const MAX_CACHE_SIZE = 100;
-const WINDOW_TOKENS = 500; // v2.4: trigger extraction when buffer >= 2000 tokens
-const WINDOW_STEP = 250; // 50% overlap — keep last 1000 tokens after extraction
+const WINDOW_TOKENS = 2000; // 2026-06-27 commit 2: 500 太低, 提到 2000 减少 LLM 触发频次
+const WINDOW_STEP = 1000; // 50% overlap // 50% overlap — keep last 1000 tokens after extraction
 
 export class MemoryWriter {
   private folderCache = new Map<string, string>();
@@ -66,24 +66,6 @@ export class MemoryWriter {
   }
 
   /**
-   * Extract subject key from user message — simple heuristic for v1.
-   * Format: <agentId>:<first-30-chars-of-message-snake_cased>
-   */
-  private async extractSubject(userMessage: string, agentId: string): Promise<{ subject: string; normalized: string; confidence: number }> {
-    const clean = userMessage
-      .replace(/[\n\r\t]+/g, ' ')
-      .replace(/[^\w一-鿿\s]/g, '')
-      .trim()
-      .slice(0, 30);
-    // v2.1: normalize through rules (pinyin/alias/contain) + LLM fallback
-    const result = await this.normalizer.normalize(clean, agentId);
-    const subject = `${agentId}:${result.canonical}`;
-    const normalized = subject.toLowerCase().replace(/\s+/g, '_');
-    const confidence = Math.max(result.confidence, userMessage.length > 50 ? 0.7 : 0.5);
-    return { subject, normalized, confidence };
-  }
-
-  /**
    * v1: hard dedup by (bot_id, subject_normalized).
    * Returns: 'merged' (bumped existing), 'inserted' (new), or 'skipped' (failed).
    */
@@ -110,7 +92,7 @@ export class MemoryWriter {
         await pool.query(
           `UPDATE memories
               SET content = $1, confidence = $2, hit_count = hit_count + 1,
-                  last_hit_at = NOW(), 
+                  last_hit_at = NOW(), updated_at = NOW() 
             WHERE id = $3`,
           [content, newConf, existing.id],
         );
@@ -123,7 +105,8 @@ export class MemoryWriter {
       // Quality gate: skip writing low-confidence memories
       // (filtered out short conversational filler like "好"/"谢谢" that
       // pollutes the RAG index and gets cited back as false evidence)
-      if (confidence < 0.5) {
+      // 2026-06-27 commit 2: 提到 0.6 减少低质量 memory
+      if (confidence < 0.6) {
         this.logger.debug(
           { agentId, subjectNormalized, confidence, contentLen: content.length },
           'Memory skipped: confidence below threshold (0.5)',
@@ -282,12 +265,21 @@ export class MemoryWriter {
         this.logger.debug({ botName, chatId: metadata.chatId, candidateCount: candidates.length },
           'LLM path ok, skipped legacy v1 extraction');
       } else {
-        const { subject, normalized, confidence } = await this.extractSubject(userMessage, agentId);
-        await this.upsertMemory(agentId, subject, normalized, content, confidence, {
-          chatId: metadata.chatId,
-          userId: metadata.userId,
-        });
-        this.logger.debug({ botName, chatId: metadata.chatId, subject: normalized }, 'Memory recorded (v1 fallback)');
+        // 2026-06-27 commit 2: LLM 失败时不再 fallback v1 (原话型污染源)
+        // 6/20 那 114 条 ${bot_uuid}:${用户原话} 就是 v1 fallback 写入的
+        this.logger.warn(
+          { botName, chatId: metadata.chatId, userMessage: userMessage.slice(0, 50) },
+          'LLM extraction failed, skipped memory write (was v1 fallback before commit 2)',
+        );
+        // 飞书告警 (commit 5 webhook 已配)
+        const webhook = process.env.PANMIRA_ALERT_WEBHOOK;
+        if (webhook) {
+          fetch(webhook, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ msg_type: 'text', content: { text: '[Panmira] LLM extraction failed, bot=' + botName + ', chat=' + metadata.chatId } }),
+          }).catch(() => {});
+        }
       }
     } catch (err: any) {
       this.logger.warn({ err: err?.message, botName }, 'Failed to record conversation memory');
