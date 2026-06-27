@@ -391,5 +391,37 @@ const prefDec = (memoryResults || []).filter((r: any) => r.type === 'preference'
     { chatId, folderCount: knowledgeFolders.length, resultCount: finalResults.length },
     'Knowledge injection applied',
   );
+  // 2026-06-27 commit 5: 写 RAG 调用日志
+  // 用于监控 topScore 趋势, 触发 P50 < 0.5 持续 6h 报警
+  // 异步写, 不 block 主流程
+  setImmediate(async () => {
+    try {
+      // 计算 topScore
+      const topScore = rankedWithScore?.[0]?.finalScore ?? null;
+      const topCosine = ranked.length > 0 ? (1 - (ranked[0].score || 0)) : null;
+      const recallPath = (typeof topRel !== 'undefined' && topRel >= MEMORY_VECTOR_THRESHOLD) ? 'vector' : 'ilike';
+      await pool.query(
+        `INSERT INTO rag_query_log
+          (bot_name, chat_id, query, query_length, top_score, top_cosine,
+           result_count, recall_path, extraction_status, duration_ms)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [
+          deps.config.name,
+          chatId,
+          (searchQuery || '').slice(0, 500),
+          (searchQuery || '').length,
+          topScore,
+          topCosine,
+          ranked.length,
+          recallPath,
+          memoryResults.length > 0 ? 'ok' : 'failed',
+          Date.now() - startTime,
+        ]
+      );
+    } catch (err) {
+      deps.logger.debug({ err: err.message }, 'rag_query_log insert failed');
+    }
+  });
+
   return { systemPromptOverride, knowledgeContext, agentBoundSkills };
 }
