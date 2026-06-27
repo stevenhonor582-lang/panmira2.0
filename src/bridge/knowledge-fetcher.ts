@@ -5,7 +5,7 @@ import type { WorkspaceManager } from '../memory/workspace-manager.js';
 import { pool } from '../db/index.js';
 import { DocEmbedder } from '../memory/doc-embedder.js';
 
-const MEMORY_VECTOR_THRESHOLD = 0.6;
+const MEMORY_VECTOR_THRESHOLD = 0.4;  // 2026-06-27 commit 6: 0.6 太严, 6/26 scraper-kit 跟 query cosine 最高才 0.567, ILIKE fallback 召回失败
 
 // 2026-06-27: jieba 风格 bigram 分词
 const STOP_CHARS = new Set([
@@ -254,8 +254,8 @@ export async function fetchKnowledgeContext(
           return { r, finalScore, meta };
         })
         .sort((a, b) => b.finalScore - a.finalScore)
-        .slice(0, 5)
-        .map(x => x.r);
+        .slice(0, 5);
+      ranked = rankedWithScore.map(x => x.r);
 
       // Bump hit_count only for docs actually injected into context (top 3)
       // M1-fix 2026-06-20: was UPDATE memories (wrong table) — IDs are document UUIDs not memory UUIDs.
