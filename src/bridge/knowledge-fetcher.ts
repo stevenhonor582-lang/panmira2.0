@@ -171,6 +171,7 @@ export async function fetchKnowledgeContext(
   // B-fix 2026-06-20: vector search for memories (semantic recall) with ILIKE fallback
   // Mirrors VMT 得一 N-1/N-2 fix: vector first, threshold decision, ILIKE as backup
   let memoryResults: any[] = [];
+  let topRel = 0;
   try {
     const queryEmb = await new DocEmbedder(deps.logger as any).embed(searchQuery);
     const vecStr = JSON.stringify(queryEmb);
@@ -219,6 +220,8 @@ export async function fetchKnowledgeContext(
   // v1 RAG §4.2: Re-rank by recency + hit_count + confidence
   // score = 0.5*cosine + 0.2*recency + 0.2*hit_count + 0.1*confidence
   let ranked = results;
+  let rankedWithScore: any[] = [];
+  const startTime = Date.now();
   try {
     if (results.length > 0) {
       // 取每条的 metadata/hit_count/confidence (从 documents 或 memories)
@@ -232,22 +235,22 @@ export async function fetchKnowledgeContext(
 
       const HALF_LIFE_DAYS = 30;
       const now = Date.now();
-      ranked = results
+      rankedWithScore = results
         .map(r => {
           const meta: any = metaMap.get(r.id);
           const cosine = 1 - (r.score || 0); // memory API: lower score = better
-          const recency = meta?.updated_at
+          // 2026-06-27 commit 1: recency + ageBoost 一起算
+          const updatedTs = meta?.updated_at
             ? Math.exp(-((now - new Date(meta.updated_at).getTime()) / 86400000) * Math.LN2 / HALF_LIFE_DAYS)
             : 0.5;
-          const hitCount = Math.min(1, (meta?.hit_count || 0) / 10); // normalize
+          const createdTs = meta?.created_at
+            ? Math.exp(-((now - new Date(meta.created_at).getTime()) / 86400000) * Math.LN2 / HALF_LIFE_DAYS)
+            : 0.5;
+          const recency = Math.max(updatedTs, 0.5);  // 旧 memory 至少 0.5
+          const ageBoost = createdTs > 0.7 ? 0.3 : 0;  // 7 天内新 memory +0.3
+          const hitCount = Math.min(1, (meta?.hit_count || 0) / 10);
           const confidence = meta?.confidence ?? 0.5;
-          // 2026-06-27: 加 ageBoost 让 7 天内新 memory 有机会排前
-      const createdTs = meta?.created_at
-        ? Math.exp(-((now - new Date(meta.created_at).getTime()) / 86400000) * Math.LN2 / HALF_LIFE_DAYS)
-        : 0.5;
-      const recency = Math.max(updatedTs, 0.5);
-      const ageBoost = createdTs > 0.7 ? 0.3 : 0;
-      const finalScore = 0.45*cosine + 0.15*recency + 0.15*hitCount + 0.1*confidence + 0.15*ageBoost;
+          const finalScore = 0.45*cosine + 0.15*recency + 0.15*hitCount + 0.1*confidence + 0.15*ageBoost;
           return { r, finalScore, meta };
         })
         .sort((a, b) => b.finalScore - a.finalScore)
@@ -418,7 +421,7 @@ const prefDec = (memoryResults || []).filter((r: any) => r.type === 'preference'
           Date.now() - startTime,
         ]
       );
-    } catch (err) {
+    } catch (err: any) {
       deps.logger.debug({ err: err.message }, 'rag_query_log insert failed');
     }
   });
