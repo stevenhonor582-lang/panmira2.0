@@ -35,6 +35,12 @@ export interface RunningTask {
   /** commit-19 (2026-06-26): user text sent during running task. NOT queued as new task.
    *  Instead appended to running task so bot sees it as user "补充" in next round. */
   userAdditionalInput?: string;
+  /**
+   * fix(xuanjian-card-lie, 2026-06-29): last users actual answers from
+   * AskUserQuestion, kept after handleAnswer clears collectedAnswers.
+   * Used by auditCorrectFinalCard() to detect LLM false-claims of 未收到.
+   */
+  lastUserAnswers: Record<string, string> | null;
 }
 
 export interface ApiTaskOptions {

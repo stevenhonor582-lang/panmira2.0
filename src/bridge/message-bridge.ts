@@ -500,6 +500,44 @@ export class MessageBridge {
       }
     }
 
+    // Plan B: p2p text/image/file during running task -> append to userAdditionalInput
+    //   instead of queuing as a new task. card_action is handled above; group
+    //   messages also flow through here (chatType startsWith check excludes only
+    //   card_action). Default media text (image/file without caption) falls
+    //   through to the queue path.
+    if (
+      this.runningTasks.has(chatId) &&
+      !msg.chatType.startsWith('card_action') &&
+      msg.text?.trim() &&
+      !this.isDefaultMediaText(msg)
+    ) {
+      const task = this.runningTasks.get(chatId)!;
+      const stamp = new Date().toISOString().slice(11, 19);
+      const prefix = `[user 补充 ${stamp}] `;
+      const appended = task.userAdditionalInput
+        ? `${task.userAdditionalInput}\n${prefix}${msg.text}`
+        : `${prefix}${msg.text}`;
+      // truncate to 50k chars to protect memory
+      const MAX_INPUT_LEN = 50000;
+      task.userAdditionalInput =
+        appended.length > MAX_INPUT_LEN ? appended.slice(appended.length - MAX_INPUT_LEN) : appended;
+      this.audit.log({
+        event: 'user_additional_input',
+        botName: this.config.name,
+        chatId,
+        userId: msg.userId,
+        prompt: msg.text,
+        meta: { appendedLen: task.userAdditionalInput.length, currentQuestionIndex: task.currentQuestionIndex },
+      });
+      await this.getSender(chatId).sendTextNotice(
+        chatId,
+        '✏️ 补充已记录',
+        `已纳入当前 task (${task.userAdditionalInput.length} 字)，无需等上一选择完成`,
+        'blue',
+      );
+      return;
+    }
+
     // If a task is running, queue the message instead of rejecting
     if (this.runningTasks.has(chatId)) {
       // If there's a pending batch and this is a text message, merge batch into the queued text
@@ -673,6 +711,8 @@ export class MessageBridge {
     task.processor.clearPendingQuestion();
 
     task.executionHandle.resolveQuestion(pending.toolUseId, collectedAnswers);
+    // fix(xuanjian-card-lie): preserve user answers for Final-card audit
+    task.lastUserAnswers = { ...collectedAnswers };
 
     this.logger.info(
       { chatId, answers: collectedAnswers, toolUseId: pending.toolUseId },
@@ -769,6 +809,8 @@ export class MessageBridge {
     task.processor.clearPendingQuestion();
 
     task.executionHandle.resolveQuestion(pending.toolUseId, collectedAnswers);
+    // fix(xuanjian-card-lie): preserve user answers for Final-card audit
+    task.lastUserAnswers = { ...collectedAnswers };
   }
 
   /** Check if message is a media message with default (auto-generated) text. */
@@ -1074,6 +1116,7 @@ export class MessageBridge {
       rateLimiter,
       chatId,
       lastResponsePreview: '',
+      lastUserAnswers: null,
     };
     this.runningTasks.set(chatId, runningTask);
     metrics.setGauge('panmira_active_tasks', this.runningTasks.size);
@@ -1320,6 +1363,8 @@ export class MessageBridge {
         await rateLimiter.cancelAndWait();
       }
 
+      // fix(xuanjian-card-lie): audit-correct Final card text before sending
+      lastState = await this.auditCorrectFinalCard(chatId, lastState);
       const finalCardStart = Date.now();
       await this.sendFinalCard(messageId, lastState, chatId);
       this.logger.info({ chatId, finalCardMs: Date.now() - finalCardStart, status: lastState.status }, 'Final card sent');
@@ -1355,6 +1400,49 @@ export class MessageBridge {
           userAdditionalInputLen: runningTask.userAdditionalInput.length,
           userAdditionalPreview: runningTask.userAdditionalInput.slice(0, 200),
         }, 'commit-19: task completed with user additional input');
+
+        // Plan A: schedule follow-up task using captured userAdditionalInput.
+        //   Background: Plan B (handleMessage routing) prevents new tasks from
+        //   being queued while a task is running, but the captured input is
+        //   otherwise unused. Without this hook, the user's text would be
+        //   silently dropped after the current task finishes.
+        //   setImmediate defers execution until after the finally block runs
+        //   (runningTasks.delete + processQueue). If something else is now
+        //   running (e.g. an old queued message), the follow-up is unshifted
+        //   to the front of the queue so it runs before any other pending work.
+        if (lastState.status === 'complete') {
+          const followUpText = runningTask.userAdditionalInput;
+          runningTask.userAdditionalInput = undefined;
+          setImmediate(() => {
+            const followUpMsg: IncomingMessage = {
+              messageId: `followup-${chatId}-${Date.now()}`,
+              chatId,
+              chatType: msg.chatType,
+              userId,
+              text: followUpText,
+            };
+            this.logger.info(
+              { chatId, followUpLen: followUpText.length, preview: followUpText.slice(0, 200) },
+              'Plan A: starting follow-up task with user additional input',
+            );
+            this.getSender(chatId).sendTextNotice(
+              chatId,
+              '🔄 继续处理',
+              `检测到补充输入（${followUpText.length} 字），正在起新任务`,
+              'blue',
+            ).catch((err) => this.logger.warn({ err, chatId }, 'Plan A: follow-up notice failed'));
+            if (this.runningTasks.has(chatId)) {
+              const queue = this.messageQueues.get(chatId) || [];
+              queue.unshift(followUpMsg);
+              this.messageQueues.set(chatId, queue);
+              this.logger.info({ chatId }, 'Plan A: queued follow-up behind running task');
+            } else {
+              this.executeQuery(followUpMsg).catch((err) =>
+                this.logger.error({ err, chatId }, 'Plan A: follow-up task failed'),
+              );
+            }
+          });
+        }
       }
       this.emitActivity({
         type: lastState.status === 'complete' ? 'task_completed' : 'task_failed',
@@ -1748,6 +1836,7 @@ export class MessageBridge {
       rateLimiter,
       chatId,
       lastResponsePreview: '',
+      lastUserAnswers: null,
     };
     this.runningTasks.set(chatId, runningTask);
     metrics.setGauge('panmira_active_tasks', this.runningTasks.size);
@@ -2675,5 +2764,50 @@ export class MessageBridge {
     }
     this.runningTasks.clear();
     this.sessionManager.destroy();
+  }
+
+  /**
+   * fix(xuanjian-card-lie, 2026-06-29): audit-correct Final card text.
+   * If LLM falsely claims 未收到/失败/未执行 while task.lastUserAnswers has
+   * real answers, replace the misleading phrase with the actual answer.
+   *
+   * Root cause: handleAnswer correctly writes answers into updatedInput via
+   * resolveQuestion, but LLM stream-processor accumulates ALL text blocks
+   * (including LLM thinking aloud output) into responseText. Final card
+   * then displays that thinking, not the actual behavior.
+   *
+   * Fix: detect claim + check lastUserAnswers + replace. No audit log query
+   * needed — answers are kept in memory on the running task.
+   */
+  private async auditCorrectFinalCard(
+    chatId: string,
+    state: CardState,
+  ): Promise<CardState> {
+    if (!state.responseText) return state;
+    const lowerText = state.responseText.toLowerCase();
+    const claimPatterns = ['未收到', '空应答', '没收到', 'with: = 空', 'with:=""', 'with: ""'];
+    const claimed = claimPatterns.some((k) => lowerText.toLowerCase().includes(k.toLowerCase()));
+    if (!claimed) return state;
+
+    const task = this.runningTasks.get(chatId);
+    const answers = task?.lastUserAnswers;
+    if (!answers || Object.keys(answers).length === 0) {
+      this.logger.warn(
+        { chatId },
+        'LLM Final card claims 未收到 and audit has no answer — keeping text as-is (genuine timeout?)',
+      );
+      return state;
+    }
+
+    const answerText = Object.values(answers).join(' / ');
+    this.logger.warn(
+      { chatId, claimed: 'not received', actual: answerText },
+      'LLM Final card lied about not receiving answer — correcting from task.lastUserAnswers',
+    );
+    const realText = state.responseText.replace(
+      /(未收到[^\n]{0,80}|空应答[^\n]{0,80}|没收到[^\n]{0,80}|with:\s*=\s*空[^\n]{0,80}|with:\s*=\s*""[^\n]{0,80})/g,
+      `已收到你的选择：${answerText}`,
+    );
+    return { ...state, responseText: realText };
   }
 }
