@@ -794,11 +794,14 @@ export class MessageBridge {
       }
     }
 
-    // Fill remaining unanswered questions with timeout message
+    // fix(timeout-no-sycophancy, 2026-06-29): do NOT auto-fill default values on timeout.
+    // Per user.prefer.bot_behavior_on_question_timeout 95% + user.bot.behavior.no_sycophancy 95%:
+    // "超时必须明告用户，不得糊弄、不得擅自代选" — we mark unanswered as
+    // '__TIMEOUT__' sentinel so LLM can detect timeout vs genuine user choice.
     for (let i = task.currentQuestionIndex; i < pending.questions.length; i++) {
       const q = pending.questions[i];
       if (!task.collectedAnswers[q.header]) {
-        task.collectedAnswers[q.header] = '用户未及时回复，请自行判断继续';
+        task.collectedAnswers[q.header] = '__TIMEOUT__';
       }
     }
 
@@ -2804,10 +2807,23 @@ export class MessageBridge {
       { chatId, claimed: 'not received', actual: answerText },
       'LLM Final card lied about not receiving answer — correcting from task.lastUserAnswers',
     );
-    const realText = state.responseText.replace(
+    // Step 1: replace "未收到" phrase with acknowledgment of real answer
+    let fixed = state.responseText.replace(
       /(未收到[^\n]{0,80}|空应答[^\n]{0,80}|没收到[^\n]{0,80}|with:\s*=\s*空[^\n]{0,80}|with:\s*=\s*""[^\n]{0,80})/g,
       `已收到你的选择：${answerText}`,
     );
-    return { ...state, responseText: realText };
+
+    // Step 2 (fix, 2026-06-29): truncate LLM fallback lists that were generated
+    // under the false "未收到" assumption. Per user.bot_interaction.expectation
+    // + user.prefer.bot_behavior_on_question_timeout: after a real answer is
+    // received, LLM's "3 个可能意图 / 或者直接发 / 你可以 / 下一条消息直接说"
+    // is misleading — strip these fallback phrasings so Final card shows only
+    // the real execution content.
+    fixed = fixed.replace(
+      /\n\n[\s\S]*(3 个可能意图|3 个可能选项|或者直接发|你可以|下一条消息直接说|下一条消息直接回复|如果你看到中途想叫停)[^\n]*\n?[\s\S]*?(?=\n\n|$)/g,
+      '\n\n',
+    ).trim();
+
+    return { ...state, responseText: fixed };
   }
 }
