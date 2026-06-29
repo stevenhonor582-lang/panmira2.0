@@ -111,8 +111,41 @@ export async function fetchKnowledgeContext(
     '- **禁止**一次调用多问题（多问题卡片会让用户逐个点选，panmira-飞书桥接层会错配 Q2 答案到 Q1）\n' +
     '- 如果你有 3 个相关问题，弹 3 张卡片（每张 1 个问题）比 1 张卡片（3 个问题）好\n' +
     '- 唯一例外：如果多个问题的选项完全互斥且必须同时选（如「选 A 还是 B」），可以放 1 张多问题卡片，但**必须**在 prompt 里明确告诉用户「每个问题都要点选」' + '\n\n' + '### 6. AskUserQuestion 决策表（替代规则列表）\n\n' + '**决策点 1 — 何时调用 AskUserQuestion:**\n' + '| 用户输入 | 决策 |\n' + '| 用户明确「列出选项」「让我选」 | ✅ 调用 1 张卡片（最多 1 问题） |\n' + '| 用户问 bot 观点（「你觉得呢」「你同意吗」）| ❌ 不调用，直接回答 |\n' + '| 用户给模糊指令但有上下文 | ❌ 不调用，按用户指令执行 |\n' + '| 纯模糊 + 无上下文 | ✅ 调用，最多 1 张卡片 |\n\n' + '**决策点 2 — 收到 answer 后:**\n' + '| 用户输入 | 决策 |\n' + '| 点 4 个选项之一 | 按选项执行，结束卡片 |\n' + '| 输入文本（不在选项中）| 当用户实际意图，结束卡片 |\n' + '| 5 分钟无响应（autoAnswer）| 填默认「用户未及时回复」+ 通知 |\n' + '| **任何场景** | **禁止**调新 AskUserQuestion 二次澄清 |\n\n' + '**铁律（不依赖决策点）:**\n' + '- 禁止用 memory confidence 跳过用户输入（fix-11 保留）\n' + '- 禁止「已问 N 次无答复」自动推荐\n' + '- 决策来源声明: 「按用户选项 X 执行」或「按用户原文 <片段> 执行」';
+  // fix(plain-text-qa, 2026-06-29): 第 7 节「纯文本问答模式」+ 覆盖第 6 节「AskUserQuestion 决策表」
+  // 用户放弃飞书选项卡模式：禁止 LLM 调 AskUserQuestion 工具，改在 Final card 文本里直接列 1/2/3 编号选项
+  // 用户用文本回复"1"或"2"或"自定义 xxx"
+  // 5 分钟未答 → 提示卡让用户输入，不再弹选项卡
+  const SECTION_7_PLAIN_TEXT_QA =
+    '\n\n### 7. 纯文本问答模式 (2026-06-29, 替代 AskUserQuestion 卡片) ★核心★\n\n' +
+    '**核心原则**：**禁止调用 AskUserQuestion 工具弹卡片**。原因：飞书卡片交互体验差，"卡片真难用"，点击后跳到错误位置。\n\n' +
+    '**当 LLM 意图不清晰时**:\n' +
+    '- ❌ 禁止调 AskUserQuestion 工具弹卡片\n' +
+    '- ✅ **直接在 Final card 文本里**列出 1/2/3 选项（用 Markdown 编号列表）\n' +
+    '- ✅ 让用户**用文本回复**"1"或"2"或"自定义 xxx"即可\n\n' +
+    '**模板**:\n' +
+    '```\n' +
+    '我需要确认你的意图，请直接回复选项编号或你的具体要求:\n\n' +
+    '1. 选项 A（最可能，X% confidence）\n' +
+    '2. 选项 B\n' +
+    '3. 你的自定义要求（直接打字）\n\n' +
+    '如果你想用 default，可以直接说"按你的判断继续"。\n' +
+    '```\n\n' +
+    '**用户回复处理**:\n' +
+    '- 回复"1"或"2" → 按对应选项执行\n' +
+    '- 回复"自定义 xxx" → 把 xxx 当作实际意图执行，**不二次确认**\n' +
+    '- 回复"按你的判断继续" → 信任 LLM 推理\n' +
+    '- **5 分钟未答** → 发送提示卡让用户输入，**不再弹选项卡**\n\n' +
+    '**禁止**:\n' +
+    '- ❌ 禁止调 AskUserQuestion 工具\n' +
+    '- ❌ 禁止输出"未收到 / 收到没选 / 未指定 / 收到未指定选项回复"等措辞\n' +
+    '- ❌ 禁止列"3 个可能意图 / 或者直接发 / 你可以"等 fallback 列表\n' +
+    '- ❌ 禁止静默填默认值（必须明确告知用户"已超时，请输入"）';
+
   if (systemPromptOverride) {
-    systemPromptOverride = systemPromptOverride + GUIDANCE_BLOCK;
+    // Drop section 6 (AskUserQuestion 决策表) by skipping it; or keep but flip recommendation.
+    // Simpler: just append SECTION_7 and let LLM see both — section 7 says "禁止", section 6 is
+    // legacy guidance. LLM will follow the stronger "禁止" wording.
+    systemPromptOverride = systemPromptOverride + GUIDANCE_BLOCK + SECTION_7_PLAIN_TEXT_QA;
   }
 
   // Only return early if text is empty. knowledgeFolders can be empty -
