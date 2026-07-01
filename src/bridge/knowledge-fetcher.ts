@@ -187,7 +187,10 @@ export async function fetchKnowledgeContext(
     // Drop section 6 (AskUserQuestion 决策表) by skipping it; or keep but flip recommendation.
     // Simpler: just append SECTION_7 and let LLM see both — section 7 says "禁止", section 6 is
     // legacy guidance. LLM will follow the stronger "禁止" wording.
-    systemPromptOverride = systemPromptOverride + GUIDANCE_BLOCK + SECTION_7_PLAIN_TEXT_QA + SECTION_8_ASK_TAG_PROTOCOL;
+    // fix(disable-cardkit, 2026-07-01): 用户决定不再启用 CardKit 卡片
+// 启用后造成很多麻烦和误导，恢复 C 方案纯文本问答模式
+// 保留 SECTION_8 代码供未来恢复，但不再注入 system prompt
+systemPromptOverride = systemPromptOverride + GUIDANCE_BLOCK + SECTION_7_PLAIN_TEXT_QA;
   }
 
   // Only return early if text is empty. knowledgeFolders can be empty -

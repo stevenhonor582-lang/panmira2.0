@@ -253,20 +253,19 @@ export class StreamProcessor {
       const delta = event.delta;
       if (delta?.type === 'text_delta' && delta.text) {
         this.responseText += delta.text;
-        // E2 PR3: detect complete [ASK]...[/ASK] block in stream
+        // fix(disable-cardkit, 2026-07-01): ASK detection disabled per user request.
+        // CardKit cards caused confusion and misleading UX. Reverted to plain-text QA.
+        // Code retained for potential future re-enablement.
+        /* DISABLED
         if (!this._askEmitted && this.onAsk) {
           const parsed = parseAskTag(this.responseText);
           if (parsed.hasAsk && parsed.ask) {
-            // Strip the [ASK] block from displayed response text
             this.responseText = parsed.remainingText;
             this._askEmitted = true;
-            try {
-              this.onAsk(parsed.ask);
-            } catch (err) {
-              // Don't let bridge callback break streaming
-            }
+            try { this.onAsk(parsed.ask); } catch (err) {}
           }
         }
+        */
       }
     } else if (event.type === 'content_block_stop') {
       // Tool may be complete
