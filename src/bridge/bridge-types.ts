@@ -52,6 +52,14 @@ export interface RunningTask {
   pendingAsk: ParsedAskTag | null;
   askId: string | null;
   askMessageId: string | null;
+  /**
+   * fix(ask-timeout, 2026-07-01): timer that fires when user doesn't answer
+   * an [ASK] card within QUESTION_TIMEOUT_MS. Cleared on button click or text
+   * reply. Per user.prefer.bot_behavior_on_question_timeout 95% + user.bot.
+   * behavior.no_sycophancy 95%: on timeout we MUST tell the user explicitly
+   * and MUST NOT auto-fill a default or let LLM continue on its own.
+   */
+  askTimeoutId?: ReturnType<typeof setTimeout>;
 }
 
 export interface ApiTaskOptions {

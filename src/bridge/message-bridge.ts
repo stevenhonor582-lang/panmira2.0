@@ -807,13 +807,77 @@ export class MessageBridge {
       task.pendingAsk = ask;
       task.askId = askId;
       task.askMessageId = messageId ?? null;
+      // fix(ask-timeout, 2026-07-01): start timeout per user.prefer.
+      // bot_behavior_on_question_timeout 95% + user.bot.behavior.
+      // no_sycophancy 95%: must tell user explicitly, must not auto-fill.
+      const timeoutSec = ask.timeoutSec ? ask.timeoutSec * 1000 : QUESTION_TIMEOUT_MS;
+      task.askTimeoutId = setTimeout(() => {
+        this.handleAskTimeout(chatId).catch((err) =>
+          this.logger.error({ err, chatId }, 'handleAskTimeout failed'),
+        );
+      }, timeoutSec);
       this.logger.info(
-        { chatId, askId, questionLen: ask.question.length, optionsCount: ask.options.length },
+        { chatId, askId, questionLen: ask.question.length, optionsCount: ask.options.length, timeoutSec: Math.round(timeoutSec / 1000) },
         'E2 [ASK] card sent to user, waiting for button click',
       );
     } catch (err) {
       this.logger.error({ err, chatId }, 'handleAskFromStream: failed to send card');
     }
+  }
+
+  /**
+   * fix(ask-timeout, 2026-07-01): [ASK] card timed out — user didn't answer
+   * within QUESTION_TIMEOUT_MS (or ask.timeoutSec). Per user preferences:
+   *   - MUST tell user explicitly (no silent auto-fill)
+   *   - MUST NOT let LLM continue on its own (no auto-decision)
+   *   - MUST prompt user how to proceed
+   *
+   * Behavior:
+   *   1. Update card in place: show ⏱️ 已超时 + ask user to retype
+   *   2. Clear task.pendingAsk (so chat is unblocked)
+   *   3. Send a text notice asking user to retype their choice
+   *   4. DO NOT inject any auto answer as next prompt — user must drive
+   */
+  private async handleAskTimeout(chatId: string): Promise<void> {
+    const task = this.runningTasks.get(chatId);
+    if (!task || !task.pendingAsk) {
+      // Already resolved or task gone — nothing to time out
+      return;
+    }
+
+    const expiredQuestion = task.pendingAsk.question;
+    const expiredAskId = task.askId;
+    const expiredMsgId = task.askMessageId;
+    task.pendingAsk = null;
+    task.askId = null;
+    task.askTimeoutId = undefined;
+
+    this.logger.warn(
+      { chatId, askId: expiredAskId, question: expiredQuestion.slice(0, 80) },
+      '[ASK] card timed out — user did not answer within timeout',
+    );
+
+    // (skip updateCard — sender.updateCard signature expects CardState not
+    //  raw JSON. Rely on sendText below; the stale card stays but is harmless
+    //  once pendingAsk is cleared — handleCardAction will route future clicks
+    //  through askId-mismatch path.)
+
+    // 2. Send a text notice (high signal — user may have switched away from Feishu)
+    try {
+      const timeoutNotice = `⏱️ \u95ee\u9898\u5df2\u8d85\u65f6\uff085 \u5206\u949f\u672a\u7b54\uff09\u3002
+
+\u539f\u95ee\u9898\uff1a\${expiredQuestion}
+
+\u8bf7\u76f4\u63a5\u6253\u5b57\u544a\u8bc9\u6211\u4f60\u7684\u9009\u62e9\uff0c\u4e0d\u8981\u70b9\u5df2\u8d85\u65f6\u7684\u5361\u7247\u3002`;
+      await this.getSender(chatId).sendText(chatId, timeoutNotice);
+    } catch (err) {
+      this.logger.warn({ err, chatId }, 'handleAskTimeout: sendText failed');
+    }
+
+    // 3. DO NOT auto-inject any answer as next prompt.
+    // Per user.bot.behavior.no_sycophancy 95%: bot must not self-decide or
+    // auto-fill. The task is now idle; user's next text message will start a
+    // fresh executeQuery.
   }
 
   /**
@@ -846,6 +910,11 @@ export class MessageBridge {
       return;
     }
 
+    // Clear timeout — user answered in time
+    if (task.askTimeoutId) {
+      clearTimeout(task.askTimeoutId);
+      task.askTimeoutId = undefined;
+    }
     const ask = task.pendingAsk;
     task.pendingAsk = null;
     task.askId = null;
