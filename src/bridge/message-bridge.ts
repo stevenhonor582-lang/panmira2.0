@@ -28,6 +28,7 @@ import { SubjectNormalizer } from './subject-normalizer.js';
 import { MemoryExtractor } from './memory-extractor.js';
 import { ClarificationMiddleware } from '../clarification/index.js';
 import { buildPendingTasksCard, type PendingTasksState } from '../feishu/card-builder.js';
+import { buildAskCard } from '../feishu/ask-card-builder.js';
 import type { FeishuCard } from '../clarification/card-builder.js';
 import { SkillLoader } from './orchestrator/skill-loader.js';
 import { ConfigReader } from './orchestrator/config-reader.js';
@@ -52,6 +53,7 @@ import {
   isStaleSessionError,
   isContextOverflowError,
 } from './bridge-types.js';
+import type { ParsedAskTag } from './ask-tag-parser.js';
 export type { PendingBatch, RunningTask, ApiTaskOptions, ApiTaskResult, ActivityEventData } from './bridge-types.js';
 import type { PendingBatch, RunningTask, ApiTaskOptions, ApiTaskResult, ActivityEventData } from './bridge-types.js';
 import { sendFinalCard, sendPlanContent, sendCompletionNotice } from './card-renderer.js';
@@ -385,6 +387,19 @@ export class MessageBridge {
       }
       return;
     }
+    // E2 PR3: route ask_answer type to dedicated handler (bypass AskUserQuestion path)
+    if (value.action === 'ask_answer') {
+      const askId = String(value.askId ?? '');
+      const optionIndex = typeof value.optionIndex === 'number' ? value.optionIndex : -1;
+      const label = typeof value.label === 'string' ? value.label : '';
+      if (optionIndex < 0 || !label) {
+        this.logger.warn({ chatId, value }, 'ask_answer card action missing optionIndex or label');
+        return;
+      }
+      await this.handleAskAnswer(chatId, userId, askId, optionIndex, label, messageId);
+      return;
+    }
+
     if (value.action !== 'answer_question') {
       this.logger.debug({ chatId, action: value.action }, 'Unknown card action — ignoring');
       return;
@@ -764,7 +779,114 @@ export class MessageBridge {
     });
   }
 
+  /**
+   * E2 PR3 (2026-07-01): Called when LLM streams a complete [ASK] block.
+   * Renders a Feishu CardKit card with buttons and stores the ask state
+   * on the running task so handleCardAction can match it later.
+   */
+  private async handleAskFromStream(
+    chatId: string,
+    ask: ParsedAskTag,
+    taskRef?: RunningTask,
+  ): Promise<void> {
+    const task = taskRef ?? this.runningTasks.get(chatId);
+    if (!task) {
+      this.logger.warn({ chatId }, 'handleAskFromStream: no running task');
+      return;
+    }
+    if (task.pendingAsk) {
+      this.logger.warn({ chatId }, 'handleAskFromStream: ask already pending, ignoring new one');
+      return;
+    }
+
+    const askId = `ask-${chatId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const cardJson = buildAskCard(ask, askId);
+
+    try {
+      const messageId = await this.getSender(chatId).sendRawCard(chatId, cardJson);
+      task.pendingAsk = ask;
+      task.askId = askId;
+      task.askMessageId = messageId ?? null;
+      this.logger.info(
+        { chatId, askId, questionLen: ask.question.length, optionsCount: ask.options.length },
+        'E2 [ASK] card sent to user, waiting for button click',
+      );
+    } catch (err) {
+      this.logger.error({ err, chatId }, 'handleAskFromStream: failed to send card');
+    }
+  }
+
+  /**
+   * E2 PR3: Handle user's button click on [ASK] card (value.action=ask_answer).
+   * Resolve the answer as the next LLM prompt, no Claude SDK AskUserQuestion
+   * tool involved — direct path back into executeQuery.
+   */
+  private async handleAskAnswer(
+    chatId: string,
+    userId: string,
+    askId: string,
+    optionIndex: number,
+    label: string,
+    cardMessageId: string,
+  ): Promise<void> {
+    const task = this.runningTasks.get(chatId);
+    if (!task || task.askId !== askId) {
+      this.logger.warn(
+        { chatId, askId, hasTask: !!task, currentAskId: task?.askId },
+        'handleAskAnswer: askId mismatch (stale card or task gone)',
+      );
+      // Mark the clicked card as stale so user knows to re-answer
+      await this.getSender(chatId).updateCard(cardMessageId, {
+        status: 'error',
+        userPrompt: '',
+        responseText: '⚠️ 这张卡片已过期。请重新发送你的问题。',
+        toolCalls: [],
+        errorMessage: 'ask_card_stale',
+      }).catch(() => {});
+      return;
+    }
+
+    const ask = task.pendingAsk;
+    task.pendingAsk = null;
+    task.askId = null;
+    task.askMessageId = null;
+
+    // Update clicked card to show the answer (so user sees feedback)
+    await this.getSender(chatId).updateCard(cardMessageId, {
+      status: 'complete',
+      userPrompt: '',
+      responseText: `✅ 已收到你的选择：**${label}**`,
+      toolCalls: [],
+    }).catch(() => {});
+
+    // Compose next prompt — original question + user's answer
+    const answerPrompt = ask
+      ? `（关于：${ask.question}）我选：${optionIndex}. ${label}`
+      : `我选：${optionIndex}. ${label}`;
+
+    // Re-inject answer as a fresh user message for the same chat session
+    const syntheticMsg: IncomingMessage = {
+      messageId: `ask-answer-${chatId}-${Date.now()}`,
+      chatId,
+      chatType: 'card_action',
+      userId,
+      text: answerPrompt,
+    };
+
+    this.logger.info({ chatId, askId, optionIndex, labelLen: label.length }, 'E2 [ASK] answer received, queuing as new prompt');
+
+    // Queue it — task is still running, will be processed after current stream ends
+    const queue = this.messageQueues.get(chatId) || [];
+    if (queue.length >= MAX_QUEUE_SIZE) {
+      await this.getSender(chatId).sendText(chatId, '已收到选择，但当前任务还在跑，请稍等');
+      return;
+    }
+    queue.push(syntheticMsg);
+    this.messageQueues.set(chatId, queue);
+  }
+
   /** Auto-answer remaining questions when timeout fires. */
+    /** Auto-answer remaining questions when timeout fires. */
   private async autoAnswerRemainingQuestions(task: RunningTask): Promise<void> {
     const pending = task.pendingQuestion;
     if (!pending) return;
@@ -965,6 +1087,15 @@ export class MessageBridge {
             ? '🖼️ ' + text
             : text;
     const processor = new StreamProcessor(displayPrompt, this.config.contextWindow, this.config.claude.model);
+
+    // E2 PR3 (2026-07-01): hook [ASK] tag detection. When LLM streams a
+    // complete [ASK] block, fire this callback to render a Feishu CardKit card.
+    processor.onAsk = (ask) => {
+      this.handleAskFromStream(chatId, ask, runningTask).catch((err) =>
+        this.logger.error({ err, chatId }, 'handleAskFromStream failed'),
+      );
+    };
+
     const initialState: CardState = {
       status: 'preparing',
       userPrompt: displayPrompt,
@@ -1120,6 +1251,9 @@ export class MessageBridge {
       chatId,
       lastResponsePreview: '',
       lastUserAnswers: null,
+      pendingAsk: null,
+      askId: null,
+      askMessageId: null,
     };
     this.runningTasks.set(chatId, runningTask);
     metrics.setGauge('panmira_active_tasks', this.runningTasks.size);
@@ -1840,6 +1974,9 @@ export class MessageBridge {
       chatId,
       lastResponsePreview: '',
       lastUserAnswers: null,
+      pendingAsk: null,
+      askId: null,
+      askMessageId: null,
     };
     this.runningTasks.set(chatId, runningTask);
     metrics.setGauge('panmira_active_tasks', this.runningTasks.size);

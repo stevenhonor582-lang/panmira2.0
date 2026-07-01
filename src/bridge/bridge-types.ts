@@ -1,4 +1,5 @@
 import type { IncomingMessage, CardState, PendingQuestion } from '../types.js';
+import type { ParsedAskTag } from './ask-tag-parser.js';
 
 export const TASK_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 export const QUESTION_TIMEOUT_MS = 5 * 60 * 1000;
@@ -41,6 +42,16 @@ export interface RunningTask {
    * Used by auditCorrectFinalCard() to detect LLM false-claims of 未收到.
    */
   lastUserAnswers: Record<string, string> | null;
+  /**
+   * E2 PR3 (2026-07-01): pending [ASK] tag state — when LLM streams an [ASK]
+   * block, bridge builds a Feishu CardKit card and sets pendingAsk until
+   * user clicks a button or types a reply. Used to:
+   *  - Route card_action value.action=ask_answer back to LLM as next prompt
+   *  - Detect user typing during ask (handleAnswer special-cases pendingAsk)
+   */
+  pendingAsk: ParsedAskTag | null;
+  askId: string | null;
+  askMessageId: string | null;
 }
 
 export interface ApiTaskOptions {

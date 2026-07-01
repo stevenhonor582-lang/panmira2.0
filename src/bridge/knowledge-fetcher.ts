@@ -141,11 +141,27 @@ export async function fetchKnowledgeContext(
     '- ❌ 禁止列"3 个可能意图 / 或者直接发 / 你可以"等 fallback 列表\n' +
     '- ❌ 禁止静默填默认值（必须明确告知用户"已超时，请输入"）';
 
+  // E2 PR3 (2026-07-01): SECTION 8 — [ASK] tag protocol for card rendering.
+  // When LLM needs user input, output an [ASK] block in stream text. Panmira
+  // detects it, renders a Feishu CardKit card with buttons, and feeds the
+  // user's button click back as a fresh prompt. NO AskUserQuestion tool call.
+  const SECTION_8_ASK_TAG_PROTOCOL =
+    '\n\n### 8. [ASK] 卡片协议 (E2 2026-07-01, 替代 AskUserQuestion 工具)\n\n' +
+    '**当 LLM 意图不清晰需要问用户时**，**输出 [ASK] 标签**（不要调 AskUserQuestion 工具，已禁用）：\n\n' +
+    '\n\n' +
+    '**规则**:\n' +
+    '- ✅ 一次最多 1 个 [ASK] 块（多问题分多轮）\n' +
+    '- ✅ 至少 2 个选项（默认推荐项放第一）\n' +
+    '- ✅ 选项简洁、非技术性、差异明确\n' +
+    '- ✅ 用户点按钮 → panmira 自动把答案作为下一轮 prompt（你不需要二次确认）\n' +
+    '- ❌ 禁止输出 fallback 列表（3 个可能意图 / 或者直接发 / 你可以 ...）\n' +
+    '- ❌ 禁止输出未收到/未指定/空应答等措辞——你不再用 AskUserQuestion 工具';
+
   if (systemPromptOverride) {
     // Drop section 6 (AskUserQuestion 决策表) by skipping it; or keep but flip recommendation.
     // Simpler: just append SECTION_7 and let LLM see both — section 7 says "禁止", section 6 is
     // legacy guidance. LLM will follow the stronger "禁止" wording.
-    systemPromptOverride = systemPromptOverride + GUIDANCE_BLOCK + SECTION_7_PLAIN_TEXT_QA;
+    systemPromptOverride = systemPromptOverride + GUIDANCE_BLOCK + SECTION_7_PLAIN_TEXT_QA + SECTION_8_ASK_TAG_PROTOCOL;
   }
 
   // Only return early if text is empty. knowledgeFolders can be empty -
