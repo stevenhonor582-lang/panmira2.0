@@ -569,8 +569,66 @@ async function main() {
     process.exit(0);
   };
 
-  process.on('SIGINT', () => { shutdown('SIGINT').catch((err) => { logger.error({ err }, 'Shutdown error on SIGINT'); process.exit(1); }); });
-  process.on('SIGTERM', () => { shutdown('SIGTERM').catch((err) => { logger.error({ err }, 'Shutdown error on SIGTERM'); process.exit(1); }); });
+  // fix(sigint-trace, 2026-07-01): capture SIGINT source for diagnosis.
+  // mah has been receiving mystery SIGINT every 1-2h (2584+ restarts).
+  // Per user.workflow.bug_fix.approval_flow: capture context BEFORE shutdown
+  // runs, so we have evidence in logs of who triggered it.
+  const captureSigintContext = (signal: string) => {
+    const stack = new Error('SIGINT trace').stack;
+    const ppid = process.ppid;
+    const pid = process.pid;
+    const uptime = process.uptime();
+    const memUsage = process.memoryUsage();
+    const activeHandles = (process as any)._getActiveHandles?.()?.length ?? -1;
+    const activeRequests = (process as any)._getActiveRequests?.()?.length ?? -1;
+    logger.warn(
+      {
+        signal,
+        pid,
+        ppid,
+        uptimeSec: Math.round(uptime),
+        rssMb: Math.round(memUsage.rss / 1024 / 1024),
+        heapUsedMb: Math.round(memUsage.heapUsed / 1024 / 1024),
+        heapTotalMb: Math.round(memUsage.heapTotal / 1024 / 1024),
+        externalMb: Math.round(memUsage.external / 1024 / 1024),
+        activeHandles,
+        activeRequests,
+        stack,
+      },
+      `Received ${signal} — capturing context before shutdown`,
+    );
+  };
+
+  process.on('SIGINT', () => {
+    captureSigintContext('SIGINT');
+    shutdown('SIGINT').catch((err) => { logger.error({ err }, 'Shutdown error on SIGINT'); process.exit(1); });
+  });
+  process.on('SIGTERM', () => {
+    captureSigintContext('SIGTERM');
+    shutdown('SIGTERM').catch((err) => { logger.error({ err }, 'Shutdown error on SIGTERM'); process.exit(1); });
+  });
+
+  // Capture uncaught errors / unhandled rejections that may precede a SIGINT.
+  // These often indicate what was running when the process got killed.
+  process.on('uncaughtException', (err) => {
+    logger.error(
+      { err: err?.stack || err?.message, name: err?.name },
+      'uncaughtException — may precede SIGINT/exit',
+    );
+  });
+  process.on('unhandledRejection', (reason) => {
+    logger.error(
+      { reason: reason instanceof Error ? reason.stack : String(reason) },
+      'unhandledRejection — may precede SIGINT/exit',
+    );
+  });
+  process.on('beforeExit', (code) => {
+    logger.warn({ code }, 'beforeExit — Node event loop empty, may signal upcoming shutdown');
+  });
+  process.on('exit', (code) => {
+    // Synchronous only — log to stderr so we have a record even if logger is gone
+    console.error(`[panmira:exit] code=${code} uptime=${Math.round(process.uptime())}s ppid=${process.ppid}`);
+  });
 }
 
 async function startBotsSafely<TConfig extends BotConfigBase, THandle>(
