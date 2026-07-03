@@ -131,6 +131,14 @@ async function main() {
     logger.warn({ err: err.message }, 'Auto-migrate failed (non-critical)');
   }
 
+  // Phase B: 启动 NextCRM 对话回写 worker
+  try {
+    const { bootstrapNextcrmSyncWorker } = await import('./sync/nextcrm-sync-worker.js');
+    bootstrapNextcrmSyncWorker(logger);
+  } catch (err: any) {
+    logger.warn({ err: err.message }, 'nextcrm-sync worker bootstrap failed (non-critical)');
+  }
+
   // Seed default agent templates on first startup
   await seedDefaultAgents(logger);
 

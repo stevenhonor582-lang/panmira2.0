@@ -616,3 +616,24 @@ export const memoriesEval = pgTable('memories_eval', {
   queryCount: integer('query_count'),
   details: jsonb('details'),
 });
+
+// ── lead_bindings (Phase B: panmira chatId → NextCRM leadId 缓存) ──
+export const leadBindings = pgTable('lead_bindings', {
+  botName: varchar('bot_name', { length: 255 }).notNull(),
+  chatId: varchar('chat_id', { length: 255 }).notNull(),
+  leadId: varchar('lead_id', { length: 64 }).notNull(),
+  platform: varchar('platform', { length: 50 }),
+  boundAt: bigint('bound_at', { mode: 'number' }).notNull(),
+});
+
+// ── nextcrm_sync_outbox (Phase B: 回写 NextCRM 待发队列) ──
+export const nextcrmSyncOutbox = pgTable('nextcrm_sync_outbox', {
+  id: serial('id').primaryKey(),
+  payload: jsonb('payload').notNull(),
+  status: varchar('status', { length: 20 }).notNull().default('pending'),
+  attempts: integer('attempts').notNull().default(0),
+  lastError: text('last_error'),
+  nextRetryAt: bigint('next_retry_at', { mode: 'number' }),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+});

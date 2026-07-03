@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "nextcrm": {
+      "type": "http",
+      "url": "https://crm.sites.panmira.cn/api/mcp/mcp",
+      "headers": {
+        "Authorization": "Bearer nxtc__0fa0c5279ada86478143c6c9f2f10b8af019aef95ff8f5c1"
+      }
+    }
+  }
+}

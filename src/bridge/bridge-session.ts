@@ -1,3 +1,4 @@
+import { syncTurn as nextcrmSyncTurn } from '../sync/nextcrm-sync.js';
 import type { BotConfigBase } from '../config.js';
 import type { Logger } from '../utils/logger.js';
 import type { Engine, Executor, EngineName } from '../engines/index.js';
@@ -75,6 +76,17 @@ export async function recordSession(
       costUsd,
       durationMs,
     });
+    // Phase B: 异步回写 NextCRM(绝不 await 阻塞,绝不抛)
+    void nextcrmSyncTurn({
+      botName: deps.config.name,
+      chatId,
+      prompt,
+      responseText,
+      claudeSessionId,
+      costUsd,
+      durationMs,
+      logger: deps.logger,
+    }).catch((e) => deps.logger.warn({ err: e, chatId }, 'nextcrm-sync syncTurn threw (swallowed)'));
   } catch (err) {
     deps.logger.warn({ err, chatId }, 'Failed to record session in registry');
   }
