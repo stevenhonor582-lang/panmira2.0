@@ -40,8 +40,8 @@ export async function syncTurn(args: {
   const { botName, chatId, prompt, responseText, logger } = args;
   try {
     const sessRes = await pool.query(
-      'SELECT id, platform FROM sessions WHERE bot_name = $1 AND chat_id = $2 ORDER BY updated_at DESC LIMIT 1',
-      [botName, chatId],
+      'SELECT id, platform FROM sessions WHERE chat_id = $1 ORDER BY updated_at DESC LIMIT 1',
+      [chatId],
     );
     const sess = sessRes.rows[0];
     if (!sess) {
@@ -52,8 +52,8 @@ export async function syncTurn(args: {
     const externalId = `${botName}:${chatId}`; // 一个客户(chatId)= 一个 Conversation
 
     const leadRes = await pool.query(
-      'SELECT lead_id FROM lead_bindings WHERE bot_name = $1 AND chat_id = $2 LIMIT 1',
-      [botName, chatId],
+      'SELECT lead_id FROM lead_bindings WHERE chat_id = $1 LIMIT 1',
+      [chatId],
     );
     const leadId: string | undefined = leadRes.rows[0]?.lead_id;
 
