@@ -210,21 +210,15 @@ export class MessageBridge {
   }): ExecutionHandle {
     // Phase γ-4b: systemPromptOverride (GUIDANCE_BLOCK + SECTION_7) prepended to knowledgeContext
     // so anti-sycophancy rules + RAG context are both in the prompt
-    const fullKnowledgeContext = [
+        const fullKnowledgeContext = [
       opts.systemPromptOverride,
       opts.knowledgeContext,
-    ].filter(Boolean).join('
-
----
-
-');
+    ].filter(Boolean).join(String.fromCharCode(10, 10, 45, 45, 45, 10, 10));
+    const sep = String.fromCharCode(10, 10, 45, 45, 45, 10, 10);
     const fullPrompt = fullKnowledgeContext
-      ? `${fullKnowledgeContext}
-
----
-
-用户问题: ${opts.prompt}`
+      ? fullKnowledgeContext + sep + String.fromCharCode(29993, 25143, 38382, 39064) + ': ' + opts.prompt
       : opts.prompt;
+    const runner = QueryRunner.createDefault();
     const stream = runner.runQueryStream({
       botName: opts.botName,
       prompt: fullPrompt,
