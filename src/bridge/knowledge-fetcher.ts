@@ -245,7 +245,7 @@ systemPromptOverride = systemPromptOverride + GUIDANCE_BLOCK + SECTION_7_PLAIN_T
     return { systemPromptOverride, knowledgeContext: null, agentBoundSkills };
   }
 
-  const results = await deps.memoryClient.searchInFolders(searchQuery, folderUuids, 20);
+  const results = await deps.memoryClient.searchInFolders(searchQuery, folderUuids, 5);  // P2 2026-07-04: 20 -> 5
   // B-fix 2026-06-20: vector search for memories (semantic recall) with ILIKE fallback
   // Mirrors VMT 得一 N-1/N-2 fix: vector first, threshold decision, ILIKE as backup
   let memoryResults: any[] = [];
@@ -262,7 +262,7 @@ systemPromptOverride = systemPromptOverride + GUIDANCE_BLOCK + SECTION_7_PLAIN_T
          WHERE invalidated_at IS NULL
            AND bot_id = (SELECT bot_id FROM bot_configs WHERE name = $2 LIMIT 1)
            AND embedding IS NOT NULL
-         ORDER BY embedding <=> $1::vector ASC LIMIT 8`,
+         ORDER BY embedding <=> $1::vector ASC LIMIT 3`,  // P2 2026-07-04: 8 -> 3
       [vecStr, deps.config.name],
     );
     const topRel = vecRows[0]?.relevance ?? 0;
@@ -283,7 +283,7 @@ systemPromptOverride = systemPromptOverride + GUIDANCE_BLOCK + SECTION_7_PLAIN_T
              FROM memories WHERE invalidated_at IS NULL
               AND bot_id = (SELECT bot_id FROM bot_configs WHERE name = $1 LIMIT 1)
               AND (${whereClauses})
-            ORDER BY hit_count DESC, confidence DESC LIMIT 8`,
+            ORDER BY hit_count DESC, confidence DESC LIMIT 3`,  // P2 2026-07-04: 8 -> 3
           [deps.config.name, ...keywords]
         );
         ilikeRows = rows || [];
@@ -304,9 +304,11 @@ systemPromptOverride = systemPromptOverride + GUIDANCE_BLOCK + SECTION_7_PLAIN_T
     if (results.length > 0) {
       // 取每条的 metadata/hit_count/confidence (从 documents 或 memories)
       const ids = results.map(r => r.id);
+      // P3-prime 2026-07-04: 之前查 memories 表但 results 是 documents, 永远 miss 0 行.
+      // 改查 documents 表用 documents 字段 (hit_count, quality_score, updated_at, created_at)
       const { rows: metaRows } = await pool.query(
-        `SELECT id, hit_count, confidence, updated_at, polarity FROM memories
-          WHERE id = ANY($1) AND invalidated_at IS NULL`,
+        `SELECT id, hit_count, quality_score, updated_at, created_at FROM documents
+          WHERE id = ANY($1)`,
         [ids]
       ).catch(() => ({ rows: [] }));
       const metaMap = new Map(metaRows.map((r: any) => [r.id, r]));
@@ -316,29 +318,28 @@ systemPromptOverride = systemPromptOverride + GUIDANCE_BLOCK + SECTION_7_PLAIN_T
       rankedWithScore = results
         .map(r => {
           const meta: any = metaMap.get(r.id);
-          const cosine = 1 - (r.score || 0); // memory API: lower score = better
-          // 2026-06-27 commit 1: recency + ageBoost 一起算
+          const cosine = 1 - (r.score || 0);
           const updatedTs = meta?.updated_at
             ? Math.exp(-((now - new Date(meta.updated_at).getTime()) / 86400000) * Math.LN2 / HALF_LIFE_DAYS)
             : 0.5;
           const createdTs = meta?.created_at
             ? Math.exp(-((now - new Date(meta.created_at).getTime()) / 86400000) * Math.LN2 / HALF_LIFE_DAYS)
             : 0.5;
-          const recency = Math.max(updatedTs, 0.5);  // 旧 memory 至少 0.5
-          const ageBoost = createdTs > 0.7 ? 0.3 : 0;  // 7 天内新 memory +0.3
+          const recency = Math.max(updatedTs, 0.5);
+          const ageBoost = createdTs > 0.7 ? 0.3 : 0;
           const hitCount = Math.min(1, (meta?.hit_count || 0) / 10);
-          const confidence = meta?.confidence ?? 0.5;
-          const finalScore = 0.45*cosine + 0.15*recency + 0.15*hitCount + 0.1*confidence + 0.15*ageBoost;
+          const quality = meta?.quality_score != null ? Math.min(1, meta.quality_score / 100) : 0.5;
+          const finalScore = 0.45*cosine + 0.15*recency + 0.15*hitCount + 0.1*quality + 0.15*ageBoost;
           return { r, finalScore, meta };
         })
         .sort((a, b) => b.finalScore - a.finalScore)
-        .slice(0, 20);  // 2026-06-27 commit 8: 5 -> 20 (per user)
+        .slice(0, 5);
       ranked = rankedWithScore.map(x => x.r);
 
       // 2026-06-27 commit 7: UPDATE memoryResults (not ranked) — ranked is folder documents, memoryResults is memories.
       // Previous bug: ranked.slice(0,3).map(r=>r.id) returned document UUIDs, UPDATE memories matched 0 rows,
       // metaRows.length === 0 caused the whole block to be skipped. hit_count never grew.
-      const memoryInjectedIds = (memoryResults as any[]).slice(0, 20).map((m: any) => m.id);  // 2026-06-27 commit 8: 3 -> 20 (跟 ranked top 20 一致)
+      const memoryInjectedIds = (memoryResults as any[]).slice(0, 3).map((m: any) => m.id);  // P2 2026-07-04: 20 -> 3
       if (memoryInjectedIds.length > 0) {
         try {
           const { rowCount } = await pool.query(
