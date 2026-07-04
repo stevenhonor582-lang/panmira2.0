@@ -57,6 +57,8 @@ import type { PendingBatch, RunningTask, ApiTaskOptions, ApiTaskResult, Activity
 import { sendFinalCard, sendPlanContent, sendCompletionNotice } from './card-renderer.js';
 import type { CardRendererDeps } from './card-renderer.js';
 import { executorForChat, prepareSessionForExecution, recordSession } from './bridge-session.js';
+import { useSDKCore } from '../sdk-core/feature-flag.js';
+import { QueryRunner } from '../sdk-core/query-runner.js';
 import type { SessionHelperDeps } from './bridge-session.js';
 import { fetchKnowledgeContext } from './knowledge-fetcher.js';
 import type { KnowledgeFetcherDeps } from './knowledge-fetcher.js';
@@ -191,6 +193,36 @@ export class MessageBridge {
    */
   private executorForChat(chatId: string): Executor {
     return executorForChat(this._sessionDeps, chatId);
+  }
+
+  /**
+   * Phase γ-3: Create execution handle backed by SDK Core (QueryRunner).
+   * Bypasses legacy executor + ensureIsolatedWorkspace.
+   * Uses English slug cwd from bot_configs.english_slug (V021).
+   */
+  private createSDKCoreHandle(opts: {
+    prompt: string;
+    botName: string;
+    abortController: AbortController;
+  }): ExecutionHandle {
+    const runner = QueryRunner.createDefault();
+    const stream = runner.runQueryStream({
+      botName: opts.botName,
+      prompt: opts.prompt,
+      abortController: opts.abortController,
+    });
+    return {
+      stream: stream as ExecutionHandle['stream'],
+      sendAnswer: () => {
+        this.logger.warn({ botName: opts.botName }, 'SDK Core: sendAnswer not yet implemented');
+      },
+      resolveQuestion: () => {
+        this.logger.warn({ botName: opts.botName }, 'SDK Core: resolveQuestion not yet implemented');
+      },
+      finish: () => {
+        opts.abortController.abort();
+      },
+    };
   }
 
   /**
@@ -1092,18 +1124,20 @@ export class MessageBridge {
     // Start multi-turn execution
     // Resolve user role from permissions config
     const userRole = resolveUserRole(this.config.permissions, userId);
-    const executionHandle = this.executorForChat(chatId).startExecution({
-      prompt,
-      cwd,
-      sessionId: session.sessionId,
-      abortController,
-      outputsDir,
-      apiContext,
-      model: session.model,
-      systemPromptOverride,
-      knowledgeContext,
-      userRole,
-    });
+    const executionHandle = useSDKCore(this.config.name)
+      ? this.createSDKCoreHandle({ prompt, botName: this.config.name, abortController })
+      : this.executorForChat(chatId).startExecution({
+          prompt,
+          cwd,
+          sessionId: session.sessionId,
+          abortController,
+          outputsDir,
+          apiContext,
+          model: session.model,
+          systemPromptOverride,
+          knowledgeContext,
+          userRole,
+        });
 
     const rateLimiter = new RateLimiter(1500);
 
