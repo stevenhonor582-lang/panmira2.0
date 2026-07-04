@@ -122,6 +122,37 @@ export class QueryRunner {
     );
   }
 
+  /**
+   * Run a query for a bot, streaming messages as they arrive.
+   * Used by message-bridge for real-time card rendering.
+   *
+   * @param opts - Query options
+   * @yields SDKMessage - Each message from the SDK stream
+   * @throws {BotNotFoundError} if bot not found
+   * @throws {QueryExecutionError} if SDK stream fails
+   */
+  async *runQueryStream(opts: QueryRunnerOptions): AsyncGenerator<SDKMessage, void, unknown> {
+    const bot = await this.sessionManager.resolveBot(opts.botName);
+    const options = await this.buildOptions(bot, opts);
+
+    LOG.info(
+      { bot_name: bot.name, cwd: options.cwd, prompt_length: opts.prompt.length },
+      'Query stream started',
+    );
+
+    try {
+      const stream = query({ prompt: opts.prompt, options });
+      for await (const message of stream) {
+        yield message;
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new QueryExecutionError(`SDK stream failed: ${msg}`, bot.name, err);
+    }
+
+    LOG.info({ bot_name: bot.name }, 'Query stream completed');
+  }
+
   // === Private ===
 
   private async buildOptions(
