@@ -141,56 +141,14 @@ export async function fetchKnowledgeContext(
     '- ❌ 禁止列"3 个可能意图 / 或者直接发 / 你可以"等 fallback 列表\n' +
     '- ❌ 禁止静默填默认值（必须明确告知用户"已超时，请输入"）';
 
-  // E2 PR3 (2026-07-01): SECTION 8 — [ASK] tag protocol for card rendering.
-  // When LLM needs user input, output an [ASK] block in stream text. Panmira
-  // detects it, renders a Feishu CardKit card with buttons, and feeds the
-  // user's button click back as a fresh prompt. NO AskUserQuestion tool call.
-  // fix(2026-07-01, strengthen-E2): LLM 必须在用户输入模糊时输出 [ASK] 块.
-  // 23:40 信言 task 证据：用户发"我想做 X 但不确定 Y"，LLM 没弹卡片直接答.
-  // 按 user.workflow.card_interaction_design 92% + user.feedback.card_usability 90%:
-  // 必须强制 LLM 主动 [ASK]，否则 CardKit 基础设施白搭.
-  const SECTION_8_ASK_TAG_PROTOCOL =
-    '\n\n### 8. [ASK] 卡片协议 (E2 2026-07-01, 强制版) ★最高优先级★\n\n' +
-    '**核心铁律：用户输入模糊时，必须输出 [ASK] 标签**（不要调 AskUserQuestion 工具，已禁用）\n\n' +
-    '**触发条件（满足任一必须 [ASK]）**:\n' +
-    '- 用户输入含"X / Y / Z"等占位符（不是真变量名，是泛指）\n' +
-    '- 用户输入含"不确定 / 不知道 / 帮我看看 / 帮我想 / 帮我搞 / 看下 / 试下 / 弄一下"\n' +
-    '- 用户描述了目标但没说**具体范围 / 平台 / 目标 / 数量**\n' +
-    '- 用户用了模糊量词："一些 / 几个 / 多个 / 那些 / 这些"\n' +
-    '- 任何指令需要从 ≥2 个互斥选项中选 1 个\n\n' +
-    '**输出格式**（严格遵守）：\n' +
-    '```\n' +
-    '[ASK]\n' +
-    'question: <你要问的具体问题>\n' +
-    'options:\n' +
-    '  1. <最可能的选项>\n' +
-    '  2. <替代选项>\n' +
-    '  3. <让用户自己说>\n' +
-    'timeout: 300\n' +
-    '[/ASK]\n' +
-    '```\n\n' +
-    '**规则**:\n' +
-    '- ✅ 一次最多 1 个 [ASK] 块（多问题分多轮）\n' +
-    '- ✅ 至少 2 个选项（默认推荐项放第一）\n' +
-    '- ✅ 选项简洁、非技术性、差异明确（不要英文+中文混杂）\n' +
-    '- ✅ 用户点按钮 → panmira 自动把答案作为下一轮 prompt（你不需要二次确认）\n' +
-    '- ❌ 禁止直接长文本回答——如果触发条件满足，必须 [ASK]\n' +
-    '- ❌ 禁止输出 fallback 列表（3 个可能意图 / 或者直接发 / 你可以 ...）\n' +
-    '- ❌ 禁止输出"未收到/未指定/空应答"等措辞\n\n' +
-    '**示例（用户输入 → 你应该输出）**:\n' +
-    '- 用户:"我想做 X 但不确定 Y" → [ASK] 问 X 是什么 / Y 是什么\n' +
-    '- 用户:"帮我搞搞 SOP" → [ASK] 问哪个 SOP（部署/记忆/卡片/...）\n' +
-    '- 用户:"怎么改一下" → [ASK] 问改什么（记忆/检索/卡片/...）\n' +
-    '- 用户:"继续做 L2" → 直接执行（明确指令，不 [ASK]）';
 
   if (systemPromptOverride) {
     // Drop section 6 (AskUserQuestion 决策表) by skipping it; or keep but flip recommendation.
     // Simpler: just append SECTION_7 and let LLM see both — section 7 says "禁止", section 6 is
     // legacy guidance. LLM will follow the stronger "禁止" wording.
-    // fix(disable-cardkit, 2026-07-01): 用户决定不再启用 CardKit 卡片
-// 启用后造成很多麻烦和误导，恢复 C 方案纯文本问答模式
-// 保留 SECTION_8 代码供未来恢复，但不再注入 system prompt
-systemPromptOverride = systemPromptOverride + GUIDANCE_BLOCK + SECTION_7_PLAIN_TEXT_QA;
+    // Phase γ-1 (2026-07-05): SECTION_8 [ASK] protocol deleted (dead code, CardKit disabled).
+  // GUIDANCE_BLOCK + SECTION_7 保留注入（Phase γ-3 接入 SDK Core 后移到 DB agents.system_prompt）.
+  systemPromptOverride = systemPromptOverride + GUIDANCE_BLOCK + SECTION_7_PLAIN_TEXT_QA;
   }
 
   // Only return early if text is empty. knowledgeFolders can be empty -
