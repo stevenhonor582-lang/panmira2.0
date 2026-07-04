@@ -196,19 +196,29 @@ export class MessageBridge {
   }
 
   /**
-   * Phase γ-3: Create execution handle backed by SDK Core (QueryRunner).
+   * Phase γ-3/γ-4: Create execution handle backed by SDK Core (QueryRunner).
    * Bypasses legacy executor + ensureIsolatedWorkspace.
    * Uses English slug cwd from bot_configs.english_slug (V021).
+   * Phase γ-4: injects knowledgeContext (RAG memories/documents) into prompt.
    */
   private createSDKCoreHandle(opts: {
     prompt: string;
     botName: string;
     abortController: AbortController;
+    knowledgeContext?: string | null;
   }): ExecutionHandle {
     const runner = QueryRunner.createDefault();
+    // Phase γ-4: prepend RAG context to user prompt
+    const fullPrompt = opts.knowledgeContext
+      ? `${opts.knowledgeContext}
+
+---
+
+用户问题: ${opts.prompt}`
+      : opts.prompt;
     const stream = runner.runQueryStream({
       botName: opts.botName,
-      prompt: opts.prompt,
+      prompt: fullPrompt,
       abortController: opts.abortController,
     });
     return {
@@ -1125,7 +1135,7 @@ export class MessageBridge {
     // Resolve user role from permissions config
     const userRole = resolveUserRole(this.config.permissions, userId);
     const executionHandle = useSDKCore(this.config.name)
-      ? this.createSDKCoreHandle({ prompt, botName: this.config.name, abortController })
+      ? this.createSDKCoreHandle({ prompt, botName: this.config.name, abortController, knowledgeContext })
       : this.executorForChat(chatId).startExecution({
           prompt,
           cwd,
