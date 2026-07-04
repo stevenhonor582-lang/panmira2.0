@@ -256,7 +256,7 @@ systemPromptOverride = systemPromptOverride + GUIDANCE_BLOCK + SECTION_7_PLAIN_T
     // Use (SELECT id ...) not (SELECT bot_id ...) — fix VMT bug N-2 uuid/varchar type mismatch
     const { rows: vecRows } = await pool.query(
       `SELECT id, type, subject, subject_normalized, confidence, polarity, hit_count,
-              LEFT(content, 300) AS snippet, last_hit_at,
+              LEFT(content, 300) AS snippet, last_hit_at, created_at,
               1 - (embedding <=> $1::vector) AS relevance
          FROM memories
          WHERE invalidated_at IS NULL
@@ -279,7 +279,7 @@ systemPromptOverride = systemPromptOverride + GUIDANCE_BLOCK + SECTION_7_PLAIN_T
         ).join(" OR ");
         const { rows } = await pool.query(
           `SELECT id, type, subject, subject_normalized, confidence, polarity, hit_count,
-                  LEFT(content, 300) AS snippet, last_hit_at
+                  LEFT(content, 300) AS snippet, last_hit_at, created_at
              FROM memories WHERE invalidated_at IS NULL
               AND bot_id = (SELECT bot_id FROM bot_configs WHERE name = $1 LIMIT 1)
               AND (${whereClauses})
@@ -444,22 +444,26 @@ const prefDec = (memoryResults || []).filter((r: any) => r.type === 'preference'
     '### 相关事实（⚠️ 供参考，决策权在用户）\n' +
     'bot 看到这些事实后必须告诉用户，不能基于这些事实自主决策。\n' +
     'bot 不能说「我推荐 X」，只能说「我看到 X 事实」。\n\n' +
-    prefDec.map((r: any) =>
-      '- [历史] ' + r.subject + '\n' +
-      '  > ' + (r.snippet || r.content || '').slice(0, 150) + '\n' +
-      '  > （仅供参考，不替代用户当前决策）'
-    ).join('\n')
+    prefDec.map((r: any) => {
+      const conf = r.confidence != null ? r.confidence.toFixed(2) : '?';
+      const time = r.created_at ? new Date(r.created_at).toISOString().slice(0, 10) : '?';
+      return '- [历史] ' + r.subject + ' [置信度: ' + conf + ', 时间: ' + time + ']\n' +
+        '  > ' + (r.snippet || r.content || '').slice(0, 150) + '\n' +
+        '  > （仅供参考，不替代用户当前决策）';
+    }).join('\n')
   );
   // commit-16: facts/events 也用 '事实呈现' 模式
   if (factsEv.length > 0) docParts.push(
     '### 相关事实（⚠️ 供参考，决策权在用户）\n' +
     'bot 看到这些事实后必须告诉用户，不能基于这些事实自主决策。\n' +
     'bot 不能说「我推荐 X」，只能说「我看到 X 事实」。\n\n' +
-    factsEv.map((r: any) =>
-      '- [事实] ' + r.subject + '\n' +
-      '  > ' + (r.snippet || r.content || '').slice(0, 200) + '\n' +
-      '  > （仅供参考，不替代用户当前决策）'
-    ).join('\n')
+    factsEv.map((r: any) => {
+      const conf = r.confidence != null ? r.confidence.toFixed(2) : '?';
+      const time = r.created_at ? new Date(r.created_at).toISOString().slice(0, 10) : '?';
+      return '- [事实] ' + r.subject + ' [置信度: ' + conf + ', 时间: ' + time + ']\n' +
+        '  > ' + (r.snippet || r.content || '').slice(0, 200) + '\n' +
+        '  > （仅供参考，不替代用户当前决策）';
+    }).join('\n')
   );
   // Multi-version rendering: list ALL similar docs (don't truncate to 3),
   // each with updated_at + folder name from path, so the bot can see all
