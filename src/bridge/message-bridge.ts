@@ -206,11 +206,20 @@ export class MessageBridge {
     botName: string;
     abortController: AbortController;
     knowledgeContext?: string | null;
+    systemPromptOverride?: string;
   }): ExecutionHandle {
-    const runner = QueryRunner.createDefault();
-    // Phase γ-4: prepend RAG context to user prompt
-    const fullPrompt = opts.knowledgeContext
-      ? `${opts.knowledgeContext}
+    // Phase γ-4b: systemPromptOverride (GUIDANCE_BLOCK + SECTION_7) prepended to knowledgeContext
+    // so anti-sycophancy rules + RAG context are both in the prompt
+    const fullKnowledgeContext = [
+      opts.systemPromptOverride,
+      opts.knowledgeContext,
+    ].filter(Boolean).join('
+
+---
+
+');
+    const fullPrompt = fullKnowledgeContext
+      ? `${fullKnowledgeContext}
 
 ---
 
@@ -1135,7 +1144,7 @@ export class MessageBridge {
     // Resolve user role from permissions config
     const userRole = resolveUserRole(this.config.permissions, userId);
     const executionHandle = useSDKCore(this.config.name)
-      ? this.createSDKCoreHandle({ prompt, botName: this.config.name, abortController, knowledgeContext })
+      ? this.createSDKCoreHandle({ prompt, botName: this.config.name, abortController, knowledgeContext, systemPromptOverride })
       : this.executorForChat(chatId).startExecution({
           prompt,
           cwd,
