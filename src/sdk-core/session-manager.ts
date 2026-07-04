@@ -16,18 +16,7 @@ const LOG: Logger = createLogger('info').child({ module: 'sdk-core/session-manag
 
 const WORKSPACE_BASE = '/home/ubuntu/workspace';
 
-/**
- * Temporary slug map (Phase α).
- * Phase β migration V021 will add english_slug column to bot_configs.
- */
-const BOT_SLUG_MAP: Readonly<Record<string, string>> = Object.freeze({
-  '得一': 'deyi',
-  '玄鉴': 'xuanjian',
-  '不盈': 'buying',
-  '守静': 'shoujing',
-  '信言': 'xinyan',
-});
-
+// english_slug now stored in bot_configs.english_slug (V021 migration).
 // === Typed Errors ===
 
 /** Thrown when bot_configs lookup fails or bot is inactive. */
@@ -72,6 +61,7 @@ export interface SessionCwdConfig {
 
 interface BotConfigRow {
   name: string;
+  english_slug: string | null;
   agent_id: string | null;
 }
 
@@ -98,16 +88,19 @@ export class SDKSessionManager {
    */
   async resolveBot(botName: string): Promise<BotRecord> {
     const bot = await this.queryBot(botName);
-    const englishSlug = this.resolveSlug(botName);
+
+    if (!bot.english_slug) {
+      LOG.warn({ botName }, 'english_slug missing in bot_configs; using name as fallback');
+    }
 
     LOG.debug(
-      { bot_name: bot.name, english_slug: englishSlug, agent_id: bot.agent_id },
+      { bot_name: bot.name, english_slug: bot.english_slug, agent_id: bot.agent_id },
       'Bot resolved',
     );
 
     return {
       name: bot.name,
-      englishSlug,
+      englishSlug: bot.english_slug ?? botName,
       agentId: bot.agent_id,
     };
   }
@@ -164,9 +157,9 @@ export class SDKSessionManager {
   // === Private ===
 
   private async queryBot(botName: string): Promise<BotConfigRow> {
-    // agent_id stored in config_json JSONB (per panmira 1.0 schema)
+    // agent_id in config_json JSONB; english_slug in bot_configs (V021)
     const { rows } = await pool.query(
-      `SELECT name, config_json->>'agentId' AS agent_id
+      `SELECT name, english_slug, config_json->>'agentId' AS agent_id
          FROM bot_configs
         WHERE name = $1 AND is_active = true`,
       [botName],
@@ -176,14 +169,5 @@ export class SDKSessionManager {
       throw new BotNotFoundError(botName);
     }
     return rows[0];
-  }
-
-  private resolveSlug(botName: string): string {
-    const slug = BOT_SLUG_MAP[botName];
-    if (!slug) {
-      LOG.warn({ botName }, 'No English slug mapping; using fallback');
-      return botName;
-    }
-    return slug;
   }
 }

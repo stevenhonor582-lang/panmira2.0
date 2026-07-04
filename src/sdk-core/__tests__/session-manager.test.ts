@@ -47,6 +47,7 @@ const queryMock = vi.mocked(pool.query);
 
 const DEYI_ROW = Object.freeze({
   name: '得一',
+  english_slug: 'deyi',
   agent_id: 'agent-deyi-001',
 });
 
@@ -126,7 +127,7 @@ describe('SDKSessionManager.resolveSlug fallback', () => {
     // Arrange — DB has the row so resolveBot does not throw; the slug
     // map miss is what we are exercising.
     queryMock.mockResolvedValueOnce({
-      rows: [{ name: '神秘机器人', agent_id: null }],
+      rows: [{ name: '神秘机器人', english_slug: null, agent_id: null }],
     });
     const manager = new SDKSessionManager();
 
