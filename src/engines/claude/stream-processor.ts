@@ -8,8 +8,6 @@ import type {
 } from '../../feishu/card-builder.js';
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg', '.tiff']);
-import { parseAskTag } from '../../bridge/ask-tag-parser.js';
-import type { ParsedAskTag } from '../../bridge/ask-tag-parser.js';
 
 /**
  * Tools handled by the SDK in bypassPermissions mode.
@@ -46,13 +44,6 @@ export class StreamProcessor {
   private _lastCacheCreationTokens: number | undefined;
   // Live background tasks (Monitor, etc.) — task_id → latest rollup.
   private _backgroundEvents: Map<string, BackgroundEvent> = new Map();
-
-  // E2 PR3 (2026-07-01): hook for [ASK] tag detection. When LLM streams a
-  // complete [ASK]...[/ASK] block, this callback fires with the parsed tag.
-  // Bridge builds a Feishu CardKit card and waits for user's button click.
-  // Set by message-bridge after creating the processor.
-  public onAsk?: (ask: ParsedAskTag) => void;
-  private _askEmitted = false;
 
   constructor(
     private userPrompt: string,
@@ -253,19 +244,6 @@ export class StreamProcessor {
       const delta = event.delta;
       if (delta?.type === 'text_delta' && delta.text) {
         this.responseText += delta.text;
-        // fix(disable-cardkit, 2026-07-01): ASK detection disabled per user request.
-        // CardKit cards caused confusion and misleading UX. Reverted to plain-text QA.
-        // Code retained for potential future re-enablement.
-        /* DISABLED
-        if (!this._askEmitted && this.onAsk) {
-          const parsed = parseAskTag(this.responseText);
-          if (parsed.hasAsk && parsed.ask) {
-            this.responseText = parsed.remainingText;
-            this._askEmitted = true;
-            try { this.onAsk(parsed.ask); } catch (err) {}
-          }
-        }
-        */
       }
     } else if (event.type === 'content_block_stop') {
       // Tool may be complete
