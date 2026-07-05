@@ -142,6 +142,8 @@ describe('QueryRunner.runQuery', () => {
       stubs.agentDefinitionBuilder,
       stubs.hookRegistry,
       stubs.canUseToolDecider,
+      undefined,
+      undefined,
     );
 
     // Act
@@ -173,6 +175,8 @@ describe('QueryRunner.runQuery', () => {
       stubs.agentDefinitionBuilder,
       stubs.hookRegistry,
       stubs.canUseToolDecider,
+      undefined,
+      undefined,
     );
 
     // Act + Assert
@@ -198,6 +202,8 @@ describe('QueryRunner.runQuery', () => {
       stubs.agentDefinitionBuilder,
       stubs.hookRegistry,
       stubs.canUseToolDecider,
+      undefined,
+      undefined,
     );
 
     // Act + Assert
@@ -222,6 +228,8 @@ describe('QueryRunner.runQuery', () => {
       stubs.agentDefinitionBuilder,
       stubs.hookRegistry,
       stubs.canUseToolDecider,
+      undefined,
+      undefined,
     );
 
     // Act + Assert
