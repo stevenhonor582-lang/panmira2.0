@@ -2,7 +2,6 @@ import { ClarificationError, isClarificationError } from './errors.js';
 import { ClarificationEngine } from './engine.js';
 import { ConfigLoader } from './config-loader.js';
 import { CardBuilder } from './card-builder.js';
-import { SessionStore } from './session-store.js';
 import type { FeishuCard } from './card-builder.js';
 
 export interface MiddlewareContext {
