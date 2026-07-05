@@ -12,15 +12,15 @@ describe("CardKit Renderer", () => {
   it("buildCompletionCard has 4 persistent buttons", () => {
     const card = buildCompletionCard({ body: "hi" });
     const parsed = JSON.parse(card);
-    const cs = parsed.elements.find((e: any) => e.tag === "column_set");
-    expect(cs.columns).toHaveLength(4);
+    const cs = parsed.elements.find((e: any) => e.tag === "action");
+    expect(cs.actions).toHaveLength(4);
   });
 
   it("buildCompletionCard delete button has confirm", () => {
     const card = buildCompletionCard({ body: "hi" });
     const parsed = JSON.parse(card);
-    const cs = parsed.elements.find((e: any) => e.tag === "column_set");
-    expect(cs.columns[3].elements[0].confirm).toBeDefined();
+    const cs = parsed.elements.find((e: any) => e.tag === "action");
+    expect(cs.actions[3].elements[0].confirm).toBeDefined();
   });
 
   it("buildTaskListCard generates task list", () => {
