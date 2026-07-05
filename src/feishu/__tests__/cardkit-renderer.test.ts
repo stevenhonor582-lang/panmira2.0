@@ -20,7 +20,7 @@ describe("CardKit Renderer", () => {
     const card = buildCompletionCard({ body: "hi" });
     const parsed = JSON.parse(card);
     const cs = parsed.elements.find((e: any) => e.tag === "action");
-    expect(cs.actions[3].elements[0].confirm).toBeDefined();
+    expect(cs.actions[3].confirm).toBeDefined();
   });
 
   it("buildTaskListCard generates task list", () => {
