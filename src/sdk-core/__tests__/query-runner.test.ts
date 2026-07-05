@@ -157,7 +157,7 @@ describe('QueryRunner.runQuery', () => {
     expect(stubs.systemPromptInjector.inject).toHaveBeenCalledWith(
       'agent-deyi-001',
     );
-    expect(stubs.agentDefinitionBuilder.buildBusinessExperts).toHaveBeenCalledTimes(1);
+    // buildBusinessExperts no longer called in buildOptions (removed for binary launch fix)
     expect(stubs.hookRegistry.registerDefaults).toHaveBeenCalledTimes(1);
     expect(queryMock).toHaveBeenCalledTimes(1);
   });

@@ -20,7 +20,7 @@ export type TextSender = (chatId: string, text: string) => Promise<boolean>;
 export class ClarificationMiddleware {
   constructor(
     private engine: ClarificationEngine,
-    private sessionStore: SessionStore,
+    private sessionStore: any,
     private configLoader: ConfigLoader,
     private cardBuilder: CardBuilder,
     private sendCard: CardSender,
