@@ -214,6 +214,23 @@ export class MessageBridge {
 
   private taskManager = new TaskManager();
 
+  private async sendTaskList(chatId: string): Promise<void> {
+    try {
+      const tasks = await this.taskManager.listOpenTasks(chatId);
+      if (tasks.length === 0) {
+        await this.getSender(chatId).sendText(chatId, 'no open tasks');
+        return;
+      }
+      const lines = tasks.map((t: any, i: number) => {
+        return (i + 1) + '. [' + t.status + '] ' + (t.title || 'untitled');
+      });
+      await this.getSender(chatId).sendText(chatId, lines.join('\n'));
+    } catch (err: any) {
+      this.logger.warn({ err: err.message, chatId }, 'sendTaskList failed');
+      await this.getSender(chatId).sendText(chatId, 'task list unavailable');
+    }
+  }
+
   private executorForChat(chatId: string): Executor {
     return executorForChat(this._sessionDeps, chatId);
   }
