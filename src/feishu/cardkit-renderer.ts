@@ -72,8 +72,8 @@ export function buildCompletionCard(content: CompletionCardContent): string {
 
   // 4 persistent buttons (column_set with 4 columns)
   elements.push({
-    tag: 'column_set',
-    columns: [
+    tag: 'action',
+    actions: [
       buildActionButton('📋 任务', 'list_tasks', 'default'),
       buildActionButton('🆕 新任务', 'new_task', 'primary'),
       buildActionButton('⏹ 停止', 'force_stop', 'default'),
@@ -114,8 +114,8 @@ export function buildTaskListCard(content: TaskListCardContent): string {
                  task.status === 'failed_recovery' ? '⚠️' : '✅';
 
     elements.push({
-      tag: 'column_set',
-      columns: [
+      tag: 'action',
+      actions: [
         {
           tag: 'column',
           elements: [{
@@ -151,8 +151,8 @@ export function buildTaskListCard(content: TaskListCardContent): string {
   // Bottom buttons
   elements.push({ tag: 'hr' });
   elements.push({
-    tag: 'column_set',
-    columns: [
+    tag: 'action',
+    actions: [
       buildActionButton('🆕 新任务', 'new_task', 'primary'),
       buildActionButton('🔍 搜索', 'search_tasks', 'default'),
     ],
@@ -235,10 +235,10 @@ function buildActionButton(text: string, value: string, type: 'default' | 'prima
     };
   }
 
-  return {
-    tag: 'column',
-    elements: [btn],
-    width: 'weighted',
-    weight: 1,
-  };
+  
+    
+    
+    
+    
+  
 }
