@@ -58,6 +58,10 @@ export async function startFeishuBot(
   const rawSender = new MessageSender(client, botLogger);
   const sender = new FeishuSenderAdapter(rawSender);
   const bridge = new MessageBridge(botConfig, botLogger, sender, memoryServerUrl, memorySecret, sessionStore);
+  // 工单 9 (2026-07-06): 预热 contextWindow cache(Layer 1: DB 测量值)
+  bridge.refreshContextWindowCache().catch((err) => {
+    botLogger.warn({ err: err.message }, 'Initial contextWindow cache refresh failed');
+  });
 
   const dispatcher = createEventDispatcher(
     botConfig,
