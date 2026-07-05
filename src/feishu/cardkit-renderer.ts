@@ -49,6 +49,18 @@ export interface TaskListCardContent {
  *
  * This is the primary card type — sent AFTER bot finishes processing.
  */
+export interface CompletionCardContent {
+  body: string;
+  showNlFallback?: boolean;
+  /**
+   * 当前任务状态。控制 4 个 task 管理按钮是否 disabled:
+   * - 'completed' / 'failed' → 按钮 disabled(task 已结束,操作无意义)
+   * - 'running' / 'pending' → 按钮 enabled
+   * - undefined → 默认 enabled(向后兼容)
+   */
+  taskState?: 'running' | 'pending' | 'completed' | 'failed';
+}
+
 export function buildCompletionCard(content: CompletionCardContent): string {
   const elements: any[] = [
     {
@@ -70,14 +82,19 @@ export function buildCompletionCard(content: CompletionCardContent): string {
     tag: 'hr',
   });
 
-  // 4 persistent buttons (column_set with 4 columns)
+  // 工单 8 (2026-07-06): task 已完成时,4 个 task 管理按钮 disabled(防 card_action_stale)
+  const taskActive = content.taskState === 'running' || content.taskState === 'pending';
+  const disableOld = !taskActive && content.taskState !== undefined;
+
+  // 5 buttons: 4 task 管理(可能 disabled)+ 1 new_chat shortcut(总是 enabled)
   elements.push({
     tag: 'action',
     actions: [
-      buildActionButton('📋 任务', 'list_tasks', 'default'),
-      buildActionButton('🆕 新任务', 'new_task', 'primary'),
-      buildActionButton('⏹ 停止', 'force_stop', 'default'),
-      buildActionButton('❌ 删除', 'delete_current', 'danger'),
+      buildActionButton('📋 任务', 'list_tasks', 'default', disableOld),
+      buildActionButton('🔄 续接', 'new_task', 'default', disableOld),
+      buildActionButton('⏹ 停止', 'force_stop', 'default', disableOld),
+      buildActionButton('❌ 删除', 'delete_current', 'danger', disableOld),
+      buildActionButton('💬 新对话', 'new_chat', 'primary', false),
     ],
   });
 
@@ -219,13 +236,16 @@ export function buildErrorCard(error: string, suggestion?: string): string {
 
 // === Helpers ===
 
-function buildActionButton(text: string, value: string, type: 'default' | 'primary' | 'danger'): any {
+export function buildActionButton(text: string, value: string, type: 'default' | 'primary' | 'danger', disabled = false): any {
   const btn: any = {
     tag: 'button',
     text: { tag: 'plain_text', content: text },
     type,
     value: { action: value },
   };
+  if (disabled) {
+    btn.disabled = true;
+  }
 
   // 二次确认 for destructive actions
   if (type === 'danger') {
