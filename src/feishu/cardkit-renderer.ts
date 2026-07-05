@@ -176,22 +176,18 @@ export function buildStreamingCard(userPrompt: string): string {
   return JSON.stringify({
     config: { wide_screen_mode: true },
     header: {
-      title: { tag: 'plain_text', content: '🤔 正在思考...' },
+      title: { tag: 'plain_text', content: 'Thinking...' },
       template: 'blue',
     },
     elements: [
-        {
-          tag: 'markdown',
-          content: `> ${userPrompt.slice(0, 200)}`,
-        },
-        { tag: 'hr' },
-        {
-          tag: 'markdown',
-          content: '⏳ 处理中...',
-        },
-      ],
-    },
+      { tag: 'markdown', content: '> ' + userPrompt.slice(0, 200) },
+      { tag: 'hr' },
+      { tag: 'markdown', content: 'Processing...' },
+    ],
   });
+}
+
+
 
 /**
  * Build an error card.
