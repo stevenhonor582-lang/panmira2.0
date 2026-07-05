@@ -486,7 +486,7 @@ export class MessageBridge {
       };
       try {
         await this.getSender(chatId).updateCard(messageId, staleState);
-      } catch (err) {
+      } catch (err: any) {
         // Fallback: send a plain text notice if updateCard fails (e.g. message deleted).
         this.logger.warn({ err, chatId }, 'updateCard failed; falling back to sendText');
         await this.getSender(chatId).sendText(chatId,
@@ -947,7 +947,7 @@ export class MessageBridge {
           '如果你想重新选择，请重新发送问题。',
         ].join('\n');
         await this.getSender(task.chatId).sendText(task.chatId, timeoutMsg);
-      } catch (err) {
+      } catch (err: any) {
         this.logger.error({ err, chatId: task.chatId }, 'Failed to notify user about question timeout');
       }
     }
@@ -1232,7 +1232,7 @@ export class MessageBridge {
         const selectedNames = selectedSkills.map((s: any) => s.name);
         const mergedNames = [...new Set([...selectedNames, ...agentBoundSkills])];
         this.logger.info({ chatId, keyword: selectedNames.length, total: mergedNames.length }, 'Skills deployed for standard execution');
-      } catch (err) {
+      } catch (err: any) {
         this.logger.warn({ err }, 'Skill deployment failed, using default skills');
       }
     }
@@ -1540,7 +1540,7 @@ export class MessageBridge {
           const cardJson = buildCompletionCard({ body: responseText });
           await this.getSender(chatId).sendRawCard(chatId, cardJson);
           this.logger.info({ chatId }, 'CardKit completion card sent');
-        } catch (err) {
+        } catch (err: any) {
           this.logger.warn({ err: err.message, chatId }, 'CardKit completion card failed');
         }
       }
@@ -1962,7 +1962,7 @@ export class MessageBridge {
       systemPromptOverride = knowledgeResult.systemPromptOverride;
       knowledgeContext = knowledgeResult.knowledgeContext;
       apiAgentBoundSkills = knowledgeResult.agentBoundSkills;
-    } catch (err) {
+    } catch (err: any) {
       this.logger.warn({ err }, 'Knowledge search for API task failed, continuing without injection');
     }
 
