@@ -203,7 +203,7 @@ export class MessageBridge {
     systemPromptOverride?: string; knowledgeContext?: string | null; userRole?: string;
   }): ExecutionHandle {
     return useSDKCore(this.config.name)
-      ? this.createSDKCoreHandle({ prompt: opts.prompt, botName: this.config.name,
+      ? this.createSDKCoreHandle({ prompt: opts.prompt, botName: this.config.name, chatId: opts.chatId,
           abortController: opts.abortController, knowledgeContext: opts.knowledgeContext,
           systemPromptOverride: opts.systemPromptOverride })
       : this.executorForChat(opts.chatId).startExecution({
@@ -299,6 +299,7 @@ export class MessageBridge {
         executable: claudeExe,
         pathToClaudeCodeExecutable: claudeExe,
         systemPrompt: opts.systemPromptOverride || undefined,
+      mcpServers: { feishu: createFeishuMcpServer(this.getSender(chatId), chatId) },
       } as any,
     });
 
@@ -1206,7 +1207,7 @@ export class MessageBridge {
     // Resolve user role from permissions config
     const userRole = resolveUserRole(this.config.permissions, userId);
     const executionHandle = useSDKCore(this.config.name)
-      ? this.createSDKCoreHandle({ prompt, botName: this.config.name, abortController, knowledgeContext, systemPromptOverride })
+      ? this.createSDKCoreHandle({ prompt, botName: this.config.name, abortController, chatId, knowledgeContext, systemPromptOverride })
       : this.executorForChat(chatId).startExecution({
           prompt,
           cwd,
