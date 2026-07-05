@@ -1133,7 +1133,16 @@ export class MessageBridge {
             'SELECT name, system_prompt, knowledge_folders, skills, tools FROM agents WHERE id = $1',
             [this.config.agentId]
           );
-          return rows[0] || null;
+          const r = rows[0];
+          if (!r) return null;
+          return {
+            name: r.name,
+            systemPrompt: r.system_prompt,
+            knowledgeFolders: r.knowledge_folders || [],
+            skills: r.skills || [],
+            tools: r.tools || [],
+            orchestration: { intents: [] },
+          };
         } catch { return null; }
       })() : Promise.resolve(null),
       Promise.resolve(this.sessionManager.consumePendingSummary(chatId)),
