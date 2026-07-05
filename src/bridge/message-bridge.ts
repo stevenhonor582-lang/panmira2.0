@@ -195,6 +195,25 @@ export class MessageBridge {
    * configured engine. Executors are cached per-engine so repeated turns
    * on the same engine don't re-instantiate the SDK wrapper.
    */
+
+  private startExecutionGated(opts: {
+    prompt: string; chatId: string; cwd: string;
+    sessionId?: string | undefined; abortController: AbortController;
+    outputsDir?: string; apiContext?: any; model?: string; maxTurns?: number;
+    systemPromptOverride?: string; knowledgeContext?: string | null; userRole?: string;
+  }): ExecutionHandle {
+    return useSDKCore(this.config.name)
+      ? this.createSDKCoreHandle({ prompt: opts.prompt, botName: this.config.name,
+          abortController: opts.abortController, knowledgeContext: opts.knowledgeContext,
+          systemPromptOverride: opts.systemPromptOverride })
+      : this.executorForChat(opts.chatId).startExecution({
+          prompt: opts.prompt, cwd: opts.cwd, sessionId: opts.sessionId,
+          abortController: opts.abortController, outputsDir: opts.outputsDir,
+          apiContext: opts.apiContext, model: opts.model, maxTurns: opts.maxTurns,
+          systemPromptOverride: opts.systemPromptOverride,
+          knowledgeContext: opts.knowledgeContext, userRole: opts.userRole });
+  }
+
   private executorForChat(chatId: string): Executor {
     return executorForChat(this._sessionDeps, chatId);
   }
@@ -1391,7 +1410,7 @@ export class MessageBridge {
         });
 
         // Retry execution without sessionId
-        const retryHandle = this.executorForChat(chatId).startExecution({
+        const retryHandle = this.startExecutionGated({
           prompt,
           cwd,
           sessionId: undefined,
@@ -1435,7 +1454,7 @@ export class MessageBridge {
         });
 
         const continuationPrompt = this.buildContinuationPrompt(prompt, lastState);
-        const retryHandle = this.executorForChat(chatId).startExecution({
+        const retryHandle = this.startExecutionGated({
           prompt: continuationPrompt,
           cwd,
           sessionId: undefined,
@@ -1662,7 +1681,7 @@ export class MessageBridge {
 
         try {
           const retryPrompt = isOverflow ? this.buildContinuationPrompt(prompt, lastState) : prompt;
-          const retryHandle = this.executorForChat(chatId).startExecution({
+          const retryHandle = this.startExecutionGated({
             prompt: retryPrompt,
             cwd,
             sessionId: undefined,
@@ -1909,7 +1928,7 @@ export class MessageBridge {
       this.logger.debug({ err: err?.message }, 'Skill staging not available, using default skills');
     }
 
-    const executionHandle = this.executorForChat(chatId).startExecution({
+    const executionHandle = this.startExecutionGated({
       prompt,
       cwd,
       sessionId: session.sessionId,
@@ -2087,7 +2106,7 @@ export class MessageBridge {
         }
 
         const retryPrompt = isOverflow ? this.buildContinuationPrompt(prompt, lastState) : prompt;
-        const retryHandle = this.executorForChat(chatId).startExecution({
+        const retryHandle = this.startExecutionGated({
           prompt: retryPrompt,
           cwd,
           sessionId: undefined,
@@ -2265,7 +2284,7 @@ export class MessageBridge {
 
         try {
           const retryPrompt = isOverflow ? this.buildContinuationPrompt(prompt, lastState) : prompt;
-          const retryHandle = this.executorForChat(chatId).startExecution({
+          const retryHandle = this.startExecutionGated({
             prompt: retryPrompt,
             cwd,
             sessionId: undefined,
