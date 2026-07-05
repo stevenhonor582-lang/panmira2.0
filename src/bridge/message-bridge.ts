@@ -58,6 +58,7 @@ import { sendFinalCard, sendPlanContent, sendCompletionNotice } from './card-ren
 import type { CardRendererDeps } from './card-renderer.js';
 import { executorForChat, prepareSessionForExecution, recordSession } from './bridge-session.js';
 import { useSDKCore } from '../sdk-core/feature-flag.js';
+import { buildCompletionCard } from '../feishu/cardkit-renderer.js';
 import { createFeishuMcpServer } from '../feishu/mcp-server.js';
 import { QueryRunner } from '../sdk-core/query-runner.js';
 import type { SessionHelperDeps } from './bridge-session.js';
@@ -497,8 +498,32 @@ export class MessageBridge {
       return;
     }
 
+    // Phase gamma-6: CardKit button actions
+    if (value.action === 'list_tasks') {
+      await this.getSender(chatId).sendText(chatId, 'task list coming soon');
+      return;
+    }
+    if (value.action === 'new_task') {
+      await this.getSender(chatId).sendText(chatId, 'send a message to start new task');
+      return;
+    }
+    if (value.action === 'force_stop') {
+      const task = this.runningTasks.get(chatId);
+      if (task) {
+        task.abortController.abort();
+        await this.getSender(chatId).sendText(chatId, 'task stopped');
+      } else {
+        await this.getSender(chatId).sendText(chatId, 'no running task');
+      }
+      return;
+    }
+    if (value.action === 'delete_current') {
+      await this.getSender(chatId).sendText(chatId, 'delete coming soon');
+      return;
+    }
+
     if (value.action !== 'answer_question') {
-      this.logger.debug({ chatId, action: value.action }, 'Unknown card action — ignoring');
+      this.logger.debug({ chatId, action: value.action }, 'Unknown card action');
       return;
     }
     if (value.toolUseId !== task.pendingQuestion.toolUseId) {
@@ -1487,6 +1512,19 @@ export class MessageBridge {
       const finalCardStart = Date.now();
       await this.sendFinalCard(messageId, lastState, chatId);
       this.logger.info({ chatId, finalCardMs: Date.now() - finalCardStart, status: lastState.status }, 'Final card sent');
+
+      // Phase gamma-6: Send CardKit completion card with 4 persistent buttons
+      if (useSDKCore(this.config.name) && lastState.status === 'complete') {
+        try {
+          const responseText = lastState.responseText || 'done';
+          const cardJson = buildCompletionCard({ body: responseText });
+          await this.getSender(chatId).sendRawCard(chatId, cardJson);
+          this.logger.info({ chatId }, 'CardKit completion card sent');
+        } catch (err) {
+          this.logger.warn({ err: err.message, chatId }, 'CardKit completion card failed');
+        }
+      }
+
 
       // Audit + cost tracking
       const durationMs = Date.now() - startTime;
