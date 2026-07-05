@@ -52,13 +52,6 @@ export interface TaskListCardContent {
 export interface CompletionCardContent {
   body: string;
   showNlFallback?: boolean;
-  /**
-   * 当前任务状态。控制 4 个 task 管理按钮是否 disabled:
-   * - 'completed' / 'failed' → 按钮 disabled(task 已结束,操作无意义)
-   * - 'running' / 'pending' → 按钮 enabled
-   * - undefined → 默认 enabled(向后兼容)
-   */
-  taskState?: 'running' | 'pending' | 'completed' | 'failed';
 }
 
 export function buildCompletionCard(content: CompletionCardContent): string {
@@ -82,21 +75,9 @@ export function buildCompletionCard(content: CompletionCardContent): string {
     tag: 'hr',
   });
 
-  // 工单 8 (2026-07-06): task 已完成时,4 个 task 管理按钮 disabled(防 card_action_stale)
-  const taskActive = content.taskState === 'running' || content.taskState === 'pending';
-  const disableOld = !taskActive && content.taskState !== undefined;
-
-  // 5 buttons: 4 task 管理(可能 disabled)+ 1 new_chat shortcut(总是 enabled)
-  elements.push({
-    tag: 'action',
-    actions: [
-      buildActionButton('📋 任务', 'list_tasks', 'default', disableOld),
-      buildActionButton('🔄 续接', 'new_task', 'default', disableOld),
-      buildActionButton('⏹ 停止', 'force_stop', 'default', disableOld),
-      buildActionButton('❌ 删除', 'delete_current', 'danger', disableOld),
-      buildActionButton('💬 新对话', 'new_chat', 'primary', false),
-    ],
-  });
+  // 工单 8 修正 v2 (2026-07-06): 不显示 task 管理按钮 — 用户直接用文本交互
+  // (buildCompletionCard 现仅作为 fallback/参考保留,生产路径走 sendFinalCard → buildCard)
+  // buildActionButton 暂时保留签名(其他调用方可能还在用)
 
   return JSON.stringify({
     config: { wide_screen_mode: true },
@@ -236,16 +217,13 @@ export function buildErrorCard(error: string, suggestion?: string): string {
 
 // === Helpers ===
 
-export function buildActionButton(text: string, value: string, type: 'default' | 'primary' | 'danger', disabled = false): any {
+export function buildActionButton(text: string, value: string, type: 'default' | 'primary' | 'danger'): any {
   const btn: any = {
     tag: 'button',
     text: { tag: 'plain_text', content: text },
     type,
     value: { action: value },
   };
-  if (disabled) {
-    btn.disabled = true;
-  }
 
   // 二次确认 for destructive actions
   if (type === 'danger') {
