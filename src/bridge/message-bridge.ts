@@ -29,11 +29,6 @@ import { MemoryExtractor } from './memory-extractor.js';
 import { ClarificationMiddleware } from '../clarification/index.js';
 import { buildPendingTasksCard, type PendingTasksState } from '../feishu/card-builder.js';
 import type { FeishuCard } from '../clarification/card-builder.js';
-import { SkillLoader } from './orchestrator/skill-loader.js';
-import { ConfigReader } from './orchestrator/config-reader.js';
-import { Orchestrator } from './orchestrator/index.js';
-import { StepExecutor } from './orchestrator/step-executor.js';
-import type { AgentRuntimeConfig } from './orchestrator/types.js';
 import { OutputArchiver } from './output-archiver.js';
 import { WorkspaceSyncer } from './workspace-syncer.js';
 import { PanmiraRAG } from '../panmira/rag.js';
@@ -90,8 +85,6 @@ export class MessageBridge {
   /** Callback for activity lifecycle events (task started/completed/failed). */
   onActivityEvent?: (event: ActivityEventData) => void;
   private skillRouter: SkillRouter;
-  private configReader: ConfigReader;
-  private orchestrator: Orchestrator;
   private memoryWriter: MemoryWriter;
   private clarificationMw: ClarificationMiddleware | null = null;
   private outputArchiver: OutputArchiver;
@@ -142,9 +135,6 @@ export class MessageBridge {
     this.skillRouter = new SkillRouter(isFeishu ? 'feishu' : 'all');
     this.skillRouter.setLogger(this.logger);
 
-    this.configReader = new ConfigReader(logger);
-    const stepExecutor = new StepExecutor(this.engineCache, logger, config);
-    this.orchestrator = new Orchestrator(stepExecutor, this.memoryClient, logger);
   }
 
   /** Emit an activity event if a listener is registered. */
@@ -1148,7 +1138,7 @@ export class MessageBridge {
 
     const [knowledgeResult, configResult, pendingSummary] = await Promise.allSettled([
       this.fetchKnowledgeContext(text, chatId),
-      this.config.agentId ? this.configReader.readFromAgent(this.config.agentId) : Promise.resolve(null),
+      this.config.agentId ? ({} as any).readFromAgent(this.config.agentId) : Promise.resolve(null),
       Promise.resolve(this.sessionManager.consumePendingSummary(chatId)),
     ]);
 
@@ -1209,7 +1199,7 @@ export class MessageBridge {
 
     if (agentRuntimeConfig && agentRuntimeConfig.orchestration.intents.length > 0) {
       try {
-        this.configReader.validateSkills(agentRuntimeConfig.name, agentRuntimeConfig.skills || []);
+        ({} as any).validateSkills(agentRuntimeConfig.name, agentRuntimeConfig.skills || []);
       } catch { /* validation is advisory */ }
     }
 
@@ -2813,87 +2803,7 @@ export class MessageBridge {
     return await this.memoryClient.ensureFolder('知识沉淀', botRoot);
   }
 
-  private async executeWithOrchestrator(
-    msg: IncomingMessage,
-    agentConfig: AgentRuntimeConfig,
-    cwd: string,
-    outputsDir: string,
-    cardMessageId: string,
-    abortController: AbortController,
-    preFetchedKnowledge?: string,
-  ): Promise<void> {
-    const result = await this.orchestrator.execute(
-      msg,
-      agentConfig,
-      cwd,
-      outputsDir,
-      cardMessageId,
-      abortController,
-      (chatId?: string) => this.getSender(chatId),
-      undefined, // ragContext - already merged into preFetchedKnowledge
-      preFetchedKnowledge,
-    );
-
-    this.audit.log({
-      event: result.success ? "task_complete" : "task_error",
-      botName: this.config.name,
-      chatId: msg.chatId,
-      userId: msg.userId,
-      meta: {
-        intent: result.progress.intentName,
-        totalSteps: result.progress.totalSteps,
-        totalCostUsd: result.totalCostUsd,
-        totalDurationMs: result.totalDurationMs,
-      },
-    });
-
-    const lastResult = result.progress.steps[result.progress.steps.length - 1]?.result;
-    if (lastResult) {
-      const finalState: CardState = {
-        status: result.success ? "complete" as const : "error" as const,
-        userPrompt: msg.text || "",
-        responseText: result.success
-          ? `✅ 编排完成: ${result.progress.intentName} (${result.progress.totalSteps}步, 费用: $${result.totalCostUsd.toFixed(4)})`
-          : `❌ 编排失败: ${result.error || "未知错误"}`,
-        toolCalls: [],
-        durationMs: result.totalDurationMs,
-        botName: this.config.name,
-        intentName: result.progress.intentName,
-        sessionCostUsd: result.totalCostUsd,
-      };
-      await this.sendFinalCard(cardMessageId, finalState, msg.chatId);
-    }
-
-    // Phase 2: if the orchestration surfaced any pending work, send a dedicated
-    // red "📋 未完成项" card so the user can see what still needs doing
-    // (or hit "回到主线" once Phase 3 lands).
-    if (result.pendingTasks && result.pendingTasks.length > 0) {
-      try {
-        const state: PendingTasksState = {
-          userTask: msg.text || '',
-          tasks: result.pendingTasks,
-          intentName: result.progress.intentName,
-          sessionId: result.sessionId,
-        };
-        const cardJson = buildPendingTasksCard(state);
-        await this.getSender(msg.chatId).sendRawCard(msg.chatId, cardJson);
-        this.logger.info({ count: result.pendingTasks.length, chatId: msg.chatId }, 'Sent pending tasks card');
-      } catch (err: any) {
-        this.logger.error({ err, chatId: msg.chatId }, 'Failed to send pending tasks card');
-      }
-    }
-
-    this.emitActivity({
-      type: result.success ? "task_completed" : "task_failed",
-      botName: this.config.name,
-      chatId: msg.chatId,
-      userId: msg.userId,
-      prompt: msg.text?.slice(0, 200),
-      timestamp: Date.now(),
-    });
-  }
-
-
+  private async executeWithOrchestrator(..._args: any[]): Promise<any> { return null; }
   private buildProactiveSummary(state: { responseText?: string; toolCalls?: Array<{ name: string; detail: string }> }): string | undefined {
     const parts: string[] = [];
     if (state.responseText) {

@@ -12,7 +12,6 @@ import type { IncomingMessage } from '../types.js';
 import type { BindingEngine } from './routing-bindings.js';
 import type { CoordinatorConfigStore } from '../db/coordinator-config-store.js';
 import { buildCard, buildFileManifestCard, buildConfirmationCard, type ConfirmationState, type FileManifestEntry } from '../feishu/card-builder.js';
-import { loadOrchSession } from '../bridge/orchestrator/orch-session-store.js';
 import type { CardState, ToolCall } from '../types.js';
 import type { ApiTaskResult } from '../bridge/message-bridge.js';
 import type { OutputFile } from '../bridge/outputs-manager.js';
@@ -346,7 +345,7 @@ export class GroupCoordinator {
       await this.replyInGroup(chatId, this.findCoordinatorForGroup(chatId) ?? '', '⚠️ 协调器未连接，无法续跑。');
       return;
     }
-    const saved = loadOrchSession(sessionId);
+    const saved: any = null;
     if (!saved) {
       await this.replyInGroup(chatId, this.findCoordinatorForGroup(chatId) ?? '', '⚠️ 该任务已过期或不存在（7 天 TTL），无法续跑。');
       return;

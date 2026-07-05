@@ -597,7 +597,6 @@ export function buildConfirmationCard(state: ConfirmationState): string {
 
 // ── Pending Tasks Card (red) ──
 
-import type { PendingTask, PendingSeverity } from '../bridge/orchestrator/types.js';
 
 export interface PendingTasksState {
   userTask: string;
