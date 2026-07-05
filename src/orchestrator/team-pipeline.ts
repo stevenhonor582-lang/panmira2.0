@@ -31,6 +31,7 @@ export interface TeamPipelineDeps {
   reviewPanel: ReviewPanel;
   bridge: MessageBridge;
   botName: string;
+  hooksGate?: { runAfterStage(stage: string, output: string, ctx: any): Promise<void> };
 }
 
 export class TeamPipeline {
@@ -83,6 +84,9 @@ export class TeamPipeline {
       const r = await es.execute(prompt, pipelineCtx);
       await this.deps.memoryBridge.writeStageOutput(pipelineCtx, stage, r.content);
       stages.push({ stage, status: 'complete', output: r.content, durationMs: Date.now() - start });
+      if (this.deps.hooksGate) {
+        await this.deps.hooksGate.runAfterStage(stage, r.content, pipelineCtx);
+      }
       return r.content;
     };
 
