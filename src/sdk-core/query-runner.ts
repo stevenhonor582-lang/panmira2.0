@@ -204,12 +204,12 @@ export class QueryRunner {
     const systemPrompt = await this.systemPromptInjector.inject(bot.agentId);
 
     return {
-      permissionMode: bypassPermissions,
+      permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
       cwd: sessionConfig.cwd,
       abortController: opts.abortController ?? new AbortController(),
       includePartialMessages: true,
-      settingSources: this.baseUrl ? [project] : [user, project],
+      settingSources: this.baseUrl ? ["project"] : ["user", "project"],
       spawnClaudeCodeProcess: createSpawnFn(this.apiKey, this.baseUrl),
       executable: CLAUDE_EXECUTABLE,
       pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE,
