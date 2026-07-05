@@ -58,6 +58,7 @@ import { sendFinalCard, sendPlanContent, sendCompletionNotice } from './card-ren
 import type { CardRendererDeps } from './card-renderer.js';
 import { executorForChat, prepareSessionForExecution, recordSession } from './bridge-session.js';
 import { useSDKCore } from '../sdk-core/feature-flag.js';
+import { createFeishuMcpServer } from '../feishu/mcp-server.js';
 import { QueryRunner } from '../sdk-core/query-runner.js';
 import type { SessionHelperDeps } from './bridge-session.js';
 import { fetchKnowledgeContext } from './knowledge-fetcher.js';
@@ -196,12 +197,7 @@ export class MessageBridge {
    * on the same engine don't re-instantiate the SDK wrapper.
    */
 
-  private startExecutionGated(opts: {
-    prompt: string; chatId: string; cwd: string;
-    sessionId?: string | undefined; abortController: AbortController;
-    outputsDir?: string; apiContext?: any; model?: string; maxTurns?: number;
-    systemPromptOverride?: string; knowledgeContext?: string | null; userRole?: string;
-  }): ExecutionHandle {
+  private startExecutionGated(opts: Record<string, any>): ExecutionHandle {
     return useSDKCore(this.config.name)
       ? this.createSDKCoreHandle({ prompt: opts.prompt, botName: this.config.name, chatId: opts.chatId,
           abortController: opts.abortController, knowledgeContext: opts.knowledgeContext,
@@ -228,6 +224,7 @@ export class MessageBridge {
     prompt: string;
     botName: string;
     abortController: AbortController;
+    chatId: string;
     knowledgeContext?: string | null;
     systemPromptOverride?: string;
   }): ExecutionHandle {
@@ -299,7 +296,7 @@ export class MessageBridge {
         executable: claudeExe,
         pathToClaudeCodeExecutable: claudeExe,
         systemPrompt: opts.systemPromptOverride || undefined,
-      mcpServers: { feishu: createFeishuMcpServer(this.getSender(chatId), chatId) },
+      mcpServers: { feishu: createFeishuMcpServer(this.getSender(opts.chatId), opts.chatId) },
       } as any,
     });
 
