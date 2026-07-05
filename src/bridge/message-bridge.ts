@@ -1127,7 +1127,15 @@ export class MessageBridge {
 
     const [knowledgeResult, configResult, pendingSummary] = await Promise.allSettled([
       this.fetchKnowledgeContext(text, chatId),
-      this.config.agentId ? ({} as any).readFromAgent(this.config.agentId) : Promise.resolve(null),
+      this.config.agentId ? (async () => {
+        try {
+          const { rows } = await pool.query(
+            'SELECT name, system_prompt, knowledge_folders, skills, tools FROM agents WHERE id = $1',
+            [this.config.agentId]
+          );
+          return rows[0] || null;
+        } catch { return null; }
+      })() : Promise.resolve(null),
       Promise.resolve(this.sessionManager.consumePendingSummary(chatId)),
     ]);
 
