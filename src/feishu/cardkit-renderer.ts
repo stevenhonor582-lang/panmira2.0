@@ -82,14 +82,12 @@ export function buildCompletionCard(content: CompletionCardContent): string {
   });
 
   return JSON.stringify({
-    schema: '2.0',
+    config: { wide_screen_mode: true },
     header: {
       title: { tag: 'plain_text', content: '🤖 助手回复' },
       template: 'blue',
     },
-    body: {
-      elements,
-    },
+    elements,
   });
 }
 
@@ -145,14 +143,8 @@ export function buildTaskListCard(content: TaskListCardContent): string {
   // Collapsible closed section
   if (content.closedCount && content.closedCount > 0) {
     elements.push({
-      tag: 'collapsible_panel',
-      header: { tag: 'markdown', content: `已关闭 (${content.closedCount}) ▼` },
-      body: {
-        elements: [{
-          tag: 'markdown',
-          content: '点击具体任务查看详情',
-        }],
-      },
+      tag: 'markdown',
+      content: `---\n已关闭 (${content.closedCount}) 个任务`,
     });
   }
 
@@ -167,12 +159,12 @@ export function buildTaskListCard(content: TaskListCardContent): string {
   });
 
   return JSON.stringify({
-    schema: '2.0',
+    config: { wide_screen_mode: true },
     header: {
       title: { tag: 'plain_text', content: '📋 任务列表' },
       template: 'green',
     },
-    body: { elements },
+    elements,
   });
 }
 
@@ -182,13 +174,12 @@ export function buildTaskListCard(content: TaskListCardContent): string {
  */
 export function buildStreamingCard(userPrompt: string): string {
   return JSON.stringify({
-    schema: '2.0',
+    config: { wide_screen_mode: true },
     header: {
       title: { tag: 'plain_text', content: '🤔 正在思考...' },
       template: 'blue',
     },
-    body: {
-      elements: [
+    elements: [
         {
           tag: 'markdown',
           content: `> ${userPrompt.slice(0, 200)}`,
@@ -222,12 +213,12 @@ export function buildErrorCard(error: string, suggestion?: string): string {
   }
 
   return JSON.stringify({
-    schema: '2.0',
+    config: { wide_screen_mode: true },
     header: {
       title: { tag: 'plain_text', content: '❌ 出错' },
       template: 'red',
     },
-    body: { elements },
+    elements,
   });
 }
 
