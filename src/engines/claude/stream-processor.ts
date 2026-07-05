@@ -469,6 +469,10 @@ export class StreamProcessor {
     if (model.includes("sonnet-4")) return 200000;
     if (model.includes("haiku")) return 200000;
     if (model.includes("gpt-4") || model.includes("o1") || model.includes("o3")) return 128000;
+    // GLM: 用户确认 GLM-5 / GLM-5.2 官方 context = 1M (2026-07-06)
+    // 旧 GLM-4 = 128K;保守起见 GLM 不带版本号的兜底 200K,带 -5 的 1M
+    if (model.includes("GLM-5") || model.includes("GLM-5.2") || model.includes("GLM-5.1")) return 1000000;
+    if (model.includes("GLM-4")) return 128000;
     if (model.includes("GLM")) return 200000;
     if (model.includes("deepseek")) return 1000000;
     // MiniMax M-series — per minimaxi.com 官方页 + 实测 (2026-06-08)
