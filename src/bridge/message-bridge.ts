@@ -403,7 +403,7 @@ export class MessageBridge {
   /** Collect current running tasks in a persistable format.
    *  Includes AskUserQuestion state so cards from interrupted sessions can be
    *  recognized on restart (see findRecentInterruptedTask). */
-  private collectPersistableTasks(): any[] { return [] as any[]; }
+  private collectPersistableTasks(): Array<Record<string, unknown>> { return []; }
   persistTaskSnapshot(): void { return; }
   stopChatTask(chatId: string): boolean { return false; }
 
@@ -477,7 +477,7 @@ export class MessageBridge {
     if (!task || !task.pendingQuestion) {
       // Task is gone — likely a recent SIGINT/restart. Look up the persisted
       // snapshot so we can give a more precise reason than a generic "expired".
-      const stale = null;
+      const stale: any = null;
       if (stale && stale.pendingQuestion) {
         if (value.toolUseId === stale.pendingQuestion.toolUseId) {
           // Tool-use id matches the question we had — recognize it as "just-restarted"
@@ -2527,7 +2527,7 @@ export class MessageBridge {
     costUsd: number | undefined,
     durationMs: number | undefined,
   ): Promise<void> {
-    return _recordSession(this._sessionDeps, chatId, prompt, responseText, claudeSessionId, costUsd, durationMs);
+    return this._recordSession(chatId, prompt, responseText, claudeSessionId, costUsd, durationMs);
   }
 
   private async sendCompletionNotice(chatId: string, state: CardState, durationMs: number): Promise<void> {
