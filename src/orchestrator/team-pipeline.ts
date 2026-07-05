@@ -31,6 +31,8 @@ export interface TeamPipelineDeps {
   reviewPanel: ReviewPanel;
   bridge: MessageBridge;
   botName: string;
+  hooksGate?: { runAfterStage(stage: string, output: string, ctx: any): Promise<void> };
+  metricsRecorder?: { record(metric: string, bot: string, chatId: string, value: number, meta?: object): Promise<void> };
 }
 
 export class TeamPipeline {
@@ -83,6 +85,9 @@ export class TeamPipeline {
       const r = await es.execute(prompt, pipelineCtx);
       await this.deps.memoryBridge.writeStageOutput(pipelineCtx, stage, r.content);
       stages.push({ stage, status: 'complete', output: r.content, durationMs: Date.now() - start });
+      if (this.deps.hooksGate) {
+        await this.deps.hooksGate.runAfterStage(stage, r.content, pipelineCtx);
+      }
       return r.content;
     };
 
@@ -116,12 +121,21 @@ export class TeamPipeline {
       durationMs: 0,
     });
 
+    const totalDurationMs = Date.now() - totalStart;
+    if (this.deps.metricsRecorder) {
+      const bot = ctx.botName;
+      const chatId = ctx.chatId;
+      await this.deps.metricsRecorder.record('task_duration_ms', bot, chatId, totalDurationMs);
+      await this.deps.metricsRecorder.record('orchestration_flexibility', bot, chatId, 1, { scene_type: sceneType });
+      await this.deps.metricsRecorder.record('callback_count', bot, chatId, 0);
+      await this.deps.metricsRecorder.record('incomplete_rate', bot, chatId, review.passed ? 0 : 1);
+    }
     return {
       status: review.passed ? 'complete' : 'error',
       sceneType,
       stages,
       finalOutput,
-      totalDurationMs: Date.now() - totalStart,
+      totalDurationMs,
     };
   }
 }
