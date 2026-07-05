@@ -51,13 +51,11 @@ export type { PendingBatch, RunningTask, ApiTaskOptions, ApiTaskResult, Activity
 import type { PendingBatch, RunningTask, ApiTaskOptions, ApiTaskResult, ActivityEventData } from './bridge-types.js';
 import { sendFinalCard, sendPlanContent, sendCompletionNotice } from './card-renderer.js';
 import type { CardRendererDeps } from './card-renderer.js';
-import { executorForChat, prepareSessionForExecution, recordSession } from './bridge-session.js';
 import { TaskManager } from '../task/task-manager.js';
 import { useSDKCore } from '../sdk-core/feature-flag.js';
 import { buildCompletionCard } from '../feishu/cardkit-renderer.js';
 import { createFeishuMcpServer } from '../feishu/mcp-server.js';
 import { QueryRunner } from '../sdk-core/query-runner.js';
-import type { SessionHelperDeps } from './bridge-session.js';
 import { fetchKnowledgeContext } from './knowledge-fetcher.js';
 import type { KnowledgeFetcherDeps } from './knowledge-fetcher.js';
 import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
@@ -154,14 +152,14 @@ export class MessageBridge {
     return chatPat.test(trimmed);
   }
 
-  private get _sessionDeps(): SessionHelperDeps {
+  private get _sessionDeps(): any {
     return {
       config: this.config,
       logger: this.logger,
       sessionManager: this.sessionManager,
       engineCache: this.engineCache,
       sessionRegistry: this.sessionRegistry,
-      getSender: (chatId) => this.getSender(chatId),
+      getSender: (chatId: string) => this.getSender(chatId),
     };
   }
 
@@ -204,6 +202,23 @@ export class MessageBridge {
 
   private taskManager = new TaskManager();
 
+
+  private async _recordSession(
+    chatId: string, prompt: string, responseText: string | undefined,
+    claudeSessionId: string | undefined, costUsd: number | undefined, durationMs: number | undefined,
+  ): Promise<void> {
+    if (!this.sessionRegistry) return;
+    try {
+      await this.sessionRegistry.createOrUpdate({
+        chatId, botName: this.config.name, claudeSessionId,
+        workingDirectory: this.sessionManager.getSession(chatId).workingDirectory,
+        prompt, responseText, costUsd, durationMs,
+      });
+    } catch (err: any) {
+      this.logger.warn({ err: err.message, chatId }, 'recordSession failed');
+    }
+  }
+
   private async sendTaskList(chatId: string): Promise<void> {
     try {
       const tasks = await this.taskManager.listOpenTasks(chatId);
@@ -222,7 +237,16 @@ export class MessageBridge {
   }
 
   private executorForChat(chatId: string): Executor {
-    return executorForChat(this._sessionDeps, chatId);
+    const session = this.sessionManager.getSession(chatId);
+    const name = session.engine ?? resolveEngineName(this.config);
+    let entry = this.engineCache.get(name);
+    if (!entry) {
+      const engine = createEngine(this.config, this.logger, name);
+      const executor = engine.createExecutor();
+      entry = { engine, executor };
+      this.engineCache.set(name, entry);
+    }
+    return entry.executor;
   }
 
   /**
@@ -321,7 +345,12 @@ export class MessageBridge {
 
 
   private prepareSessionForExecution(chatId: string) {
-    return prepareSessionForExecution(this._sessionDeps, chatId);
+    const session = this.sessionManager.getSession(chatId);
+    const engineName = session.engine ?? resolveEngineName(this.config);
+    if (session.sessionId && session.sessionIdEngine && session.sessionIdEngine !== engineName) {
+      this.sessionManager.resetSession(chatId);
+    }
+    return { session: this.sessionManager.getSession(chatId), engineName };
   }
 
   /** Inject the doc sync service for /sync commands. */
@@ -1672,7 +1701,7 @@ export class MessageBridge {
       // Post-processing: fire-and-forget to avoid blocking task cleanup
       const postProcessPromise = (async () => {
         try {
-          await this.recordSession(
+          await this._recordSession(
             chatId,
             displayPrompt,
             lastState.responseText,
@@ -1799,7 +1828,7 @@ export class MessageBridge {
           metrics.incCounter('panmira_tasks_total');
           metrics.incCounter('panmira_tasks_by_status', lastState.status === 'complete' ? 'success' : 'error');
 
-          await this.recordSession(
+          await this._recordSession(
             chatId,
             displayPrompt,
             lastState.responseText,
@@ -2268,7 +2297,7 @@ export class MessageBridge {
       }
 
       // Record in cross-platform session registry
-      await this.recordSession(
+      await this._recordSession(
         chatId,
         prompt,
         lastState.responseText,
