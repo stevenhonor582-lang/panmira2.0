@@ -296,10 +296,22 @@ export interface FeishuBotJsonEntry extends EngineJsonFields {
  *    ~/workspace/{botName}.
  * 5. Otherwise (custom path, env-specific), keep the configured value.
  */
+
+// panmira 2.0: English slug map for cwd isolation
+const BOT_SLUG_MAP: Readonly<Record<string, string>> = Object.freeze({
+  '得一': 'deyi',
+  '玄鉴': 'xuanjian',
+  '不盈': 'buying',
+  '守静': 'shoujing',
+  '信言': 'xinyan',
+});
+
+
 function ensureIsolatedWorkspace(botName: string, configuredDir: string): string {
   const expanded = expandUserPath(configuredDir);
   const workspaceRoot = path.join(os.homedir(), 'workspace');
-  const expectedDir = path.join(workspaceRoot, botName);
+  const slug = BOT_SLUG_MAP[botName] || botName;
+  const expectedDir = path.join(workspaceRoot, slug);
   // Legacy form: ~/workspace-{botName} (v1.0.0 and earlier default)
   const legacyPattern = new RegExp(`^${escapeRegex(path.join(os.homedir(), 'workspace-'))}([^/]+)$`);
 
