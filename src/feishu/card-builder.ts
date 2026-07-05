@@ -148,7 +148,24 @@ export function buildCard(state: CardState): string {
     elements.push({ tag: 'markdown', content: `**Error:** ${state.errorMessage}` });
   }
 
-
+  // 工单 8 (2026-07-06): task 完成/失败时,加 5 按钮(task 管理 4 个 disabled + new_chat 1 个 enabled)
+  if (state.status === 'complete' || state.status === 'error') {
+    elements.push({ tag: 'hr' });
+    elements.push({
+      tag: 'markdown',
+      content: '✅ 任务已结束 — 4 个旧按钮已禁用,请用 💬 新对话 按钮或直接打字发起新任务',
+    });
+    elements.push({
+      tag: 'action',
+      actions: [
+        { tag: 'button', text: { tag: 'plain_text', content: '📋 任务' }, type: 'default', value: { action: 'list_tasks' }, disabled: true },
+        { tag: 'button', text: { tag: 'plain_text', content: '🔄 续接' }, type: 'default', value: { action: 'new_task' }, disabled: true },
+        { tag: 'button', text: { tag: 'plain_text', content: '⏹ 停止' }, type: 'default', value: { action: 'force_stop' }, disabled: true },
+        { tag: 'button', text: { tag: 'plain_text', content: '❌ 删除' }, type: 'danger', value: { action: 'delete_current' }, disabled: true, confirm: { title: { tag: 'plain_text', content: '确认' }, text: { tag: 'markdown', content: '确定删除当前任务?' } } },
+        { tag: 'button', text: { tag: 'plain_text', content: '💬 新对话' }, type: 'primary', value: { action: 'new_chat' }, disabled: false },
+      ],
+    });
+  }
 
   const card = {
     config: { wide_screen_mode: true, update_multi: true },

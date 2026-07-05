@@ -49,6 +49,7 @@ import {
 export type { PendingBatch, RunningTask, ApiTaskOptions, ApiTaskResult, ActivityEventData } from './bridge-types.js';
 import type { PendingBatch, RunningTask, ApiTaskOptions, ApiTaskResult, ActivityEventData } from './bridge-types.js';
 import { sendFinalCard, sendPlanContent, sendCompletionNotice } from './card-renderer.js';
+// buildCompletionCard 现已挪到 cardkit-renderer.ts,sendFinalCard 内部已带按钮
 import type { CardRendererDeps } from './card-renderer.js';
 import { TaskManager } from '../task/task-manager.js';
 import { useSDKCore } from '../sdk-core/feature-flag.js';
@@ -1529,17 +1530,9 @@ export class MessageBridge {
       await this.sendFinalCard(messageId, lastState, chatId);
       this.logger.info({ chatId, finalCardMs: Date.now() - finalCardStart, status: lastState.status }, 'Final card sent');
 
-      // Phase gamma-6: Send CardKit completion card with 4 persistent buttons
-      if (useSDKCore(this.config.name) && lastState.status === 'complete') {
-        try {
-          const responseText = lastState.responseText || 'done';
-          const cardJson = buildCompletionCard({ body: responseText });
-          await this.getSender(chatId).sendRawCard(chatId, cardJson);
-          this.logger.info({ chatId }, 'CardKit completion card sent');
-        } catch (err: any) {
-          this.logger.warn({ err: err.message, chatId }, 'CardKit completion card failed');
-        }
-      }
+      // 工单 8 (2026-07-06): 不再单独推 CardKit completion card(避免重复推送)。
+      // sendFinalCard 已通过 cardBuilder.ts 的 cardTemplate 把 4 按钮 + new_chat 快捷键 渲染到原卡片。
+      // 之前 sendRawCard 会再推一张新卡片导致用户看到重复内容。
 
 
       // Audit + cost tracking
