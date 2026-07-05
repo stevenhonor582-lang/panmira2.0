@@ -192,7 +192,6 @@ export function buildStreamingCard(userPrompt: string): string {
       ],
     },
   });
-}
 
 /**
  * Build an error card.
