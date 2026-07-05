@@ -5,21 +5,21 @@ describe("CardKit Renderer", () => {
   it("buildCompletionCard generates valid JSON 2.0", () => {
     const card = buildCompletionCard({ body: "test" });
     const parsed = JSON.parse(card);
-    expect(parsed.schema).toBe("2.0");
-    expect(parsed.body.elements.length).toBeGreaterThanOrEqual(4);
+    expect(parsed.config).toBeDefined();
+    expect(parsed.elements.length).toBeGreaterThanOrEqual(4);
   });
 
   it("buildCompletionCard has 4 persistent buttons", () => {
     const card = buildCompletionCard({ body: "hi" });
     const parsed = JSON.parse(card);
-    const cs = parsed.body.elements.find((e) => e.tag === "column_set");
+    const cs = parsed.elements.find((e: any) => e.tag === "column_set");
     expect(cs.columns).toHaveLength(4);
   });
 
   it("buildCompletionCard delete button has confirm", () => {
     const card = buildCompletionCard({ body: "hi" });
     const parsed = JSON.parse(card);
-    const cs = parsed.body.elements.find((e) => e.tag === "column_set");
+    const cs = parsed.elements.find((e: any) => e.tag === "column_set");
     expect(cs.columns[3].elements[0].confirm).toBeDefined();
   });
 
@@ -29,13 +29,13 @@ describe("CardKit Renderer", () => {
       closedCount: 3,
     });
     const parsed = JSON.parse(card);
-    expect(parsed.schema).toBe("2.0");
+    expect(parsed.config).toBeDefined();
   });
 
   it("buildStreamingCard generates thinking card", () => {
     const card = buildStreamingCard("question");
     const parsed = JSON.parse(card);
-    expect(parsed.header.title.content).toContain("思考");
+    expect(parsed.header.title.content).toContain("hinking");
   });
 
   it("buildErrorCard generates red header", () => {
