@@ -1,4 +1,5 @@
-import type { Pool } from 'pg';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyPool = { query: (...args: any[]) => Promise<any> };
 import type { SceneType } from '../orchestrator/orchestrator.js';
 import type { ExpertConfig } from './expert-subagent.js';
 
@@ -11,7 +12,7 @@ export interface ScenePack {
 }
 
 export class ScenePackLoader {
-  constructor(private opts: { pool: Pick<Pool, 'query'> }) {}
+  constructor(private opts: { pool: AnyPool }) {}
 
   async load(sceneType: SceneType): Promise<ScenePack> {
     const r = await this.opts.pool.query(

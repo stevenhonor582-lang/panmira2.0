@@ -1,4 +1,5 @@
-import type { Pool } from 'pg';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyPool = { query: (...args: any[]) => Promise<any> };
 
 export interface MemoryBridgeCtx {
   chatId: string;
@@ -7,7 +8,7 @@ export interface MemoryBridgeCtx {
 }
 
 export class MemoryBridge {
-  constructor(private opts: { pool: Pick<Pool, 'query'> }) {}
+  constructor(private opts: { pool: AnyPool }) {}
 
   async writeStageOutput(
     ctx: MemoryBridgeCtx,
