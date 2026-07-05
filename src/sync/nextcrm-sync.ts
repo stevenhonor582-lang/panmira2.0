@@ -18,6 +18,7 @@ type SyncBody = {
   source: string;
   botName?: string;
   title?: string;
+  panmiraSource?: string;
   messages: SyncMessage[];
 };
 
@@ -50,6 +51,7 @@ export async function syncTurn(args: {
     }
     const platform: string = sess.platform || 'web';
     const externalId = `${botName}:${chatId}`; // 一个客户(chatId)= 一个 Conversation
+    const panmiraSource = process.env.PANMIRA_SOURCE_NAME || 'mah';
 
     const leadRes = await pool.query(
       'SELECT lead_id FROM lead_bindings WHERE chat_id = $1 LIMIT 1',
@@ -76,6 +78,7 @@ export async function syncTurn(args: {
     const payload: SyncBody = {
       externalId,
       source: platform,
+      panmiraSource,
       botName,
       leadId,
       title: prompt.slice(0, 80),
