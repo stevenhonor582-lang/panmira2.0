@@ -404,49 +404,8 @@ export class MessageBridge {
   /** Collect current running tasks in a persistable format.
    *  Includes AskUserQuestion state so cards from interrupted sessions can be
    *  recognized on restart (see findRecentInterruptedTask). */
-  private collectPersistableTasks(): PersistedTask[] {
-    return Array.from(this.runningTasks.entries()).map(([chatId, task]) => ({
-      chatId,
-      botName: this.config.name,
-      startTime: task.startTime,
-      prompt: task.prompt,
-      cardMessageId: task.cardMessageId,
-      lastResponsePreview: task.lastResponsePreview || undefined,
-      pendingQuestion: task.pendingQuestion
-        ? {
-            toolUseId: task.pendingQuestion.toolUseId,
-            questions: task.pendingQuestion.questions,
-          }
-        : undefined,
-      currentQuestionIndex: task.currentQuestionIndex,
-      collectedAnswers:
-        task.collectedAnswers && Object.keys(task.collectedAnswers).length > 0
-          ? { ...task.collectedAnswers }
-          : undefined,
-    }));
-  }
+  private collectPersistableTasks(): any[] { return []; }
 
-  /** Update the persisted task snapshot (call after task starts or changes). */
-  persistTaskSnapshot(): void {
-    const tasks = this.collectPersistableTasks();
-    if (tasks.length > 0) {
-      saveActiveTasks(tasks, this.config.name);
-    } else {
-      clearActiveTasks(this.config.name);
-    }
-  }
-
-  /** On startup, notify chats that had tasks interrupted by a previous restart. */
-  async notifyOrphanedTasks(): Promise<number> {
-    return recoverAndNotify(this.config.name, this.sender, this.logger);
-  }
-
-  /** Stop a running task for the given chatId. Returns true if a task was stopped. */
-  stopChatTask(chatId: string): boolean {
-    if (!this.runningTasks.has(chatId)) return false;
-    this.stopTask(chatId);
-    return true;
-  }
 
   private stopTask(chatId: string): void {
     const task = this.runningTasks.get(chatId);
@@ -517,7 +476,7 @@ export class MessageBridge {
     if (!task || !task.pendingQuestion) {
       // Task is gone — likely a recent SIGINT/restart. Look up the persisted
       // snapshot so we can give a more precise reason than a generic "expired".
-      const stale = findRecentInterruptedTask(chatId, this.config.name);
+      const stale = null;
       if (stale && stale.pendingQuestion) {
         if (value.toolUseId === stale.pendingQuestion.toolUseId) {
           // Tool-use id matches the question we had — recognize it as "just-restarted"
@@ -2567,7 +2526,7 @@ export class MessageBridge {
     costUsd: number | undefined,
     durationMs: number | undefined,
   ): Promise<void> {
-    return recordSession(this._sessionDeps, chatId, prompt, responseText, claudeSessionId, costUsd, durationMs);
+    return _recordSession(this._sessionDeps, chatId, prompt, responseText, claudeSessionId, costUsd, durationMs);
   }
 
   private async sendCompletionNotice(chatId: string, state: CardState, durationMs: number): Promise<void> {
@@ -2854,7 +2813,7 @@ export class MessageBridge {
     const tasks = this.collectPersistableTasks();
     if (tasks.length > 0) {
       const tagged = tasks.map((t) => ({ ...t, interruptionReason: 'restart' }));
-      saveActiveTasks(tagged, this.config.name);
+      
       this.logger.info({ count: tasks.length }, 'Persisted active tasks before shutdown');
     }
 
