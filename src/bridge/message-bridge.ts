@@ -57,6 +57,7 @@ import type { PendingBatch, RunningTask, ApiTaskOptions, ApiTaskResult, Activity
 import { sendFinalCard, sendPlanContent, sendCompletionNotice } from './card-renderer.js';
 import type { CardRendererDeps } from './card-renderer.js';
 import { executorForChat, prepareSessionForExecution, recordSession } from './bridge-session.js';
+import { TaskManager } from '../task/task-manager.js';
 import { useSDKCore } from '../sdk-core/feature-flag.js';
 import { buildCompletionCard } from '../feishu/cardkit-renderer.js';
 import { createFeishuMcpServer } from '../feishu/mcp-server.js';
@@ -210,6 +211,8 @@ export class MessageBridge {
           systemPromptOverride: opts.systemPromptOverride,
           knowledgeContext: opts.knowledgeContext, userRole: opts.userRole });
   }
+
+  private taskManager = new TaskManager();
 
   private executorForChat(chatId: string): Executor {
     return executorForChat(this._sessionDeps, chatId);
@@ -500,7 +503,7 @@ export class MessageBridge {
 
     // Phase gamma-6: CardKit button actions
     if (value.action === 'list_tasks') {
-      await this.getSender(chatId).sendText(chatId, 'task list coming soon');
+      await this.sendTaskList(chatId);
       return;
     }
     if (value.action === 'new_task') {
@@ -518,7 +521,7 @@ export class MessageBridge {
       return;
     }
     if (value.action === 'delete_current') {
-      await this.getSender(chatId).sendText(chatId, 'delete coming soon');
+      await this.taskManager.forceStop(chatId); await this.getSender(chatId).sendText(chatId, 'current task deleted');
       return;
     }
 
