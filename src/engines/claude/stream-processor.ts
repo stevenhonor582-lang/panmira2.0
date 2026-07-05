@@ -49,6 +49,12 @@ export class StreamProcessor {
     private userPrompt: string,
     private _overrideContextWindow?: number,
     private _fallbackModel?: string,
+    /**
+     * 工单 9 (2026-07-06): contextWindow 解析器(Layer 1 + Layer 2)
+     * 接收 model 名,返回真实 contextWindow(优先查 DB,fallback hardcode)
+     * 由 message-bridge 在构造时注入
+     */
+    private contextWindowResolver?: (model: string) => number | undefined,
   ) {}
 
   processMessage(message: SDKMessage): CardState {
@@ -267,7 +273,7 @@ export class StreamProcessor {
         this._model = primaryModel;
         // Use inferred context window if available (more accurate for 3rd-party providers like DeepSeek)
         // otherwise fall back to what the API reports
-        this._contextWindow = this.inferContextWindow(primaryModel) || mu.contextWindow;
+        this._contextWindow = this.inferContextWindowFromCache(primaryModel) || mu.contextWindow;
         // Use last API call's tokens from stream events (accurate context window occupation)
         // Falls back to cumulative modelUsage input+output if stream events weren't captured
         if (this._lastInputTokens != null) {
@@ -297,7 +303,7 @@ export class StreamProcessor {
     // Fallback: if modelUsage was empty (third-party proxy), infer from env/config
     if (!this._contextWindow) {
       const fallbackModel = this._fallbackModel || process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
-      this._contextWindow = this.inferContextWindow(fallbackModel);
+      this._contextWindow = this.inferContextWindowFromCache(fallbackModel);
       this._model = fallbackModel;
 
     } else {
@@ -464,11 +470,21 @@ export class StreamProcessor {
     return this._planFilePath;
   }
 
-  private inferContextWindow(model: string): number | undefined {
+  /**
+   * 工单 9 (2026-07-06): 三层 contextWindow 推断(同步版)
+   * - Layer 1: contextWindowResolver (DB 实测值,见 inferContextWindowFromCache)
+   * - Layer 2: hardcode
+   * - Layer 3: undefined
+   */
+  private inferContextWindowSync(model: string): number | undefined {
     if (model.includes("opus-4")) return 200000;
     if (model.includes("sonnet-4")) return 200000;
     if (model.includes("haiku")) return 200000;
     if (model.includes("gpt-4") || model.includes("o1") || model.includes("o3")) return 128000;
+    // GLM: 用户确认 GLM-5 / GLM-5.2 官方 context = 1M
+    // 旧 GLM-4 = 128K;GLM 不带版本号兜底 200K,带 -5 的 1M
+    if (model.includes("GLM-5") || model.includes("GLM-5.2") || model.includes("GLM-5.1")) return 1000000;
+    if (model.includes("GLM-4")) return 128000;
     if (model.includes("GLM")) return 200000;
     if (model.includes("deepseek")) return 1000000;
     // MiniMax M-series — per minimaxi.com 官方页 + 实测 (2026-06-08)
@@ -477,13 +493,29 @@ export class StreamProcessor {
     //   配 512K (8K 安全边距), 安全运行
     // M2.7: 待测 (历史粗测 350K 失败, 暂保留 300K)
     // M1:  待测, 暂按官方 1M
-    // 精测脚本: scripts/test-minimax-context.mjs
     if (model.includes("MiniMax-M3") || model.includes("MiniMax-M3-")) return 512000;
     if (model.includes("MiniMax-M2.7") || model.includes("MiniMax-M2.7-")) return 300000;
     if (model.includes("MiniMax-M1") || model.includes("MiniMax-M1-")) return 1000000;
     if (model.includes("MiniMax")) return 200000; // safe fallback for unknown M-series
-    return undefined;
+    return undefined; // Layer 3
   }
+
+  /**
+   * 工单 9 (2026-07-06): 三层 contextWindow 推断
+   * - Layer 1: contextWindowResolver(model) → DB 实测值(由 message-bridge 注入)
+   * - Layer 2: hardcode
+   * - Layer 3: undefined
+   */
+  private inferContextWindowFromCache(model: string): number | undefined {
+    if (this.contextWindowResolver) {
+      try {
+        const v = this.contextWindowResolver(model);
+        if (v && v > 0) return v;
+      } catch (e) { /* fallback to hardcode */ }
+    }
+    return this.inferContextWindowSync(model);
+  }
+
 }
 
 function isImagePath(filePath: string): boolean {

@@ -66,6 +66,31 @@ import { join as pathJoin } from 'node:path';
 export class MessageBridge {
   private engine: Engine;
   private executor: Executor;
+  /**
+   * 工单 9 (2026-07-06): contextWindow in-memory cache
+   * 由 start() 时一次性预热,5 分钟过期,StreamProcessor 同步读
+   */
+  private contextWindowCache = new Map<string, number>();
+  public async refreshContextWindowCache(): Promise<void> {
+    try {
+      const r = await pool.query(`SELECT name, context_window FROM provider_configs WHERE context_window IS NOT NULL`);
+      for (const row of r.rows) {
+        this.contextWindowCache.set(row.name, Number(row.context_window));
+      }
+    } catch (e: any) {
+      this.logger.warn({ err: e.message }, 'refreshContextWindowCache failed');
+    }
+  }
+  /**
+   * 同步版 resolver:StreamProcessor 直接传这个函数
+   * Layer 1 - cache;fallback undefined(由 StreamProcessor hardcode 处理)
+   */
+  private resolveContextWindowSync = (model: string): number | undefined => {
+    for (const [name, value] of this.contextWindowCache) {
+      if (model.includes(name)) return value;
+    }
+    return undefined;
+  };
   /** Lazy per-engine cache so a session override doesn't pay instantiation cost each turn. */
   private engineCache = new Map<EngineName, { engine: Engine; executor: Executor }>();
   private sessionManager: SessionManager;
@@ -1102,7 +1127,7 @@ export class MessageBridge {
           : imageKey
             ? '🖼️ ' + text
             : text;
-    const processor = new StreamProcessor(displayPrompt, this.config.contextWindow, this.config.claude.model);
+    const processor = new StreamProcessor(displayPrompt, this.config.contextWindow, this.config.claude.model, this.resolveContextWindowSync);
 
     const initialState: CardState = {
       status: 'preparing',
@@ -1916,7 +1941,7 @@ export class MessageBridge {
     const outputsDir = this.outputsManager.prepareDir(chatId);  // bot name fixed at construction
 
     const displayPrompt = prompt;
-    const processor = new StreamProcessor(displayPrompt, this.config.contextWindow, this.config.claude.model);
+    const processor = new StreamProcessor(displayPrompt, this.config.contextWindow, this.config.claude.model, this.resolveContextWindowSync);
     const rateLimiter = new RateLimiter(1500);
 
     const initialState: CardState = {
