@@ -10,7 +10,6 @@ import type { DocSync } from '../sync/doc-sync.js';
 import type { Engine, Executor, ExecutionHandle, EngineName } from '../engines/index.js';
 import { createEngine, resolveEngineName, StreamProcessor, SessionManager } from '../engines/index.js';
 import { RateLimiter } from './rate-limiter.js';
-import { saveActiveTasks, recoverAndNotify, clearActiveTasks, findRecentInterruptedTask, type PersistedTask } from './task-state-store.js';
 import { OutputsManager } from './outputs-manager.js';
 import { MemoryClient } from '../memory/memory-client.js';
 import { AuditLogger } from '../utils/audit-logger.js';
@@ -404,7 +403,8 @@ export class MessageBridge {
   /** Collect current running tasks in a persistable format.
    *  Includes AskUserQuestion state so cards from interrupted sessions can be
    *  recognized on restart (see findRecentInterruptedTask). */
-  private collectPersistableTasks(): any[] { return []; }
+  private collectPersistableTasks(): any[] { return [] as any[]; }
+  persistTaskSnapshot(): void { return; }
 
 
   private stopTask(chatId: string): void {
