@@ -405,6 +405,7 @@ export class MessageBridge {
    *  recognized on restart (see findRecentInterruptedTask). */
   private collectPersistableTasks(): any[] { return [] as any[]; }
   persistTaskSnapshot(): void { return; }
+  stopChatTask(chatId: string): boolean { return false; }
 
 
   private stopTask(chatId: string): void {
