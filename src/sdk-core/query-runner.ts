@@ -215,6 +215,8 @@ export class QueryRunner {
       pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE,
       systemPrompt: systemPrompt || undefined,
     };
+  }
+
 
   private async executeStream(
     prompt: string,
