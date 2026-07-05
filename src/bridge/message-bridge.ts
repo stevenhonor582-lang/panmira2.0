@@ -1134,7 +1134,7 @@ export class MessageBridge {
     let systemPromptOverride: string | undefined;
     let knowledgeContext: string | null = null;
     let agentBoundSkills: string[] = [];
-    let agentRuntimeConfig: AgentRuntimeConfig | null = null;
+    let agentRuntimeConfig: any | null = null;
 
     const [knowledgeResult, configResult, pendingSummary] = await Promise.allSettled([
       this.fetchKnowledgeContext(text, chatId),

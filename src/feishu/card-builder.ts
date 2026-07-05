@@ -600,18 +600,18 @@ export function buildConfirmationCard(state: ConfirmationState): string {
 
 export interface PendingTasksState {
   userTask: string;
-  tasks: PendingTask[];
+  tasks: any[];
   /** Originating orchestration plan name, for context. */
   intentName?: string;
   /** sessionId of the orchestration (Phase 3 will fill this in). */
   sessionId?: string;
 }
 
-function severityIcon(s: PendingSeverity): string {
+function severityIcon(s: string): string {
   return s === 'high' ? '🔴' : s === 'medium' ? '🟡' : '🟢';
 }
 
-function severityLabel(s: PendingSeverity): string {
+function severityLabel(s: string): string {
   return s === 'high' ? '[高]' : s === 'medium' ? '[中]' : '[低]';
 }
 
