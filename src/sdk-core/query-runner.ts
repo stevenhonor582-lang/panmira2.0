@@ -9,7 +9,10 @@
  * @module sdk-core/query-runner
  */
 
-import { query, type SDKMessage, type Options } from '@anthropic-ai/claude-agent-sdk';
+import { query, type SDKMessage, type Options, type SpawnOptions, type SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { createLogger, type Logger } from '../utils/logger.js';
 import { SDKSessionManager, type BotRecord } from './session-manager.js';
 import { SystemPromptInjector } from './system-prompt-injector.js';
@@ -18,6 +21,40 @@ import { HookRegistry } from './hook-registry.js';
 import { CanUseToolDecider, type BotPermissions } from './can-use-tool.js';
 
 const LOG: Logger = createLogger('info').child({ module: 'sdk-core/query-runner' });
+
+
+// === Claude binary path + spawn helper (from executor.ts) ===
+function resolveClaudePath(): string {
+  if (process.env.CLAUDE_EXECUTABLE_PATH) return process.env.CLAUDE_EXECUTABLE_PATH;
+  const candidates = [
+    join(process.cwd(), "node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude"),
+    join(process.cwd(), "node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs"),
+  ];
+  for (const p of candidates) { if (existsSync(p)) return p; }
+  return "claude";
+}
+const CLAUDE_EXECUTABLE = resolveClaudePath();
+const ALWAYS_FILTERED = ["CLAUDE_"];
+const AUTH_ENV_VARS = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"];
+
+function createSpawnFn(apiKey?: string, baseUrl?: string) {
+  return (options: SpawnOptions): SpawnedProcess => {
+    const exec = options.command;
+    const baseEnv = options.env && Object.keys(options.env).length > 0
+      ? { ...process.env, ...options.env } : { ...process.env };
+    const env: Record<string, string> = {};
+    for (const [key, value] of Object.entries(baseEnv)) {
+      if (value === undefined) continue;
+      if (ALWAYS_FILTERED.some((p) => key.startsWith(p))) continue;
+      if (apiKey && AUTH_ENV_VARS.some((v) => key.startsWith(v))) continue;
+      env[key] = value;
+    }
+    if (apiKey) { env.ANTHROPIC_AUTH_TOKEN = apiKey; if (!baseUrl) env.ANTHROPIC_API_KEY = apiKey; }
+    if (baseUrl) env.ANTHROPIC_BASE_URL = baseUrl;
+    const child = spawn(exec, options.args, { cwd: options.cwd, env, signal: options.signal, stdio: ["pipe", "pipe", "pipe"] });
+    return child as unknown as SpawnedProcess;
+  };
+}
 
 // === Typed Errors ===
 
@@ -76,6 +113,8 @@ export class QueryRunner {
     private readonly agentDefinitionBuilder: AgentDefinitionBuilder,
     private readonly hookRegistry: HookRegistry,
     private readonly canUseToolDecider: CanUseToolDecider,
+    private readonly apiKey?: string,
+    private readonly baseUrl?: string,
   ) {
     this.hookRegistry.registerDefaults();
   }
@@ -111,14 +150,16 @@ export class QueryRunner {
    * Default factory — creates QueryRunner with all SDK Core modules
    * configured with sensible defaults.
    */
-  static createDefault(permissions?: Partial<BotPermissions>): QueryRunner {
-    const deciderOpts = permissions ? { permissions } : {};
+  static createDefault(opts?: { permissions?: Partial<BotPermissions>; apiKey?: string; baseUrl?: string }): QueryRunner {
+    const deciderOpts = opts?.permissions ? { permissions: opts.permissions } : {};
     return new QueryRunner(
       new SDKSessionManager(),
       new SystemPromptInjector(),
       new AgentDefinitionBuilder(),
       new HookRegistry(),
       new CanUseToolDecider(deciderOpts),
+      opts?.apiKey,
+      opts?.baseUrl,
     );
   }
 
@@ -158,30 +199,22 @@ export class QueryRunner {
   private async buildOptions(
     bot: BotRecord,
     opts: QueryRunnerOptions,
-  ): Promise<Options> {
-    const sessionConfig = this.sessionManager.buildSessionConfig(
-      bot,
-      opts.continue ?? true,
-    );
+  ): Promise<Record<string, unknown>> {
+    const sessionConfig = this.sessionManager.buildSessionConfig(bot, false);
     const systemPrompt = await this.systemPromptInjector.inject(bot.agentId);
-    const businessExperts = await this.agentDefinitionBuilder.buildBusinessExperts();
 
     return {
+      permissionMode: bypassPermissions,
+      allowDangerouslySkipPermissions: true,
       cwd: sessionConfig.cwd,
-      persistSession: sessionConfig.persistSession,
-      continue: sessionConfig.continue,
-      settingSources: [],
-      systemPrompt: {
-        type: 'preset',
-        preset: 'claude_code',
-        append: systemPrompt,
-      },
-      agents: Object.keys(businessExperts).length > 0 ? businessExperts : undefined,
-      hooks: this.hookRegistry.all,
-      canUseTool: this.canUseToolDecider.decide,
       abortController: opts.abortController ?? new AbortController(),
+      includePartialMessages: true,
+      settingSources: this.baseUrl ? [project] : [user, project],
+      spawnClaudeCodeProcess: createSpawnFn(this.apiKey, this.baseUrl),
+      executable: CLAUDE_EXECUTABLE,
+      pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE,
+      systemPrompt: systemPrompt || undefined,
     };
-  }
 
   private async executeStream(
     prompt: string,

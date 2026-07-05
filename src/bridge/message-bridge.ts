@@ -62,6 +62,10 @@ import { QueryRunner } from '../sdk-core/query-runner.js';
 import type { SessionHelperDeps } from './bridge-session.js';
 import { fetchKnowledgeContext } from './knowledge-fetcher.js';
 import type { KnowledgeFetcherDeps } from './knowledge-fetcher.js';
+import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
+import { spawn as nodeSpawn } from 'node:child_process';
+import { existsSync as fsExists } from 'node:fs';
+import { join as pathJoin } from 'node:path';
 
 export class MessageBridge {
   private engine: Engine;
@@ -208,41 +212,86 @@ export class MessageBridge {
     knowledgeContext?: string | null;
     systemPromptOverride?: string;
   }): ExecutionHandle {
-    // Phase γ-4b: systemPromptOverride (GUIDANCE_BLOCK + SECTION_7) prepended to knowledgeContext
-    // so anti-sycophancy rules + RAG context are both in the prompt
-        const fullKnowledgeContext = [
-      opts.systemPromptOverride,
-      opts.knowledgeContext,
-    ].filter(Boolean).join(String.fromCharCode(10, 10, 45, 45, 45, 10, 10));
+    // Resolve binary path
+    const binaryCandidates = [
+      pathJoin(process.cwd(), 'node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude'),
+      pathJoin(process.cwd(), 'node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs'),
+    ];
+    const claudeExe = binaryCandidates.find(p => fsExists(p)) || 'claude';
+
+    // Build full prompt
     const sep = String.fromCharCode(10, 10, 45, 45, 45, 10, 10);
-    const fullPrompt = fullKnowledgeContext
-      ? fullKnowledgeContext + sep + String.fromCharCode(29993, 25143, 38382, 39064) + ': ' + opts.prompt
+    const parts = [opts.systemPromptOverride, opts.knowledgeContext].filter(Boolean);
+    const fullPrompt = parts.length > 0
+      ? parts.join(sep) + sep + '\u7528\u6237\u95ee\u9898: ' + opts.prompt
       : opts.prompt;
-    const runner = QueryRunner.createDefault();
-    const stream = runner.runQueryStream({
-      botName: opts.botName,
+
+    // Spawn function (same as executor.ts createSpawnFn)
+    const apiKey = this.config.claude.apiKey;
+    const baseUrl = this.config.claude.baseUrl;
+    const spawnFn = (options: { command: string; args: string[]; cwd: string; env: Record<string, string | undefined>; signal: AbortSignal }) => {
+      const baseEnv = options.env && Object.keys(options.env).length > 0
+        ? { ...process.env, ...options.env } : { ...process.env };
+      const env: Record<string, string> = {};
+      for (const [key, value] of Object.entries(baseEnv)) {
+        if (value === undefined) continue;
+        if (key.startsWith('CLAUDE_')) continue;
+        if (apiKey && (key.startsWith('ANTHROPIC_API_KEY') || key.startsWith('ANTHROPIC_AUTH_TOKEN') || key.startsWith('ANTHROPIC_BASE_URL'))) continue;
+        env[key] = value;
+      }
+      if (apiKey) {
+        env.ANTHROPIC_AUTH_TOKEN = apiKey;
+        if (!baseUrl) env.ANTHROPIC_API_KEY = apiKey;
+      }
+      if (baseUrl) env.ANTHROPIC_BASE_URL = baseUrl;
+      const child = nodeSpawn(options.command, options.args, {
+        cwd: options.cwd, env, signal: options.signal, stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      // Debug: capture stderr
+      let stderrBuf = '';
+      child.stderr?.on('data', (d: Buffer) => { stderrBuf += d.toString(); });
+      child.on('exit', (code: number | null) => {
+        if (code !== 0) {
+          this.logger.error({ code, stderr: stderrBuf.slice(0, 500), command: options.command, cwd: options.cwd }, 'SDK Core binary exited non-zero');
+        }
+      });
+      return child;
+    };
+
+    // English slug cwd
+    const slugMap: Record<string, string> = {
+      '\u5f97\u4e00': 'deyi', '\u7384\u9274': 'xuanjian', '\u4e0d\u76c8': 'buying',
+      '\u5b88\u9759': 'shoujing', '\u4fe1\u8a00': 'xinyan',
+    };
+    const slug = slugMap[opts.botName] || opts.botName;
+    const cwd = `/home/ubuntu/workspace/${slug}`;
+
+    // Call SDK query() with ESM import (NOT require)
+    const stream = sdkQuery({
       prompt: fullPrompt,
-      abortController: opts.abortController,
+      options: {
+        permissionMode: 'bypassPermissions',
+        allowDangerouslySkipPermissions: true,
+        cwd,
+        abortController: opts.abortController,
+        includePartialMessages: true,
+        settingSources: baseUrl ? ['project'] : ['user', 'project'],
+        spawnClaudeCodeProcess: spawnFn,
+        executable: claudeExe,
+        pathToClaudeCodeExecutable: claudeExe,
+        systemPrompt: opts.systemPromptOverride || undefined,
+      } as any,
     });
+
     return {
-      stream: stream as ExecutionHandle['stream'],
-      sendAnswer: () => {
-        this.logger.warn({ botName: opts.botName }, 'SDK Core: sendAnswer not yet implemented');
-      },
-      resolveQuestion: () => {
-        this.logger.warn({ botName: opts.botName }, 'SDK Core: resolveQuestion not yet implemented');
-      },
-      finish: () => {
-        opts.abortController.abort();
-      },
+      stream: stream as unknown as ExecutionHandle['stream'],
+      sendAnswer: () => {},
+      resolveQuestion: () => {},
+      finish: () => { opts.abortController.abort(); },
     };
   }
 
-  /**
-   * Session ids and model overrides are engine-specific. If a bot's default
-   * engine changes between restarts, discard the old per-chat state before the
-   * next execution so another engine does not try to resume it.
-   */
+
   private prepareSessionForExecution(chatId: string) {
     return prepareSessionForExecution(this._sessionDeps, chatId);
   }
