@@ -348,3 +348,64 @@
   color: var(--accent-text);
   white-space: nowrap;
 }
+
+/* ═══ Resources Overview (Plan H2) ═══ */
+.resourcesOverview {
+  margin-bottom: 1.5rem;
+  padding: 1.25rem 1.5rem;
+  background: var(--bg-elevated, #0c0c11);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.06));
+  border-radius: 12px;
+}
+.statCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+.statCard {
+  display: block;
+  padding: 0.875rem 1rem;
+  background: var(--bg-base, #050508);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.06));
+  border-radius: 8px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+.statCard:hover {
+  border-color: rgba(99, 102, 241, 0.5);
+  background: rgba(255, 255, 255, 0.04);
+}
+.statLabel {
+  font-size: 0.78rem;
+  color: var(--text-tertiary, #888);
+  margin-bottom: 0.4rem;
+  letter-spacing: 0.02em;
+}
+.statValue {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text-primary, #f0f0f2);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.quickActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.quickAction {
+  padding: 0.5rem 0.875rem;
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: 6px;
+  color: #818cf8;
+  text-decoration: none;
+  font-size: 0.85rem;
+  transition: background-color 120ms ease;
+}
+.quickAction:hover {
+  background: rgba(99, 102, 241, 0.18);
+  color: #a5b4fc;
+}

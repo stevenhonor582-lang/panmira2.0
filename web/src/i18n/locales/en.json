@@ -546,5 +546,15 @@
   "agents.invalidJson": "Invalid JSON in {field}",
   "bots": {
     "providerLockedHint": "🔒 Provider-controlled: model={{model}}, baseUrl={{baseUrl}}. Edit in Settings → AI Providers."
+  },
+  "dashboard": {
+    "overviewTitle": "Resources Overview",
+    "llm": "LLM Models",
+    "embedding": "Embedding Models",
+    "kb": "Knowledge Bases",
+    "agents": "Agents",
+    "newAgent": "New Agent",
+    "uploadDoc": "Upload Document",
+    "connectChannel": "Connect Channel"
   }
 }

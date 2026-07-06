@@ -546,5 +546,15 @@
   "agents.invalidJson": "{field} JSON 格式错误",
   "bots": {
     "providerLockedHint": "🔒 由服务商控制：模型={{model}}，地址={{baseUrl}}。请到设置→AI 服务商修改。"
+  },
+  "dashboard": {
+    "overviewTitle": "资源总览",
+    "llm": "LLM 模型",
+    "embedding": "Embedding 模型",
+    "kb": "知识库",
+    "agents": "Agent",
+    "newAgent": "新建 Agent",
+    "uploadDoc": "上传文档",
+    "connectChannel": "接入 Channel"
   }
 }
