@@ -34,6 +34,7 @@ import { handleKnowledgeBaseRoutes } from './routes/knowledge-base-routes.js';
 import { handleAgentKnowledgeRoutes } from './routes/agent-knowledge-routes.js';
 import { handleAgentRunRoutes } from './routes/agent-run-routes.js';
 import { handleOAuthClientRoutes } from './routes/oauth-client-routes.js';
+import { handleReportsRoutes } from './routes/reports-routes.js';
 import { verifyAccessToken } from './middleware.js';
 import { metrics as _metrics } from '../utils/metrics.js';
 import type { SessionRegistry } from '../session/session-registry.js';
@@ -686,6 +687,13 @@ ${content}
       if (url.startsWith('/api/v2/admin/oauth-clients')) {
         if (await handleOAuthClientRoutes(req, res, method, url)) return;
         jsonResponse(res, 404, { error: 'OAuth client route not found' });
+        return;
+      }
+
+      // Plan B-3: Reports
+      if (url.startsWith('/api/v2/admin/reports/')) {
+        if (await handleReportsRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Reports route not found' });
         return;
       }
 
