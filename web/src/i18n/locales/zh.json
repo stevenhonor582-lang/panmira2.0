@@ -579,5 +579,27 @@
     "toggleFailed": "切换失败",
     "loadFailed": "加载失败",
     "loading": "加载中..."
+  },
+  "knowledge": {
+    "title": "数智底座",
+    "upload": "上传文档",
+    "uploadPrompt": "文档标题?",
+    "uploadContentPrompt": "文档内容(纯文本)?",
+    "uploadOk": "上传成功",
+    "uploadFailed": "上传失败",
+    "knowledgeBases": "知识库",
+    "documents": "文档列表",
+    "docs": "文档",
+    "colTitle": "标题",
+    "colStatus": "状态",
+    "colChunks": "Chunks",
+    "search": "检索测试",
+    "searchBtn": "搜索",
+    "searchPlaceholder": "输入查询...",
+    "searchFailed": "搜索失败",
+    "results": "条结果",
+    "empty": "请选择左侧知识库",
+    "loadFailed": "加载失败",
+    "loading": "加载中..."
   }
 }
