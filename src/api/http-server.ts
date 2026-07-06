@@ -259,6 +259,8 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
       !url.startsWith('/api/admin') &&
       !url.startsWith('/api/auth') &&
       !url.startsWith('/api/v1/memory') &&
+      !url.startsWith('/oauth') &&
+      url !== '/.well-known/oauth-authorization-server' &&
       !url.startsWith('/api/reports')
     ) {
       const auth = req.headers.authorization;
@@ -653,9 +655,15 @@ ${content}
 
       // Auth routes (register, login, refresh, me)
       if (url.startsWith('/api/auth')) {
-        if (await handleOAuthRoutes(req, res, method, url)) return;
         if (await handleAuthRoutes(userStore, req, res, method, url)) return;
         jsonResponse(res, 404, { error: 'Auth route not found' });
+        return;
+      }
+
+      // OAuth 2.0 routes (external system access)
+      if (url.startsWith('/oauth') || url === '/.well-known/oauth-authorization-server') {
+        if (await handleOAuthRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'OAuth route not found' });
         return;
       }
 
