@@ -747,3 +747,62 @@ export const usageReports = pgTable('usage_reports', {
   costUsd: numeric('cost_usd', { precision: 12, scale: 6 }).notNull().default('0'),
   metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}),
 });
+
+// ── plan-B1 (2026-07-06): 资源引擎 ──────────────────────────────────────────
+
+// embedding_providers:跟 provider_configs 风格一致,text PK
+export const embeddingProviders = pgTable('embedding_providers', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  baseUrl: text('base_url').notNull().default(''),
+  apiKeyEncrypted: text('api_key_encrypted'),
+  modelName: text('model_name').notNull().default(''),
+  dimensions: integer('dimensions').notNull().default(1024),
+  pricingPer1k: numeric('pricing_per_1k', { precision: 10, scale: 6 }).notNull().default('0'),
+  isDefault: boolean('is_default').notNull().default(false),
+  status: text('status').notNull().default('active'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// mcp_servers:独立 MCP 资源池(spec §10)
+export const mcpServers = pgTable('mcp_servers', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  teamId: uuid('team_id'), // 可空,空=Company 级
+  name: varchar('name', { length: 100 }).notNull(),
+  url: text('url').notNull(),
+  transport: varchar('transport', { length: 20 }).notNull().default('http'), // http / sse
+  authType: varchar('auth_type', { length: 20 }).notNull().default('none'), // oauth / api_key / none
+  authRefId: uuid('auth_ref_id'), // FK → external_oauth_credentials
+  apiKeyEncrypted: text('api_key_encrypted'), // 直接存 API key
+  toolsCache: jsonb('tools_cache').$type<Array<{ name: string; description: string; schema: unknown }>>().default([]),
+  healthStatus: varchar('health_status', { length: 20 }).notNull().default('unknown'),
+  lastCheckAt: timestamp('last_check_at', { withTimezone: true }),
+  status: varchar('status', { length: 20 }).notNull().default('active'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// agent_skill_refs:agent 绑 skill(spec §9.3)
+export const agentSkillRefs = pgTable('agent_skill_refs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  agentId: uuid('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  skillId: varchar('skill_id', { length: 255 }).notNull().references(() => skills.id, { onDelete: 'cascade' }),
+  skillVersion: varchar('skill_version', { length: 20 }),
+  params: jsonb('params').$type<Record<string, unknown>>().default({}),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// skill_usage:skill 调用日志,给 usage_reports 聚合
+export const skillUsage = pgTable('skill_usage', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  skillId: varchar('skill_id', { length: 255 }).notNull(),
+  agentId: uuid('agent_id'),
+  callCount: integer('call_count').notNull().default(1),
+  successCount: integer('success_count').notNull().default(0),
+  avgLatencyMs: integer('avg_latency_ms').notNull().default(0),
+  date: varchar('date', { length: 10 }).notNull(), // YYYY-MM-DD
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});

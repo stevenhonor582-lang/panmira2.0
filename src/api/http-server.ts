@@ -29,6 +29,7 @@ import { ProviderConfigStore } from '../db/provider-config-store.js';
 import { DiscoveredGroupStore } from '../db/discovered-group-store.js';
 import { handleAuthRoutes } from './routes/auth-routes.js';
 import { handleOAuthRoutes } from './routes/oauth-routes.js';
+import { handleResourceRoutes } from './routes/resource-routes.js';
 import { verifyAccessToken } from './middleware.js';
 import { metrics as _metrics } from '../utils/metrics.js';
 import type { SessionRegistry } from '../session/session-registry.js';
@@ -261,7 +262,8 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
       !url.startsWith('/api/v1/memory') &&
       !url.startsWith('/oauth') &&
       url !== '/.well-known/oauth-authorization-server' &&
-      !url.startsWith('/api/reports')
+      !url.startsWith('/api/reports') &&
+      !url.startsWith('/api/v2/admin')
     ) {
       const auth = req.headers.authorization;
       const urlToken = url.includes('token=')
@@ -664,6 +666,15 @@ ${content}
       if (url.startsWith('/oauth') || url === '/.well-known/oauth-authorization-server') {
         if (await handleOAuthRoutes(req, res, method, url)) return;
         jsonResponse(res, 404, { error: 'OAuth route not found' });
+        return;
+      }
+
+      // Plan B-1: Resource engine routes (embedding / mcp / agent skill refs)
+      if (url.startsWith('/api/v2/admin/embedding-providers') ||
+          url.startsWith('/api/v2/admin/mcp-servers') ||
+          url.startsWith('/api/v2/admin/agents/')) {
+        if (await handleResourceRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Resource route not found' });
         return;
       }
 
