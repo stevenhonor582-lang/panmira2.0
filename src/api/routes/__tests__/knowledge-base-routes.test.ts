@@ -97,3 +97,17 @@ describe('handleKnowledgeBaseRoutes document dispatch', () => {
     expect(handled).toBe(true);
   });
 });
+
+describe('handleKnowledgeBaseRoutes search dispatch', () => {
+  it('handles POST /:id/search', async () => {
+    const { req, res } = mockReqRes('POST', '/api/v2/admin/knowledge-bases/abc-123/search');
+    const handled = await handleKnowledgeBaseRoutes(req, res, 'POST', '/api/v2/admin/knowledge-bases/abc-123/search');
+    expect(handled).toBe(true);
+  });
+
+  it('does NOT match GET /:id/search (only POST allowed)', async () => {
+    const { req, res } = mockReqRes('GET', '/api/v2/admin/knowledge-bases/abc-123/search');
+    const handled = await handleKnowledgeBaseRoutes(req, res, 'GET', '/api/v2/admin/knowledge-bases/abc-123/search');
+    expect(handled).toBe(false);
+  });
+});

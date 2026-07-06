@@ -20,6 +20,7 @@ import { db } from '../../db/index.js';
 import { knowledgeBases, documents, documentChunks } from '../../db/schema.js';
 import { chunkText, makeChunkId } from '../../services/chunker.js';
 import { embedText } from '../../services/embedder.js';
+import { hybridSearch } from '../../services/hybrid-search.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import { requireBearer, requireScopes } from '../oauth-middleware.js';
 
@@ -350,6 +351,36 @@ async function createDocumentVersion(req: http.IncomingMessage, res: http.Server
   jsonResponse(res, 201, { success: true, data: { docId, version: newVersion, chunks: chunks.length } });
 }
 
+
+// POST /api/v2/admin/knowledge-bases/:id/search
+async function searchKb(req: http.IncomingMessage, res: http.ServerResponse, kbId: string) {
+  const ctx = await requireBearer(req, res);
+  if (!ctx) return;
+  const check = requireScopes(ctx, ['knowledge:read', 'knowledge:admin']);
+  if (!check.ok) { jsonResponse(res, 403, { error: 'insufficient_scope', missing: check.missing }); return; }
+
+  const [kb] = await db.select().from(knowledgeBases).where(eq(knowledgeBases.id, kbId)).limit(1);
+  if (!kb) { jsonResponse(res, 404, { error: 'KB not found' }); return; }
+  if (!canAccessKb(ctx, kb)) { jsonResponse(res, 403, { error: 'forbidden' }); return; }
+
+  const body = (await parseJsonBody(req)) as Record<string, unknown>;
+  const { query, topK, mode } = body;
+  if (!query || typeof query !== 'string') { jsonResponse(res, 400, { error: 'query required' }); return; }
+
+  const results = await hybridSearch({
+    query: String(query),
+    kbIds: [kbId],
+    topK: Number(topK) || 5,
+    mode: (mode === 'vector' || mode === 'bm25' || mode === 'hybrid') ? mode : 'hybrid',
+    visibilityFilter: {
+      userId: ctx.userId || '',
+      teamId: ctx.teamId,
+      tenantId: ctx.tenantId,
+    },
+  });
+  jsonResponse(res, 200, { success: true, data: results });
+}
+
 // ── Dispatch ────────────────────────────────────────────────────────────
 
 export async function handleKnowledgeBaseRoutes(
@@ -395,6 +426,12 @@ export async function handleKnowledgeBaseRoutes(
   const docVerMatch = url.match(/^\/api\/v2\/admin\/documents\/([^/]+)\/versions$/);
   if (docVerMatch && method === 'POST') {
     await createDocumentVersion(req, res, docVerMatch[1]!); return true;
+  }
+
+  // /api/v2/admin/knowledge-bases/:id/search
+  const searchMatch = url.match(/^\/api\/v2\/admin\/knowledge-bases\/([^/]+)\/search$/);
+  if (searchMatch && method === 'POST') {
+    await searchKb(req, res, searchMatch[1]!); return true;
   }
 
   return false;
