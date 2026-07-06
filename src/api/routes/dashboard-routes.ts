@@ -25,31 +25,28 @@ export async function handleDashboardRoutes(
 
   if (u.pathname === '/api/v2/admin/dashboard/stats') {
     try {
-      const countsRes = await pool.query<{
-        llm: string; embedding: string; mcp: string;
-        knowledge_bases: string; agents: string; oauth_clients: string; skills: string;
-      }>(`
+      const countsRes = await pool.query(`
         SELECT
-          (SELECT count(*) FROM provider_configs WHERE status != 'disabled') AS llm,
+          (SELECT count(*) FROM provider_configs) AS llm,
           (SELECT count(*) FROM embedding_providers WHERE status != 'disabled') AS embedding,
           (SELECT count(*) FROM mcp_servers WHERE status != 'disabled') AS mcp,
           (SELECT count(*) FROM knowledge_bases) AS knowledge_bases,
-          (SELECT count(*) FROM agents WHERE status != 'disabled') AS agents,
+          (SELECT count(*) FROM agents) AS agents,
           (SELECT count(*) FROM oauth_clients) AS oauth_clients,
-          (SELECT count(*) FROM skills WHERE status != 'disabled') AS skills
+          (SELECT count(*) FROM skills) AS skills
       `);
-      const c = countsRes.rows[0];
+      const c = countsRes.rows[0] as any;
 
-      const trendsRes = await pool.query<{ date: string; dimension: string; count: string }>(`
+      const trendsRes = await pool.query(`
         SELECT date, dimension, SUM(count)::bigint AS count
         FROM mv_usage_reports_daily
-        WHERE date >= (CURRENT_DATE - INTERVAL '7 days')::date
+        WHERE date >= TO_CHAR(CURRENT_DATE - INTERVAL '7 days', 'YYYY-MM-DD')
         GROUP BY date, dimension
         ORDER BY date ASC
       `);
 
       const trendMap = new Map<string, Record<string, number>>();
-      for (const row of trendsRes.rows) {
+      for (const row of trendsRes.rows as any[]) {
         const day = row.date.toString();
         if (!trendMap.has(day)) trendMap.set(day, { date: day, token: 0, skill: 0, mcp: 0, knowledge: 0 });
         const entry = trendMap.get(day)!;
