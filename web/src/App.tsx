@@ -16,6 +16,7 @@ const KnowledgeView = lazy(() => import('./components/KnowledgeView').then(m => 
 const AgentsView = lazy(() => import('./components/AgentsView').then(m => ({ default: m.AgentsView })));
 const ResourcesView = lazy(() => import('./components/ResourcesView').then(m => ({ default: m.ResourcesView })));
 const ChannelsView = lazy(() => import('./components/ChannelsView').then(m => ({ default: m.ChannelsView })));
+const OAuthClientsView = lazy(() => import('./components/OAuthClientsView').then(m => ({ default: m.OAuthClientsView })));
 const ReportsView = lazy(() => import('./components/ReportsView').then(m => ({ default: m.ReportsView })));
 const CostView = lazy(() => import('./components/CostView').then(m => ({ default: m.CostView })));
 const AuditView = lazy(() => import('./components/AuditView').then(m => ({ default: m.AuditView })));
@@ -80,7 +81,7 @@ export function App() {
         <Route path="/app/alerts" element={<AdminLayout><AlertsView /></AdminLayout>} />
         <Route path="/app/reports" element={<AdminLayout><ReportsView /></AdminLayout>} />
         <Route path="/app/cost" element={<AdminLayout><CostView /></AdminLayout>} />
-        <Route path="/app/oauth-clients" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/oauth-clients" element={<AdminLayout><OAuthClientsView /></AdminLayout>} />
         <Route path="/app/audit" element={<AdminLayout><AuditView /></AdminLayout>} />
 
         {/* Chat routes: ChatLayout (preserves existing chat UI) */}

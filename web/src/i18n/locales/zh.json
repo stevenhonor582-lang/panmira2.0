@@ -713,5 +713,19 @@
     "colAction": "动作",
     "colTarget": "目标",
     "empty": "暂无审计日志"
+  },
+  "oauth": {
+    "title": "OAuth 客户端",
+    "newClient": "新建客户端",
+    "newNamePrompt": "客户端名称?",
+    "secretWarning": "client_secret 只显示一次",
+    "colName": "名称",
+    "colClientId": "Client ID",
+    "colScopes": "Scopes",
+    "colStatus": "状态",
+    "colCreated": "创建时间",
+    "revoke": "撤销",
+    "revokeConfirm": "确定撤销这个客户端?",
+    "empty": "暂无 OAuth 客户端"
   }
 }
