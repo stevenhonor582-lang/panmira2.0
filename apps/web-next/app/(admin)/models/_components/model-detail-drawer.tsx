@@ -22,6 +22,7 @@ interface Props {
   onDelete: (model: Model) => void;
   onTest: (model: Model) => void;
   onToggleDefault: (model: Model) => void;
+  onToggleStatus: (model: Model) => void;
 }
 
 export function ModelDetailDrawer({
@@ -32,6 +33,7 @@ export function ModelDetailDrawer({
   onDelete,
   onTest,
   onToggleDefault,
+  onToggleStatus,
 }: Props) {
   if (!model) return null;
 
@@ -134,6 +136,16 @@ export function ModelDetailDrawer({
             </Button>
           </div>
           <div className="flex gap-2">
+            {model.type === "embedding" && (
+              <Button
+                variant="outline"
+                onClick={() => onToggleStatus(model)}
+                className="gap-1.5"
+              >
+                <Power className="size-3.5" />
+                {model.status === "active" ? "停用" : "启用"}
+              </Button>
+            )}
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               关闭
             </Button>

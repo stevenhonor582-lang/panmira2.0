@@ -91,6 +91,15 @@ export default function ModelsPage() {
     await load();
   };
 
+  const handleToggleStatus = async (model: Model) => {
+    if (model.type === "llm") return;  // LLM 不支持
+    await api(`/api/v2/admin/models/${model.id}`, {
+      method: "PATCH",
+      body: { ...model, status: model.status === "active" ? "disabled" : "active" },
+    });
+    await load();
+  };
+
   const handleTest = async (model: Model): Promise<{ ok: boolean; message: string; latencyMs?: number }> => {
     setTestModelName(model.name);
     setTestOpen(true);
@@ -219,6 +228,7 @@ export default function ModelsPage() {
         onDelete={(m) => { setDeleting(m); setDeleteOpen(true); }}
         onTest={(m) => handleTest(m)}
         onToggleDefault={handleToggleDefault}
+        onToggleStatus={handleToggleStatus}
       />
       <ModelDeleteDialog
         model={deleting}
