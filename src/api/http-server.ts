@@ -38,6 +38,7 @@ import { handleReportsRoutes } from './routes/reports-routes.js';
 import { handleTenantQuotaRoutes } from './routes/tenant-quota-routes.js';
 import { handleMaintenanceRoutes } from './routes/maintenance-routes.js';
 import { handleChannelUsageRoutes } from './routes/channel-usage-routes.js';
+import { handleReportsExportRoutes } from './routes/reports-export-routes.js';
 import { verifyAccessToken } from './middleware.js';
 import { metrics as _metrics } from '../utils/metrics.js';
 import type { SessionRegistry } from '../session/session-registry.js';
@@ -711,6 +712,13 @@ ${content}
       if (url.startsWith('/api/v2/admin/maintenance/')) {
         if (await handleMaintenanceRoutes(req, res, method, url)) return;
         jsonResponse(res, 404, { error: 'Maintenance route not found' });
+        return;
+      }
+
+      // Plan D: Reports CSV export
+      if (url.startsWith('/api/v2/admin/reports/') && url.includes('/export')) {
+        if (await handleReportsExportRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Reports export route not found' });
         return;
       }
 
