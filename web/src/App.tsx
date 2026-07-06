@@ -2,10 +2,11 @@ import { useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useStore } from './store';
 import { LoginPage } from './components/LoginPage';
-import { Layout } from './components/Layout';
-import { ChatView } from './components/ChatView';
+import { ChatLayout } from './components/ChatLayout';
+import { AdminLayout } from './components/AdminLayout';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
+const ChatView = lazy(() => import('./components/ChatView').then(m => ({ default: m.ChatView })));
 const MemoryView = lazy(() => import('./components/MemoryView').then(m => ({ default: m.MemoryView })));
 const VoiceView = lazy(() => import('./components/VoiceView').then(m => ({ default: m.VoiceView })));
 const SettingsView = lazy(() => import('./components/SettingsView').then(m => ({ default: m.SettingsView })));
@@ -54,25 +55,35 @@ export function App() {
   return (
     <ErrorBoundary>
       <Routes>
-        <Route path="/admin" element={<Navigate to="/settings" replace />} />
-        <Route path="/admin/*" element={<Navigate to="/settings" replace />} />
-        <Route path="*" element={
-          <Layout>
-            <ErrorBoundary>
-              <Suspense fallback={<div style={{ padding: 24, color: '#666' }}>加载中...</div>}>
-                <Routes>
-                  <Route path="/" element={<ChatView />} />
-                  <Route path="/memory" element={<MemoryView />} />
-                  <Route path="/voice" element={<VoiceView />} />
-                  <Route path="/settings" element={<SettingsView />} />
-                  <Route path="/dashboard" element={<DashboardView />} />
-                  <Route path="/team" element={<TeamWorkspace />} />
-                  <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
-              </Suspense>
-            </ErrorBoundary>
-          </Layout>
-        } />
+        <Route path="/" element={<Navigate to="/app" replace />} />
+
+        {/* Admin routes: /app/* with AdminLayout + Sidebar */}
+        <Route path="/app" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/models" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/knowledge" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/resources" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/agents" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/channels" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/permissions" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/status" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/alerts" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/reports" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/cost" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/oauth-clients" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/audit" element={<AdminLayout><DashboardView /></AdminLayout>} />
+
+        {/* Chat routes: ChatLayout (preserves existing chat UI) */}
+        <Route path="/app/chat" element={<ChatLayout><ChatView /></ChatLayout>} />
+        <Route path="/app/team" element={<ChatLayout><TeamWorkspace /></ChatLayout>} />
+        <Route path="/app/memory" element={<ChatLayout><MemoryView /></ChatLayout>} />
+        <Route path="/app/voice" element={<ChatLayout><VoiceView /></ChatLayout>} />
+        <Route path="/app/settings" element={<ChatLayout><SettingsView /></ChatLayout>} />
+
+        {/* Backward compat: /admin/* and old paths redirect */}
+        <Route path="/admin/*" element={<Navigate to="/app/settings" replace />} />
+        <Route path="/dashboard" element={<Navigate to="/app" replace />} />
+
+        <Route path="*" element={<Navigate to="/app" replace />} />
       </Routes>
     </ErrorBoundary>
   );
