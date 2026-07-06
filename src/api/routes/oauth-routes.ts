@@ -31,6 +31,7 @@ import {
 import { deviceUserCode } from '../../lib/ids.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import { recordTokenUsage } from '../../services/usage-tracker.js';
+import { checkQuota, QuotaExceeded } from '../../services/quota-check.js';
 import { verifyAccessToken as verifyAdminJwt } from '../middleware.js';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -226,6 +227,25 @@ async function handleToken(req: http.IncomingMessage, res: http.ServerResponse) 
     }
 
     if (grantType === 'client_credentials') {
+      // quota check
+      try {
+        await checkQuota(client.tenantId, 'token', 1);
+      } catch (err) {
+        if (err instanceof QuotaExceeded) {
+          const retryAfter = Math.ceil((new Date(err.resetAt).getTime() - Date.now()) / 1000);
+          res.setHeader('Retry-After', String(retryAfter));
+          jsonResponse(res, 429, {
+            error: 'quota_exceeded',
+            dimension: err.dimension,
+            limit: err.limit,
+            used: err.used,
+            period: err.period,
+            resetAt: err.resetAt,
+          });
+          return;
+        }
+        throw err;
+      }
       const requested = (body.scope || '').split(' ').filter(Boolean);
       const allowed = client.scopes as string[];
       const finalScopes = requested.length > 0 ? requested.filter(s => allowed.includes(s)) : allowed;
