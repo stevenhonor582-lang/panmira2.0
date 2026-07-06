@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -11,10 +12,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Moon, Sun, LogOut, User } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
+import { Moon, Sun, LogOut, User, Bell, ChevronRight } from "lucide-react";
 import { getUser, logout, type AuthUser } from "@/lib/auth";
+import { NAV_LABEL_MAP, NAV_GROUP_MAP } from "./sidebar";
 
 export function Topbar() {
+  const pathname = usePathname();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("dark");
 
@@ -36,6 +40,11 @@ export function Topbar() {
     localStorage.setItem("theme", next);
   };
 
+  // 找当前路由对应的 label 和 group(去掉 basePath 前缀)
+  const cleanPath = (pathname ?? "").replace(/^\/web-next/, "").replace(/\/$/, "") || "/";
+  const currentLabel = NAV_LABEL_MAP[cleanPath] ?? "工作台";
+  const currentGroup = NAV_GROUP_MAP[cleanPath];
+
   const initials = user
     ? user.name
         .split(/\s+/)
@@ -47,13 +56,28 @@ export function Topbar() {
 
   return (
     <header className="h-12 shrink-0 border-b border-border bg-background flex items-center justify-between px-4">
-      <div className="flex items-center gap-3">
-        <h1 className="text-sm font-medium tracking-tight">工作台</h1>
-        <span className="text-[11px] uppercase tracking-wider rounded bg-muted text-muted-foreground px-1.5 py-0.5">
-          workspace
-        </span>
+      {/* 面包屑:分组 > 当前页(分组 = 工作台 时不显示分组,避免重复) */}
+      <div className="flex items-center gap-2 text-sm">
+        {currentGroup && currentGroup !== "工作台" && (
+          <>
+            <span className="text-muted-foreground">{currentGroup}</span>
+            <ChevronRight className="size-3.5 text-muted-foreground" />
+          </>
+        )}
+        <span className="text-foreground font-medium">{currentLabel}</span>
       </div>
+
       <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="通知"
+          className="relative"
+        >
+          <Bell className="size-4" />
+          <span className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-primary" />
+        </Button>
+        <Separator orientation="vertical" className="h-5 mx-1" />
         <Button
           variant="ghost"
           size="icon-sm"
