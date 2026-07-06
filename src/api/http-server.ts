@@ -28,6 +28,7 @@ import { AgentStore } from '../db/agent-store.js';
 import { ProviderConfigStore } from '../db/provider-config-store.js';
 import { DiscoveredGroupStore } from '../db/discovered-group-store.js';
 import { handleAuthRoutes } from './routes/auth-routes.js';
+import { handleOAuthRoutes } from './routes/oauth-routes.js';
 import { verifyAccessToken } from './middleware.js';
 import { metrics as _metrics } from '../utils/metrics.js';
 import type { SessionRegistry } from '../session/session-registry.js';
@@ -652,6 +653,7 @@ ${content}
 
       // Auth routes (register, login, refresh, me)
       if (url.startsWith('/api/auth')) {
+        if (await handleOAuthRoutes(req, res, method, url)) return;
         if (await handleAuthRoutes(userStore, req, res, method, url)) return;
         jsonResponse(res, 404, { error: 'Auth route not found' });
         return;
