@@ -257,7 +257,7 @@ export const documents = pgTable('documents', {
   kbId: uuid('kb_id'),
   kbType: varchar('kb_type', { length: 30 }),
   visibility: varchar('visibility', { length: 20 }).notNull().default('team'),
-  version: integer('version').notNull().default(1),
+  kbVersion: integer('kb_version').notNull().default(1),
   ownerUserId: uuid('owner_user_id'),
 });
 

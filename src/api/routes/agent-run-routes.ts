@@ -44,6 +44,10 @@ async function runAgent(req: http.IncomingMessage, res: http.ServerResponse, age
       mode: (mode === 'vector' || mode === 'bm25' || mode === 'hybrid') ? mode : 'hybrid',
       minScore: Number(minScore) || 0,
     });
+    // 记录 knowledge 使用 (每次 RAG retrieve +1,每个 KB 各记一次)
+    for (const kbId of rag.usedKbIds) {
+      recordKnowledgeUsage(ctx.tenantId, kbId, 1);
+    }
   }
 
   // 2. 真实 LLM 调用留作集成 (本期 stub: 返回 RAG 准备结果)
