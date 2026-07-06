@@ -10,9 +10,16 @@ import {
   Cpu,
   Wrench,
   Plug,
-  MessageSquare,
   ScrollText,
   Settings,
+  Activity,
+  AlertTriangle,
+  FileSearch,
+  DollarSign,
+  KeyRound,
+  ShieldCheck,
+  Mic,
+  Brain,
   type LucideIcon,
 } from "lucide-react";
 
@@ -45,21 +52,43 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    title: "监控",
+    items: [
+      { label: "实时状态", href: "/status", icon: Activity },
+      { label: "预警中心", href: "/alerts", icon: AlertTriangle },
+      { label: "异常诊断", href: "/diagnose", icon: FileSearch },
+    ],
+  },
+  {
     title: "运营",
     items: [
       { label: "Channel", href: "/channels", icon: Plug },
-      { label: "报表", href: "/reports", icon: ScrollText },
+      { label: "资源报表", href: "/reports", icon: ScrollText },
+      { label: "成本分析", href: "/cost", icon: DollarSign },
+      { label: "审计日志", href: "/audit", icon: ShieldCheck },
+    ],
+  },
+  {
+    title: "权限",
+    items: [
+      { label: "OAuth Client", href: "/oauth-clients", icon: KeyRound },
+      { label: "Permissions", href: "/permissions", icon: ShieldCheck },
+    ],
+  },
+  {
+    title: "系统",
+    items: [
+      { label: "Memory", href: "/memory", icon: Brain },
+      { label: "Voice", href: "/voice", icon: Mic },
       { label: "设置", href: "/settings", icon: Settings },
     ],
   },
 ];
 
-// 全局:从 href 找 label(topbar 用)
 export const NAV_LABEL_MAP: Record<string, string> = Object.fromEntries(
   NAV_GROUPS.flatMap((g) => g.items.map((i) => [i.href, i.label])),
 );
 
-// 全局:从 href 找 group title
 export const NAV_GROUP_MAP: Record<string, string> = Object.fromEntries(
   NAV_GROUPS.flatMap((g) => g.items.map((i) => [i.href, g.title])),
 );
@@ -126,7 +155,7 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* User card */}
+      {/* Status card */}
       <div className="m-2 p-2.5 rounded-md border border-sidebar-border bg-sidebar-accent/30">
         <div className="flex items-center gap-2 mb-1.5">
           <span className="size-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]" />
