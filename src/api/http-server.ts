@@ -35,6 +35,8 @@ import { handleAgentKnowledgeRoutes } from './routes/agent-knowledge-routes.js';
 import { handleAgentRunRoutes } from './routes/agent-run-routes.js';
 import { handleOAuthClientRoutes } from './routes/oauth-client-routes.js';
 import { handleReportsRoutes } from './routes/reports-routes.js';
+import { handleTenantQuotaRoutes } from './routes/tenant-quota-routes.js';
+import { handleMaintenanceRoutes } from './routes/maintenance-routes.js';
 import { verifyAccessToken } from './middleware.js';
 import { metrics as _metrics } from '../utils/metrics.js';
 import type { SessionRegistry } from '../session/session-registry.js';
@@ -694,6 +696,20 @@ ${content}
       if (url.startsWith('/api/v2/admin/reports/')) {
         if (await handleReportsRoutes(req, res, method, url)) return;
         jsonResponse(res, 404, { error: 'Reports route not found' });
+        return;
+      }
+
+      // Plan C: Tenant quotas
+      if (url.startsWith('/api/v2/admin/tenants/') && url.includes('/quotas')) {
+        if (await handleTenantQuotaRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Tenant quota route not found' });
+        return;
+      }
+
+      // Plan C: Maintenance (refresh MV)
+      if (url.startsWith('/api/v2/admin/maintenance/')) {
+        if (await handleMaintenanceRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Maintenance route not found' });
         return;
       }
 

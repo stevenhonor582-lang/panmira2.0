@@ -848,3 +848,15 @@ export const agentKnowledgeRefs = pgTable('agent_knowledge_refs', {
   minScore: numeric('min_score', { precision: 4, scale: 3 }).notNull().default('0.5'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ── plan-C (2026-07-06): Tenant Quota ─────────────────────────────────────
+export const tenantQuotas = pgTable('tenant_quotas', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  dimension: varchar('dimension', { length: 30 }).notNull(), // token / skill / mcp / channel / knowledge
+  period: varchar('period', { length: 10 }).notNull().default('daily'), // daily / monthly
+  limitValue: bigint('limit_value', { mode: 'number' }).notNull(),
+  enabled: boolean('enabled').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
