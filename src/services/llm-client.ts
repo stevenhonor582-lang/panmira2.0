@@ -11,12 +11,39 @@ export interface LlmMessage {
   content: string;
 }
 
+export interface LlmTool {
+  name: string;
+  description: string;
+  input_schema: {
+    type: 'object';
+    properties: Record<string, { type: string; description: string }>;
+    required: string[];
+  };
+}
+
 export interface LlmCallOptions {
   system?: string;
   messages: LlmMessage[];
+  tools?: LlmTool[];
   maxTokens?: number;
   model?: string;
   timeoutMs?: number;
+}
+
+export interface LlmToolUse {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
+export interface LlmCallResult {
+  text: string;
+  toolUses: LlmToolUse[];
+  stopReason: string;
+  usage: { inputTokens: number; outputTokens: number; totalTokens: number };
+  model: string;
+  provider: string;
+  durationMs: number;
 }
 
 export interface LlmCallResult {
@@ -85,6 +112,7 @@ export async function callLlm(opts: LlmCallOptions): Promise<LlmCallResult> {
     messages: opts.messages,
   };
   if (opts.system) body.system = opts.system;
+  if (opts.tools && opts.tools.length > 0) body.tools = opts.tools;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -128,10 +156,15 @@ export async function callLlm(opts: LlmCallOptions): Promise<LlmCallResult> {
     model?: string;
   };
   const text = data.content?.find(c => c.type === 'text')?.text || '';
+  const toolUses: LlmToolUse[] = (data.content || [])
+    .filter(c => c.type === 'tool_use')
+    .map(c => ({ id: (c as any).id, name: (c as any).name, input: (c as any).input }));
   const inputTokens = data.usage?.input_tokens || 0;
   const outputTokens = data.usage?.output_tokens || 0;
   return {
     text,
+    toolUses,
+    stopReason: data.stop_reason || 'end_turn',
     usage: { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens },
     model: data.model || model,
     provider: provider.name,
