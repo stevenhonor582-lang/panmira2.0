@@ -579,5 +579,27 @@
     "toggleFailed": "Toggle failed",
     "loadFailed": "Load failed",
     "loading": "Loading..."
+  },
+  "knowledge": {
+    "title": "Knowledge Base",
+    "upload": "Upload Document",
+    "uploadPrompt": "Document title?",
+    "uploadContentPrompt": "Document content (plain text)?",
+    "uploadOk": "Upload OK",
+    "uploadFailed": "Upload failed",
+    "knowledgeBases": "Knowledge Bases",
+    "documents": "Documents",
+    "docs": "docs",
+    "colTitle": "Title",
+    "colStatus": "Status",
+    "colChunks": "Chunks",
+    "search": "Search Test",
+    "searchBtn": "Search",
+    "searchPlaceholder": "Enter query...",
+    "searchFailed": "Search failed",
+    "results": "results",
+    "empty": "Select a knowledge base on the left",
+    "loadFailed": "Load failed",
+    "loading": "Loading..."
   }
 }
