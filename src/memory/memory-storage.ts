@@ -76,6 +76,7 @@ export interface DocumentCreateInput {
   content?: string;
   tags?: string[];
   created_by?: string;
+  bot_id?: string;  // P4-prime 2026-07-04: 可选; 不传则从 folder.bot_id 继承 (COALESCE)
 }
 
 export interface DocumentUpdateInput {
@@ -336,9 +337,13 @@ export class MemoryStorage {
       summary = await this.autoTagger.summarize(data.title, content);
     }
 
+    // P4-prime 2026-07-04: bot_id COALESCE 从 folder 继承, 解决 1095 NULL bot_id documents 问题
+    // 修前: createBotDoc 不传 bot_id, INSERT 不含 bot_id 列, 永远 NULL
+    // 修后: caller 可显式传 bot_id; 否则查 folder.bot_id 自动继承 (公共区 folder.bot_id IS NULL 时仍 NULL)
     await pool.query(
-      'INSERT INTO documents (id, title, folder_id, path, content, tags, summary, content_hash, quality_score, feedback_count, file_url, created_by, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)',
-      [id, data.title, folderId, docPath, content, JSON.stringify(tags), summary, hash, 0, 0, '', data.created_by || '', now, now],
+      `INSERT INTO documents (id, title, folder_id, path, content, tags, summary, content_hash, quality_score, feedback_count, file_url, created_by, created_at, updated_at, bot_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, COALESCE($15, (SELECT bot_id FROM folders WHERE id = $3)))`,
+      [id, data.title, folderId, docPath, content, JSON.stringify(tags), summary, hash, 0, 0, '', data.created_by || '', now, now, data.bot_id || null],
     );
 
     if (this.embedder && content) {

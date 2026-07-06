@@ -12,6 +12,8 @@ import { BotRegistry } from './api/bot-registry.js';
 import { NullSender } from './web/null-sender.js';
 import { PeerManager } from './api/peer-manager.js';
 import { TaskScheduler } from './scheduler/task-scheduler.js';
+import { startMvRefreshCron } from './services/mv-refresh-cron.js';
+import { startEmbeddingWorker } from './services/embedding-worker.js';
 import { startApiServer } from './api/http-server.js';
 import { startMemoryServer } from './memory/memory-server.js';
 import { WorkspaceManager } from './memory/workspace-manager.js';
@@ -129,6 +131,14 @@ async function main() {
     await runAutoMigrate(logger);
   } catch (err: any) {
     logger.warn({ err: err.message }, 'Auto-migrate failed (non-critical)');
+  }
+
+  // Phase B: 启动 NextCRM 对话回写 worker
+  try {
+    const { bootstrapNextcrmSyncWorker } = await import('./sync/nextcrm-sync-worker.js');
+    bootstrapNextcrmSyncWorker(logger);
+  } catch (err: any) {
+    logger.warn({ err: err.message }, 'nextcrm-sync worker bootstrap failed (non-critical)');
   }
 
   // Seed default agent templates on first startup
@@ -317,6 +327,12 @@ async function main() {
   // Create task scheduler
   const scheduler = new TaskScheduler(registry, logger, scheduledTaskStore);
 
+  // Plan D: 启动 MV 物化视图定时刷新 (5 分钟)
+  startMvRefreshCron();
+
+  // Plan F: 启动 embedding worker (5s poll, 异步嵌入队列)
+  startEmbeddingWorker();
+
   // Initialize peer manager for cross-instance bot discovery
   let peerManager: PeerManager | undefined;
   if (appConfig.peers.length > 0) {
@@ -476,7 +492,7 @@ async function main() {
   ];
   for (const bridge of allBridgesForRecovery) {
     try {
-      const count = await bridge.notifyOrphanedTasks();
+      const count = await (bridge as any).notifyOrphanedTasks();
       if (count > 0) {
         logger.info({ count }, 'Sent task recovery notifications');
       }

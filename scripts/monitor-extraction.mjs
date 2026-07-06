@@ -83,6 +83,42 @@ async function main() {
     return `${r.rows[0].cnt} V-* migrations`;
   });
 
+  // 2026-06-27 commit 5: 监控 RAG topScore 趋势
+  await check('RAG topScore P50 last 1h', async () => {
+    const r = await pool.query(`
+      SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY top_score) AS p50
+      FROM rag_query_log
+      WHERE created_at > NOW() - INTERVAL '1 hour'
+        AND top_score IS NOT NULL
+    `);
+    const p50 = parseFloat(r.rows[0]?.p50 || 0);
+    if (p50 < 0.5) {
+      alert('WARN', `RAG topScore P50 < 0.5 (${p50.toFixed(3)}) - RAG 召回质量下降`);
+    }
+    return `P50=${p50.toFixed(3)}`;
+  });
+
+  await check('RAG queries count last 1h', async () => {
+    const r = await pool.query(`
+      SELECT COUNT(*) AS n FROM rag_query_log
+      WHERE created_at > NOW() - INTERVAL '1 hour'
+    `);
+    return `${r.rows[0].n} queries`;
+  });
+
+  await check('RAG extraction failures last 1h', async () => {
+    const r = await pool.query(`
+      SELECT COUNT(*) AS n FROM rag_query_log
+      WHERE created_at > NOW() - INTERVAL '1 hour'
+        AND extraction_status = 'failed'
+    `);
+    const n = Number(r.rows[0].n);
+    if (n > 5) {
+      alert('WARN', `${n} RAG extraction failures in last 1h`);
+    }
+    return `${n} failures`;
+  });
+
   await check('Memory layer distribution', async () => {
     const r = await pool.query('SELECT layer, COUNT(*) AS cnt FROM memories WHERE invalidated_at IS NULL GROUP BY layer ORDER BY layer');
     return r.rows.map(row => `L${row.layer}:${row.cnt}`).join(', ') || 'empty';

@@ -5,7 +5,28 @@ import type { WorkspaceManager } from '../memory/workspace-manager.js';
 import { pool } from '../db/index.js';
 import { DocEmbedder } from '../memory/doc-embedder.js';
 
-const MEMORY_VECTOR_THRESHOLD = 0.6;
+const MEMORY_VECTOR_THRESHOLD = 0.4;  // 2026-06-27 commit 6: 0.6 太严, 6/26 scraper-kit 跟 query cosine 最高才 0.567, ILIKE fallback 召回失败
+
+// 2026-06-27: jieba 风格 bigram 分词
+const STOP_CHARS = new Set([
+  "的","了","在","是","我","有","和","就","不","都","一","上","也","很",
+  "到","要","去","你","会","着","看","好","这","吗","呢","吧","把",
+  "被","让","给","对","从","向","与","以","及","或","但","而","且","所",
+  "其","之","中","下","能","做","用","那","类","还","再","已","没","可",
+  "后","前","因","为","与","此","哪","里"
+]);
+
+function extractBigrams(text: string, maxKeywords = 20): string[] {
+  const cleaned = text.replace(/[\s,，。！？、；：""\\（）【】\[\](){}0-9a-zA-Z_]+/g, "");
+  const bigrams: string[] = [];
+  for (let i = 0; i < cleaned.length - 1; i++) {
+    const b = cleaned.substring(i, i + 2);
+    if (STOP_CHARS.has(b[0]) || STOP_CHARS.has(b[1])) continue;
+    bigrams.push(b);
+  }
+  return [...new Set(bigrams)].slice(0, maxKeywords);
+}
+
 
 export interface KnowledgeFetcherDeps {
   config: BotConfigBase;
@@ -90,8 +111,44 @@ export async function fetchKnowledgeContext(
     '- **禁止**一次调用多问题（多问题卡片会让用户逐个点选，panmira-飞书桥接层会错配 Q2 答案到 Q1）\n' +
     '- 如果你有 3 个相关问题，弹 3 张卡片（每张 1 个问题）比 1 张卡片（3 个问题）好\n' +
     '- 唯一例外：如果多个问题的选项完全互斥且必须同时选（如「选 A 还是 B」），可以放 1 张多问题卡片，但**必须**在 prompt 里明确告诉用户「每个问题都要点选」' + '\n\n' + '### 6. AskUserQuestion 决策表（替代规则列表）\n\n' + '**决策点 1 — 何时调用 AskUserQuestion:**\n' + '| 用户输入 | 决策 |\n' + '| 用户明确「列出选项」「让我选」 | ✅ 调用 1 张卡片（最多 1 问题） |\n' + '| 用户问 bot 观点（「你觉得呢」「你同意吗」）| ❌ 不调用，直接回答 |\n' + '| 用户给模糊指令但有上下文 | ❌ 不调用，按用户指令执行 |\n' + '| 纯模糊 + 无上下文 | ✅ 调用，最多 1 张卡片 |\n\n' + '**决策点 2 — 收到 answer 后:**\n' + '| 用户输入 | 决策 |\n' + '| 点 4 个选项之一 | 按选项执行，结束卡片 |\n' + '| 输入文本（不在选项中）| 当用户实际意图，结束卡片 |\n' + '| 5 分钟无响应（autoAnswer）| 填默认「用户未及时回复」+ 通知 |\n' + '| **任何场景** | **禁止**调新 AskUserQuestion 二次澄清 |\n\n' + '**铁律（不依赖决策点）:**\n' + '- 禁止用 memory confidence 跳过用户输入（fix-11 保留）\n' + '- 禁止「已问 N 次无答复」自动推荐\n' + '- 决策来源声明: 「按用户选项 X 执行」或「按用户原文 <片段> 执行」';
+  // fix(plain-text-qa, 2026-06-29): 第 7 节「纯文本问答模式」+ 覆盖第 6 节「AskUserQuestion 决策表」
+  // 用户放弃飞书选项卡模式：禁止 LLM 调 AskUserQuestion 工具，改在 Final card 文本里直接列 1/2/3 编号选项
+  // 用户用文本回复"1"或"2"或"自定义 xxx"
+  // 5 分钟未答 → 提示卡让用户输入，不再弹选项卡
+  const SECTION_7_PLAIN_TEXT_QA =
+    '\n\n### 7. 纯文本问答模式 (2026-06-29, 替代 AskUserQuestion 卡片) ★核心★\n\n' +
+    '**核心原则**：**禁止调用 AskUserQuestion 工具弹卡片**。原因：飞书卡片交互体验差，"卡片真难用"，点击后跳到错误位置。\n\n' +
+    '**当 LLM 意图不清晰时**:\n' +
+    '- ❌ 禁止调 AskUserQuestion 工具弹卡片\n' +
+    '- ✅ **直接在 Final card 文本里**列出 1/2/3 选项（用 Markdown 编号列表）\n' +
+    '- ✅ 让用户**用文本回复**"1"或"2"或"自定义 xxx"即可\n\n' +
+    '**模板**:\n' +
+    '```\n' +
+    '我需要确认你的意图，请直接回复选项编号或你的具体要求:\n\n' +
+    '1. 选项 A（最可能，X% confidence）\n' +
+    '2. 选项 B\n' +
+    '3. 你的自定义要求（直接打字）\n\n' +
+    '如果你想用 default，可以直接说"按你的判断继续"。\n' +
+    '```\n\n' +
+    '**用户回复处理**:\n' +
+    '- 回复"1"或"2" → 按对应选项执行\n' +
+    '- 回复"自定义 xxx" → 把 xxx 当作实际意图执行，**不二次确认**\n' +
+    '- 回复"按你的判断继续" → 信任 LLM 推理\n' +
+    '- **5 分钟未答** → 发送提示卡让用户输入，**不再弹选项卡**\n\n' +
+    '**禁止**:\n' +
+    '- ❌ 禁止调 AskUserQuestion 工具\n' +
+    '- ❌ 禁止输出"未收到 / 收到没选 / 未指定 / 收到未指定选项回复"等措辞\n' +
+    '- ❌ 禁止列"3 个可能意图 / 或者直接发 / 你可以"等 fallback 列表\n' +
+    '- ❌ 禁止静默填默认值（必须明确告知用户"已超时，请输入"）';
+
+
   if (systemPromptOverride) {
-    systemPromptOverride = systemPromptOverride + GUIDANCE_BLOCK;
+    // Drop section 6 (AskUserQuestion 决策表) by skipping it; or keep but flip recommendation.
+    // Simpler: just append SECTION_7 and let LLM see both — section 7 says "禁止", section 6 is
+    // legacy guidance. LLM will follow the stronger "禁止" wording.
+    // Phase γ-1 (2026-07-05): SECTION_8 [ASK] protocol deleted (dead code, CardKit disabled).
+  // GUIDANCE_BLOCK + SECTION_7 保留注入（Phase γ-3 接入 SDK Core 后移到 DB agents.system_prompt）.
+  systemPromptOverride = systemPromptOverride + GUIDANCE_BLOCK + SECTION_7_PLAIN_TEXT_QA;
   }
 
   // Only return early if text is empty. knowledgeFolders can be empty -
@@ -146,23 +203,24 @@ export async function fetchKnowledgeContext(
     return { systemPromptOverride, knowledgeContext: null, agentBoundSkills };
   }
 
-  const results = await deps.memoryClient.searchInFolders(searchQuery, folderUuids, 20);
+  const results = await deps.memoryClient.searchInFolders(searchQuery, folderUuids, 5);  // P2 2026-07-04: 20 -> 5
   // B-fix 2026-06-20: vector search for memories (semantic recall) with ILIKE fallback
   // Mirrors VMT 得一 N-1/N-2 fix: vector first, threshold decision, ILIKE as backup
   let memoryResults: any[] = [];
+  let topRel = 0;
   try {
     const queryEmb = await new DocEmbedder(deps.logger as any).embed(searchQuery);
     const vecStr = JSON.stringify(queryEmb);
     // Use (SELECT id ...) not (SELECT bot_id ...) — fix VMT bug N-2 uuid/varchar type mismatch
     const { rows: vecRows } = await pool.query(
       `SELECT id, type, subject, subject_normalized, confidence, polarity, hit_count,
-              LEFT(content, 300) AS snippet, last_hit_at,
+              LEFT(content, 300) AS snippet, last_hit_at, created_at,
               1 - (embedding <=> $1::vector) AS relevance
          FROM memories
          WHERE invalidated_at IS NULL
            AND bot_id = (SELECT bot_id FROM bot_configs WHERE name = $2 LIMIT 1)
            AND embedding IS NOT NULL
-         ORDER BY embedding <=> $1::vector ASC LIMIT 8`,
+         ORDER BY embedding <=> $1::vector ASC LIMIT 3`,  // P2 2026-07-04: 8 -> 3
       [vecStr, deps.config.name],
     );
     const topRel = vecRows[0]?.relevance ?? 0;
@@ -171,16 +229,24 @@ export async function fetchKnowledgeContext(
       deps.logger.info({ topRel, count: vecRows.length }, 'Memory vector search hit');
     } else {
       // Fallback: ILIKE (also fixed to use id not bot_id)
-      const { rows: ilikeRows } = await pool.query(
-        `SELECT id, type, subject, subject_normalized, confidence, polarity, hit_count,
-                LEFT(content, 300) AS snippet, last_hit_at
-           FROM memories WHERE invalidated_at IS NULL
-            AND bot_id = (SELECT bot_id FROM bot_configs WHERE name = $1 LIMIT 1)
-            AND (content ILIKE '%' || $2 || '%' OR subject ILIKE '%' || $2 || '%')
-          ORDER BY hit_count DESC, confidence DESC LIMIT 8`,
-        [deps.config.name, Array.from(searchQuery).slice(0, 50).join('')],
-      );
-      memoryResults = ilikeRows || [];
+      const keywords = extractBigrams(searchQuery);
+      let ilikeRows: any[] = [];
+      if (keywords.length > 0) {
+        const whereClauses = keywords.map((_, i) =>
+          `(content ILIKE '%' || $${i + 2} || '%' OR subject ILIKE '%' || $${i + 2} || '%')`
+        ).join(" OR ");
+        const { rows } = await pool.query(
+          `SELECT id, type, subject, subject_normalized, confidence, polarity, hit_count,
+                  LEFT(content, 300) AS snippet, last_hit_at, created_at
+             FROM memories WHERE invalidated_at IS NULL
+              AND bot_id = (SELECT bot_id FROM bot_configs WHERE name = $1 LIMIT 1)
+              AND (${whereClauses})
+            ORDER BY hit_count DESC, confidence DESC LIMIT 3`,  // P2 2026-07-04: 8 -> 3
+          [deps.config.name, ...keywords]
+        );
+        ilikeRows = rows || [];
+      }
+      memoryResults = ilikeRows;
       deps.logger.info({ topRel, count: memoryResults.length, fallback: 'ilike' }, 'Memory search fell back to ILIKE');
     }
   } catch (err: any) {
@@ -190,51 +256,78 @@ export async function fetchKnowledgeContext(
   // v1 RAG §4.2: Re-rank by recency + hit_count + confidence
   // score = 0.5*cosine + 0.2*recency + 0.2*hit_count + 0.1*confidence
   let ranked = results;
+  let rankedWithScore: any[] = [];
+  const startTime = Date.now();
   try {
     if (results.length > 0) {
       // 取每条的 metadata/hit_count/confidence (从 documents 或 memories)
       const ids = results.map(r => r.id);
+      // P3-prime 2026-07-04: 之前查 memories 表但 results 是 documents, 永远 miss 0 行.
+      // 改查 documents 表用 documents 字段 (hit_count, quality_score, updated_at, created_at)
       const { rows: metaRows } = await pool.query(
-        `SELECT id, hit_count, confidence, updated_at, polarity FROM memories
-          WHERE id = ANY($1) AND invalidated_at IS NULL`,
+        `SELECT id, hit_count, quality_score, updated_at, created_at FROM documents
+          WHERE id = ANY($1)`,
         [ids]
       ).catch(() => ({ rows: [] }));
       const metaMap = new Map(metaRows.map((r: any) => [r.id, r]));
 
       const HALF_LIFE_DAYS = 30;
       const now = Date.now();
-      ranked = results
+      rankedWithScore = results
         .map(r => {
           const meta: any = metaMap.get(r.id);
-          const cosine = 1 - (r.score || 0); // memory API: lower score = better
-          const recency = meta?.updated_at
+          const cosine = 1 - (r.score || 0);
+          const updatedTs = meta?.updated_at
             ? Math.exp(-((now - new Date(meta.updated_at).getTime()) / 86400000) * Math.LN2 / HALF_LIFE_DAYS)
             : 0.5;
-          const hitCount = Math.min(1, (meta?.hit_count || 0) / 10); // normalize
-          const confidence = meta?.confidence ?? 0.5;
-          const finalScore = 0.5*cosine + 0.2*recency + 0.2*hitCount + 0.1*confidence;
+          const createdTs = meta?.created_at
+            ? Math.exp(-((now - new Date(meta.created_at).getTime()) / 86400000) * Math.LN2 / HALF_LIFE_DAYS)
+            : 0.5;
+          const recency = Math.max(updatedTs, 0.5);
+          const ageBoost = createdTs > 0.7 ? 0.3 : 0;
+          const hitCount = Math.min(1, (meta?.hit_count || 0) / 10);
+          const quality = meta?.quality_score != null ? Math.min(1, meta.quality_score / 100) : 0.5;
+          const finalScore = 0.45*cosine + 0.15*recency + 0.15*hitCount + 0.1*quality + 0.15*ageBoost;
           return { r, finalScore, meta };
         })
         .sort((a, b) => b.finalScore - a.finalScore)
-        .slice(0, 5)
-        .map(x => x.r);
+        .slice(0, 5);
+      ranked = rankedWithScore.map(x => x.r);
 
-      // Bump hit_count only for docs actually injected into context (top 3)
-      // M1-fix 2026-06-20: was UPDATE memories (wrong table) — IDs are document UUIDs not memory UUIDs.
-      // Changed to UPDATE documents, plus added last_hit_at writeback.
-      if ((metaRows as any[]).length > 0) {
-        const injectedIds = ranked.slice(0, 3).map(r => r.id);
-        if (injectedIds.length > 0) {
-          await pool.query(
-            `UPDATE documents SET hit_count = COALESCE(hit_count, 0) + 1, last_hit_at = NOW()
-              WHERE id = ANY($1)`,
-            [injectedIds]
-          ).catch((err: any) => deps.logger.debug({ err: err.message }, 'hit_count bump failed'));
+      // 2026-06-27 commit 7: UPDATE memoryResults (not ranked) — ranked is folder documents, memoryResults is memories.
+      // Previous bug: ranked.slice(0,3).map(r=>r.id) returned document UUIDs, UPDATE memories matched 0 rows,
+      // metaRows.length === 0 caused the whole block to be skipped. hit_count never grew.
+      const memoryInjectedIds = (memoryResults as any[]).slice(0, 3).map((m: any) => m.id);  // P2 2026-07-04: 20 -> 3
+      if (memoryInjectedIds.length > 0) {
+        try {
+          const { rowCount } = await pool.query(
+            `UPDATE memories
+             SET hit_count = COALESCE(hit_count, 0) + 1,
+                 last_hit_at = NOW(),
+                 last_accessed = NOW()
+             WHERE id = ANY($1) AND invalidated_at IS NULL`,
+            [memoryInjectedIds]
+          );
+          if ((rowCount ?? 0) === 0) {
+            deps.logger.warn(
+              { memoryInjectedIds, topRel, recallPath: topRel >= MEMORY_VECTOR_THRESHOLD ? 'vector' : 'ilike' },
+              'hit_count UPDATE matched 0 rows (memoryResults ids not in memories table?)',
+            );
+          } else {
+            deps.logger.debug({ rowCount, memoryInjectedIds }, 'hit_count bumped');
+          }
+        } catch (err: any) {
+          deps.logger.error({ err: err?.message, memoryInjectedIds }, 'hit_count bump failed');
         }
       }
 
       deps.logger.info(
-        { chatId, resultCount: ranked.length, topScore: ranked.length > 0 ? (1 - (ranked[0].score || 0)) : 0 },
+        { 
+          chatId, 
+          resultCount: ranked.length, 
+          topScore: rankedWithScore[0]?.finalScore ?? 0,
+          topCosine: ranked.length > 0 ? (1 - (ranked[0].score || 0)) : 0,
+        },
         'Knowledge re-ranked (v1)',
       );
     }
@@ -309,22 +402,26 @@ const prefDec = (memoryResults || []).filter((r: any) => r.type === 'preference'
     '### 相关事实（⚠️ 供参考，决策权在用户）\n' +
     'bot 看到这些事实后必须告诉用户，不能基于这些事实自主决策。\n' +
     'bot 不能说「我推荐 X」，只能说「我看到 X 事实」。\n\n' +
-    prefDec.map((r: any) =>
-      '- [历史] ' + r.subject + '\n' +
-      '  > ' + (r.snippet || r.content || '').slice(0, 150) + '\n' +
-      '  > （仅供参考，不替代用户当前决策）'
-    ).join('\n')
+    prefDec.map((r: any) => {
+      const conf = r.confidence != null ? r.confidence.toFixed(2) : '?';
+      const time = r.created_at ? new Date(r.created_at).toISOString().slice(0, 10) : '?';
+      return '- [历史] ' + r.subject + ' [置信度: ' + conf + ', 时间: ' + time + ']\n' +
+        '  > ' + (r.snippet || r.content || '').slice(0, 150) + '\n' +
+        '  > （仅供参考，不替代用户当前决策）';
+    }).join('\n')
   );
   // commit-16: facts/events 也用 '事实呈现' 模式
   if (factsEv.length > 0) docParts.push(
     '### 相关事实（⚠️ 供参考，决策权在用户）\n' +
     'bot 看到这些事实后必须告诉用户，不能基于这些事实自主决策。\n' +
     'bot 不能说「我推荐 X」，只能说「我看到 X 事实」。\n\n' +
-    factsEv.map((r: any) =>
-      '- [事实] ' + r.subject + '\n' +
-      '  > ' + (r.snippet || r.content || '').slice(0, 200) + '\n' +
-      '  > （仅供参考，不替代用户当前决策）'
-    ).join('\n')
+    factsEv.map((r: any) => {
+      const conf = r.confidence != null ? r.confidence.toFixed(2) : '?';
+      const time = r.created_at ? new Date(r.created_at).toISOString().slice(0, 10) : '?';
+      return '- [事实] ' + r.subject + ' [置信度: ' + conf + ', 时间: ' + time + ']\n' +
+        '  > ' + (r.snippet || r.content || '').slice(0, 200) + '\n' +
+        '  > （仅供参考，不替代用户当前决策）';
+    }).join('\n')
   );
   // Multi-version rendering: list ALL similar docs (don't truncate to 3),
   // each with updated_at + folder name from path, so the bot can see all
@@ -351,5 +448,37 @@ const prefDec = (memoryResults || []).filter((r: any) => r.type === 'preference'
     { chatId, folderCount: knowledgeFolders.length, resultCount: finalResults.length },
     'Knowledge injection applied',
   );
+  // 2026-06-27 commit 5: 写 RAG 调用日志
+  // 用于监控 topScore 趋势, 触发 P50 < 0.5 持续 6h 报警
+  // 异步写, 不 block 主流程
+  setImmediate(async () => {
+    try {
+      // 计算 topScore
+      const topScore = rankedWithScore?.[0]?.finalScore ?? null;
+      const topCosine = ranked.length > 0 ? (1 - (ranked[0].score || 0)) : null;
+      const recallPath = (typeof topRel !== 'undefined' && topRel >= MEMORY_VECTOR_THRESHOLD) ? 'vector' : 'ilike';
+      await pool.query(
+        `INSERT INTO rag_query_log
+          (bot_name, chat_id, query, query_length, top_score, top_cosine,
+           result_count, recall_path, extraction_status, duration_ms)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [
+          deps.config.name,
+          chatId,
+          (searchQuery || '').slice(0, 500),
+          (searchQuery || '').length,
+          topScore,
+          topCosine,
+          ranked.length,
+          recallPath,
+          memoryResults.length > 0 ? 'ok' : 'failed',
+          Date.now() - startTime,
+        ]
+      );
+    } catch (err: any) {
+      deps.logger.debug({ err: err.message }, 'rag_query_log insert failed');
+    }
+  });
+
   return { systemPromptOverride, knowledgeContext, agentBoundSkills };
 }

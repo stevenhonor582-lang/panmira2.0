@@ -148,7 +148,9 @@ export function buildCard(state: CardState): string {
     elements.push({ tag: 'markdown', content: `**Error:** ${state.errorMessage}` });
   }
 
-
+  // 工单 8 修正 v2 (2026-07-06): 不再显示 task 管理按钮 — 用户直接用文本交互
+  // ("新任务"/"续接"/"停"等关键词自动触发)。按钮触发的 card_action 容易 stale,
+  // 且与用户实际操作路径不符。详见 ticket8-fix-v2 commit + handoff-2026-07-06-ticket8-fixed.md
 
   const card = {
     config: { wide_screen_mode: true, update_multi: true },
@@ -597,22 +599,21 @@ export function buildConfirmationCard(state: ConfirmationState): string {
 
 // ── Pending Tasks Card (red) ──
 
-import type { PendingTask, PendingSeverity } from '../bridge/orchestrator/types.js';
 
 export interface PendingTasksState {
   userTask: string;
-  tasks: PendingTask[];
+  tasks: any[];
   /** Originating orchestration plan name, for context. */
   intentName?: string;
   /** sessionId of the orchestration (Phase 3 will fill this in). */
   sessionId?: string;
 }
 
-function severityIcon(s: PendingSeverity): string {
+function severityIcon(s: string): string {
   return s === 'high' ? '🔴' : s === 'medium' ? '🟡' : '🟢';
 }
 
-function severityLabel(s: PendingSeverity): string {
+function severityLabel(s: string): string {
   return s === 'high' ? '[高]' : s === 'medium' ? '[中]' : '[低]';
 }
 

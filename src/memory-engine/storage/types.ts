@@ -5,11 +5,13 @@ export interface StorageBackend {
   retrieve(
     query: string,
     userId: string,
+    botId?: string,
     options?: { layers?: number[]; limit?: number; threshold?: number },
   ): Promise<MemoryResult[]>;
   retrieveVector(
     embedding: number[],
     userId: string,
+    botId?: string,
     options?: { layers?: number[]; limit?: number; threshold?: number },
   ): Promise<MemoryResult[]>;
   updateAccess(id: string): Promise<void>;

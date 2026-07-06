@@ -8,6 +8,7 @@ export type AuditEvent =
   | 'task_idle_timeout'
   | 'task_stopped'
   | 'task_queued'
+  | 'user_additional_input'
   | 'command'
   | 'auth_denied'
   | 'api_task_start'

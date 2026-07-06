@@ -2,7 +2,6 @@ import { ClarificationError, isClarificationError } from './errors.js';
 import { ClarificationEngine } from './engine.js';
 import { ConfigLoader } from './config-loader.js';
 import { CardBuilder } from './card-builder.js';
-import { SessionStore } from './session-store.js';
 import type { FeishuCard } from './card-builder.js';
 
 export interface MiddlewareContext {
@@ -21,7 +20,7 @@ export type TextSender = (chatId: string, text: string) => Promise<boolean>;
 export class ClarificationMiddleware {
   constructor(
     private engine: ClarificationEngine,
-    private sessionStore: SessionStore,
+    private sessionStore: any,
     private configLoader: ConfigLoader,
     private cardBuilder: CardBuilder,
     private sendCard: CardSender,

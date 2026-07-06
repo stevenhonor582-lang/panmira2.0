@@ -28,6 +28,24 @@ import { AgentStore } from '../db/agent-store.js';
 import { ProviderConfigStore } from '../db/provider-config-store.js';
 import { DiscoveredGroupStore } from '../db/discovered-group-store.js';
 import { handleAuthRoutes } from './routes/auth-routes.js';
+import { handleOAuthRoutes } from './routes/oauth-routes.js';
+import { handleResourceRoutes } from './routes/resource-routes.js';
+import { handleKnowledgeBaseRoutes } from './routes/knowledge-base-routes.js';
+import { handleAgentKnowledgeRoutes } from './routes/agent-knowledge-routes.js';
+import { handleAgentRunRoutes } from './routes/agent-run-routes.js';
+import { handleOAuthClientRoutes } from './routes/oauth-client-routes.js';
+import { handleReportsRoutes } from './routes/reports-routes.js';
+import { handleDashboardRoutes } from './routes/dashboard-routes.js';
+import { handleModelsPoolRoutes } from './routes/models-pool-routes.js';
+import { handleAgentsCrudRoutes } from './routes/agents-crud-routes.js';
+import { handleChannelsRoutes } from './routes/channels-routes.js';
+import { handleMonitoringRoutes } from './routes/monitoring-routes.js';
+import { handleOpsRoutes } from './routes/ops-routes.js';
+import { handleTenantQuotaRoutes } from './routes/tenant-quota-routes.js';
+import { handleMaintenanceRoutes } from './routes/maintenance-routes.js';
+import { handleChannelUsageRoutes } from './routes/channel-usage-routes.js';
+import { handleEmbeddingJobsRoutes } from './routes/embedding-jobs-routes.js';
+import { handleReportsExportRoutes } from './routes/reports-export-routes.js';
 import { verifyAccessToken } from './middleware.js';
 import { metrics as _metrics } from '../utils/metrics.js';
 import type { SessionRegistry } from '../session/session-registry.js';
@@ -258,7 +276,10 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
       !url.startsWith('/api/admin') &&
       !url.startsWith('/api/auth') &&
       !url.startsWith('/api/v1/memory') &&
-      !url.startsWith('/api/reports')
+      !url.startsWith('/oauth') &&
+      url !== '/.well-known/oauth-authorization-server' &&
+      !url.startsWith('/api/reports') &&
+      !url.startsWith('/api/v2/admin') && !url.startsWith('/api/v2/agents')
     ) {
       const auth = req.headers.authorization;
       const urlToken = url.includes('token=')
@@ -654,6 +675,106 @@ ${content}
       if (url.startsWith('/api/auth')) {
         if (await handleAuthRoutes(userStore, req, res, method, url)) return;
         jsonResponse(res, 404, { error: 'Auth route not found' });
+        return;
+      }
+
+      // OAuth 2.0 routes (external system access)
+      if (url.startsWith('/oauth') || url === '/.well-known/oauth-authorization-server') {
+        if (await handleOAuthRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'OAuth route not found' });
+        return;
+      }
+
+      // Plan B-1: Resource engine routes (embedding / mcp / agent skill refs)
+      // Plan B-1: Resource engine routes (embedding / mcp / agent skill refs)
+      if (url.startsWith('/api/v2/admin/embedding-providers') ||
+          url.startsWith('/api/v2/admin/mcp-servers')) {
+        if (await handleResourceRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Resource route not found' });
+        return;
+      }
+
+      // Plan B-3: OAuth client CRUD
+      if (url.startsWith('/api/v2/admin/oauth-clients')) {
+        if (await handleOAuthClientRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'OAuth client route not found' });
+        return;
+      }
+
+      // Plan D: Reports CSV export
+      if (url.startsWith('/api/v2/admin/reports/') && url.includes('/export')) {
+        if (await handleReportsExportRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Reports export route not found' });
+        return;
+      }
+
+      // Plan B-3: Reports
+        if (await handleAgentsCrudRoutes(req, res, method, url)) return;
+        if (await handleChannelsRoutes(req, res, method, url)) return;
+        if (await handleModelsPoolRoutes(req, res, method, url)) return;
+        if (await handleMonitoringRoutes(req, res, method, url)) return;
+        if (await handleOpsRoutes(req, res, method, url)) return;
+        if (await handleDashboardRoutes(req, res, method, url)) return;
+      if (url.startsWith('/api/v2/admin/reports/')) {
+        if (await handleReportsRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Reports route not found' });
+        return;
+      }
+
+      // Plan C: Tenant quotas
+      if (url.startsWith('/api/v2/admin/tenants/') && url.includes('/quotas')) {
+        if (await handleTenantQuotaRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Tenant quota route not found' });
+        return;
+      }
+
+      // Plan C: Maintenance (refresh MV)
+      if (url.startsWith('/api/v2/admin/maintenance/')) {
+        if (await handleMaintenanceRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Maintenance route not found' });
+        return;
+      }
+
+
+
+      // Plan D: Channel usage (IM handlers 调用)
+      if (url.startsWith('/api/v2/admin/channels/')) {
+        if (await handleChannelUsageRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Channel route not found' });
+        return;
+      }
+
+      // Plan F: Embedding jobs status
+      if (url.startsWith('/api/v2/admin/embedding-jobs/')) {
+        if (await handleEmbeddingJobsRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Embedding job route not found' });
+        return;
+      }
+
+      // Plan B-2: Knowledge Base CRUD
+      if (url.startsWith('/api/v2/admin/knowledge-bases') ||
+          url.startsWith('/api/v2/admin/documents/')) {
+        if (await handleKnowledgeBaseRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'KB route not found' });
+        return;
+      }
+
+      // Plan B-2: Agent KB refs (业务端, Bearer)
+      if (url.startsWith('/api/v2/agents/') && (url.includes('knowledge-refs') || url.endsWith('/run'))) {
+        // Try knowledge-refs first, then run
+        if (url.includes('knowledge-refs')) {
+          if (await handleAgentKnowledgeRoutes(req, res, method, url)) return;
+        } else if (url.endsWith('/run')) {
+          if (await handleAgentRunRoutes(req, res, method, url)) return;
+        }
+        jsonResponse(res, 404, { error: 'Agent route not found' });
+        return;
+      }
+
+      // Plan B-1: Agent resource routes (skill-refs etc.)
+      if (url.startsWith('/api/v2/admin/agents/')) {
+        if (await handleResourceRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Resource route not found' });
         return;
       }
 

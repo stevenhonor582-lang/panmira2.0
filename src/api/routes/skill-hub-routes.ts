@@ -6,6 +6,7 @@ import { jsonResponse, parseJsonBody } from './helpers.js';
 import type { RouteContext } from './types.js';
 import { SKILL_REGISTRY, refreshSkillRegistry } from '../../skills/skill-registry.js';
 import { installSkillFromHub, installFromGithub, syncSkillToBotStaging, isAdminBot, installSkillWithBinding } from '../skills-installer.js';
+import { recordSkillUsage } from '../../services/usage-tracker.js';
 
 export async function handleSkillHubRoutes(
   ctx: RouteContext,
@@ -207,6 +208,8 @@ export async function handleSkillHubRoutes(
     const workDir = bot.config.claude.defaultWorkingDirectory;
     installSkillFromHub(workDir, skillName, skillMd, referencesTar, logger);
     await installSkillWithBinding(skillName, botName, 'global', logger);
+    // Plan D: 记录 skill 使用
+    recordSkillUsage('default', skillName, 1);
     jsonResponse(res, 200, { installed: true, botName, skillName });
     return true;
   }

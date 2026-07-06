@@ -77,3 +77,6 @@ src/**/*.js.map
 *.bak.*
 *.pre
 .env.bak.*
+
+# Git worktrees (isolated workspaces for subagent-driven execution)
+.worktrees/

@@ -453,11 +453,33 @@ export class ClaudeExecutor {
       };
     };
 
+    // fix(plain-text-qa-C, 2026-06-29): physically deny AskUserQuestion tool.
+    // Per user.workflow.card_interaction_design 92% + user.feedback.card_usability 90%:
+    // user abandoned the option-card mode. Soft ban in system prompt section 7
+    // proved insufficient (LLM still called the tool). Hard deny here forces
+    // LLM to fall back to plain-text 1/2/3 numbered options in Final card.
+    const denyAskUserQuestionHook = async (): Promise<{
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse';
+        permissionDecision: 'deny';
+        permissionDecisionReason: string;
+      };
+    }> => ({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason:
+          '已禁用 AskUserQuestion 工具（用户偏好纯文本问答）。' +
+          '请在回复文本里直接列出 1/2/3 编号选项，让用户用文本回复选择。' +
+          '模板：\n``\n我需要确认你的意图：\n\n1. 选项 A\n2. 选项 B\n3. 自定义（直接打字）\n```',
+      },
+    });
+
     queryOptions.hooks = {
       PreToolUse: [
         {
           matcher: 'AskUserQuestion',
-          hooks: [askUserQuestionHook as any],
+          hooks: [denyAskUserQuestionHook as any],
         },
         {
           matcher: 'EnterPlanMode',

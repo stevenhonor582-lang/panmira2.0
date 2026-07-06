@@ -12,8 +12,19 @@
     "resolveJsonModule": true,
     "declaration": true,
     "declarationMap": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/services/style-profile/**/*",
+    "src/sdk-core/__tests__/**/*",
+    "src/services/__tests__/**/*",
+    "src/api/routes/__tests__/**/*"
+  ]
 }

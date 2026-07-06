@@ -1,0 +1,243 @@
+{
+  "timestamp": "2026-07-04T11:01:23.200Z",
+  "observations": [
+    {
+      "scenario": "S1",
+      "description": "PanmiraRAG.retrieve real code path: (a) no botName returns [], (b) botName=得一 finds own, (c) botName=不盈 no leak",
+      "observed": {
+        "historicalBrokenSqlError": "missing FROM-clause entry for table \"d\"",
+        "realCodePath": {
+          "callWithoutBotName": {
+            "memoriesCount": 0,
+            "memoriesIds": []
+          },
+          "callWithBotNameDeYi": {
+            "memoriesCount": 1,
+            "memoriesSnippets": [
+              "得一 私有测试事实: 隔离验证探针 A"
+            ]
+          },
+          "callWithBotNameBuYing": {
+            "memoriesCount": 1,
+            "memoriesSnippets": [
+              "不盈 私有测试事实: 隔离验证探针 B"
+            ],
+            "crossBotLeakCount": 0
+          }
+        },
+        "conclusion": "P1 FIX VERIFIED — retrieve runs cleanly with bot_id isolation",
+        "noBotNameSafe": true,
+        "deYiFindsOwn": true,
+        "buYingNoLeak": true
+      },
+      "durationMs": 3177
+    },
+    {
+      "scenario": "S2",
+      "description": "retrieve(botId=得一, user=__test_iso_user) — must return only A-tagged rows",
+      "observed": {
+        "queryBotId": "092816d0-9ee8-48b0-b49e-7708fd390c7f",
+        "queryBotName": "得一",
+        "expectedIds": [
+          "__test_iso_a_private",
+          "__test_iso_common_a"
+        ],
+        "returnedIds": [
+          "__test_iso_a_private",
+          "__test_iso_common_a"
+        ],
+        "contaminationCount": 0,
+        "contaminationSamples": [],
+        "missingExpected": [],
+        "conclusion": "ISOLATION OK — only bot A data returned"
+      },
+      "durationMs": 2
+    },
+    {
+      "scenario": "S3",
+      "description": "Write-side dedup — non-test subjects duplicated across bots (target after P3 = 0)",
+      "observed": {
+        "duplicatedSubjectCount": 42,
+        "totalDuplicateRows": 99,
+        "topDuplicates": [
+          {
+            "subject_normalized": "panmira",
+            "bot_count": "5",
+            "bots": [
+              "092816d0-9ee8-48b0-b49e-7708fd390c7f",
+              "136bf019-fe41-426d-9aad-c59f901179fe",
+              "7c53b85b-a0df-44cf-8298-dd228150ea56",
+              "93325749-b883-4b79-bc18-a3360c85d8dd",
+              "fb2af5ea-ee86-4c43-ab71-214d40559a2e"
+            ]
+          },
+          {
+            "subject_normalized": "project.hailian_zhida",
+            "bot_count": "4",
+            "bots": [
+              "092816d0-9ee8-48b0-b49e-7708fd390c7f",
+              "136bf019-fe41-426d-9aad-c59f901179fe",
+              "93325749-b883-4b79-bc18-a3360c85d8dd",
+              "fb2af5ea-ee86-4c43-ab71-214d40559a2e"
+            ]
+          },
+          {
+            "subject_normalized": "project.hailian_zhida (新增)",
+            "bot_count": "4",
+            "bots": [
+              "092816d0-9ee8-48b0-b49e-7708fd390c7f",
+              "136bf019-fe41-426d-9aad-c59f901179fe",
+              "7c53b85b-a0df-44cf-8298-dd228150ea56",
+              "fb2af5ea-ee86-4c43-ab71-214d40559a2e"
+            ]
+          },
+          {
+            "subject_normalized": "user.prefer.workflow (新增)",
+            "bot_count": "4",
+            "bots": [
+              "092816d0-9ee8-48b0-b49e-7708fd390c7f",
+              "136bf019-fe41-426d-9aad-c59f901179fe",
+              "7c53b85b-a0df-44cf-8298-dd228150ea56",
+              "fb2af5ea-ee86-4c43-ab71-214d40559a2e"
+            ]
+          },
+          {
+            "subject_normalized": "project.vmt",
+            "bot_count": "3",
+            "bots": [
+              "092816d0-9ee8-48b0-b49e-7708fd390c7f",
+              "136bf019-fe41-426d-9aad-c59f901179fe",
+              "fb2af5ea-ee86-4c43-ab71-214d40559a2e"
+            ]
+          },
+          {
+            "subject_normalized": "project.vmt (新增)",
+            "bot_count": "3",
+            "bots": [
+              "092816d0-9ee8-48b0-b49e-7708fd390c7f",
+              "136bf019-fe41-426d-9aad-c59f901179fe",
+              "fb2af5ea-ee86-4c43-ab71-214d40559a2e"
+            ]
+          },
+          {
+            "subject_normalized": "server.ruoshui (新增)",
+            "bot_count": "3",
+            "bots": [
+              "092816d0-9ee8-48b0-b49e-7708fd390c7f",
+              "136bf019-fe41-426d-9aad-c59f901179fe",
+              "fb2af5ea-ee86-4c43-ab71-214d40559a2e"
+            ]
+          },
+          {
+            "subject_normalized": "user.prefer.execution_strategy",
+            "bot_count": "3",
+            "bots": [
+              "092816d0-9ee8-48b0-b49e-7708fd390c7f",
+              "136bf019-fe41-426d-9aad-c59f901179fe",
+              "fb2af5ea-ee86-4c43-ab71-214d40559a2e"
+            ]
+          },
+          {
+            "subject_normalized": "user.prefer.workflow",
+            "bot_count": "3",
+            "bots": [
+              "092816d0-9ee8-48b0-b49e-7708fd390c7f",
+              "136bf019-fe41-426d-9aad-c59f901179fe",
+              "7c53b85b-a0df-44cf-8298-dd228150ea56"
+            ]
+          },
+          {
+            "subject_normalized": "海联智达品牌站B12",
+            "bot_count": "3",
+            "bots": [
+              "092816d0-9ee8-48b0-b49e-7708fd390c7f",
+              "7c53b85b-a0df-44cf-8298-dd228150ea56",
+              "fb2af5ea-ee86-4c43-ab71-214d40559a2e"
+            ]
+          },
+          {
+            "subject_normalized": "bot.dahai (新增)",
+            "bot_count": "2",
+            "bots": [
+              "092816d0-9ee8-48b0-b49e-7708fd390c7f",
+              "136bf019-fe41-426d-9aad-c59f901179fe"
+            ]
+          },
+          {
+            "subject_normalized": "org.hailianzhida",
+            "bot_count": "2",
+            "bots": [
+              "092816d0-9ee8-48b0-b49e-7708fd390c7f",
+              "fb2af5ea-ee86-4c43-ab71-214d40559a2e"
+            ]
+          },
+          {
+            "subject_normalized": "person.xuanjian",
+            "bot_count": "2",
+            "bots": [
+              "092816d0-9ee8-48b0-b49e-7708fd390c7f",
+              "fb2af5ea-ee86-4c43-ab71-214d40559a2e"
+            ]
+          },
+          {
+            "subject_normalized": "project.content_ops",
+            "bot_count": "2",
+            "bots": [
+              "092816d0-9ee8-48b0-b49e-7708fd390c7f",
+              "fb2af5ea-ee86-4c43-ab71-214d40559a2e"
+            ]
+          },
+          {
+            "subject_normalized": "project.content_ops.deployment (新增)",
+            "bot_count": "2",
+            "bots": [
+              "092816d0-9ee8-48b0-b49e-7708fd390c7f",
+              "fb2af5ea-ee86-4c43-ab71-214d40559a2e"
+            ]
+          },
+          {
+            "subject_normalized": "project.content_ops (新增)",
+            "bot_count": "2",
+            "bots": [
+              "092816d0-9ee8-48b0-b49e-7708fd390c7f",
+              "fb2af5ea-ee86-4c43-ab71-214d40559a2e"
+            ]
+          },
+          {
+            "subject_normalized": "project.frontend.tech_stack",
+            "bot_count": "2",
+            "bots": [
+              "7c53b85b-a0df-44cf-8298-dd228150ea56",
+              "fb2af5ea-ee86-4c43-ab71-214d40559a2e"
+            ]
+          },
+          {
+            "subject_normalized": "project.hailianzhida",
+            "bot_count": "2",
+            "bots": [
+              "092816d0-9ee8-48b0-b49e-7708fd390c7f",
+              "7c53b85b-a0df-44cf-8298-dd228150ea56"
+            ]
+          },
+          {
+            "subject_normalized": "project.security.credentials_management",
+            "bot_count": "2",
+            "bots": [
+              "092816d0-9ee8-48b0-b49e-7708fd390c7f",
+              "fb2af5ea-ee86-4c43-ab71-214d40559a2e"
+            ]
+          },
+          {
+            "subject_normalized": "project.vmt.memory_system.status",
+            "bot_count": "2",
+            "bots": [
+              "092816d0-9ee8-48b0-b49e-7708fd390c7f",
+              "136bf019-fe41-426d-9aad-c59f901179fe"
+            ]
+          }
+        ]
+      },
+      "durationMs": 22
+    }
+  ]
+}

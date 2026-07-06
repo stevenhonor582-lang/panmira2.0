@@ -71,6 +71,7 @@ export interface MemoryQuery {
   layers?: MemoryLayer[];
   limit?: number;
   threshold?: number;
+  botId?: string;
 }
 
 export interface MemoryResult {

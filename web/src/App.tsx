@@ -3,9 +3,9 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useStore } from './store';
 import { LoginPage } from './components/LoginPage';
 import { Layout } from './components/Layout';
-import { ChatView } from './components/ChatView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
+const ChatView = lazy(() => import('./components/ChatView').then(m => ({ default: m.ChatView })));
 const MemoryView = lazy(() => import('./components/MemoryView').then(m => ({ default: m.MemoryView })));
 const VoiceView = lazy(() => import('./components/VoiceView').then(m => ({ default: m.VoiceView })));
 const SettingsView = lazy(() => import('./components/SettingsView').then(m => ({ default: m.SettingsView })));
@@ -54,25 +54,14 @@ export function App() {
   return (
     <ErrorBoundary>
       <Routes>
-        <Route path="/admin" element={<Navigate to="/settings" replace />} />
-        <Route path="/admin/*" element={<Navigate to="/settings" replace />} />
-        <Route path="*" element={
-          <Layout>
-            <ErrorBoundary>
-              <Suspense fallback={<div style={{ padding: 24, color: '#666' }}>加载中...</div>}>
-                <Routes>
-                  <Route path="/" element={<ChatView />} />
-                  <Route path="/memory" element={<MemoryView />} />
-                  <Route path="/voice" element={<VoiceView />} />
-                  <Route path="/settings" element={<SettingsView />} />
-                  <Route path="/dashboard" element={<DashboardView />} />
-                  <Route path="/team" element={<TeamWorkspace />} />
-                  <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
-              </Suspense>
-            </ErrorBoundary>
-          </Layout>
-        } />
+        <Route path="/" element={<Navigate to="/chat" replace />} />
+        <Route path="/chat" element={<Layout><ChatView /></Layout>} />
+        <Route path="/team" element={<Layout><TeamWorkspace /></Layout>} />
+        <Route path="/memory" element={<Layout><MemoryView /></Layout>} />
+        <Route path="/voice" element={<Layout><VoiceView /></Layout>} />
+        <Route path="/settings" element={<Layout><SettingsView /></Layout>} />
+        <Route path="/dashboard" element={<Layout><DashboardView /></Layout>} />
+        <Route path="*" element={<Navigate to="/chat" replace />} />
       </Routes>
     </ErrorBoundary>
   );

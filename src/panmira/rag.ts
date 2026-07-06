@@ -60,9 +60,29 @@ export class PanmiraRAG {
    * Called before each Claude execution.
    */
   async retrieve(query: string, chatId?: string, botName?: string): Promise<RAGContext> {
+    // P1 (2026-07-04): resolve botName → botId so searchMemories can enforce isolation.
+    // searchMemories returns [] when botId is missing — safe default, never leaks across bots.
+    let botId: string | undefined;
+    if (botName) {
+      try {
+        const { rows } = await pool.query(
+          'SELECT bot_id FROM bot_configs WHERE name = $1 AND is_active = true',
+          [botName],
+        );
+        botId = rows[0]?.bot_id;
+        if (!botId) {
+          this.logger.warn({ botName }, 'RAG bot_name lookup: no active bot found — memories will be empty');
+        }
+      } catch (err: any) {
+        this.logger.warn({ err: err.message, botName }, 'RAG bot_name lookup failed — memories will be empty');
+      }
+    } else {
+      this.logger.debug({ query }, 'RAG retrieve called without botName — memories will be empty');
+    }
+
     const [documents, memories] = await Promise.all([
       this.searchDocuments(query),
-      this.config.includeMemories ? this.searchMemories(query, chatId) : Promise.resolve([]),
+      this.config.includeMemories ? this.searchMemories(query, botId) : Promise.resolve([]),
     ]);
 
     const formattedContext = this.formatContext(documents, memories, botName);
@@ -108,33 +128,45 @@ export class PanmiraRAG {
   }
 
   /**
-   * Search conversation memories using PostgreSQL pgvector.
+   * Search conversation memories scoped to a single bot.
+   *
+   * P1 (2026-07-04): rewrote — original used a zero-vector placeholder for pgvector
+   * (always scored 0) AND referenced a non-existent `d.content` alias (always threw,
+   * catch returned []). Keyword ILIKE only for now; re-enable pgvector via the
+   * memory-engine retriever path which has a real embedder.
+   *
+   * botId is REQUIRED — returns [] if missing (safe default, never leaks).
+   * Filters mirror memory-engine/storage/postgres-store.ts retrieve:
+   *   invalidated_at IS NULL, confidence >= 0.5.
+   * Sort: hit_count (popularity) > importance > recency.
    */
-  private async searchMemories(query: string, chatId?: string): Promise<RAGMemory[]> {
+  private async searchMemories(query: string, botId?: string): Promise<RAGMemory[]> {
+    if (!botId) {
+      this.logger.warn({ query }, 'RAG searchMemories called without botId — returning []');
+      return [];
+    }
     try {
+      const keyword = `%${query.slice(0, 100)}%`;
       const { rows } = await pool.query(
-        `SELECT 
-          d.content,
-          importance,
-          created_at,
-          CASE WHEN embedding IS NOT NULL 
-            THEN 1 - (embedding <=> $1::vector) 
-            ELSE 0 
-          END as relevance
+        `SELECT content, importance, created_at, hit_count
          FROM memories
-         WHERE d.content IS NOT NULL AND d.content != ''
-         ORDER BY relevance DESC, importance DESC
-         LIMIT $2`,
-        [JSON.stringify(Array(1024).fill(0)), this.config.maxMemories], // placeholder vector
+         WHERE bot_id = $1
+           AND invalidated_at IS NULL
+           AND confidence >= 0.5
+           AND content IS NOT NULL AND content != ''
+           AND content ILIKE $2
+         ORDER BY hit_count DESC NULLS LAST, importance DESC, created_at DESC
+         LIMIT $3`,
+        [botId, keyword, this.config.maxMemories],
       );
 
       return rows.map((row: any) => ({
         content: this.truncateContent(row.content, 300),
-        relevance: Math.max(0, Math.min(1, row.relevance || 0)),
+        relevance: Math.min((row.hit_count || 0) / 10, 1),
         timestamp: row.created_at ? new Date(row.created_at).toISOString() : '',
       }));
     } catch (err: any) {
-      this.logger.warn({ err: err.message }, 'RAG memory search failed');
+      this.logger.warn({ err: err.message, botId }, 'RAG memory search failed');
       return [];
     }
   }

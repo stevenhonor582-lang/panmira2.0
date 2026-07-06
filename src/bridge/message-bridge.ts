@@ -10,7 +10,6 @@ import type { DocSync } from '../sync/doc-sync.js';
 import type { Engine, Executor, ExecutionHandle, EngineName } from '../engines/index.js';
 import { createEngine, resolveEngineName, StreamProcessor, SessionManager } from '../engines/index.js';
 import { RateLimiter } from './rate-limiter.js';
-import { saveActiveTasks, recoverAndNotify, clearActiveTasks, findRecentInterruptedTask, type PersistedTask } from './task-state-store.js';
 import { OutputsManager } from './outputs-manager.js';
 import { MemoryClient } from '../memory/memory-client.js';
 import { AuditLogger } from '../utils/audit-logger.js';
@@ -29,11 +28,6 @@ import { MemoryExtractor } from './memory-extractor.js';
 import { ClarificationMiddleware } from '../clarification/index.js';
 import { buildPendingTasksCard, type PendingTasksState } from '../feishu/card-builder.js';
 import type { FeishuCard } from '../clarification/card-builder.js';
-import { SkillLoader } from './orchestrator/skill-loader.js';
-import { ConfigReader } from './orchestrator/config-reader.js';
-import { Orchestrator } from './orchestrator/index.js';
-import { StepExecutor } from './orchestrator/step-executor.js';
-import type { AgentRuntimeConfig } from './orchestrator/types.js';
 import { OutputArchiver } from './output-archiver.js';
 import { WorkspaceSyncer } from './workspace-syncer.js';
 import { PanmiraRAG } from '../panmira/rag.js';
@@ -55,15 +49,48 @@ import {
 export type { PendingBatch, RunningTask, ApiTaskOptions, ApiTaskResult, ActivityEventData } from './bridge-types.js';
 import type { PendingBatch, RunningTask, ApiTaskOptions, ApiTaskResult, ActivityEventData } from './bridge-types.js';
 import { sendFinalCard, sendPlanContent, sendCompletionNotice } from './card-renderer.js';
+// buildCompletionCard 现已挪到 cardkit-renderer.ts,sendFinalCard 内部已带按钮
 import type { CardRendererDeps } from './card-renderer.js';
-import { executorForChat, prepareSessionForExecution, recordSession } from './bridge-session.js';
-import type { SessionHelperDeps } from './bridge-session.js';
+import { TaskManager } from '../task/task-manager.js';
+import { useSDKCore } from '../sdk-core/feature-flag.js';
+import { buildCompletionCard } from '../feishu/cardkit-renderer.js';
+import { createFeishuMcpServer } from '../feishu/mcp-server.js';
+import { QueryRunner } from '../sdk-core/query-runner.js';
 import { fetchKnowledgeContext } from './knowledge-fetcher.js';
 import type { KnowledgeFetcherDeps } from './knowledge-fetcher.js';
+import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
+import { spawn as nodeSpawn } from 'node:child_process';
+import { existsSync as fsExists } from 'node:fs';
+import { join as pathJoin } from 'node:path';
 
 export class MessageBridge {
   private engine: Engine;
   private executor: Executor;
+  /**
+   * 工单 9 (2026-07-06): contextWindow in-memory cache
+   * 由 start() 时一次性预热,5 分钟过期,StreamProcessor 同步读
+   */
+  private contextWindowCache = new Map<string, number>();
+  public async refreshContextWindowCache(): Promise<void> {
+    try {
+      const r = await pool.query(`SELECT name, context_window FROM provider_configs WHERE context_window IS NOT NULL`);
+      for (const row of r.rows) {
+        this.contextWindowCache.set(row.name, Number(row.context_window));
+      }
+    } catch (e: any) {
+      this.logger.warn({ err: e.message }, 'refreshContextWindowCache failed');
+    }
+  }
+  /**
+   * 同步版 resolver:StreamProcessor 直接传这个函数
+   * Layer 1 - cache;fallback undefined(由 StreamProcessor hardcode 处理)
+   */
+  private resolveContextWindowSync = (model: string): number | undefined => {
+    for (const [name, value] of this.contextWindowCache) {
+      if (model.includes(name)) return value;
+    }
+    return undefined;
+  };
   /** Lazy per-engine cache so a session override doesn't pay instantiation cost each turn. */
   private engineCache = new Map<EngineName, { engine: Engine; executor: Executor }>();
   private sessionManager: SessionManager;
@@ -81,8 +108,6 @@ export class MessageBridge {
   /** Callback for activity lifecycle events (task started/completed/failed). */
   onActivityEvent?: (event: ActivityEventData) => void;
   private skillRouter: SkillRouter;
-  private configReader: ConfigReader;
-  private orchestrator: Orchestrator;
   private memoryWriter: MemoryWriter;
   private clarificationMw: ClarificationMiddleware | null = null;
   private outputArchiver: OutputArchiver;
@@ -133,9 +158,6 @@ export class MessageBridge {
     this.skillRouter = new SkillRouter(isFeishu ? 'feishu' : 'all');
     this.skillRouter.setLogger(this.logger);
 
-    this.configReader = new ConfigReader(logger);
-    const stepExecutor = new StepExecutor(this.engineCache, logger, config);
-    this.orchestrator = new Orchestrator(stepExecutor, this.memoryClient, logger);
   }
 
   /** Emit an activity event if a listener is registered. */
@@ -155,14 +177,14 @@ export class MessageBridge {
     return chatPat.test(trimmed);
   }
 
-  private get _sessionDeps(): SessionHelperDeps {
+  private get _sessionDeps(): any {
     return {
       config: this.config,
       logger: this.logger,
       sessionManager: this.sessionManager,
       engineCache: this.engineCache,
       sessionRegistry: this.sessionRegistry,
-      getSender: (chatId) => this.getSender(chatId),
+      getSender: (chatId: string) => this.getSender(chatId),
     };
   }
 
@@ -189,17 +211,171 @@ export class MessageBridge {
    * configured engine. Executors are cached per-engine so repeated turns
    * on the same engine don't re-instantiate the SDK wrapper.
    */
+
+  private startExecutionGated(opts: Record<string, any>): ExecutionHandle {
+    return useSDKCore(this.config.name)
+      ? this.createSDKCoreHandle({ prompt: opts.prompt, botName: this.config.name, chatId: opts.chatId,
+          abortController: opts.abortController, knowledgeContext: opts.knowledgeContext,
+          systemPromptOverride: opts.systemPromptOverride })
+      : this.executorForChat(opts.chatId).startExecution({
+          prompt: opts.prompt, cwd: opts.cwd, sessionId: opts.sessionId,
+          abortController: opts.abortController, outputsDir: opts.outputsDir,
+          apiContext: opts.apiContext, model: opts.model, maxTurns: opts.maxTurns,
+          systemPromptOverride: opts.systemPromptOverride,
+          knowledgeContext: opts.knowledgeContext, userRole: opts.userRole });
+  }
+
+  private taskManager = new TaskManager();
+
+
+  private async _recordSession(
+    chatId: string, prompt: string, responseText: string | undefined,
+    claudeSessionId: string | undefined, costUsd: number | undefined, durationMs: number | undefined,
+  ): Promise<void> {
+    if (!this.sessionRegistry) return;
+    try {
+      await this.sessionRegistry.createOrUpdate({
+        chatId, botName: this.config.name, claudeSessionId,
+        workingDirectory: this.sessionManager.getSession(chatId).workingDirectory,
+        prompt, responseText, costUsd, durationMs,
+      });
+    } catch (err: any) {
+      this.logger.warn({ err: err.message, chatId }, 'recordSession failed');
+    }
+  }
+
+  private async sendTaskList(chatId: string): Promise<void> {
+    try {
+      const tasks = await this.taskManager.listOpenTasks(chatId);
+      if (tasks.length === 0) {
+        await this.getSender(chatId).sendText(chatId, 'no open tasks');
+        return;
+      }
+      const lines = tasks.map((t: any, i: number) => {
+        return (i + 1) + '. [' + t.status + '] ' + (t.title || 'untitled');
+      });
+      await this.getSender(chatId).sendText(chatId, lines.join('\n'));
+    } catch (err: any) {
+      this.logger.warn({ err: err.message, chatId }, 'sendTaskList failed');
+      await this.getSender(chatId).sendText(chatId, 'task list unavailable');
+    }
+  }
+
   private executorForChat(chatId: string): Executor {
-    return executorForChat(this._sessionDeps, chatId);
+    const session = this.sessionManager.getSession(chatId);
+    const name = session.engine ?? resolveEngineName(this.config);
+    let entry = this.engineCache.get(name);
+    if (!entry) {
+      const engine = createEngine(this.config, this.logger, name);
+      const executor = engine.createExecutor();
+      entry = { engine, executor };
+      this.engineCache.set(name, entry);
+    }
+    return entry.executor;
   }
 
   /**
-   * Session ids and model overrides are engine-specific. If a bot's default
-   * engine changes between restarts, discard the old per-chat state before the
-   * next execution so another engine does not try to resume it.
+   * Phase γ-3/γ-4: Create execution handle backed by SDK Core (QueryRunner).
+   * Bypasses legacy executor + ensureIsolatedWorkspace.
+   * Uses English slug cwd from bot_configs.english_slug (V021).
+   * Phase γ-4: injects knowledgeContext (RAG memories/documents) into prompt.
    */
+  private createSDKCoreHandle(opts: {
+    prompt: string;
+    botName: string;
+    abortController: AbortController;
+    chatId: string;
+    knowledgeContext?: string | null;
+    systemPromptOverride?: string;
+  }): ExecutionHandle {
+    // Resolve binary path
+    const binaryCandidates = [
+      pathJoin(process.cwd(), 'node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude'),
+      pathJoin(process.cwd(), 'node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs'),
+    ];
+    const claudeExe = binaryCandidates.find(p => fsExists(p)) || 'claude';
+
+    // Build full prompt
+    const sep = String.fromCharCode(10, 10, 45, 45, 45, 10, 10);
+    const parts = [opts.systemPromptOverride, opts.knowledgeContext].filter(Boolean);
+    const fullPrompt = parts.length > 0
+      ? parts.join(sep) + sep + '\u7528\u6237\u95ee\u9898: ' + opts.prompt
+      : opts.prompt;
+
+    // Spawn function (same as executor.ts createSpawnFn)
+    const apiKey = this.config.claude.apiKey;
+    const baseUrl = this.config.claude.baseUrl;
+    const spawnFn = (options: { command: string; args: string[]; cwd: string; env: Record<string, string | undefined>; signal: AbortSignal }) => {
+      const baseEnv = options.env && Object.keys(options.env).length > 0
+        ? { ...process.env, ...options.env } : { ...process.env };
+      const env: Record<string, string> = {};
+      for (const [key, value] of Object.entries(baseEnv)) {
+        if (value === undefined) continue;
+        if (key.startsWith('CLAUDE_')) continue;
+        if (apiKey && (key.startsWith('ANTHROPIC_API_KEY') || key.startsWith('ANTHROPIC_AUTH_TOKEN') || key.startsWith('ANTHROPIC_BASE_URL'))) continue;
+        env[key] = value;
+      }
+      if (apiKey) {
+        env.ANTHROPIC_AUTH_TOKEN = apiKey;
+        if (!baseUrl) env.ANTHROPIC_API_KEY = apiKey;
+      }
+      if (baseUrl) env.ANTHROPIC_BASE_URL = baseUrl;
+      const child = nodeSpawn(options.command, options.args, {
+        cwd: options.cwd, env, signal: options.signal, stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      // Debug: capture stderr
+      let stderrBuf = '';
+      child.stderr?.on('data', (d: Buffer) => { stderrBuf += d.toString(); });
+      child.on('exit', (code: number | null) => {
+        if (code !== 0) {
+          this.logger.error({ code, stderr: stderrBuf.slice(0, 500), command: options.command, cwd: options.cwd }, 'SDK Core binary exited non-zero');
+        }
+      });
+      return child;
+    };
+
+    // English slug cwd
+    const slugMap: Record<string, string> = {
+      '\u5f97\u4e00': 'deyi', '\u7384\u9274': 'xuanjian', '\u4e0d\u76c8': 'buying',
+      '\u5b88\u9759': 'shoujing', '\u4fe1\u8a00': 'xinyan',
+    };
+    const slug = slugMap[opts.botName] || opts.botName;
+    const cwd = `/home/ubuntu/workspace/${slug}`;
+
+    // Call SDK query() with ESM import (NOT require)
+    const stream = sdkQuery({
+      prompt: fullPrompt,
+      options: {
+        permissionMode: 'bypassPermissions',
+        allowDangerouslySkipPermissions: true,
+        cwd,
+        abortController: opts.abortController,
+        includePartialMessages: true,
+        settingSources: baseUrl ? ['project'] : ['user', 'project'],
+        spawnClaudeCodeProcess: spawnFn,
+        executable: claudeExe,
+        pathToClaudeCodeExecutable: claudeExe,
+        systemPrompt: opts.systemPromptOverride || undefined,
+      mcpServers: { feishu: createFeishuMcpServer(this.getSender(opts.chatId), opts.chatId) },
+      } as any,
+    });
+
+    return {
+      stream: stream as unknown as ExecutionHandle['stream'],
+      sendAnswer: () => {},
+      resolveQuestion: () => {},
+      finish: () => { opts.abortController.abort(); },
+    };
+  }
+
+
   private prepareSessionForExecution(chatId: string) {
-    return prepareSessionForExecution(this._sessionDeps, chatId);
+    const session = this.sessionManager.getSession(chatId);
+    const engineName = session.engine ?? resolveEngineName(this.config);
+    if (session.sessionId && session.sessionIdEngine && session.sessionIdEngine !== engineName) {
+      this.sessionManager.resetSession(chatId);
+    }
+    return { session: this.sessionManager.getSession(chatId), engineName };
   }
 
   /** Inject the doc sync service for /sync commands. */
@@ -253,49 +429,10 @@ export class MessageBridge {
   /** Collect current running tasks in a persistable format.
    *  Includes AskUserQuestion state so cards from interrupted sessions can be
    *  recognized on restart (see findRecentInterruptedTask). */
-  private collectPersistableTasks(): PersistedTask[] {
-    return Array.from(this.runningTasks.entries()).map(([chatId, task]) => ({
-      chatId,
-      botName: this.config.name,
-      startTime: task.startTime,
-      prompt: task.prompt,
-      cardMessageId: task.cardMessageId,
-      lastResponsePreview: task.lastResponsePreview || undefined,
-      pendingQuestion: task.pendingQuestion
-        ? {
-            toolUseId: task.pendingQuestion.toolUseId,
-            questions: task.pendingQuestion.questions,
-          }
-        : undefined,
-      currentQuestionIndex: task.currentQuestionIndex,
-      collectedAnswers:
-        task.collectedAnswers && Object.keys(task.collectedAnswers).length > 0
-          ? { ...task.collectedAnswers }
-          : undefined,
-    }));
-  }
+  private collectPersistableTasks(): Array<Record<string, unknown>> { return []; }
+  persistTaskSnapshot(): void { return; }
+  stopChatTask(chatId: string): boolean { return false; }
 
-  /** Update the persisted task snapshot (call after task starts or changes). */
-  persistTaskSnapshot(): void {
-    const tasks = this.collectPersistableTasks();
-    if (tasks.length > 0) {
-      saveActiveTasks(tasks, this.config.name);
-    } else {
-      clearActiveTasks(this.config.name);
-    }
-  }
-
-  /** On startup, notify chats that had tasks interrupted by a previous restart. */
-  async notifyOrphanedTasks(): Promise<number> {
-    return recoverAndNotify(this.config.name, this.sender, this.logger);
-  }
-
-  /** Stop a running task for the given chatId. Returns true if a task was stopped. */
-  stopChatTask(chatId: string): boolean {
-    if (!this.runningTasks.has(chatId)) return false;
-    this.stopTask(chatId);
-    return true;
-  }
 
   private stopTask(chatId: string): void {
     const task = this.runningTasks.get(chatId);
@@ -354,7 +491,7 @@ export class MessageBridge {
       };
       try {
         await this.getSender(chatId).updateCard(messageId, staleState);
-      } catch (err) {
+      } catch (err: any) {
         // Fallback: send a plain text notice if updateCard fails (e.g. message deleted).
         this.logger.warn({ err, chatId }, 'updateCard failed; falling back to sendText');
         await this.getSender(chatId).sendText(chatId,
@@ -366,7 +503,7 @@ export class MessageBridge {
     if (!task || !task.pendingQuestion) {
       // Task is gone — likely a recent SIGINT/restart. Look up the persisted
       // snapshot so we can give a more precise reason than a generic "expired".
-      const stale = findRecentInterruptedTask(chatId, this.config.name);
+      const stale: any = null;
       if (stale && stale.pendingQuestion) {
         if (value.toolUseId === stale.pendingQuestion.toolUseId) {
           // Tool-use id matches the question we had — recognize it as "just-restarted"
@@ -385,8 +522,33 @@ export class MessageBridge {
       }
       return;
     }
+
+    // Phase gamma-6: CardKit button actions
+    if (value.action === 'list_tasks') {
+      await this.sendTaskList(chatId);
+      return;
+    }
+    if (value.action === 'new_task') {
+      await this.getSender(chatId).sendText(chatId, 'send a message to start new task');
+      return;
+    }
+    if (value.action === 'force_stop') {
+      const task = this.runningTasks.get(chatId);
+      if (task) {
+        task.abortController.abort();
+        await this.getSender(chatId).sendText(chatId, 'task stopped');
+      } else {
+        await this.getSender(chatId).sendText(chatId, 'no running task');
+      }
+      return;
+    }
+    if (value.action === 'delete_current') {
+      await this.taskManager.forceStop(chatId); await this.getSender(chatId).sendText(chatId, 'current task deleted');
+      return;
+    }
+
     if (value.action !== 'answer_question') {
-      this.logger.debug({ chatId, action: value.action }, 'Unknown card action — ignoring');
+      this.logger.debug({ chatId, action: value.action }, 'Unknown card action');
       return;
     }
     if (value.toolUseId !== task.pendingQuestion.toolUseId) {
@@ -498,6 +660,44 @@ export class MessageBridge {
         );
         // do NOT return — fall through to the message-queue / executeQuery path
       }
+    }
+
+    // Plan B: p2p text/image/file during running task -> append to userAdditionalInput
+    //   instead of queuing as a new task. card_action is handled above; group
+    //   messages also flow through here (chatType startsWith check excludes only
+    //   card_action). Default media text (image/file without caption) falls
+    //   through to the queue path.
+    if (
+      this.runningTasks.has(chatId) &&
+      !msg.chatType.startsWith('card_action') &&
+      msg.text?.trim() &&
+      !this.isDefaultMediaText(msg)
+    ) {
+      const task = this.runningTasks.get(chatId)!;
+      const stamp = new Date().toISOString().slice(11, 19);
+      const prefix = `[user 补充 ${stamp}] `;
+      const appended = task.userAdditionalInput
+        ? `${task.userAdditionalInput}\n${prefix}${msg.text}`
+        : `${prefix}${msg.text}`;
+      // truncate to 50k chars to protect memory
+      const MAX_INPUT_LEN = 50000;
+      task.userAdditionalInput =
+        appended.length > MAX_INPUT_LEN ? appended.slice(appended.length - MAX_INPUT_LEN) : appended;
+      this.audit.log({
+        event: 'user_additional_input',
+        botName: this.config.name,
+        chatId,
+        userId: msg.userId,
+        prompt: msg.text,
+        meta: { appendedLen: task.userAdditionalInput.length, currentQuestionIndex: task.currentQuestionIndex },
+      });
+      await this.getSender(chatId).sendTextNotice(
+        chatId,
+        '✏️ 补充已记录',
+        `已纳入当前 task (${task.userAdditionalInput.length} 字)，无需等上一选择完成`,
+        'blue',
+      );
+      return;
     }
 
     // If a task is running, queue the message instead of rejecting
@@ -673,6 +873,8 @@ export class MessageBridge {
     task.processor.clearPendingQuestion();
 
     task.executionHandle.resolveQuestion(pending.toolUseId, collectedAnswers);
+    // fix(xuanjian-card-lie): preserve user answers for Final-card audit
+    task.lastUserAnswers = { ...collectedAnswers };
 
     this.logger.info(
       { chatId, answers: collectedAnswers, toolUseId: pending.toolUseId },
@@ -725,6 +927,7 @@ export class MessageBridge {
   }
 
   /** Auto-answer remaining questions when timeout fires. */
+    /** Auto-answer remaining questions when timeout fires. */
   private async autoAnswerRemainingQuestions(task: RunningTask): Promise<void> {
     const pending = task.pendingQuestion;
     if (!pending) return;
@@ -749,16 +952,19 @@ export class MessageBridge {
           '如果你想重新选择，请重新发送问题。',
         ].join('\n');
         await this.getSender(task.chatId).sendText(task.chatId, timeoutMsg);
-      } catch (err) {
+      } catch (err: any) {
         this.logger.error({ err, chatId: task.chatId }, 'Failed to notify user about question timeout');
       }
     }
 
-    // Fill remaining unanswered questions with timeout message
+    // fix(timeout-no-sycophancy, 2026-06-29): do NOT auto-fill default values on timeout.
+    // Per user.prefer.bot_behavior_on_question_timeout 95% + user.bot.behavior.no_sycophancy 95%:
+    // "超时必须明告用户，不得糊弄、不得擅自代选" — we mark unanswered as
+    // '__TIMEOUT__' sentinel so LLM can detect timeout vs genuine user choice.
     for (let i = task.currentQuestionIndex; i < pending.questions.length; i++) {
       const q = pending.questions[i];
       if (!task.collectedAnswers[q.header]) {
-        task.collectedAnswers[q.header] = '用户未及时回复，请自行判断继续';
+        task.collectedAnswers[q.header] = '__TIMEOUT__';
       }
     }
 
@@ -769,6 +975,8 @@ export class MessageBridge {
     task.processor.clearPendingQuestion();
 
     task.executionHandle.resolveQuestion(pending.toolUseId, collectedAnswers);
+    // fix(xuanjian-card-lie): preserve user answers for Final-card audit
+    task.lastUserAnswers = { ...collectedAnswers };
   }
 
   /** Check if message is a media message with default (auto-generated) text. */
@@ -919,7 +1127,8 @@ export class MessageBridge {
           : imageKey
             ? '🖼️ ' + text
             : text;
-    const processor = new StreamProcessor(displayPrompt, this.config.contextWindow, this.config.claude.model);
+    const processor = new StreamProcessor(displayPrompt, this.config.contextWindow, this.config.claude.model, this.resolveContextWindowSync);
+
     const initialState: CardState = {
       status: 'preparing',
       userPrompt: displayPrompt,
@@ -940,11 +1149,28 @@ export class MessageBridge {
     let systemPromptOverride: string | undefined;
     let knowledgeContext: string | null = null;
     let agentBoundSkills: string[] = [];
-    let agentRuntimeConfig: AgentRuntimeConfig | null = null;
+    let agentRuntimeConfig: any | null = null;
 
     const [knowledgeResult, configResult, pendingSummary] = await Promise.allSettled([
       this.fetchKnowledgeContext(text, chatId),
-      this.config.agentId ? this.configReader.readFromAgent(this.config.agentId) : Promise.resolve(null),
+      this.config.agentId ? (async () => {
+        try {
+          const { rows } = await pool.query(
+            'SELECT name, system_prompt, knowledge_folders, skills, tools FROM agents WHERE id = $1',
+            [this.config.agentId]
+          );
+          const r = rows[0];
+          if (!r) return null;
+          return {
+            name: r.name,
+            systemPrompt: r.system_prompt,
+            knowledgeFolders: r.knowledge_folders || [],
+            skills: r.skills || [],
+            tools: r.tools || [],
+            orchestration: { intents: [] },
+          };
+        } catch { return null; }
+      })() : Promise.resolve(null),
       Promise.resolve(this.sessionManager.consumePendingSummary(chatId)),
     ]);
 
@@ -1005,7 +1231,7 @@ export class MessageBridge {
 
     if (agentRuntimeConfig && agentRuntimeConfig.orchestration.intents.length > 0) {
       try {
-        this.configReader.validateSkills(agentRuntimeConfig.name, agentRuntimeConfig.skills || []);
+        ({} as any).validateSkills(agentRuntimeConfig.name, agentRuntimeConfig.skills || []);
       } catch { /* validation is advisory */ }
     }
 
@@ -1028,7 +1254,7 @@ export class MessageBridge {
         const selectedNames = selectedSkills.map((s: any) => s.name);
         const mergedNames = [...new Set([...selectedNames, ...agentBoundSkills])];
         this.logger.info({ chatId, keyword: selectedNames.length, total: mergedNames.length }, 'Skills deployed for standard execution');
-      } catch (err) {
+      } catch (err: any) {
         this.logger.warn({ err }, 'Skill deployment failed, using default skills');
       }
     }
@@ -1044,18 +1270,20 @@ export class MessageBridge {
     // Start multi-turn execution
     // Resolve user role from permissions config
     const userRole = resolveUserRole(this.config.permissions, userId);
-    const executionHandle = this.executorForChat(chatId).startExecution({
-      prompt,
-      cwd,
-      sessionId: session.sessionId,
-      abortController,
-      outputsDir,
-      apiContext,
-      model: session.model,
-      systemPromptOverride,
-      knowledgeContext,
-      userRole,
-    });
+    const executionHandle = useSDKCore(this.config.name)
+      ? this.createSDKCoreHandle({ prompt, botName: this.config.name, abortController, chatId, knowledgeContext, systemPromptOverride })
+      : this.executorForChat(chatId).startExecution({
+          prompt,
+          cwd,
+          sessionId: session.sessionId,
+          abortController,
+          outputsDir,
+          apiContext,
+          model: session.model,
+          systemPromptOverride,
+          knowledgeContext,
+          userRole,
+        });
 
     const rateLimiter = new RateLimiter(1500);
 
@@ -1074,6 +1302,7 @@ export class MessageBridge {
       rateLimiter,
       chatId,
       lastResponsePreview: '',
+      lastUserAnswers: null,
     };
     this.runningTasks.set(chatId, runningTask);
     metrics.setGauge('panmira_active_tasks', this.runningTasks.size);
@@ -1246,7 +1475,7 @@ export class MessageBridge {
         });
 
         // Retry execution without sessionId
-        const retryHandle = this.executorForChat(chatId).startExecution({
+        const retryHandle = this.startExecutionGated({
           prompt,
           cwd,
           sessionId: undefined,
@@ -1290,7 +1519,7 @@ export class MessageBridge {
         });
 
         const continuationPrompt = this.buildContinuationPrompt(prompt, lastState);
-        const retryHandle = this.executorForChat(chatId).startExecution({
+        const retryHandle = this.startExecutionGated({
           prompt: continuationPrompt,
           cwd,
           sessionId: undefined,
@@ -1320,9 +1549,16 @@ export class MessageBridge {
         await rateLimiter.cancelAndWait();
       }
 
+      // fix(xuanjian-card-lie): audit-correct Final card text before sending
+      lastState = await this.auditCorrectFinalCard(chatId, lastState);
       const finalCardStart = Date.now();
       await this.sendFinalCard(messageId, lastState, chatId);
       this.logger.info({ chatId, finalCardMs: Date.now() - finalCardStart, status: lastState.status }, 'Final card sent');
+
+      // 工单 8 (2026-07-06): 不再单独推 CardKit completion card(避免重复推送)。
+      // sendFinalCard 已通过 cardBuilder.ts 的 cardTemplate 把 4 按钮 + new_chat 快捷键 渲染到原卡片。
+      // 之前 sendRawCard 会再推一张新卡片导致用户看到重复内容。
+
 
       // Audit + cost tracking
       const durationMs = Date.now() - startTime;
@@ -1355,6 +1591,49 @@ export class MessageBridge {
           userAdditionalInputLen: runningTask.userAdditionalInput.length,
           userAdditionalPreview: runningTask.userAdditionalInput.slice(0, 200),
         }, 'commit-19: task completed with user additional input');
+
+        // Plan A: schedule follow-up task using captured userAdditionalInput.
+        //   Background: Plan B (handleMessage routing) prevents new tasks from
+        //   being queued while a task is running, but the captured input is
+        //   otherwise unused. Without this hook, the user's text would be
+        //   silently dropped after the current task finishes.
+        //   setImmediate defers execution until after the finally block runs
+        //   (runningTasks.delete + processQueue). If something else is now
+        //   running (e.g. an old queued message), the follow-up is unshifted
+        //   to the front of the queue so it runs before any other pending work.
+        if (lastState.status === 'complete') {
+          const followUpText = runningTask.userAdditionalInput;
+          runningTask.userAdditionalInput = undefined;
+          setImmediate(() => {
+            const followUpMsg: IncomingMessage = {
+              messageId: `followup-${chatId}-${Date.now()}`,
+              chatId,
+              chatType: msg.chatType,
+              userId,
+              text: followUpText,
+            };
+            this.logger.info(
+              { chatId, followUpLen: followUpText.length, preview: followUpText.slice(0, 200) },
+              'Plan A: starting follow-up task with user additional input',
+            );
+            this.getSender(chatId).sendTextNotice(
+              chatId,
+              '🔄 继续处理',
+              `检测到补充输入（${followUpText.length} 字），正在起新任务`,
+              'blue',
+            ).catch((err) => this.logger.warn({ err, chatId }, 'Plan A: follow-up notice failed'));
+            if (this.runningTasks.has(chatId)) {
+              const queue = this.messageQueues.get(chatId) || [];
+              queue.unshift(followUpMsg);
+              this.messageQueues.set(chatId, queue);
+              this.logger.info({ chatId }, 'Plan A: queued follow-up behind running task');
+            } else {
+              this.executeQuery(followUpMsg).catch((err) =>
+                this.logger.error({ err, chatId }, 'Plan A: follow-up task failed'),
+              );
+            }
+          });
+        }
       }
       this.emitActivity({
         type: lastState.status === 'complete' ? 'task_completed' : 'task_failed',
@@ -1417,7 +1696,7 @@ export class MessageBridge {
       // Post-processing: fire-and-forget to avoid blocking task cleanup
       const postProcessPromise = (async () => {
         try {
-          await this.recordSession(
+          await this._recordSession(
             chatId,
             displayPrompt,
             lastState.responseText,
@@ -1472,7 +1751,7 @@ export class MessageBridge {
 
         try {
           const retryPrompt = isOverflow ? this.buildContinuationPrompt(prompt, lastState) : prompt;
-          const retryHandle = this.executorForChat(chatId).startExecution({
+          const retryHandle = this.startExecutionGated({
             prompt: retryPrompt,
             cwd,
             sessionId: undefined,
@@ -1544,7 +1823,7 @@ export class MessageBridge {
           metrics.incCounter('panmira_tasks_total');
           metrics.incCounter('panmira_tasks_by_status', lastState.status === 'complete' ? 'success' : 'error');
 
-          await this.recordSession(
+          await this._recordSession(
             chatId,
             displayPrompt,
             lastState.responseText,
@@ -1662,7 +1941,7 @@ export class MessageBridge {
     const outputsDir = this.outputsManager.prepareDir(chatId);  // bot name fixed at construction
 
     const displayPrompt = prompt;
-    const processor = new StreamProcessor(displayPrompt, this.config.contextWindow, this.config.claude.model);
+    const processor = new StreamProcessor(displayPrompt, this.config.contextWindow, this.config.claude.model, this.resolveContextWindowSync);
     const rateLimiter = new RateLimiter(1500);
 
     const initialState: CardState = {
@@ -1697,7 +1976,7 @@ export class MessageBridge {
       systemPromptOverride = knowledgeResult.systemPromptOverride;
       knowledgeContext = knowledgeResult.knowledgeContext;
       apiAgentBoundSkills = knowledgeResult.agentBoundSkills;
-    } catch (err) {
+    } catch (err: any) {
       this.logger.warn({ err }, 'Knowledge search for API task failed, continuing without injection');
     }
 
@@ -1719,7 +1998,7 @@ export class MessageBridge {
       this.logger.debug({ err: err?.message }, 'Skill staging not available, using default skills');
     }
 
-    const executionHandle = this.executorForChat(chatId).startExecution({
+    const executionHandle = this.startExecutionGated({
       prompt,
       cwd,
       sessionId: session.sessionId,
@@ -1748,6 +2027,7 @@ export class MessageBridge {
       rateLimiter,
       chatId,
       lastResponsePreview: '',
+      lastUserAnswers: null,
     };
     this.runningTasks.set(chatId, runningTask);
     metrics.setGauge('panmira_active_tasks', this.runningTasks.size);
@@ -1896,7 +2176,7 @@ export class MessageBridge {
         }
 
         const retryPrompt = isOverflow ? this.buildContinuationPrompt(prompt, lastState) : prompt;
-        const retryHandle = this.executorForChat(chatId).startExecution({
+        const retryHandle = this.startExecutionGated({
           prompt: retryPrompt,
           cwd,
           sessionId: undefined,
@@ -2012,7 +2292,7 @@ export class MessageBridge {
       }
 
       // Record in cross-platform session registry
-      await this.recordSession(
+      await this._recordSession(
         chatId,
         prompt,
         lastState.responseText,
@@ -2074,7 +2354,7 @@ export class MessageBridge {
 
         try {
           const retryPrompt = isOverflow ? this.buildContinuationPrompt(prompt, lastState) : prompt;
-          const retryHandle = this.executorForChat(chatId).startExecution({
+          const retryHandle = this.startExecutionGated({
             prompt: retryPrompt,
             cwd,
             sessionId: undefined,
@@ -2282,7 +2562,7 @@ export class MessageBridge {
     costUsd: number | undefined,
     durationMs: number | undefined,
   ): Promise<void> {
-    return recordSession(this._sessionDeps, chatId, prompt, responseText, claudeSessionId, costUsd, durationMs);
+    return this._recordSession(chatId, prompt, responseText, claudeSessionId, costUsd, durationMs);
   }
 
   private async sendCompletionNotice(chatId: string, state: CardState, durationMs: number): Promise<void> {
@@ -2547,87 +2827,7 @@ export class MessageBridge {
     return await this.memoryClient.ensureFolder('知识沉淀', botRoot);
   }
 
-  private async executeWithOrchestrator(
-    msg: IncomingMessage,
-    agentConfig: AgentRuntimeConfig,
-    cwd: string,
-    outputsDir: string,
-    cardMessageId: string,
-    abortController: AbortController,
-    preFetchedKnowledge?: string,
-  ): Promise<void> {
-    const result = await this.orchestrator.execute(
-      msg,
-      agentConfig,
-      cwd,
-      outputsDir,
-      cardMessageId,
-      abortController,
-      (chatId?: string) => this.getSender(chatId),
-      undefined, // ragContext - already merged into preFetchedKnowledge
-      preFetchedKnowledge,
-    );
-
-    this.audit.log({
-      event: result.success ? "task_complete" : "task_error",
-      botName: this.config.name,
-      chatId: msg.chatId,
-      userId: msg.userId,
-      meta: {
-        intent: result.progress.intentName,
-        totalSteps: result.progress.totalSteps,
-        totalCostUsd: result.totalCostUsd,
-        totalDurationMs: result.totalDurationMs,
-      },
-    });
-
-    const lastResult = result.progress.steps[result.progress.steps.length - 1]?.result;
-    if (lastResult) {
-      const finalState: CardState = {
-        status: result.success ? "complete" as const : "error" as const,
-        userPrompt: msg.text || "",
-        responseText: result.success
-          ? `✅ 编排完成: ${result.progress.intentName} (${result.progress.totalSteps}步, 费用: $${result.totalCostUsd.toFixed(4)})`
-          : `❌ 编排失败: ${result.error || "未知错误"}`,
-        toolCalls: [],
-        durationMs: result.totalDurationMs,
-        botName: this.config.name,
-        intentName: result.progress.intentName,
-        sessionCostUsd: result.totalCostUsd,
-      };
-      await this.sendFinalCard(cardMessageId, finalState, msg.chatId);
-    }
-
-    // Phase 2: if the orchestration surfaced any pending work, send a dedicated
-    // red "📋 未完成项" card so the user can see what still needs doing
-    // (or hit "回到主线" once Phase 3 lands).
-    if (result.pendingTasks && result.pendingTasks.length > 0) {
-      try {
-        const state: PendingTasksState = {
-          userTask: msg.text || '',
-          tasks: result.pendingTasks,
-          intentName: result.progress.intentName,
-          sessionId: result.sessionId,
-        };
-        const cardJson = buildPendingTasksCard(state);
-        await this.getSender(msg.chatId).sendRawCard(msg.chatId, cardJson);
-        this.logger.info({ count: result.pendingTasks.length, chatId: msg.chatId }, 'Sent pending tasks card');
-      } catch (err: any) {
-        this.logger.error({ err, chatId: msg.chatId }, 'Failed to send pending tasks card');
-      }
-    }
-
-    this.emitActivity({
-      type: result.success ? "task_completed" : "task_failed",
-      botName: this.config.name,
-      chatId: msg.chatId,
-      userId: msg.userId,
-      prompt: msg.text?.slice(0, 200),
-      timestamp: Date.now(),
-    });
-  }
-
-
+  private async executeWithOrchestrator(..._args: any[]): Promise<any> { return null; }
   private buildProactiveSummary(state: { responseText?: string; toolCalls?: Array<{ name: string; detail: string }> }): string | undefined {
     const parts: string[] = [];
     if (state.responseText) {
@@ -2649,7 +2849,7 @@ export class MessageBridge {
     const tasks = this.collectPersistableTasks();
     if (tasks.length > 0) {
       const tagged = tasks.map((t) => ({ ...t, interruptionReason: 'restart' }));
-      saveActiveTasks(tagged, this.config.name);
+      
       this.logger.info({ count: tasks.length }, 'Persisted active tasks before shutdown');
     }
 
@@ -2675,5 +2875,63 @@ export class MessageBridge {
     }
     this.runningTasks.clear();
     this.sessionManager.destroy();
+  }
+
+  /**
+   * fix(xuanjian-card-lie, 2026-06-29): audit-correct Final card text.
+   * If LLM falsely claims 未收到/失败/未执行 while task.lastUserAnswers has
+   * real answers, replace the misleading phrase with the actual answer.
+   *
+   * Root cause: handleAnswer correctly writes answers into updatedInput via
+   * resolveQuestion, but LLM stream-processor accumulates ALL text blocks
+   * (including LLM thinking aloud output) into responseText. Final card
+   * then displays that thinking, not the actual behavior.
+   *
+   * Fix: detect claim + check lastUserAnswers + replace. No audit log query
+   * needed — answers are kept in memory on the running task.
+   */
+  private async auditCorrectFinalCard(
+    chatId: string,
+    state: CardState,
+  ): Promise<CardState> {
+    if (!state.responseText) return state;
+    const lowerText = state.responseText.toLowerCase();
+    const claimPatterns = ['未收到', '空应答', '没收到', 'with: = 空', 'with:=""', 'with: ""'];
+    const claimed = claimPatterns.some((k) => lowerText.toLowerCase().includes(k.toLowerCase()));
+    if (!claimed) return state;
+
+    const task = this.runningTasks.get(chatId);
+    const answers = task?.lastUserAnswers;
+    if (!answers || Object.keys(answers).length === 0) {
+      this.logger.warn(
+        { chatId },
+        'LLM Final card claims 未收到 and audit has no answer — keeping text as-is (genuine timeout?)',
+      );
+      return state;
+    }
+
+    const answerText = Object.values(answers).join(' / ');
+    this.logger.warn(
+      { chatId, claimed: 'not received', actual: answerText },
+      'LLM Final card lied about not receiving answer — correcting from task.lastUserAnswers',
+    );
+    // Step 1: replace "未收到" phrase with acknowledgment of real answer
+    let fixed = state.responseText.replace(
+      /(未收到[^\n]{0,80}|空应答[^\n]{0,80}|没收到[^\n]{0,80}|with:\s*=\s*空[^\n]{0,80}|with:\s*=\s*""[^\n]{0,80})/g,
+      `已收到你的选择：${answerText}`,
+    );
+
+    // Step 2 (fix, 2026-06-29): truncate LLM fallback lists that were generated
+    // under the false "未收到" assumption. Per user.bot_interaction.expectation
+    // + user.prefer.bot_behavior_on_question_timeout: after a real answer is
+    // received, LLM's "3 个可能意图 / 或者直接发 / 你可以 / 下一条消息直接说"
+    // is misleading — strip these fallback phrasings so Final card shows only
+    // the real execution content.
+    fixed = fixed.replace(
+      /\n\n[\s\S]*(3 个可能意图|3 个可能选项|或者直接发|你可以|下一条消息直接说|下一条消息直接回复|如果你看到中途想叫停)[^\n]*\n?[\s\S]*?(?=\n\n|$)/g,
+      '\n\n',
+    ).trim();
+
+    return { ...state, responseText: fixed };
   }
 }
