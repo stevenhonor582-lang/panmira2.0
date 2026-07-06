@@ -207,6 +207,8 @@ export async function handleSkillHubRoutes(
     const workDir = bot.config.claude.defaultWorkingDirectory;
     installSkillFromHub(workDir, skillName, skillMd, referencesTar, logger);
     await installSkillWithBinding(skillName, botName, 'global', logger);
+    // Plan D: 记录 skill 使用
+    recordSkillUsage('default', skillName, 1);
     jsonResponse(res, 200, { installed: true, botName, skillName });
     return true;
   }
