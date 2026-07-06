@@ -30,6 +30,7 @@ import { DiscoveredGroupStore } from '../db/discovered-group-store.js';
 import { handleAuthRoutes } from './routes/auth-routes.js';
 import { handleOAuthRoutes } from './routes/oauth-routes.js';
 import { handleResourceRoutes } from './routes/resource-routes.js';
+import { handleKnowledgeBaseRoutes } from './routes/knowledge-base-routes.js';
 import { verifyAccessToken } from './middleware.js';
 import { metrics as _metrics } from '../utils/metrics.js';
 import type { SessionRegistry } from '../session/session-registry.js';
@@ -670,9 +671,25 @@ ${content}
       }
 
       // Plan B-1: Resource engine routes (embedding / mcp / agent skill refs)
+      // Plan B-1: Resource engine routes (embedding / mcp / agent skill refs)
       if (url.startsWith('/api/v2/admin/embedding-providers') ||
-          url.startsWith('/api/v2/admin/mcp-servers') ||
-          url.startsWith('/api/v2/admin/agents/')) {
+          url.startsWith('/api/v2/admin/mcp-servers')) {
+        if (await handleResourceRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Resource route not found' });
+        return;
+      }
+
+      // Plan B-2: Knowledge Base CRUD
+      if (url.startsWith('/api/v2/admin/knowledge-bases') ||
+          url.startsWith('/api/v2/admin/agents/') && url.includes('knowledge-refs') ||
+          url.startsWith('/api/v2/admin/documents/')) {
+        if (await handleKnowledgeBaseRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'KB route not found' });
+        return;
+      }
+
+      // Plan B-1: Agent resource routes (skill-refs etc.)
+      if (url.startsWith('/api/v2/admin/agents/')) {
         if (await handleResourceRoutes(req, res, method, url)) return;
         jsonResponse(res, 404, { error: 'Resource route not found' });
         return;
