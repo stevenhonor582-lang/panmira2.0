@@ -38,6 +38,7 @@ import { handleReportsRoutes } from './routes/reports-routes.js';
 import { handleDashboardRoutes } from './routes/dashboard-routes.js';
 import { handleModelsPoolRoutes } from './routes/models-pool-routes.js';
 import { handleAgentsCrudRoutes } from './routes/agents-crud-routes.js';
+import { handleChannelsRoutes } from './routes/channels-routes.js';
 import { handleTenantQuotaRoutes } from './routes/tenant-quota-routes.js';
 import { handleMaintenanceRoutes } from './routes/maintenance-routes.js';
 import { handleChannelUsageRoutes } from './routes/channel-usage-routes.js';
@@ -707,6 +708,7 @@ ${content}
 
       // Plan B-3: Reports
         if (await handleAgentsCrudRoutes(req, res, method, url)) return;
+        if (await handleChannelsRoutes(req, res, method, url)) return;
         if (await handleModelsPoolRoutes(req, res, method, url)) return;
         if (await handleDashboardRoutes(req, res, method, url)) return;
       if (url.startsWith('/api/v2/admin/reports/')) {

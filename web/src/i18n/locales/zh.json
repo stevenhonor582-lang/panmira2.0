@@ -622,5 +622,37 @@
     "description": "描述",
     "loadFailed": "加载失败",
     "loading": "加载中..."
+  },
+  "resources": {
+    "title": "资源池",
+    "mcpServers": "MCP 服务器",
+    "skillPlugins": "Skill 插件",
+    "emptyMcp": "暂无 MCP 服务器",
+    "emptySkills": "暂无 Skill 插件",
+    "colName": "名称",
+    "colUrl": "URL",
+    "colHealth": "健康",
+    "colVersion": "版本",
+    "colSkills": "技能数",
+    "colStatus": "状态",
+    "active": "启用",
+    "disabled": "禁用",
+    "loading": "加载中..."
+  },
+  "channels": {
+    "title": "Channel 接入",
+    "newChannel": "新建 Channel",
+    "newGroupIdPrompt": "群组 ID?",
+    "deleteConfirm": "确定删除这个 Channel?",
+    "delete": "删除",
+    "empty": "暂无 Channel",
+    "colGroupId": "群组 ID",
+    "colPattern": "匹配规则",
+    "colBots": "目标 Bot",
+    "colPriority": "优先级",
+    "colStatus": "状态",
+    "active": "启用",
+    "disabled": "禁用",
+    "loading": "加载中..."
   }
 }
