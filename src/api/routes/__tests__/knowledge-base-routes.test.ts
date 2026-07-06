@@ -71,3 +71,29 @@ describe('handleKnowledgeBaseRoutes dispatch', () => {
     expect(handled).toBe(false);
   });
 });
+
+describe('handleKnowledgeBaseRoutes document dispatch', () => {
+  it('handles GET /:id/documents', async () => {
+    const { req, res } = mockReqRes('GET', '/api/v2/admin/knowledge-bases/abc-123/documents');
+    const handled = await handleKnowledgeBaseRoutes(req, res, 'GET', '/api/v2/admin/knowledge-bases/abc-123/documents');
+    expect(handled).toBe(true);
+  });
+
+  it('handles POST /:id/documents (bind)', async () => {
+    const { req, res } = mockReqRes('POST', '/api/v2/admin/knowledge-bases/abc-123/documents');
+    const handled = await handleKnowledgeBaseRoutes(req, res, 'POST', '/api/v2/admin/knowledge-bases/abc-123/documents');
+    expect(handled).toBe(true);
+  });
+
+  it('handles POST /:id/documents/upload', async () => {
+    const { req, res } = mockReqRes('POST', '/api/v2/admin/knowledge-bases/abc-123/documents/upload');
+    const handled = await handleKnowledgeBaseRoutes(req, res, 'POST', '/api/v2/admin/knowledge-bases/abc-123/documents/upload');
+    expect(handled).toBe(true);
+  });
+
+  it('handles POST /documents/:docId/versions', async () => {
+    const { req, res } = mockReqRes('POST', '/api/v2/admin/documents/doc-xyz/versions');
+    const handled = await handleKnowledgeBaseRoutes(req, res, 'POST', '/api/v2/admin/documents/doc-xyz/versions');
+    expect(handled).toBe(true);
+  });
+});

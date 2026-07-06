@@ -1,8 +1,11 @@
 /**
  * Plan B-2 数智底座 KB 端点:
- *   /api/v2/admin/knowledge-bases        (CRUD,需 knowledge:admin scope)
- *   /api/v2/admin/knowledge-bases/:id    (GET/PATCH/DELETE)
- *   /api/v2/admin/knowledge-bases/:id/indexing  (POST, 异步 202)
+ *   /api/v2/admin/knowledge-bases                          (CRUD, knowledge:admin)
+ *   /api/v2/admin/knowledge-bases/:id                      (GET/PATCH/DELETE)
+ *   /api/v2/admin/knowledge-bases/:id/indexing             (POST, 异步 202)
+ *   /api/v2/admin/knowledge-bases/:id/documents            (GET list / POST bind)
+ *   /api/v2/admin/knowledge-bases/:id/documents/upload     (POST 新 doc + chunk + embed)
+ *   /api/v2/admin/documents/:docId/versions                (POST 新版本)
  *
  * 模式: 跟 resource-routes 一样,纯函数 handleKnowledgeBaseRoutes,挂 http-server
  * 权限:
@@ -12,9 +15,11 @@
  *   - visibility 权限 (personal/team/company)
  */
 import type http from 'node:http';
-import { eq, and, desc, isNull, or } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { knowledgeBases, agentKnowledgeRefs } from '../../db/schema.js';
+import { knowledgeBases, documents, documentChunks } from '../../db/schema.js';
+import { chunkText, makeChunkId } from '../../services/chunker.js';
+import { embedText } from '../../services/embedder.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import { requireBearer, requireScopes } from '../oauth-middleware.js';
 
@@ -42,12 +47,12 @@ function canAccessKb(ctx: { tenantId: string; userId?: string; teamId?: string }
   }
   // team
   if (kb.teamId && ctx.teamId && kb.teamId === ctx.teamId) return true;
-  // Company 级 KB 给 team 看
   if (!kb.teamId && kb.visibility === 'team') return true;
   return false;
 }
 
-// ── list ────────────────────────────────────────────────────────────────
+// ── KB CRUD handlers ────────────────────────────────────────────────────
+
 async function listKnowledgeBases(req: http.IncomingMessage, res: http.ServerResponse) {
   const ctx = await requireBearer(req, res);
   if (!ctx) return;
@@ -58,7 +63,6 @@ async function listKnowledgeBases(req: http.IncomingMessage, res: http.ServerRes
   const qp = new URL(url, 'http://localhost').searchParams;
   const typeFilter = qp.get('type');
 
-  // 拉所有同 tenant 的 KB,在内存里按 visibility 过滤(简单实现;数据量大会卡)
   const conditions = [eq(knowledgeBases.tenantId, ctx.tenantId)];
   if (typeFilter && isValidType(typeFilter)) {
     conditions.push(eq(knowledgeBases.type, typeFilter));
@@ -71,7 +75,6 @@ async function listKnowledgeBases(req: http.IncomingMessage, res: http.ServerRes
   jsonResponse(res, 200, { success: true, data: visible });
 }
 
-// ── create ──────────────────────────────────────────────────────────────
 async function createKnowledgeBase(req: http.IncomingMessage, res: http.ServerResponse) {
   const ctx = await requireBearer(req, res);
   if (!ctx) return;
@@ -85,7 +88,6 @@ async function createKnowledgeBase(req: http.IncomingMessage, res: http.ServerRe
   if (!name || typeof name !== 'string') { jsonResponse(res, 400, { error: 'name required' }); return; }
   if (visibility && !isValidVisibility(visibility)) { jsonResponse(res, 400, { error: 'invalid visibility', allowed: VISIBILITIES }); return; }
 
-  // 业务规则:personal KB 必须有 ownerUserId,company KB 必须 team/owner 都空
   if (type === 'personal' && !ownerUserId) { jsonResponse(res, 400, { error: 'personal KB requires ownerUserId' }); return; }
   if (type === 'company' && (teamId || ownerUserId)) { jsonResponse(res, 400, { error: 'company KB must not have team/owner' }); return; }
 
@@ -106,7 +108,6 @@ async function createKnowledgeBase(req: http.IncomingMessage, res: http.ServerRe
   jsonResponse(res, 201, { success: true, data: row });
 }
 
-// ── get by id ───────────────────────────────────────────────────────────
 async function getKnowledgeBase(req: http.IncomingMessage, res: http.ServerResponse, id: string) {
   const ctx = await requireBearer(req, res);
   if (!ctx) return;
@@ -120,7 +121,6 @@ async function getKnowledgeBase(req: http.IncomingMessage, res: http.ServerRespo
   jsonResponse(res, 200, { success: true, data: kb });
 }
 
-// ── patch ───────────────────────────────────────────────────────────────
 async function patchKnowledgeBase(req: http.IncomingMessage, res: http.ServerResponse, id: string) {
   const ctx = await requireBearer(req, res);
   if (!ctx) return;
@@ -145,7 +145,6 @@ async function patchKnowledgeBase(req: http.IncomingMessage, res: http.ServerRes
   jsonResponse(res, 200, { success: true, data: updated });
 }
 
-// ── delete (soft) ──────────────────────────────────────────────────────
 async function deleteKnowledgeBase(req: http.IncomingMessage, res: http.ServerResponse, id: string) {
   const ctx = await requireBearer(req, res);
   if (!ctx) return;
@@ -156,8 +155,6 @@ async function deleteKnowledgeBase(req: http.IncomingMessage, res: http.ServerRe
   if (!kb) { jsonResponse(res, 404, { error: 'KB not found' }); return; }
   if (!canAccessKb(ctx, kb)) { jsonResponse(res, 403, { error: 'forbidden' }); return; }
 
-  // 软删:把 visibility 改 private + 加 'deleted_' 前缀(后续清理)
-  // 简单实现:用 description 字段标 'DELETED' (Plan B 范围)
   await db.update(knowledgeBases).set({
     description: `[DELETED ${new Date().toISOString()}] ${kb.description || ''}`.slice(0, 1000),
     updatedAt: new Date(),
@@ -165,7 +162,6 @@ async function deleteKnowledgeBase(req: http.IncomingMessage, res: http.ServerRe
   jsonResponse(res, 200, { success: true, data: { id, deleted: true } });
 }
 
-// ── indexing trigger (async 202) ───────────────────────────────────────
 async function triggerIndexing(req: http.IncomingMessage, res: http.ServerResponse, id: string) {
   const ctx = await requireBearer(req, res);
   if (!ctx) return;
@@ -176,20 +172,18 @@ async function triggerIndexing(req: http.IncomingMessage, res: http.ServerRespon
   if (!kb) { jsonResponse(res, 404, { error: 'KB not found' }); return; }
   if (!canAccessKb(ctx, kb)) { jsonResponse(res, 403, { error: 'forbidden' }); return; }
 
-  // 标记 indexing(实际 job 留 B-3,本期直接 ready)
   await db.update(knowledgeBases).set({
     indexStatus: 'indexing',
     updatedAt: new Date(),
   }).where(eq(knowledgeBases.id, id));
 
-  // 立即 fire-and-forget 标记 ready(简化:实际生产要走队列)
   setImmediate(async () => {
     try {
       await db.update(knowledgeBases).set({
         indexStatus: 'ready',
         updatedAt: new Date(),
       }).where(eq(knowledgeBases.id, id));
-    } catch (err) {
+    } catch {
       await db.update(knowledgeBases).set({
         indexStatus: 'failed',
         updatedAt: new Date(),
@@ -200,7 +194,164 @@ async function triggerIndexing(req: http.IncomingMessage, res: http.ServerRespon
   jsonResponse(res, 202, { success: true, data: { id, indexStatus: 'indexing' } });
 }
 
-// ── 主路由 dispatch ────────────────────────────────────────────────────
+// ── Document handlers ───────────────────────────────────────────────────
+
+async function listKbDocuments(req: http.IncomingMessage, res: http.ServerResponse, kbId: string) {
+  const ctx = await requireBearer(req, res);
+  if (!ctx) return;
+  const check = requireScopes(ctx, ['knowledge:read', 'knowledge:admin']);
+  if (!check.ok) { jsonResponse(res, 403, { error: 'insufficient_scope', missing: check.missing }); return; }
+
+  const [kb] = await db.select().from(knowledgeBases).where(eq(knowledgeBases.id, kbId)).limit(1);
+  if (!kb) { jsonResponse(res, 404, { error: 'KB not found' }); return; }
+  if (!canAccessKb(ctx, kb)) { jsonResponse(res, 403, { error: 'forbidden' }); return; }
+
+  const rows = await db.select().from(documents)
+    .where(eq(documents.kbId, kbId))
+    .orderBy(desc(documents.version), desc(documents.updatedAt));
+  jsonResponse(res, 200, { success: true, data: rows });
+}
+
+async function bindDocumentToKb(req: http.IncomingMessage, res: http.ServerResponse, kbId: string) {
+  const ctx = await requireBearer(req, res);
+  if (!ctx) return;
+  const check = requireScopes(ctx, ['knowledge:admin']);
+  if (!check.ok) { jsonResponse(res, 403, { error: 'insufficient_scope', missing: check.missing }); return; }
+
+  const body = (await parseJsonBody(req)) as Record<string, unknown>;
+  const { docId } = body;
+  if (!docId) { jsonResponse(res, 400, { error: 'docId required' }); return; }
+
+  const [kb] = await db.select().from(knowledgeBases).where(eq(knowledgeBases.id, kbId)).limit(1);
+  if (!kb) { jsonResponse(res, 404, { error: 'KB not found' }); return; }
+  if (!canAccessKb(ctx, kb)) { jsonResponse(res, 403, { error: 'forbidden' }); return; }
+
+  const [doc] = await db.select().from(documents).where(eq(documents.id, String(docId))).limit(1);
+  if (!doc) { jsonResponse(res, 404, { error: 'document not found' }); return; }
+
+  await db.update(documents).set({
+    kbId,
+    kbType: kb.type,
+    visibility: kb.visibility,
+    updatedAt: new Date().toISOString(),
+  }).where(eq(documents.id, String(docId)));
+  jsonResponse(res, 200, { success: true, data: { docId, kbId } });
+}
+
+async function uploadDocumentToKb(req: http.IncomingMessage, res: http.ServerResponse, kbId: string) {
+  const ctx = await requireBearer(req, res);
+  if (!ctx) return;
+  const check = requireScopes(ctx, ['knowledge:admin']);
+  if (!check.ok) { jsonResponse(res, 403, { error: 'insufficient_scope', missing: check.missing }); return; }
+
+  const body = (await parseJsonBody(req)) as Record<string, unknown>;
+  const { title, content } = body;
+  if (!title || !content) { jsonResponse(res, 400, { error: 'title + content required' }); return; }
+
+  const [kb] = await db.select().from(knowledgeBases).where(eq(knowledgeBases.id, kbId)).limit(1);
+  if (!kb) { jsonResponse(res, 404, { error: 'KB not found' }); return; }
+  if (!canAccessKb(ctx, kb)) { jsonResponse(res, 403, { error: 'forbidden' }); return; }
+
+  const docId = `${kbId}::doc::${Date.now()}`;
+  await db.insert(documents).values({
+    id: docId,
+    title: String(title),
+    content: String(content),
+    folderId: 'kb-root',
+    path: `/kb/${kbId}/${docId}`,
+    createdBy: ctx.userId ? String(ctx.userId) : '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    kbId,
+    kbType: kb.type,
+    visibility: kb.visibility,
+    version: 1,
+    ownerUserId: kb.ownerUserId || null,
+  });
+
+  const chunks = chunkText(String(content), { chunkSize: kb.chunkSize, chunkOverlap: kb.chunkOverlap });
+
+  let embeddedCount = 0;
+  for (const chunk of chunks) {
+    let embedding: number[] | null = null;
+    if (kb.embeddingProviderId) {
+      embedding = await embedText({ providerId: kb.embeddingProviderId, text: chunk.content });
+      if (embedding) embeddedCount++;
+    }
+    await db.insert(documentChunks).values({
+      id: makeChunkId(docId, chunk.index),
+      documentId: docId,
+      chunkIndex: chunk.index,
+      content: chunk.content,
+      heading: chunk.heading || null,
+      embedding: embedding as any,
+      chunkTokenCount: chunk.tokenCount,
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  await db.update(knowledgeBases).set({
+    documentCount: (kb.documentCount || 0) + 1,
+    chunkCount: (kb.chunkCount || 0) + chunks.length,
+    updatedAt: new Date(),
+  }).where(eq(knowledgeBases.id, kbId));
+
+  jsonResponse(res, 201, { success: true, data: { docId, chunks: chunks.length, embedded: embeddedCount } });
+}
+
+async function createDocumentVersion(req: http.IncomingMessage, res: http.ServerResponse, docId: string) {
+  const ctx = await requireBearer(req, res);
+  if (!ctx) return;
+  const check = requireScopes(ctx, ['knowledge:admin']);
+  if (!check.ok) { jsonResponse(res, 403, { error: 'insufficient_scope', missing: check.missing }); return; }
+
+  const body = (await parseJsonBody(req)) as Record<string, unknown>;
+  const { content } = body;
+  if (!content) { jsonResponse(res, 400, { error: 'content required' }); return; }
+
+  const [doc] = await db.select().from(documents).where(eq(documents.id, docId)).limit(1);
+  if (!doc) { jsonResponse(res, 404, { error: 'document not found' }); return; }
+  if (doc.kbId) {
+    const [kb] = await db.select().from(knowledgeBases).where(eq(knowledgeBases.id, doc.kbId)).limit(1);
+    if (kb && !canAccessKb(ctx, kb)) { jsonResponse(res, 403, { error: 'forbidden' }); return; }
+  }
+
+  const newVersion = (doc.version || 1) + 1;
+  await db.update(documents).set({
+    content: String(content),
+    version: newVersion,
+    updatedAt: new Date().toISOString(),
+  }).where(eq(documents.id, docId));
+
+  await db.delete(documentChunks).where(eq(documentChunks.documentId, docId));
+
+  const kb = doc.kbId ? (await db.select().from(knowledgeBases).where(eq(knowledgeBases.id, doc.kbId)).limit(1))[0] : null;
+  const chunks = chunkText(String(content), {
+    chunkSize: kb?.chunkSize || 512,
+    chunkOverlap: kb?.chunkOverlap || 64,
+  });
+  for (const chunk of chunks) {
+    let embedding: number[] | null = null;
+    if (kb?.embeddingProviderId) {
+      embedding = await embedText({ providerId: kb.embeddingProviderId, text: chunk.content });
+    }
+    await db.insert(documentChunks).values({
+      id: makeChunkId(docId, chunk.index),
+      documentId: docId,
+      chunkIndex: chunk.index,
+      content: chunk.content,
+      heading: chunk.heading || null,
+      embedding: embedding as any,
+      chunkTokenCount: chunk.tokenCount,
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  jsonResponse(res, 201, { success: true, data: { docId, version: newVersion, chunks: chunks.length } });
+}
+
+// ── Dispatch ────────────────────────────────────────────────────────────
+
 export async function handleKnowledgeBaseRoutes(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -225,6 +376,25 @@ export async function handleKnowledgeBaseRoutes(
   const idxMatch = url.match(/^\/api\/v2\/admin\/knowledge-bases\/([^/]+)\/indexing$/);
   if (idxMatch && method === 'POST') {
     await triggerIndexing(req, res, idxMatch[1]!); return true;
+  }
+
+  // /api/v2/admin/knowledge-bases/:id/documents
+  const docsListMatch = url.match(/^\/api\/v2\/admin\/knowledge-bases\/([^/]+)\/documents$/);
+  if (docsListMatch) {
+    if (method === 'GET') { await listKbDocuments(req, res, docsListMatch[1]!); return true; }
+    if (method === 'POST') { await bindDocumentToKb(req, res, docsListMatch[1]!); return true; }
+  }
+
+  // /api/v2/admin/knowledge-bases/:id/documents/upload
+  const docsUploadMatch = url.match(/^\/api\/v2\/admin\/knowledge-bases\/([^/]+)\/documents\/upload$/);
+  if (docsUploadMatch && method === 'POST') {
+    await uploadDocumentToKb(req, res, docsUploadMatch[1]!); return true;
+  }
+
+  // /api/v2/admin/documents/:docId/versions
+  const docVerMatch = url.match(/^\/api\/v2\/admin\/documents\/([^/]+)\/versions$/);
+  if (docVerMatch && method === 'POST') {
+    await createDocumentVersion(req, res, docVerMatch[1]!); return true;
   }
 
   return false;
