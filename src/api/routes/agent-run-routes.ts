@@ -17,7 +17,8 @@ import { jsonResponse, parseJsonBody } from './helpers.js';
 import { requireBearer, requireScopes, requireAnyScope } from '../oauth-middleware.js';
 import { buildRagContext, type RagResult } from '../../services/rag-service.js';
 import { recordKnowledgeUsage, recordTokenUsage } from '../../services/usage-tracker.js';
-import { callLlm, LlmCallError, type LlmCallResult } from '../../services/llm-client.js';
+import { callLlm, LlmCallError, type LlmCallResult, type LlmToolUse } from '../../services/llm-client.js';
+import { executeTool, TOOL_DEFINITIONS } from '../../services/tool-executor.js';
 
 async function runAgent(req: http.IncomingMessage, res: http.ServerResponse, agentId: string) {
   const ctx = await requireBearer(req, res);
@@ -68,13 +69,50 @@ async function runAgent(req: http.IncomingMessage, res: http.ServerResponse, age
       durationMs: 0,
     };
   } else {
-    // Real 模式: 调真 LLM
+    // Real 模式: 调真 LLM (支持 tool_use 循环, 最多 1 跳防无限)
     try {
+      const messages: Array<{role: 'user' | 'assistant'; content: any}> = [
+        { role: 'user', content: String(query) },
+      ];
+      const enableTools = body.tools !== false && rag !== null;
+      const tools = enableTools ? TOOL_DEFINITIONS : undefined;
       llmResult = await callLlm({
         system: rag?.prompt,
-        messages: [{ role: 'user', content: String(query) }],
+        messages,
+        tools,
         maxTokens: Number(body.maxTokens) || 1024,
       });
+
+      // tool_use 循环: 检测到 tool_use 时执行 + 喂回 LLM (单跳)
+      if (enableTools && llmResult.toolUses.length > 0) {
+        const toolCall = llmResult.toolUses[0]!;
+        const toolResult = await executeTool(toolCall.name, toolCall.input, {
+          agentId,
+          tenantId: ctx.tenantId,
+        });
+        // 喂回 LLM: assistant tool_use + user tool_result
+        messages.push({ role: 'assistant', content: llmResult.text || '' });
+        messages.push({ role: 'user', content: `Tool ${toolCall.name} result: ${JSON.stringify(toolResult.output).slice(0, 2000)}` });
+        const followUp = await callLlm({
+          system: rag?.prompt,
+          messages,
+          tools,
+          maxTokens: Number(body.maxTokens) || 1024,
+        });
+        // 用 follow-up 的 text, 累加 token
+        llmResult = {
+          ...llmResult,
+          text: followUp.text,
+          usage: {
+            inputTokens: llmResult.usage.inputTokens + followUp.usage.inputTokens,
+            outputTokens: llmResult.usage.outputTokens + followUp.usage.outputTokens,
+            totalTokens: llmResult.usage.totalTokens + followUp.usage.totalTokens,
+          },
+          durationMs: llmResult.durationMs + followUp.durationMs,
+        };
+        // 把 toolCall + toolResult 暴露在响应里
+        (llmResult as any).toolCalls = [{ tool: toolCall, result: toolResult }];
+      }
     } catch (err) {
       if (err instanceof LlmCallError) {
         llmError = err.message;
@@ -118,6 +156,7 @@ async function runAgent(req: http.IncomingMessage, res: http.ServerResponse, age
         provider: llmResult.provider,
         durationMs: llmResult.durationMs,
         usage: llmResult.usage,
+        toolCalls: (llmResult as any).toolCalls || [],
       } : null,
       llmError,
     },
