@@ -253,6 +253,12 @@ export const documents = pgTable('documents', {
   feedbackCount: integer('feedback_count'),
   fileUrl: text('file_url'),
   botId: uuid('bot_id').references(() => botConfigs.botId),
+  // ── plan-B2: KB 关联 + 权限 + 版本化 ──
+  kbId: uuid('kb_id'),
+  kbType: varchar('kb_type', { length: 30 }),
+  visibility: varchar('visibility', { length: 20 }).notNull().default('team'),
+  version: integer('version').notNull().default(1),
+  ownerUserId: uuid('owner_user_id'),
 });
 
 // ── document_chunks ──────────────────────────────────────────────────────────
@@ -267,6 +273,8 @@ export const documentChunks = pgTable('document_chunks', {
   heading: varchar('heading', { length: 500 }),
   embedding: vectorColumn('embedding', 1024),
   createdAt: varchar('created_at', { length: 100 }),
+  // ── plan-B2: chunk token 计数 ──
+  chunkTokenCount: integer('chunk_token_count'),
 });
 
 // ── folders ──────────────────────────────────────────────────────────────────
@@ -804,5 +812,39 @@ export const skillUsage = pgTable('skill_usage', {
   successCount: integer('success_count').notNull().default(0),
   avgLatencyMs: integer('avg_latency_ms').notNull().default(0),
   date: varchar('date', { length: 10 }).notNull(), // YYYY-MM-DD
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+
+// ── plan-B2 (2026-07-06): 数智底座 KB ─────────────────────────────────────
+
+// knowledge_bases: 8 类 KB (industry/product/competitor/solution/pricing/company/department/personal)
+export const knowledgeBases = pgTable('knowledge_bases', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  teamId: uuid('team_id'), // 空=Company 级
+  ownerUserId: uuid('owner_user_id'), // 非空=个人 KB
+  type: varchar('type', { length: 30 }).notNull(),
+  name: varchar('name', { length: 200 }).notNull(),
+  description: text('description'),
+  visibility: varchar('visibility', { length: 20 }).notNull().default('team'),
+  embeddingProviderId: text('embedding_provider_id').references(() => embeddingProviders.id),
+  chunkSize: integer('chunk_size').notNull().default(512),
+  chunkOverlap: integer('chunk_overlap').notNull().default(64),
+  indexStatus: varchar('index_status', { length: 20 }).notNull().default('pending'),
+  documentCount: integer('document_count').notNull().default(0),
+  chunkCount: integer('chunk_count').notNull().default(0),
+  createdBy: uuid('created_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// agent_knowledge_refs: agent 绑 KB,带 topK + minScore 配置
+export const agentKnowledgeRefs = pgTable('agent_knowledge_refs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  agentId: uuid('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  kbId: uuid('kb_id').notNull().references(() => knowledgeBases.id, { onDelete: 'cascade' }),
+  topK: integer('top_k').notNull().default(5),
+  minScore: numeric('min_score', { precision: 4, scale: 3 }).notNull().default('0.5'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
