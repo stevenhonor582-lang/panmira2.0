@@ -33,6 +33,7 @@ import { handleResourceRoutes } from './routes/resource-routes.js';
 import { handleKnowledgeBaseRoutes } from './routes/knowledge-base-routes.js';
 import { handleAgentKnowledgeRoutes } from './routes/agent-knowledge-routes.js';
 import { handleAgentRunRoutes } from './routes/agent-run-routes.js';
+import { handleOAuthClientRoutes } from './routes/oauth-client-routes.js';
 import { verifyAccessToken } from './middleware.js';
 import { metrics as _metrics } from '../utils/metrics.js';
 import type { SessionRegistry } from '../session/session-registry.js';
@@ -678,6 +679,13 @@ ${content}
           url.startsWith('/api/v2/admin/mcp-servers')) {
         if (await handleResourceRoutes(req, res, method, url)) return;
         jsonResponse(res, 404, { error: 'Resource route not found' });
+        return;
+      }
+
+      // Plan B-3: OAuth client CRUD
+      if (url.startsWith('/api/v2/admin/oauth-clients')) {
+        if (await handleOAuthClientRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'OAuth client route not found' });
         return;
       }
 

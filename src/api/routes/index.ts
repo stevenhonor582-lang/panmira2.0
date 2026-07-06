@@ -19,5 +19,6 @@ export { handleKnowledgeRoutes } from './knowledge-routes.js';
 export { handleKnowledgeBaseRoutes } from './knowledge-base-routes.js';
 export { handleAgentKnowledgeRoutes } from './agent-knowledge-routes.js';
 export { handleAgentRunRoutes } from './agent-run-routes.js';
+export { handleOAuthClientRoutes } from './oauth-client-routes.js';
 export { jsonResponse, readBody, parseJsonBody } from './helpers.js';
 export type { RouteContext, RouteHandler } from './types.js';
