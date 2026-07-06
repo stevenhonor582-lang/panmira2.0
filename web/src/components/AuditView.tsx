@@ -7,7 +7,7 @@ async function fetchJSON(url: string, token: string | null): Promise<any> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(url, { headers });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) return null;
   return res.json();
 }
 

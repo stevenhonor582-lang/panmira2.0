@@ -80,3 +80,28 @@
     display: none;
   }
 }
+
+/* ═══ Auth Banner (Plan H9) ═══ */
+.authBanner {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem 1.25rem;
+  background: rgba(239, 68, 68, 0.12);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.35);
+  color: #f87171;
+  font-size: 0.85rem;
+}
+.authBanner strong { font-weight: 700; }
+.authBanner span { flex: 1; color: #fca5a5; }
+.authBanner button {
+  padding: 0.25rem 0.75rem;
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+.authBanner button:hover { background: rgba(239, 68, 68, 0.35); }

@@ -29,7 +29,7 @@ async function fetchJSON(url: string, token: string | null, opts: any = {}): Pro
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(url, { ...opts, headers: { ...headers, ...(opts.headers || {}) } });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) return null;
   return res.json();
 }
 
