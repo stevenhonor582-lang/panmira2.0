@@ -637,3 +637,113 @@ export const nextcrmSyncOutbox = pgTable('nextcrm_sync_outbox', {
   createdAt: bigint('created_at', { mode: 'number' }).notNull(),
   updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
 });
+
+// ── plan-A foundation (2026-07-06): OAuth + user_teams + usage ──────────────
+
+// user_teams: users × teams M:N 关联(saas spec §2.2)
+export const userTeams = pgTable('user_teams', {
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  teamId: uuid('team_id').notNull(), // 跟 teams.id 关联(teams 是 varchar PK,这里不强制 FK,避免类型冲突)
+  roleInTeam: varchar('role_in_team', { length: 20 }).notNull().default('team_member'),
+  joinedAt: timestamp('joined_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// agent_team_auth: agent 授权给 team(saas spec §3.3 + §4.2)
+export const agentTeamAuth = pgTable('agent_team_auth', {
+  agentId: uuid('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  teamId: uuid('team_id').notNull(),
+  grantedBy: uuid('granted_by'),
+  grantedAt: timestamp('granted_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// oauth_clients: 外部系统接入凭据(saas spec §5)
+export const oauthClients = pgTable('oauth_clients', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 100 }).notNull(),
+  type: varchar('type', { length: 20 }).notNull(), // web / native / cli / mcp_server
+  clientId: varchar('client_id', { length: 64 }).notNull().unique(),
+  clientSecretHash: varchar('client_secret_hash', { length: 200 }), // null = public client (PKCE)
+  redirectUris: jsonb('redirect_uris').$type<string[]>().notNull().default([]),
+  scopes: jsonb('scopes').$type<string[]>().notNull().default([]),
+  status: varchar('status', { length: 20 }).notNull().default('active'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// oauth_access_tokens: 短期 token (1h)
+export const oauthAccessTokens = pgTable('oauth_access_tokens', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tokenHash: varchar('token_hash', { length: 128 }).notNull().unique(),
+  clientId: uuid('client_id').notNull().references(() => oauthClients.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }), // null = client_credentials
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  scopes: jsonb('scopes').$type<string[]>().notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// oauth_refresh_tokens: 长期 token (30d), rotation
+export const oauthRefreshTokens = pgTable('oauth_refresh_tokens', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tokenHash: varchar('token_hash', { length: 128 }).notNull().unique(),
+  accessTokenId: uuid('access_token_id').notNull().references(() => oauthAccessTokens.id, { onDelete: 'cascade' }),
+  clientId: uuid('client_id').notNull().references(() => oauthClients.id, { onDelete: 'cascade' }),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  rotatedFrom: uuid('rotated_from'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// oauth_authorization_codes: 短期 code (10min)
+export const oauthAuthorizationCodes = pgTable('oauth_authorization_codes', {
+  code: varchar('code', { length: 128 }).primaryKey(),
+  clientId: uuid('client_id').notNull().references(() => oauthClients.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  redirectUri: text('redirect_uri').notNull(),
+  scopes: jsonb('scopes').$type<string[]>().notNull(),
+  codeChallenge: varchar('code_challenge', { length: 128 }),
+  codeChallengeMethod: varchar('code_challenge_method', { length: 10 }),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// oauth_device_codes: RFC 8628 device flow
+export const oauthDeviceCodes = pgTable('oauth_device_codes', {
+  deviceCode: varchar('device_code', { length: 128 }).primaryKey(),
+  userCode: varchar('user_code', { length: 20 }).notNull().unique(),
+  clientId: uuid('client_id').notNull().references(() => oauthClients.id, { onDelete: 'cascade' }),
+  scopes: jsonb('scopes').$type<string[]>().notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  intervalSec: integer('interval_sec').notNull().default(5),
+  authorizedUserId: uuid('authorized_user_id').references(() => users.id, { onDelete: 'set null' }),
+  lastPolledAt: timestamp('last_polled_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// external_oauth_credentials: Panmira 当 Client,存外部系统 token
+export const externalOAuthCredentials = pgTable('external_oauth_credentials', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  provider: varchar('provider', { length: 50 }).notNull(), // github / feishu / wecom / ...
+  accessTokenEncrypted: text('access_token_encrypted').notNull(),
+  refreshTokenEncrypted: text('refresh_token_encrypted'),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  scope: text('scope'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// usage_reports: 按日聚合的资源使用量
+export const usageReports = pgTable('usage_reports', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  date: varchar('date', { length: 10 }).notNull(), // YYYY-MM-DD
+  dimension: varchar('dimension', { length: 30 }).notNull(), // token / skill / mcp / channel / knowledge
+  dimensionKey: varchar('dimension_key', { length: 100 }).notNull(),
+  count: bigint('count', { mode: 'number' }).notNull().default(0),
+  costUsd: numeric('cost_usd', { precision: 12, scale: 6 }).notNull().default('0'),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}),
+});
