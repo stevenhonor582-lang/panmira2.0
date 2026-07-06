@@ -51,7 +51,7 @@ export async function handleAgentsCrudRoutes(
         capabilities: body.capabilities || [],
         tools: body.tools || [],
         isActive: true,
-      }).returning();
+      } as any).returning();
       jsonResponse(res, 201, { agent: result[0] });
       return true;
     } catch (err) {
