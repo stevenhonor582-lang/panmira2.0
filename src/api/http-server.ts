@@ -699,6 +699,10 @@ ${content}
       // Plan B-3: OAuth client CRUD
       if (url.startsWith('/api/v2/admin/oauth-clients')) {
         if (await handleOAuthClientRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'OAuth client route not found' });
+        return;
+      }
+
       // plan-H1+blueprint: runtime sessions + skill DAGs
       if (url.startsWith("/api/v2/admin/runtime")) {
         if (await handleRuntimeRoutes(req, res, method, url)) return;
@@ -708,9 +712,6 @@ ${content}
       if (url.startsWith("/api/v2/admin/skill-dags")) {
         if (await handleSkillDagRoutes(req, res, method, url)) return;
         jsonResponse(res, 404, { error: "Skill DAG route not found" });
-        return;
-      }
-        jsonResponse(res, 404, { error: 'OAuth client route not found' });
         return;
       }
 
