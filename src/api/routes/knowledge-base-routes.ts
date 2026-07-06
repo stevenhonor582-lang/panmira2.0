@@ -17,7 +17,7 @@
 import type http from 'node:http';
 import { eq, and, desc } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { knowledgeBases, documents, documentChunks } from '../../db/schema.js';
+import { knowledgeBases, documents, documentChunks, embeddingJobs } from '../../db/schema.js';
 import { chunkText, makeChunkId } from '../../services/chunker.js';
 import { embedText } from '../../services/embedder.js';
 import { hybridSearch } from '../../services/hybrid-search.js';
@@ -275,20 +275,15 @@ async function uploadDocumentToKb(req: http.IncomingMessage, res: http.ServerRes
 
   const chunks = chunkText(String(content), { chunkSize: kb.chunkSize, chunkOverlap: kb.chunkOverlap });
 
-  let embeddedCount = 0;
+  // Plan F: 写 chunks (embedding=null), 异步队列处理嵌入
   for (const chunk of chunks) {
-    let embedding: number[] | null = null;
-    if (kb.embeddingProviderId) {
-      embedding = await embedText({ providerId: kb.embeddingProviderId, text: chunk.content });
-      if (embedding) embeddedCount++;
-    }
     await db.insert(documentChunks).values({
       id: makeChunkId(docId, chunk.index),
       documentId: docId,
       chunkIndex: chunk.index,
       content: chunk.content,
       heading: chunk.heading || null,
-      embedding: embedding as any,
+      embedding: null as any,
       chunkTokenCount: chunk.tokenCount,
       createdAt: new Date().toISOString(),
     });
@@ -300,7 +295,29 @@ async function uploadDocumentToKb(req: http.IncomingMessage, res: http.ServerRes
     updatedAt: new Date(),
   }).where(eq(knowledgeBases.id, kbId));
 
-  jsonResponse(res, 201, { success: true, data: { docId, chunks: chunks.length, embedded: embeddedCount } });
+  // Enqueue 嵌入 job (无 provider 也能 queue,worker 会 skip)
+  let jobId: string | null = null;
+  try {
+    const [job] = await db.insert(embeddingJobs).values({
+      docId,
+      kbId,
+      tenantId: ctx.tenantId,
+      status: 'pending',
+      totalChunks: chunks.length,
+    }).returning();
+    jobId = job?.id || null;
+  } catch (err) {
+    // enqueue 失败不阻断 doc 创建, 但返 500 提示用户重试
+    jsonResponse(res, 500, { error: 'enqueue_failed', message: (err as Error).message, docId, chunks: chunks.length });
+    return;
+  }
+
+  // 返 202 (Accepted, 异步处理)
+  res.statusCode = 202;
+  jsonResponse(res, 202, {
+    success: true,
+    data: { docId, jobId, chunks: chunks.length, queued: true, status: 'pending' },
+  });
 }
 
 async function createDocumentVersion(req: http.IncomingMessage, res: http.ServerResponse, docId: string) {

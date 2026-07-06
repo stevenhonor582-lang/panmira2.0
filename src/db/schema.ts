@@ -860,3 +860,18 @@ export const tenantQuotas = pgTable('tenant_quotas', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ── plan-F (2026-07-06): 异步嵌入队列 ─────────────────────────────────────
+export const embeddingJobs = pgTable('embedding_jobs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  docId: varchar('doc_id', { length: 255 }).notNull(),
+  kbId: uuid('kb_id').notNull(),
+  tenantId: uuid('tenant_id').notNull(),
+  status: varchar('status', { length: 20 }).notNull().default('pending'),
+  totalChunks: integer('total_chunks').notNull().default(0),
+  embeddedChunks: integer('embedded_chunks').notNull().default(0),
+  attempts: integer('attempts').notNull().default(0),
+  error: text('error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+});
