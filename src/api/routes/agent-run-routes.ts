@@ -17,6 +17,7 @@ import { jsonResponse, parseJsonBody } from './helpers.js';
 import { requireBearer, requireScopes, requireAnyScope } from '../oauth-middleware.js';
 import { buildRagContext, type RagResult } from '../../services/rag-service.js';
 import { recordKnowledgeUsage } from '../../services/usage-tracker.js';
+import { callLlm, LlmCallError, type LlmCallResult } from '../../services/llm-client.js';
 
 async function runAgent(req: http.IncomingMessage, res: http.ServerResponse, agentId: string) {
   const ctx = await requireBearer(req, res);
@@ -51,28 +52,74 @@ async function runAgent(req: http.IncomingMessage, res: http.ServerResponse, age
     }
   }
 
-  // 2. 真实 LLM 调用留作集成 (本期 stub: 返回 RAG 准备结果)
-  // 未来: 把 rag.prompt 注入 LLM context, 调 claude-agent-sdk
-  const llmContext = rag ? { system: rag.prompt, usedKbs: rag.usedKbIds } : null;
+  // 2. 真实 LLM 调用 (Plan E)
+  let llmResult: LlmCallResult | null = null;
+  let llmError: string | null = null;
+  // mode: 'real' (默认) | 'mock' (开发/测试, 跳过真 LLM)
+  const llmMode = (body.mode === 'mock') ? 'mock' : 'real';
 
-  // 3. 写 usage_reports (knowledge 维度, 异步 fire-and-forget)
-  // 简化: 不实际写,仅在响应里返回调用次数
-  const usage = { knowledgeCalls: rag ? 1 : 0, retrievedChunks: rag?.retrievedChunks.length || 0 };
+  if (llmMode === 'mock') {
+    // Mock 模式: 不真调 LLM, 返 echo + 假 usage
+    llmResult = {
+      text: `[MOCK] response for: ${query}`,
+      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+      model: 'mock',
+      provider: 'mock',
+      durationMs: 0,
+    };
+  } else {
+    // Real 模式: 调真 LLM
+    try {
+      llmResult = await callLlm({
+        system: rag?.prompt,
+        messages: [{ role: 'user', content: String(query) }],
+        maxTokens: Number(body.maxTokens) || 1024,
+      });
+    } catch (err) {
+      if (err instanceof LlmCallError) {
+        llmError = err.message;
+        jsonResponse(res, err.statusCode, {
+          error: err.statusCode === 503 ? 'llm_provider_unavailable' : 'llm_call_failed',
+          message: err.message,
+          provider: err.provider,
+        });
+        return;
+      }
+      jsonResponse(res, 500, { error: 'llm_call_failed', message: (err as Error).message });
+      return;
+    }
+  }
+
+  // 3. 写 usage_reports (knowledge 维度, 异步 + token 维度)
+  if (rag) {
+    for (const kbId of rag.usedKbIds) {
+      recordKnowledgeUsage(ctx.tenantId, kbId, 1);
+    }
+  }
+  if (llmResult && llmResult.usage.totalTokens > 0) {
+    recordTokenUsage(ctx.tenantId, 'agent:' + agentId, llmResult.usage.totalTokens);
+  }
 
   jsonResponse(res, 200, {
     success: true,
     data: {
       agentId,
       query,
+      mode: llmMode,
+      response: llmResult?.text || '',
       rag: rag ? {
         usedKbIds: rag.usedKbIds,
         retrievedChunks: rag.retrievedChunks.length,
         kbBreakdown: rag.kbBreakdown,
         promptLength: rag.prompt.length,
       } : null,
-      llmContext,   // 真实 LLM 调用时用这个
-      usage,
-      note: 'RAG 上下文已准备, 真实 LLM 调用留后续接入 (claude-agent-sdk 集成)',
+      llm: llmResult ? {
+        model: llmResult.model,
+        provider: llmResult.provider,
+        durationMs: llmResult.durationMs,
+        usage: llmResult.usage,
+      } : null,
+      llmError,
     },
   });
 }
