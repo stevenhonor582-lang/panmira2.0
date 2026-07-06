@@ -727,5 +727,10 @@
     "revoke": "撤销",
     "revokeConfirm": "确定撤销这个客户端?",
     "empty": "暂无 OAuth 客户端"
+  },
+  "permissions": {
+    "title": "权限配置",
+    "subtitle": "4 类角色 × 24 个 scope 的授权矩阵",
+    "scopeCol": "Scope"
   }
 }
