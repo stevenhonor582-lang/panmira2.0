@@ -44,10 +44,10 @@ export async function recordUsage(params: RecordUsageParams): Promise<void> {
   }
   try {
     await pool.query(
-      `INSERT INTO usage_reports (id, tenant_id, date, dimension, dimension_key, count, updated_at)
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, now())
+      `INSERT INTO usage_reports (id, tenant_id, date, dimension, dimension_key, count, cost_usd, metadata)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, 0, '{}'::jsonb)
        ON CONFLICT (tenant_id, date, dimension, dimension_key)
-       DO UPDATE SET count = usage_reports.count + EXCLUDED.count, updated_at = now()`,
+       DO UPDATE SET count = usage_reports.count + EXCLUDED.count`,
       [params.tenantId, date, params.dimension, params.dimensionKey, count],
     );
   } catch (err) {

@@ -99,7 +99,8 @@ export async function handleReportsRoutes(
   url: string,
 ): Promise<boolean> {
   if (method !== 'GET') return false;
-  const m = url.match(/^\/api\/v2\/admin\/reports\/([a-z_]+)$/);
+  const pathOnly = url.split('?')[0]!;
+  const m = pathOnly.match(/^\/api\/v2\/admin\/reports\/([a-z_]+)$/);
   if (m && isValidDimension(m[1]!)) {
     await queryReports(req, res, m[1] as Dimension);
     return true;
