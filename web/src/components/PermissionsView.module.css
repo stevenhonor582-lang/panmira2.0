@@ -1,0 +1,18 @@
+.root { padding: 1rem 0; }
+.header { margin-bottom: 1.5rem; }
+.title { font-size: 1.4rem; font-weight: 700; margin: 0 0 0.25rem 0; }
+.subtitle { color: var(--text-tertiary, #888); font-size: 0.85rem; margin: 0; }
+.matrixWrap { overflow-x: auto; background: var(--bg-elevated, #0c0c11); border: 1px solid var(--border, rgba(255, 255, 255, 0.06)); border-radius: 12px; }
+.matrix { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.matrix th, .matrix td { padding: 0.625rem 0.875rem; text-align: center; border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.04)); border-right: 1px solid var(--border, rgba(255, 255, 255, 0.04)); }
+.matrix th { background: rgba(255, 255, 255, 0.02); font-weight: 600; color: var(--text-tertiary, #888); font-size: 0.78rem; text-transform: uppercase; }
+.scopeCol { text-align: left !important; min-width: 280px; }
+.roleCol { min-width: 110px; }
+.scopeCell { text-align: left !important; }
+.scopeName { font-family: ui-monospace, monospace; color: #818cf8; font-size: 0.85rem; }
+.scopeDesc { color: var(--text-tertiary, #888); font-size: 0.75rem; margin-top: 0.2rem; }
+.checkCell { font-size: 1rem; }
+.check { color: #4ade80; font-weight: 700; }
+.dash { color: var(--text-tertiary, #555); }
+.matrix tbody tr:last-child td { border-bottom: none; }
+.matrix th:last-child, .matrix td:last-child { border-right: none; }

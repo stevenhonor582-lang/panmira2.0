@@ -16,6 +16,7 @@ const KnowledgeView = lazy(() => import('./components/KnowledgeView').then(m => 
 const AgentsView = lazy(() => import('./components/AgentsView').then(m => ({ default: m.AgentsView })));
 const ResourcesView = lazy(() => import('./components/ResourcesView').then(m => ({ default: m.ResourcesView })));
 const ChannelsView = lazy(() => import('./components/ChannelsView').then(m => ({ default: m.ChannelsView })));
+const PermissionsView = lazy(() => import('./components/PermissionsView').then(m => ({ default: m.PermissionsView })));
 const OAuthClientsView = lazy(() => import('./components/OAuthClientsView').then(m => ({ default: m.OAuthClientsView })));
 const ReportsView = lazy(() => import('./components/ReportsView').then(m => ({ default: m.ReportsView })));
 const CostView = lazy(() => import('./components/CostView').then(m => ({ default: m.CostView })));
@@ -76,7 +77,7 @@ export function App() {
         <Route path="/app/resources" element={<AdminLayout><ResourcesView /></AdminLayout>} />
         <Route path="/app/agents" element={<AdminLayout><AgentsView /></AdminLayout>} />
         <Route path="/app/channels" element={<AdminLayout><ChannelsView /></AdminLayout>} />
-        <Route path="/app/permissions" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/permissions" element={<AdminLayout><PermissionsView /></AdminLayout>} />
         <Route path="/app/status" element={<AdminLayout><StatusView /></AdminLayout>} />
         <Route path="/app/alerts" element={<AdminLayout><AlertsView /></AdminLayout>} />
         <Route path="/app/reports" element={<AdminLayout><ReportsView /></AdminLayout>} />
