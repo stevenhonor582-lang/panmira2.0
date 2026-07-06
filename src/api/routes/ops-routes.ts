@@ -24,12 +24,12 @@ export async function handleOpsRoutes(
     try {
       const res2 = await pool.query(`
         SELECT date, dimension, SUM(cost_usd)::numeric AS cost
-        FROM mv_usage_reports_daily
-        WHERE date >= (CURRENT_DATE - INTERVAL '30 days')::date
+        FROM usage_reports
+        WHERE date >= TO_CHAR(CURRENT_DATE - INTERVAL '30 days', 'YYYY-MM-DD')
         GROUP BY date, dimension
         ORDER BY date DESC
       `);
-      const total = await pool.query(`SELECT COALESCE(SUM(cost_usd), 0)::numeric AS total FROM mv_usage_reports_daily WHERE date >= (CURRENT_DATE - INTERVAL '30 days')::date`);
+      const total = await pool.query(`SELECT COALESCE(SUM(cost_usd), 0)::numeric AS total FROM usage_reports WHERE date >= TO_CHAR(CURRENT_DATE - INTERVAL '30 days', 'YYYY-MM-DD')`);
       jsonResponse(res, 200, {
         totalLast30d: Number(total.rows[0].total),
         breakdown: res2.rows,

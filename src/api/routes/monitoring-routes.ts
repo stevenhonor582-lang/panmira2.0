@@ -35,11 +35,11 @@ export async function handleMonitoringRoutes(
       const usageRes = await pool.query(`
         SELECT dimension, SUM(count)::bigint AS count
         FROM mv_usage_reports_daily
-        WHERE date = CURRENT_DATE GROUP BY dimension
+        WHERE date = TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD') GROUP BY dimension
       `);
       const errorsRes = await pool.query(`
         SELECT count(*)::int AS err_count FROM activity_events
-        WHERE type IN ('task_failed', 'error') AND created_at > now() - INTERVAL '24 hours'
+        WHERE type IN ('task_failed', 'error') AND timestamp > (EXTRACT(EPOCH FROM now() - INTERVAL '24 hours') * 1000)::bigint
       `);
       const c = countsRes.rows[0];
       const usage: Record<string, number> = {};
@@ -64,10 +64,10 @@ export async function handleMonitoringRoutes(
     }
     try {
       const errorsRes = await pool.query(`
-        SELECT id, type, bot_name, message, created_at
+        SELECT id, type, bot_name, error_message, timestamp AS created_at
         FROM activity_events
         WHERE type IN ('task_failed', 'error')
-        ORDER BY created_at DESC LIMIT 50
+        ORDER BY timestamp DESC LIMIT 50
       `);
       jsonResponse(res, 200, { alerts: errorsRes.rows });
       return true;
@@ -85,8 +85,8 @@ export async function handleMonitoringRoutes(
     }
     const taskId = decodeURIComponent(diagMatch[1]);
     try {
-      const sessionRes = await pool.query(`SELECT * FROM chat_sessions WHERE id::text = $1 OR name = $1 LIMIT 1`, [taskId]);
-      const eventsRes = await pool.query(`SELECT * FROM activity_events WHERE id::text = $1 OR task_id::text = $1 ORDER BY created_at LIMIT 100`, [taskId]);
+      const sessionRes = await pool.query(`SELECT * FROM chat_sessions WHERE id::text = $1 OR bot_name = $1 ORDER BY last_used DESC LIMIT 1`, [taskId]);
+      const eventsRes = await pool.query(`SELECT * FROM activity_events WHERE id::text = $1 OR chat_id::text = $1 ORDER BY timestamp DESC LIMIT 100`, [taskId]);
       jsonResponse(res, 200, {
         taskId,
         session: sessionRes.rows[0] || null,
