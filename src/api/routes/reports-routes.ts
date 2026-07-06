@@ -54,10 +54,18 @@ async function queryReports(
   }
 
   let rows: any[];
+  // 优先用物化视图 (mv_usage_reports_daily),fallback 原表
+  let mvAvailable = true;
+  try {
+    await pool.query('SELECT 1 FROM mv_usage_reports_daily LIMIT 1');
+  } catch {
+    mvAvailable = false;
+  }
+  const src = mvAvailable ? 'mv_usage_reports_daily' : 'usage_reports';
   if (groupBy === 'day') {
     const result = await pool.query(
       `SELECT date, SUM(count)::bigint AS count
-       FROM usage_reports
+       FROM ${src}
        WHERE tenant_id = $1 AND dimension = $2 AND date BETWEEN $3 AND $4
        GROUP BY date
        ORDER BY date ASC`,
@@ -67,7 +75,7 @@ async function queryReports(
   } else {
     const result = await pool.query(
       `SELECT dimension_key AS dimensionKey, SUM(count)::bigint AS count
-       FROM usage_reports
+       FROM ${src}
        WHERE tenant_id = $1 AND dimension = $2 AND date BETWEEN $3 AND $4
        GROUP BY dimension_key
        ORDER BY count DESC
