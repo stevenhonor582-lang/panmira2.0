@@ -684,5 +684,34 @@
     "found": "找到",
     "session": "Session",
     "events": "Events"
+  },
+  "reports": {
+    "title": "资源报表",
+    "token": "Token",
+    "skill": "Skill",
+    "mcp": "MCP",
+    "channel": "Channel",
+    "knowledge": "Knowledge",
+    "exportCsv": "导出 CSV",
+    "colDate": "日期",
+    "colCount": "数量",
+    "noData": "暂无数据"
+  },
+  "cost": {
+    "title": "成本分析",
+    "total30d": "近 30 天总成本",
+    "colDate": "日期",
+    "colDimension": "维度",
+    "colCost": "成本",
+    "noData": "暂无成本数据"
+  },
+  "audit": {
+    "title": "审计日志",
+    "entries": "条记录",
+    "colTime": "时间",
+    "colActor": "操作者",
+    "colAction": "动作",
+    "colTarget": "目标",
+    "empty": "暂无审计日志"
   }
 }
