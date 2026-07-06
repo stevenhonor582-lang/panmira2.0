@@ -601,5 +601,26 @@
     "empty": "Select a knowledge base on the left",
     "loadFailed": "Load failed",
     "loading": "Loading..."
+  },
+  "agents": {
+    "title": "Agents",
+    "newAgent": "New Agent",
+    "newNamePrompt": "Agent name?",
+    "colName": "Name",
+    "colRole": "Role",
+    "colStatus": "Status",
+    "colActions": "Actions",
+    "active": "active",
+    "disabled": "disabled",
+    "detail": "Detail",
+    "delete": "Delete",
+    "deleteConfirm": "Delete this agent?",
+    "deleteFailed": "Delete failed",
+    "createFailed": "Create failed",
+    "id": "ID",
+    "systemPrompt": "System Prompt",
+    "description": "Description",
+    "loadFailed": "Load failed",
+    "loading": "Loading..."
   }
 }
