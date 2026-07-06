@@ -38,6 +38,7 @@ import { handleReportsRoutes } from './routes/reports-routes.js';
 import { handleTenantQuotaRoutes } from './routes/tenant-quota-routes.js';
 import { handleMaintenanceRoutes } from './routes/maintenance-routes.js';
 import { handleChannelUsageRoutes } from './routes/channel-usage-routes.js';
+import { handleEmbeddingJobsRoutes } from './routes/embedding-jobs-routes.js';
 import { handleReportsExportRoutes } from './routes/reports-export-routes.js';
 import { verifyAccessToken } from './middleware.js';
 import { metrics as _metrics } from '../utils/metrics.js';
@@ -728,6 +729,13 @@ ${content}
       if (url.startsWith('/api/v2/admin/channels/')) {
         if (await handleChannelUsageRoutes(req, res, method, url)) return;
         jsonResponse(res, 404, { error: 'Channel route not found' });
+        return;
+      }
+
+      // Plan F: Embedding jobs status
+      if (url.startsWith('/api/v2/admin/embedding-jobs/')) {
+        if (await handleEmbeddingJobsRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Embedding job route not found' });
         return;
       }
 

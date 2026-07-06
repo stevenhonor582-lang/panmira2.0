@@ -24,6 +24,7 @@ export { handleReportsRoutes } from './reports-routes.js';
 export { handleTenantQuotaRoutes } from './tenant-quota-routes.js';
 export { handleMaintenanceRoutes } from './maintenance-routes.js';
 export { handleChannelUsageRoutes } from './channel-usage-routes.js';
+export { handleEmbeddingJobsRoutes } from './embedding-jobs-routes.js';
 export { handleReportsExportRoutes } from './reports-export-routes.js';
 export { jsonResponse, readBody, parseJsonBody } from './helpers.js';
 export type { RouteContext, RouteHandler } from './types.js';
