@@ -556,5 +556,28 @@
     "newAgent": "新建 Agent",
     "uploadDoc": "上传文档",
     "connectChannel": "接入 Channel"
+  },
+  "models": {
+    "title": "模型池",
+    "newModel": "新建 Provider",
+    "newModelHint": "新建 Provider UI 在 Plan H3a 演示版(P0 简化)",
+    "colName": "名称",
+    "colType": "类型",
+    "colModel": "模型",
+    "colStatus": "状态",
+    "colActions": "操作",
+    "typeLlm": "LLM",
+    "typeEmbedding": "Embedding",
+    "default": "默认",
+    "active": "启用",
+    "disabled": "禁用",
+    "enable": "启用",
+    "disable": "禁用",
+    "test": "测试",
+    "testOk": "连通",
+    "testFailed": "失败",
+    "toggleFailed": "切换失败",
+    "loadFailed": "加载失败",
+    "loading": "加载中..."
   }
 }

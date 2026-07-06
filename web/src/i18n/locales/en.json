@@ -556,5 +556,28 @@
     "newAgent": "New Agent",
     "uploadDoc": "Upload Document",
     "connectChannel": "Connect Channel"
+  },
+  "models": {
+    "title": "Models Pool",
+    "newModel": "New Provider",
+    "newModelHint": "New provider UI is a Plan H3a demo (P0 simplified)",
+    "colName": "Name",
+    "colType": "Type",
+    "colModel": "Model",
+    "colStatus": "Status",
+    "colActions": "Actions",
+    "typeLlm": "LLM",
+    "typeEmbedding": "Embedding",
+    "default": "default",
+    "active": "active",
+    "disabled": "disabled",
+    "enable": "Enable",
+    "disable": "Disable",
+    "test": "Test",
+    "testOk": "OK",
+    "testFailed": "Failed",
+    "toggleFailed": "Toggle failed",
+    "loadFailed": "Load failed",
+    "loading": "Loading..."
   }
 }
