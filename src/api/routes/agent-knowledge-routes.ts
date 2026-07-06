@@ -11,13 +11,14 @@ import { eq, and } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { agentKnowledgeRefs, knowledgeBases } from '../../db/schema.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
-import { requireBearer, requireScopes } from '../oauth-middleware.js';
+import { requireBearer, requireScopes, requireAnyScope } from '../oauth-middleware.js';
 
 async function listKnowledgeRefs(req: http.IncomingMessage, res: http.ServerResponse, agentId: string) {
   const ctx = await requireBearer(req, res);
   if (!ctx) return;
-  const check = requireScopes(ctx, ['agent:read', 'agent:edit', 'agent:admin']);
-  if (!check.ok) { jsonResponse(res, 403, { error: 'insufficient_scope', missing: check.missing }); return; }
+  if (!requireAnyScope(ctx, ['agent:read', 'agent:edit', 'agent:admin'])) {
+    jsonResponse(res, 403, { error: 'insufficient_scope', required: 'agent:read/edit/admin' }); return;
+  }
 
   const rows = await db.select().from(agentKnowledgeRefs).where(eq(agentKnowledgeRefs.agentId, agentId));
   jsonResponse(res, 200, { success: true, data: rows });
@@ -26,8 +27,9 @@ async function listKnowledgeRefs(req: http.IncomingMessage, res: http.ServerResp
 async function createKnowledgeRef(req: http.IncomingMessage, res: http.ServerResponse, agentId: string) {
   const ctx = await requireBearer(req, res);
   if (!ctx) return;
-  const check = requireScopes(ctx, ['agent:edit', 'agent:admin']);
-  if (!check.ok) { jsonResponse(res, 403, { error: 'insufficient_scope', missing: check.missing }); return; }
+  if (!requireAnyScope(ctx, ['agent:edit', 'agent:admin'])) {
+    jsonResponse(res, 403, { error: 'insufficient_scope', required: 'agent:edit OR agent:admin' }); return;
+  }
 
   const body = (await parseJsonBody(req)) as Record<string, unknown>;
   const { kbId, topK, minScore } = body;
@@ -57,8 +59,9 @@ async function createKnowledgeRef(req: http.IncomingMessage, res: http.ServerRes
 async function deleteKnowledgeRef(req: http.IncomingMessage, res: http.ServerResponse, agentId: string, refId: string) {
   const ctx = await requireBearer(req, res);
   if (!ctx) return;
-  const check = requireScopes(ctx, ['agent:edit', 'agent:admin']);
-  if (!check.ok) { jsonResponse(res, 403, { error: 'insufficient_scope', missing: check.missing }); return; }
+  if (!requireAnyScope(ctx, ['agent:edit', 'agent:admin'])) {
+    jsonResponse(res, 403, { error: 'insufficient_scope', required: 'agent:edit OR agent:admin' }); return;
+  }
 
   const [ref] = await db.select().from(agentKnowledgeRefs)
     .where(and(eq(agentKnowledgeRefs.id, refId), eq(agentKnowledgeRefs.agentId, agentId)))

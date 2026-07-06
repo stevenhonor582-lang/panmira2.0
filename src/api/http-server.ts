@@ -266,7 +266,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
       !url.startsWith('/oauth') &&
       url !== '/.well-known/oauth-authorization-server' &&
       !url.startsWith('/api/reports') &&
-      !url.startsWith('/api/v2/admin')
+      !url.startsWith('/api/v2/admin') && !url.startsWith('/api/v2/agents')
     ) {
       const auth = req.headers.authorization;
       const urlToken = url.includes('token=')

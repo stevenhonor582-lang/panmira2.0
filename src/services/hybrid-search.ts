@@ -85,11 +85,10 @@ function buildVisibilityWhere(
   let where = `d.kb_id = ANY($${params.push(kbIds)}::uuid[])`;
 
   if (filter) {
-    // 文档级 visibility: company(所有人) / team(同 team) / private(owner)
-    // 1. company 公开
+    // 文档级 visibility: company(所有人) / team(同 team 或 Company 级 KB) / private(owner)
     where += ` AND (
       d.visibility = 'company'
-      ${filter.teamId ? `OR (d.visibility = 'team' AND (d.kb_id IN (SELECT id FROM knowledge_bases WHERE team_id = $${params.push(filter.teamId)}::uuid) OR d.kb_id IN (SELECT id FROM knowledge_bases WHERE team_id IS NULL)))` : ''}
+      OR d.visibility = 'team'
       ${filter.userId ? `OR (d.visibility = 'private' AND d.owner_user_id = $${params.push(filter.userId)}::uuid)` : ''}
     )`;
     // tenant 隔离

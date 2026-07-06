@@ -22,7 +22,7 @@ import { chunkText, makeChunkId } from '../../services/chunker.js';
 import { embedText } from '../../services/embedder.js';
 import { hybridSearch } from '../../services/hybrid-search.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
-import { requireBearer, requireScopes } from '../oauth-middleware.js';
+import { requireBearer, requireScopes, requireAnyScope } from '../oauth-middleware.js';
 
 const KB_TYPES = ['industry', 'product', 'competitor', 'solution', 'pricing', 'company', 'department', 'personal'] as const;
 const VISIBILITIES = ['private', 'team', 'company'] as const;
@@ -57,8 +57,9 @@ function canAccessKb(ctx: { tenantId: string; userId: string | null; teamId?: st
 async function listKnowledgeBases(req: http.IncomingMessage, res: http.ServerResponse) {
   const ctx = await requireBearer(req, res);
   if (!ctx) return;
-  const check = requireScopes(ctx, ['knowledge:read', 'knowledge:admin']);
-  if (!check.ok) { jsonResponse(res, 403, { error: 'insufficient_scope', missing: check.missing }); return; }
+  if (!requireAnyScope(ctx, ['knowledge:read', 'knowledge:admin'])) {
+    jsonResponse(res, 403, { error: 'insufficient_scope', required: 'knowledge:read OR knowledge:admin' }); return;
+  }
 
   const url = req.url || '';
   const qp = new URL(url, 'http://localhost').searchParams;
@@ -112,8 +113,9 @@ async function createKnowledgeBase(req: http.IncomingMessage, res: http.ServerRe
 async function getKnowledgeBase(req: http.IncomingMessage, res: http.ServerResponse, id: string) {
   const ctx = await requireBearer(req, res);
   if (!ctx) return;
-  const check = requireScopes(ctx, ['knowledge:read', 'knowledge:admin']);
-  if (!check.ok) { jsonResponse(res, 403, { error: 'insufficient_scope', missing: check.missing }); return; }
+  if (!requireAnyScope(ctx, ['knowledge:read', 'knowledge:admin'])) {
+    jsonResponse(res, 403, { error: 'insufficient_scope', required: 'knowledge:read OR knowledge:admin' }); return;
+  }
 
   const [kb] = await db.select().from(knowledgeBases).where(eq(knowledgeBases.id, id)).limit(1);
   if (!kb) { jsonResponse(res, 404, { error: 'KB not found' }); return; }
@@ -200,8 +202,9 @@ async function triggerIndexing(req: http.IncomingMessage, res: http.ServerRespon
 async function listKbDocuments(req: http.IncomingMessage, res: http.ServerResponse, kbId: string) {
   const ctx = await requireBearer(req, res);
   if (!ctx) return;
-  const check = requireScopes(ctx, ['knowledge:read', 'knowledge:admin']);
-  if (!check.ok) { jsonResponse(res, 403, { error: 'insufficient_scope', missing: check.missing }); return; }
+  if (!requireAnyScope(ctx, ['knowledge:read', 'knowledge:admin'])) {
+    jsonResponse(res, 403, { error: 'insufficient_scope', required: 'knowledge:read OR knowledge:admin' }); return;
+  }
 
   const [kb] = await db.select().from(knowledgeBases).where(eq(knowledgeBases.id, kbId)).limit(1);
   if (!kb) { jsonResponse(res, 404, { error: 'KB not found' }); return; }
@@ -209,7 +212,7 @@ async function listKbDocuments(req: http.IncomingMessage, res: http.ServerRespon
 
   const rows = await db.select().from(documents)
     .where(eq(documents.kbId, kbId))
-    .orderBy(desc(documents.version), desc(documents.updatedAt));
+    .orderBy(desc(documents.kbVersion), desc(documents.updatedAt));
   jsonResponse(res, 200, { success: true, data: rows });
 }
 
@@ -258,15 +261,15 @@ async function uploadDocumentToKb(req: http.IncomingMessage, res: http.ServerRes
     id: docId,
     title: String(title),
     content: String(content),
-    folderId: 'kb-root',
+    folderId: 'root',
     path: `/kb/${kbId}/${docId}`,
-    createdBy: ctx.userId ? String(ctx.userId) : '',
+    createdBy: ctx.userId ? String(ctx.userId) : null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     kbId,
     kbType: kb.type,
     visibility: kb.visibility,
-    version: 1,
+    kbVersion: 1,
     ownerUserId: kb.ownerUserId || null,
   });
 
@@ -317,10 +320,10 @@ async function createDocumentVersion(req: http.IncomingMessage, res: http.Server
     if (kb && !canAccessKb(ctx, kb)) { jsonResponse(res, 403, { error: 'forbidden' }); return; }
   }
 
-  const newVersion = (doc.version || 1) + 1;
+  const newVersion = (doc.kbVersion || 1) + 1;
   await db.update(documents).set({
     content: String(content),
-    version: newVersion,
+    kbVersion: newVersion,
     updatedAt: new Date().toISOString(),
   }).where(eq(documents.id, docId));
 
@@ -348,7 +351,7 @@ async function createDocumentVersion(req: http.IncomingMessage, res: http.Server
     });
   }
 
-  jsonResponse(res, 201, { success: true, data: { docId, version: newVersion, chunks: chunks.length } });
+  jsonResponse(res, 201, { success: true, data: { docId, kbVersion: newVersion, chunks: chunks.length } });
 }
 
 
@@ -356,8 +359,9 @@ async function createDocumentVersion(req: http.IncomingMessage, res: http.Server
 async function searchKb(req: http.IncomingMessage, res: http.ServerResponse, kbId: string) {
   const ctx = await requireBearer(req, res);
   if (!ctx) return;
-  const check = requireScopes(ctx, ['knowledge:read', 'knowledge:admin']);
-  if (!check.ok) { jsonResponse(res, 403, { error: 'insufficient_scope', missing: check.missing }); return; }
+  if (!requireAnyScope(ctx, ['knowledge:read', 'knowledge:admin'])) {
+    jsonResponse(res, 403, { error: 'insufficient_scope', required: 'knowledge:read OR knowledge:admin' }); return;
+  }
 
   const [kb] = await db.select().from(knowledgeBases).where(eq(knowledgeBases.id, kbId)).limit(1);
   if (!kb) { jsonResponse(res, 404, { error: 'KB not found' }); return; }

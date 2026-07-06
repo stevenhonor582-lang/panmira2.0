@@ -14,14 +14,15 @@ import { eq, and } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { agents, agentKnowledgeRefs } from '../../db/schema.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
-import { requireBearer, requireScopes } from '../oauth-middleware.js';
+import { requireBearer, requireScopes, requireAnyScope } from '../oauth-middleware.js';
 import { buildRagContext, type RagResult } from '../../services/rag-service.js';
 
 async function runAgent(req: http.IncomingMessage, res: http.ServerResponse, agentId: string) {
   const ctx = await requireBearer(req, res);
   if (!ctx) return;
-  const check = requireScopes(ctx, ['agent:edit', 'agent:admin']);
-  if (!check.ok) { jsonResponse(res, 403, { error: 'insufficient_scope', missing: check.missing }); return; }
+  if (!requireAnyScope(ctx, ['agent:edit', 'agent:admin'])) {
+    jsonResponse(res, 403, { error: 'insufficient_scope', required: 'agent:edit OR agent:admin' }); return;
+  }
 
   const [agent] = await db.select().from(agents).where(eq(agents.id, agentId)).limit(1);
   if (!agent) { jsonResponse(res, 404, { error: 'agent not found' }); return; }
