@@ -16,6 +16,9 @@ const KnowledgeView = lazy(() => import('./components/KnowledgeView').then(m => 
 const AgentsView = lazy(() => import('./components/AgentsView').then(m => ({ default: m.AgentsView })));
 const ResourcesView = lazy(() => import('./components/ResourcesView').then(m => ({ default: m.ResourcesView })));
 const ChannelsView = lazy(() => import('./components/ChannelsView').then(m => ({ default: m.ChannelsView })));
+const StatusView = lazy(() => import('./components/StatusView').then(m => ({ default: m.StatusView })));
+const AlertsView = lazy(() => import('./components/AlertsView').then(m => ({ default: m.AlertsView })));
+const DiagnoseView = lazy(() => import('./components/DiagnoseView').then(m => ({ default: m.DiagnoseView })));
 const TeamWorkspace = lazy(() => import('./components/team').then(m => ({ default: m.TeamWorkspace })));
 
 const IDLE_MS = 15 * 60 * 1000;
@@ -70,8 +73,8 @@ export function App() {
         <Route path="/app/agents" element={<AdminLayout><AgentsView /></AdminLayout>} />
         <Route path="/app/channels" element={<AdminLayout><ChannelsView /></AdminLayout>} />
         <Route path="/app/permissions" element={<AdminLayout><DashboardView /></AdminLayout>} />
-        <Route path="/app/status" element={<AdminLayout><DashboardView /></AdminLayout>} />
-        <Route path="/app/alerts" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/status" element={<AdminLayout><StatusView /></AdminLayout>} />
+        <Route path="/app/alerts" element={<AdminLayout><AlertsView /></AdminLayout>} />
         <Route path="/app/reports" element={<AdminLayout><DashboardView /></AdminLayout>} />
         <Route path="/app/cost" element={<AdminLayout><DashboardView /></AdminLayout>} />
         <Route path="/app/oauth-clients" element={<AdminLayout><DashboardView /></AdminLayout>} />

@@ -654,5 +654,35 @@
     "active": "启用",
     "disabled": "禁用",
     "loading": "加载中..."
+  },
+  "status": {
+    "title": "实时状态",
+    "loading": "加载中...",
+    "errors24h": "近 24h 错误",
+    "llm": "LLM",
+    "embedding": "Embedding",
+    "mcp": "MCP",
+    "kb": "知识库",
+    "agent": "Agent",
+    "oauth": "OAuth 客户端",
+    "usageToday": "今日用量",
+    "noUsageToday": "今日无用量"
+  },
+  "alerts": {
+    "title": "预警中心",
+    "total": "条预警",
+    "empty": "暂无预警",
+    "colType": "类型",
+    "colBot": "Bot",
+    "colMessage": "消息",
+    "colTime": "时间"
+  },
+  "diagnose": {
+    "title": "异常诊断",
+    "taskIdPlaceholder": "输入 task / session / event ID...",
+    "search": "查询",
+    "found": "找到",
+    "session": "Session",
+    "events": "Events"
   }
 }
