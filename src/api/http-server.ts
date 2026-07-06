@@ -31,6 +31,7 @@ import { handleAuthRoutes } from './routes/auth-routes.js';
 import { handleOAuthRoutes } from './routes/oauth-routes.js';
 import { handleResourceRoutes } from './routes/resource-routes.js';
 import { handleKnowledgeBaseRoutes } from './routes/knowledge-base-routes.js';
+import { handleAgentKnowledgeRoutes } from './routes/agent-knowledge-routes.js';
 import { verifyAccessToken } from './middleware.js';
 import { metrics as _metrics } from '../utils/metrics.js';
 import type { SessionRegistry } from '../session/session-registry.js';
@@ -681,10 +682,16 @@ ${content}
 
       // Plan B-2: Knowledge Base CRUD
       if (url.startsWith('/api/v2/admin/knowledge-bases') ||
-          url.startsWith('/api/v2/admin/agents/') && url.includes('knowledge-refs') ||
           url.startsWith('/api/v2/admin/documents/')) {
         if (await handleKnowledgeBaseRoutes(req, res, method, url)) return;
         jsonResponse(res, 404, { error: 'KB route not found' });
+        return;
+      }
+
+      // Plan B-2: Agent KB refs (业务端, Bearer)
+      if (url.startsWith('/api/v2/agents/') && url.includes('knowledge-refs')) {
+        if (await handleAgentKnowledgeRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Agent knowledge-refs route not found' });
         return;
       }
 

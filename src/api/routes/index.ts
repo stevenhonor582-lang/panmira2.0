@@ -17,5 +17,6 @@ export { handleWorkspaceRoutes } from './workspace-routes.js';
 export { handleTemplateRoutes } from "./template-routes.js";
 export { handleKnowledgeRoutes } from './knowledge-routes.js';
 export { handleKnowledgeBaseRoutes } from './knowledge-base-routes.js';
+export { handleAgentKnowledgeRoutes } from './agent-knowledge-routes.js';
 export { jsonResponse, readBody, parseJsonBody } from './helpers.js';
 export type { RouteContext, RouteHandler } from './types.js';
