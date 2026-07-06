@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
+import { RefreshCw } from "lucide-react";
+import { usePolling } from "@/lib/use-polling";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -33,22 +35,21 @@ function formatTs(ms: string | number): string {
 }
 
 export default function StatusPage() {
-  const [status, setStatus] = useState<SystemStatus | null>(null);
-  const [alerts, setAlerts] = useState<AlertItem[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    Promise.all([
+  const fetcher = async () => {
+    const [s, a] = await Promise.all([
       api<SystemStatus>("/api/v2/admin/status"),
       api<{ alerts: AlertItem[] }>("/api/v2/admin/alerts"),
-    ])
-      .then(([s, a]) => {
-        setStatus(s);
-        setAlerts(a.alerts ?? []);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+    ]);
+    return { status: s, alerts: a.alerts ?? [] };
+  };
+
+  const { data, loading, refresh, nextIn } = usePolling({
+    fetcher,
+    intervalMs: 30000,
+  });
+
+  const status = data?.status ?? null;
+  const alerts = data?.alerts ?? [];
 
   // Top bots by error count
   const botSummary = useMemo<BotAlertSummary[]>(() => {
@@ -84,16 +85,28 @@ export default function StatusPage() {
 
   return (
     <div className="space-y-5">
-      <header className="space-y-1">
-        <h2 className="text-xl font-semibold tracking-tight">实时状态</h2>
-        <p className="text-sm text-muted-foreground">
-          系统健康 + 资源使用 + 最近告警
-          {status && (
-            <span className="ml-2 text-[11px] text-muted-foreground">
-              更新于 {new Date(status.timestamp).toLocaleTimeString("zh-CN")}
-            </span>
-          )}
-        </p>
+      <header className="flex items-center justify-between gap-3">
+        <div className="space-y-1">
+          <h2 className="text-xl font-semibold tracking-tight">实时状态</h2>
+          <p className="text-sm text-muted-foreground">
+            系统健康 + 资源使用 + 最近告警
+            {status && (
+              <span className="ml-2 text-[11px] text-muted-foreground">
+                更新于 {new Date(status.timestamp).toLocaleTimeString("zh-CN")}
+              </span>
+            )}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="tabular-nums">下次 {nextIn}s</span>
+          <button
+            onClick={refresh}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md hover:bg-muted transition-colors"
+            aria-label="立即刷新"
+          >
+            <RefreshCw className="size-3.5" />
+          </button>
+        </div>
       </header>
 
       {loading ? (

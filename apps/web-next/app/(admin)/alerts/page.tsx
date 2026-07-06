@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Filter, X } from "lucide-react";
+import { useMemo, useState } from "react";
+import { AlertTriangle, Filter, X, RefreshCw } from "lucide-react";
+import { usePolling } from "@/lib/use-polling";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,25 +25,26 @@ function formatTs(ms: string | number): string {
 }
 
 export default function AlertsPage() {
-  const [alerts, setAlerts] = useState<AlertItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [botFilter, setBotFilter] = useState<string>("__all__") as [string, (v: string | null) => void];
   const [typeFilter, setTypeFilter] = useState<string>("__all__") as [string, (v: string | null) => void];
 
-  useEffect(() => {
-    api<{ alerts: AlertItem[] }>("/api/v2/admin/alerts")
-      .then((r) => setAlerts(r.alerts ?? []))
-      .catch(() => setAlerts([]))
-      .finally(() => setLoading(false));
-  }, []);
+  const { data: alerts = [], loading, refresh, nextIn } = usePolling<AlertItem[]>({
+    fetcher: async () => {
+      const r = await api<{ alerts: AlertItem[] }>("/api/v2/admin/alerts");
+      return r.alerts ?? [];
+    },
+    intervalMs: 60000,
+  });
+
+
 
   const bots = useMemo(() => {
-    const s = new Set(alerts.map((a) => a.bot_name));
+    const s = new Set((alerts ?? []).map((a) => a.bot_name));
     return Array.from(s).sort();
   }, [alerts]);
 
   const filtered = useMemo(() => {
-    return alerts.filter((a) => {
+    return (alerts ?? []).filter((a) => {
       if (botFilter !== "__all__" && a.bot_name !== botFilter) return false;
       if (typeFilter !== "__all__" && a.type !== typeFilter) return false;
       return true;
@@ -53,14 +55,26 @@ export default function AlertsPage() {
 
   return (
     <div className="space-y-5">
-      <header className="space-y-1">
-        <h2 className="text-xl font-semibold tracking-tight flex items-center gap-2">
-          <AlertTriangle className="size-5 text-rose-500" />
-          预警中心
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          task_failed + error 事件流 · {alerts.length} 条
-        </p>
+      <header className="flex items-center justify-between gap-3">
+        <div className="space-y-1">
+          <h2 className="text-xl font-semibold tracking-tight flex items-center gap-2">
+            <AlertTriangle className="size-5 text-rose-500" />
+            预警中心
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            task_failed + error 事件流 · {(alerts ?? []).length} 条
+          </p>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="tabular-nums">下次 {nextIn}s</span>
+          <button
+            onClick={refresh}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md hover:bg-muted transition-colors"
+            aria-label="立即刷新"
+          >
+            <RefreshCw className="size-3.5" />
+          </button>
+        </div>
       </header>
 
       {/* Filters */}
@@ -103,7 +117,7 @@ export default function AlertsPage() {
             清除过滤
           </Button>
           <p className="ml-auto text-xs text-muted-foreground self-end">
-            显示 {filtered.length} / {alerts.length}
+            显示 {filtered.length} / {(alerts ?? []).length}
           </p>
         </CardContent>
       </Card>
@@ -116,7 +130,7 @@ export default function AlertsPage() {
       ) : filtered.length === 0 ? (
         <Card>
           <CardContent className="p-12 text-center text-sm text-muted-foreground">
-            {alerts.length === 0 ? "暂无告警 — 系统正常运行" : "没有匹配的告警"}
+            {(alerts ?? []).length === 0 ? "暂无告警 — 系统正常运行" : "没有匹配的告警"}
           </CardContent>
         </Card>
       ) : (
