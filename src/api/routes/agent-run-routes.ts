@@ -63,11 +63,13 @@ async function runAgent(req: http.IncomingMessage, res: http.ServerResponse, age
     // Mock 模式: 不真调 LLM, 返 echo + 假 usage
     llmResult = {
       text: `[MOCK] response for: ${query}`,
+      toolUses: [],
+      stopReason: 'end_turn',
       usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
       model: 'mock',
       provider: 'mock',
       durationMs: 0,
-    };
+    } as any;
   } else {
     // Real 模式: 调真 LLM (支持 tool_use 循环, 最多 1 跳防无限)
     try {

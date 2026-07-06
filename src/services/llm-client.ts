@@ -150,15 +150,11 @@ export async function callLlm(opts: LlmCallOptions): Promise<LlmCallResult> {
     throw new LlmCallError(`LLM error ${status}: ${errText.slice(0, 200)}`, status, provider.name);
   }
 
-  const data = await response.json() as {
-    content: Array<{ type: string; text?: string }>;
-    usage?: { input_tokens: number; output_tokens: number };
-    model?: string;
-  };
-  const text = data.content?.find(c => c.type === 'text')?.text || '';
+const data = await response.json() as any;
+  const text = data.content?.find((c: any) => c.type === 'text')?.text || '';
   const toolUses: LlmToolUse[] = (data.content || [])
-    .filter(c => c.type === 'tool_use')
-    .map(c => ({ id: (c as any).id, name: (c as any).name, input: (c as any).input }));
+    .filter((c: any) => c.type === 'tool_use')
+    .map((c: any) => ({ id: c.id, name: c.name, input: c.input }));
   const inputTokens = data.usage?.input_tokens || 0;
   const outputTokens = data.usage?.output_tokens || 0;
   return {
