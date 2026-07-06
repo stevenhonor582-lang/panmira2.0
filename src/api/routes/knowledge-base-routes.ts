@@ -35,7 +35,7 @@ function isValidVisibility(v: unknown): v is typeof VISIBILITIES[number] {
 }
 
 /** 检查 ctx 是否有权访问某 KB(visibility 规则) */
-function canAccessKb(ctx: { tenantId: string; userId?: string; teamId?: string }, kb: {
+function canAccessKb(ctx: { tenantId: string; userId: string | null; teamId?: string | undefined }, kb: {
   tenantId: string;
   visibility: string;
   ownerUserId: string | null;
@@ -374,7 +374,6 @@ async function searchKb(req: http.IncomingMessage, res: http.ServerResponse, kbI
     mode: (mode === 'vector' || mode === 'bm25' || mode === 'hybrid') ? mode : 'hybrid',
     visibilityFilter: {
       userId: ctx.userId || '',
-      teamId: ctx.teamId,
       tenantId: ctx.tenantId,
     },
   });

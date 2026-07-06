@@ -12,7 +12,6 @@ export interface RagOptions {
   userQuery: string;
   userId: string;
   tenantId: string;
-  teamId?: string;
   topK?: number;       // 默认 5
   mode?: SearchMode;  // 默认 hybrid
   minScore?: number;   // 过滤低分 chunk, 默认 0
@@ -91,7 +90,6 @@ export async function buildRagContext(opts: RagOptions): Promise<RagResult> {
     mode,
     visibilityFilter: {
       userId: opts.userId,
-      teamId: opts.teamId,
       tenantId: opts.tenantId,
     },
   });

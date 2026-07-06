@@ -32,6 +32,7 @@ import { handleOAuthRoutes } from './routes/oauth-routes.js';
 import { handleResourceRoutes } from './routes/resource-routes.js';
 import { handleKnowledgeBaseRoutes } from './routes/knowledge-base-routes.js';
 import { handleAgentKnowledgeRoutes } from './routes/agent-knowledge-routes.js';
+import { handleAgentRunRoutes } from './routes/agent-run-routes.js';
 import { verifyAccessToken } from './middleware.js';
 import { metrics as _metrics } from '../utils/metrics.js';
 import type { SessionRegistry } from '../session/session-registry.js';
@@ -689,9 +690,14 @@ ${content}
       }
 
       // Plan B-2: Agent KB refs (业务端, Bearer)
-      if (url.startsWith('/api/v2/agents/') && url.includes('knowledge-refs')) {
-        if (await handleAgentKnowledgeRoutes(req, res, method, url)) return;
-        jsonResponse(res, 404, { error: 'Agent knowledge-refs route not found' });
+      if (url.startsWith('/api/v2/agents/') && (url.includes('knowledge-refs') || url.endsWith('/run'))) {
+        // Try knowledge-refs first, then run
+        if (url.includes('knowledge-refs')) {
+          if (await handleAgentKnowledgeRoutes(req, res, method, url)) return;
+        } else if (url.endsWith('/run')) {
+          if (await handleAgentRunRoutes(req, res, method, url)) return;
+        }
+        jsonResponse(res, 404, { error: 'Agent route not found' });
         return;
       }
 
