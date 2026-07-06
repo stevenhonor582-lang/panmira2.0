@@ -20,6 +20,8 @@ import {
   ShieldCheck,
   Mic,
   Brain,
+  FolderOpen,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 
@@ -78,6 +80,10 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: "系统",
     items: [
+      { label: "Bots", href: "/settings/bots", icon: Bot },
+      { label: "Projects", href: "/settings/projects", icon: FolderOpen },
+      { label: "Coordinator", href: "/settings/coordinator", icon: Workflow },
+      { label: "Chain Editor", href: "/settings/chain-editor", icon: Activity },
       { label: "Memory", href: "/memory", icon: Brain },
       { label: "Voice", href: "/voice", icon: Mic },
       { label: "设置", href: "/settings", icon: Settings },
