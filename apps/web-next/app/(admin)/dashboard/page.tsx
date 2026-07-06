@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { api, ApiError } from "@/lib/api";
+import { useState } from "react";
+import { RefreshCw, Loader2 } from "lucide-react";
+import { api } from "@/lib/api";
+import { usePolling } from "@/lib/use-polling";
 import {
   Card,
   CardContent,
@@ -92,27 +94,33 @@ const chartConfig = {
 } satisfies ChartConfig;
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: stats, error, refresh, nextIn } = usePolling<DashboardStats>({
+    fetcher: () => api<DashboardStats>("/api/v2/admin/dashboard/stats"),
+    intervalMs: 60000,
+  });
 
-  useEffect(() => {
-    let alive = true;
-    api<DashboardStats>("/api/v2/admin/dashboard/stats")
-      .then((data) => alive && setStats(data))
-      .catch((err) => alive && setError(err instanceof Error ? err.message : "未知错误"));
-    return () => {
-      alive = false;
-    };
-  }, []);
+  const errorMsg = error instanceof Error ? error.message : null;
 
   return (
     <div className="space-y-5">
       {/* Header */}
-      <header className="space-y-1">
-        <h2 className="text-xl font-semibold tracking-tight">总览 Dashboard</h2>
-        <p className="text-sm text-muted-foreground">
-          数智资源总览 · 实时数据 · 每 60s 自动刷新
-        </p>
+      <header className="flex items-center justify-between gap-3">
+        <div className="space-y-1">
+          <h2 className="text-xl font-semibold tracking-tight">总览 Dashboard</h2>
+          <p className="text-sm text-muted-foreground">
+            数智资源总览 · 实时数据 · 每 60s 自动刷新
+          </p>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="tabular-nums">下次 {nextIn}s</span>
+          <button
+            onClick={refresh}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md hover:bg-muted transition-colors"
+            aria-label="立即刷新"
+          >
+            <RefreshCw className="size-3.5" />
+          </button>
+        </div>
       </header>
 
       {/* Status cards */}
@@ -159,9 +167,9 @@ export default function DashboardPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {error ? (
+          {errorMsg ? (
             <div className="h-72 grid place-items-center text-sm text-destructive">
-              加载失败:{error}
+              加载失败:{errorMsg}
             </div>
           ) : !stats ? (
             <Skeleton className="h-72 w-full" />
