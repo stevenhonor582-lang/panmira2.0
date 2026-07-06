@@ -25,6 +25,7 @@ export async function runPreflight(logger: Logger): Promise<PreflightResult> {
     'DATABASE_URL',
     'ANTHROPIC_BASE_URL',
     'API_SECRET',
+    'ENCRYPTION_KEY',
   ];
 
   for (const varName of requiredEnvVars) {
@@ -32,6 +33,8 @@ export async function runPreflight(logger: Logger): Promise<PreflightResult> {
       checks.push({ name: `ENV:${varName}`, status: 'fail', message: `${varName} is not set` });
     } else if (varName === 'JWT_SECRET' && process.env[varName]!.length < 16) {
       checks.push({ name: `ENV:${varName}`, status: 'warn', message: `${varName} is too short (< 16 chars)` });
+    } else if (varName === 'ENCRYPTION_KEY' && process.env[varName]!.length !== 64) {
+      checks.push({ name: `ENV:${varName}`, status: 'fail', message: `${varName} must be 64 hex chars (32 bytes); run: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` });
     } else {
       checks.push({ name: `ENV:${varName}`, status: 'ok', message: 'Set' });
     }
