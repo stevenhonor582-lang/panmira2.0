@@ -30,6 +30,8 @@ import { DiscoveredGroupStore } from '../db/discovered-group-store.js';
 import { handleAuthRoutes } from './routes/auth-routes.js';
 import { handleOAuthRoutes } from './routes/oauth-routes.js';
 import { handleResourceRoutes } from './routes/resource-routes.js';
+import { handleRuntimeRoutes } from './routes/runtime-routes.js';
+import { handleSkillDagRoutes } from './routes/skill-dag-routes.js';
 import { handleKnowledgeBaseRoutes } from './routes/knowledge-base-routes.js';
 import { handleAgentKnowledgeRoutes } from './routes/agent-knowledge-routes.js';
 import { handleAgentRunRoutes } from './routes/agent-run-routes.js';
@@ -691,6 +693,17 @@ ${content}
       // Plan B-3: OAuth client CRUD
       if (url.startsWith('/api/v2/admin/oauth-clients')) {
         if (await handleOAuthClientRoutes(req, res, method, url)) return;
+      // plan-H1+blueprint: runtime sessions + skill DAGs
+      if (url.startsWith("/api/v2/admin/runtime")) {
+        if (await handleRuntimeRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: "Runtime route not found" });
+        return;
+      }
+      if (url.startsWith("/api/v2/admin/skill-dags")) {
+        if (await handleSkillDagRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: "Skill DAG route not found" });
+        return;
+      }
         jsonResponse(res, 404, { error: 'OAuth client route not found' });
         return;
       }

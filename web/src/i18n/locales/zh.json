@@ -546,5 +546,58 @@
   "agents.invalidJson": "{field} JSON 格式错误",
   "bots": {
     "providerLockedHint": "🔒 由服务商控制：模型={{model}}，地址={{baseUrl}}。请到设置→AI 服务商修改。"
+  },
+  "runtime": {
+    "title": "Runtime Console",
+    "activeNow": "活跃中",
+    "totalToday": "今日总数",
+    "costToday": "今日花费",
+    "botsActive": "Bot 数",
+    "activeOnly": "仅活跃",
+    "refresh": "刷新",
+    "interrupt": "中断",
+    "interruptConfirm": "确认中断此 session?",
+    "interruptOnlyActive": "只能中断活跃 session",
+    "colStatus": "状态",
+    "colBot": "Bot",
+    "colModel": "模型",
+    "colLastUsed": "最后活动",
+    "colCost": "花费",
+    "loading": "加载中...",
+    "empty": "无 session",
+    "status_active": "活跃",
+    "status_idle": "空闲",
+    "status_archived": "已归档"
+  },
+  "blueprint": {
+    "title": "Agent 执行蓝图",
+    "tabIdentity": "身份",
+    "tabOrchestration": "编排(skill/MCP/KB)",
+    "tabTools": "工具策略",
+    "tabGuardrails": "边界与铁律",
+    "name": "名字",
+    "description": "描述",
+    "systemPrompt": "系统提示词",
+    "isActive": "启用",
+    "empty": "无 agent",
+    "saved": "已保存",
+    "saving": "保存中...",
+    "save": "保存",
+    "saveFailed": "保存失败",
+    "hintTitle": "JSON 结构提示"
+  },
+  "dag": {
+    "title": "Skill DAG 编写器",
+    "newVersion": "新版本",
+    "versions": "版本列表",
+    "empty": "无版本",
+    "nodesAndEdges": "节点 + 边(JSON)",
+    "errors": "校验错误",
+    "nodesList": "节点预览",
+    "validate": "校验",
+    "validationOk": "校验通过",
+    "selectOne": "选择一个版本",
+    "loading": "加载中...",
+    "tenantIdPrompt": "请输入 tenantId"
   }
 }

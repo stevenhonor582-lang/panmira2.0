@@ -11,6 +11,9 @@ const MemoryView = lazy(() => import('./components/MemoryView').then(m => ({ def
 const VoiceView = lazy(() => import('./components/VoiceView').then(m => ({ default: m.VoiceView })));
 const SettingsView = lazy(() => import('./components/SettingsView').then(m => ({ default: m.SettingsView })));
 const DashboardView = lazy(() => import('./components/DashboardView').then(m => ({ default: m.DashboardView })));
+const AgentTemplateEditor = lazy(() => import('./components/AgentTemplateEditor').then(m => ({ default: m.AgentTemplateEditor })));
+const SkillDagEditor = lazy(() => import('./components/SkillDagEditor').then(m => ({ default: m.SkillDagEditor })));
+const RuntimeConsole = lazy(() => import('./components/RuntimeConsole').then(m => ({ default: m.RuntimeConsole })));
 const TeamWorkspace = lazy(() => import('./components/team').then(m => ({ default: m.TeamWorkspace })));
 
 const IDLE_MS = 15 * 60 * 1000;
@@ -59,10 +62,13 @@ export function App() {
 
         {/* Admin routes: /app/* with AdminLayout + Sidebar */}
         <Route path="/app" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/runtime" element={<AdminLayout><RuntimeConsole /></AdminLayout>} />
         <Route path="/app/models" element={<AdminLayout><DashboardView /></AdminLayout>} />
         <Route path="/app/knowledge" element={<AdminLayout><DashboardView /></AdminLayout>} />
         <Route path="/app/resources" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/skills/dags" element={<AdminLayout><SkillDagEditor /></AdminLayout>} />
         <Route path="/app/agents" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/agents/templates" element={<AdminLayout><AgentTemplateEditor /></AdminLayout>} />
         <Route path="/app/channels" element={<AdminLayout><DashboardView /></AdminLayout>} />
         <Route path="/app/permissions" element={<AdminLayout><DashboardView /></AdminLayout>} />
         <Route path="/app/status" element={<AdminLayout><DashboardView /></AdminLayout>} />
