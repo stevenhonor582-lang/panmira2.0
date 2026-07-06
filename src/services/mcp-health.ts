@@ -31,8 +31,11 @@ export async function checkMcpHealth(server: typeof mcpServers.$inferSelect): Pr
     if (!res.ok) return { status: 'down', error: `HTTP ${res.status}`, latencyMs };
     const data = await res.json() as { result?: { tools?: Array<{ name: string; description: string; inputSchema: unknown }> } };
     const tools = (data.result?.tools || []).map(t => ({ name: t.name, description: t.description, schema: t.inputSchema }));
+    // 记录 MCP 健康检查 (fire-and-forget)
+    if (server.tenantId) recordMcpUsage(server.tenantId, server.id, 1);
     return { status: tools.length > 0 ? 'healthy' : 'degraded', tools, latencyMs };
   } catch (e) {
+    if (server.tenantId) recordMcpUsage(server.tenantId, server.id, 1);
     return { status: 'down', error: (e as Error).message, latencyMs: Date.now() - start };
   }
 }

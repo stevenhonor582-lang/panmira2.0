@@ -30,6 +30,7 @@ import {
 } from '../../lib/tokens.js';
 import { deviceUserCode } from '../../lib/ids.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
+import { recordTokenUsage } from '../../services/usage-tracker.js';
 import { verifyAccessToken as verifyAdminJwt } from '../middleware.js';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -234,6 +235,8 @@ async function handleToken(req: http.IncomingMessage, res: http.ServerResponse) 
         tenantId: client.tenantId,
         scopes: finalScopes,
       });
+      // 记录 token 颁发
+      recordTokenUsage(client.tenantId, client.clientId, 1);
       return jsonResponse(res, 200, {
         access_token: result.accessToken,
         token_type: 'Bearer',
