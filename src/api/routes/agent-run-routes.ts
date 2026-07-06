@@ -16,7 +16,7 @@ import { agents, agentKnowledgeRefs } from '../../db/schema.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import { requireBearer, requireScopes, requireAnyScope } from '../oauth-middleware.js';
 import { buildRagContext, type RagResult } from '../../services/rag-service.js';
-import { recordKnowledgeUsage } from '../../services/usage-tracker.js';
+import { recordKnowledgeUsage, recordTokenUsage } from '../../services/usage-tracker.js';
 import { callLlm, LlmCallError, type LlmCallResult } from '../../services/llm-client.js';
 
 async function runAgent(req: http.IncomingMessage, res: http.ServerResponse, agentId: string) {
