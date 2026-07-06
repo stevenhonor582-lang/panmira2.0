@@ -23,10 +23,10 @@ describe('plan-B2 schema: knowledge_bases + 加列', () => {
     }
   });
 
-  it('documents 加 5 列 (kbId/kbType/visibility/version/ownerUserId)', () => {
+  it('documents 加 5 列 (kbId/kbType/visibility/kbVersion/ownerUserId)', () => {
     const docs = schema.documents as any;
     const names = Object.keys(docs);
-    for (const f of ['kbId', 'kbType', 'visibility', 'version', 'ownerUserId']) {
+    for (const f of ['kbId', 'kbType', 'visibility', 'kbVersion', 'ownerUserId']) {
       expect(names).toContain(f);
     }
   });

@@ -4,7 +4,7 @@
  */
 import { eq, and } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { agentKnowledgeRefs, knowledgeBases } from '../db/schema.js';
+import * as schemaMod from '../db/schema.js';
 import { hybridSearch, type SearchResult, type SearchMode } from './hybrid-search.js';
 
 export interface RagOptions {
@@ -53,6 +53,7 @@ Please answer based on the context above. If the context doesn't contain the ans
 
 /** 主入口: 为 agent 构造 RAG context */
 export async function buildRagContext(opts: RagOptions): Promise<RagResult> {
+  const { agentKnowledgeRefs, knowledgeBases } = schemaMod;
   const topK = opts.topK || DEFAULT_TOPK;
   const mode = opts.mode || 'hybrid';
   const minScore = opts.minScore || 0;
