@@ -1,10 +1,10 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { and, eq, gt, isNull } from 'drizzle-orm';
-import { db } from '../db/index.ts';
+import { db } from '../db/index.js';
 import {
   oauthAccessTokens,
   oauthRefreshTokens,
-} from '../db/schema.ts';
+} from '../db/schema.js';
 
 const ACCESS_TTL_SEC = 60 * 60; // 1h
 const REFRESH_TTL_SEC = 60 * 60 * 24 * 30; // 30d

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { hashPassword, verifyPassword } from '../password.ts';
+import { hashPassword, verifyPassword } from '../password.js';
 
 describe('password (bcryptjs)', () => {
   it('hashes are different for same input (随机 salt)', async () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import * as schema from '../db/schema.ts';
+import * as schema from '../db/schema.js';
 
 describe('schema: plan-A 新表导出', () => {
   it('user_teams 表导出', () => {

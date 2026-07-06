@@ -3,7 +3,7 @@
  * 跟 src/api/middleware.ts(内部 JWT)平行,这是 OAuth token 路径
  */
 import type http from 'node:http';
-import { validateAccessToken } from '../lib/tokens.ts';
+import { validateAccessToken } from '../lib/tokens.js';
 import { jsonResponse } from './routes/helpers.js';
 
 export interface OAuthContext {

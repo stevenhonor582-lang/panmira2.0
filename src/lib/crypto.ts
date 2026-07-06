@@ -3,4 +3,4 @@
  * 实际实现在 src/db/crypto.ts(早期就有,AES-256-GCM)
  * 为新模块(OAuth / Token / Secret)提供 lib/ 路径
  */
-export { encrypt, decrypt } from '../db/crypto.ts';
+export { encrypt, decrypt } from '../db/crypto.js';

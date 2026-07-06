@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { requireScopes, requireAnyScope, type OAuthContext } from '../oauth-middleware.ts';
+import { requireScopes, requireAnyScope, type OAuthContext } from '../oauth-middleware.js';
 
 const ctx: OAuthContext = {
   tenantId: 't1', userId: 'u1', clientId: 'c1', tokenId: 'tk1',

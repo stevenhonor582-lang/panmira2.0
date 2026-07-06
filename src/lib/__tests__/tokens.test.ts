@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateOpaqueToken, hashToken } from '../tokens.ts';
+import { generateOpaqueToken, hashToken } from '../tokens.js';
 
 describe('tokens (utils)', () => {
   it('generates 43-char base64url tokens', () => {
@@ -21,7 +21,7 @@ describe('tokens (utils)', () => {
   });
 
   it('UUID v7 monotonic', async () => {
-    const { uuidv7 } = await import('../ids.ts');
+    const { uuidv7 } = await import('../ids.js');
     const a = uuidv7();
     await new Promise(r => setTimeout(r, 5));
     const b = uuidv7();
@@ -30,7 +30,7 @@ describe('tokens (utils)', () => {
   });
 
   it('deviceUserCode is 8-char uppercase alphanumeric', async () => {
-    const { deviceUserCode } = await import('../ids.ts');
+    const { deviceUserCode } = await import('../ids.js');
     const code = deviceUserCode();
     expect(code).toHaveLength(8);
     expect(code).toMatch(/^[A-HJ-NP-Z2-9]+$/); // 排除 0/O/1/I

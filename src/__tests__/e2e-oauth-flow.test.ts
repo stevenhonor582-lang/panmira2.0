@@ -7,7 +7,7 @@
  *  4. 完整 scope 列表覆盖 saas spec
  */
 import { describe, it, expect } from 'vitest';
-import { generateOpaqueToken, hashToken } from '../lib/tokens.ts';
+import { generateOpaqueToken, hashToken } from '../lib/tokens.js';
 
 describe('OAuth flow: token 工具', () => {
   it('generateOpaqueToken produces unique 43-char base64url', () => {
@@ -24,7 +24,7 @@ describe('OAuth flow: token 工具', () => {
   });
 
   it('OAuth discovery 列表覆盖 saas spec §5.3', async () => {
-    const { handleOAuthRoutes } = await import('../api/routes/oauth-routes.ts');
+    const { handleOAuthRoutes } = await import('../api/routes/oauth-routes.js');
     const resData: { body?: unknown } = {};
     const res = {
       statusCode: 200,
@@ -54,7 +54,7 @@ describe('OAuth flow: token 工具', () => {
   });
 
   it('grant_types 包含 4 个(spec §5.2)', async () => {
-    const { handleOAuthRoutes } = await import('../api/routes/oauth-routes.ts');
+    const { handleOAuthRoutes } = await import('../api/routes/oauth-routes.js');
     const resData: { body?: unknown } = {};
     const res = {
       statusCode: 200,

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { encrypt, decrypt } from '../../db/crypto.ts';
+import { encrypt, decrypt } from '../../db/crypto.js';
 
 describe('crypto (AES-256-GCM)', () => {
   beforeAll(() => {

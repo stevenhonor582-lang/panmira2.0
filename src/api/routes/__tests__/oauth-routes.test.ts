@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { handleOAuthRoutes } from '../oauth-routes.ts';
+import { handleOAuthRoutes } from '../oauth-routes.js';
 import type http from 'node:http';
 
 function mockReqRes(method: string, url: string): { req: http.IncomingMessage; res: http.ServerResponse; resData: { status?: number; body?: unknown } } {

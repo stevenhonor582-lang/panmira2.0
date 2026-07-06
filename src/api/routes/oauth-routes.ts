@@ -15,20 +15,20 @@
 import type http from 'node:http';
 import { createHash } from 'node:crypto';
 import { and, eq, gt, isNull } from 'drizzle-orm';
-import { db } from '../../db/index.ts';
+import { db } from '../../db/index.js';
 import {
   oauthClients,
   oauthAuthorizationCodes,
   oauthDeviceCodes,
-} from '../../db/schema.ts';
+} from '../../db/schema.js';
 import {
   issueTokens,
   validateAccessToken,
   rotateRefreshToken,
   revokeAccessToken,
   hashToken,
-} from '../../lib/tokens.ts';
-import { deviceUserCode } from '../../lib/ids.ts';
+} from '../../lib/tokens.js';
+import { deviceUserCode } from '../../lib/ids.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import { verifyAccessToken as verifyAdminJwt } from '../middleware.js';
 
@@ -142,7 +142,7 @@ async function handleAuthorizeGet(req: http.IncomingMessage, res: http.ServerRes
 async function handleAuthorizeConfirm(req: http.IncomingMessage, res: http.ServerResponse) {
   const admin = await requireAdminFromJwt(req, res);
   if (!admin) return;
-  const body = await parseJsonBody<Record<string, string>>(req) || {};
+  const body = (await parseJsonBody(req)) as Record<string, string>;
   const { client_id, redirect_uri, scope, state, code_challenge, code_challenge_method, action } = body;
   if (action === 'deny') {
     const sep = redirect_uri?.includes('?') ? '&' : '?';
@@ -181,7 +181,7 @@ async function handleAuthorizeConfirm(req: http.IncomingMessage, res: http.Serve
 // ─── /oauth/token ───────────────────────────────────────────────────────────
 
 async function handleToken(req: http.IncomingMessage, res: http.ServerResponse) {
-  const body = await parseJsonBody<Record<string, string>>(req) || {};
+  const body = (await parseJsonBody(req)) as Record<string, string>;
   const grantType = body.grant_type;
   const auth = await authenticateClient(req, body);
   if (!auth || !auth.secretOk) {
@@ -293,7 +293,7 @@ async function handleToken(req: http.IncomingMessage, res: http.ServerResponse) 
 // ─── /oauth/device ──────────────────────────────────────────────────────────
 
 async function handleDeviceRequest(req: http.IncomingMessage, res: http.ServerResponse) {
-  const body = await parseJsonBody<Record<string, string>>(req) || {};
+  const body = (await parseJsonBody(req)) as Record<string, string>;
   const auth = await authenticateClient(req, body);
   if (!auth || !auth.secretOk) {
     return jsonResponse(res, 401, { error: 'invalid_client' });
@@ -338,7 +338,7 @@ ${code ? `<p>设备码: <code style="font-size: 18px; padding: 4px 8px; backgrou
 async function handleDeviceVerifyPost(req: http.IncomingMessage, res: http.ServerResponse) {
   const admin = await requireAdminFromJwt(req, res);
   if (!admin) return;
-  const body = await parseJsonBody<Record<string, string>>(req) || {};
+  const body = (await parseJsonBody(req)) as Record<string, string>;
   if (body.action === 'deny') {
     res.setHeader('content-type', 'text/html');
     return res.end('<h2>已拒绝</h2>');
@@ -356,7 +356,7 @@ async function handleDeviceVerifyPost(req: http.IncomingMessage, res: http.Serve
 // ─── /oauth/revoke + /oauth/jwks + discovery ────────────────────────────────
 
 async function handleRevoke(req: http.IncomingMessage, res: http.ServerResponse) {
-  const body = await parseJsonBody<Record<string, string>>(req) || {};
+  const body = (await parseJsonBody(req)) as Record<string, string>;
   if (!body.token) {
     res.statusCode = 400;
     return res.end();
