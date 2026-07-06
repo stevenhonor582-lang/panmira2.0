@@ -622,5 +622,37 @@
     "description": "Description",
     "loadFailed": "Load failed",
     "loading": "Loading..."
+  },
+  "resources": {
+    "title": "Resources",
+    "mcpServers": "MCP Servers",
+    "skillPlugins": "Skill Plugins",
+    "emptyMcp": "No MCP servers",
+    "emptySkills": "No skill plugins",
+    "colName": "Name",
+    "colUrl": "URL",
+    "colHealth": "Health",
+    "colVersion": "Version",
+    "colSkills": "Skills",
+    "colStatus": "Status",
+    "active": "active",
+    "disabled": "disabled",
+    "loading": "Loading..."
+  },
+  "channels": {
+    "title": "Channels",
+    "newChannel": "New Channel",
+    "newGroupIdPrompt": "Group ID?",
+    "deleteConfirm": "Delete this channel?",
+    "delete": "Delete",
+    "empty": "No channels",
+    "colGroupId": "Group ID",
+    "colPattern": "Pattern",
+    "colBots": "Target Bots",
+    "colPriority": "Priority",
+    "colStatus": "Status",
+    "active": "active",
+    "disabled": "disabled",
+    "loading": "Loading..."
   }
 }
