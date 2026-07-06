@@ -694,6 +694,13 @@ ${content}
         return;
       }
 
+      // Plan D: Reports CSV export
+      if (url.startsWith('/api/v2/admin/reports/') && url.includes('/export')) {
+        if (await handleReportsExportRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Reports export route not found' });
+        return;
+      }
+
       // Plan B-3: Reports
       if (url.startsWith('/api/v2/admin/reports/')) {
         if (await handleReportsRoutes(req, res, method, url)) return;
@@ -715,12 +722,7 @@ ${content}
         return;
       }
 
-      // Plan D: Reports CSV export
-      if (url.startsWith('/api/v2/admin/reports/') && url.includes('/export')) {
-        if (await handleReportsExportRoutes(req, res, method, url)) return;
-        jsonResponse(res, 404, { error: 'Reports export route not found' });
-        return;
-      }
+
 
       // Plan D: Channel usage (IM handlers 调用)
       if (url.startsWith('/api/v2/admin/channels/')) {
