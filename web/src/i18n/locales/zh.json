@@ -601,5 +601,26 @@
     "empty": "请选择左侧知识库",
     "loadFailed": "加载失败",
     "loading": "加载中..."
+  },
+  "agents": {
+    "title": "Agent 列表",
+    "newAgent": "新建 Agent",
+    "newNamePrompt": "Agent 名称?",
+    "colName": "名称",
+    "colRole": "角色",
+    "colStatus": "状态",
+    "colActions": "操作",
+    "active": "启用",
+    "disabled": "禁用",
+    "detail": "详情",
+    "delete": "删除",
+    "deleteConfirm": "确定删除这个 Agent?",
+    "deleteFailed": "删除失败",
+    "createFailed": "创建失败",
+    "id": "ID",
+    "systemPrompt": "System Prompt",
+    "description": "描述",
+    "loadFailed": "加载失败",
+    "loading": "加载中..."
   }
 }
