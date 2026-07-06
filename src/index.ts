@@ -13,6 +13,7 @@ import { NullSender } from './web/null-sender.js';
 import { PeerManager } from './api/peer-manager.js';
 import { TaskScheduler } from './scheduler/task-scheduler.js';
 import { startMvRefreshCron } from './services/mv-refresh-cron.js';
+import { startEmbeddingWorker } from './services/embedding-worker.js';
 import { startApiServer } from './api/http-server.js';
 import { startMemoryServer } from './memory/memory-server.js';
 import { WorkspaceManager } from './memory/workspace-manager.js';
@@ -328,6 +329,9 @@ async function main() {
 
   // Plan D: 启动 MV 物化视图定时刷新 (5 分钟)
   startMvRefreshCron();
+
+  // Plan F: 启动 embedding worker (5s poll, 异步嵌入队列)
+  startEmbeddingWorker();
 
   // Initialize peer manager for cross-instance bot discovery
   let peerManager: PeerManager | undefined;
