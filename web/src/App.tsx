@@ -2,7 +2,8 @@ import { useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useStore } from './store';
 import { LoginPage } from './components/LoginPage';
-import { Layout } from './components/Layout';
+import { ChatLayout } from './components/ChatLayout';
+import { AdminLayout } from './components/AdminLayout';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 const ChatView = lazy(() => import('./components/ChatView').then(m => ({ default: m.ChatView })));
@@ -10,6 +11,9 @@ const MemoryView = lazy(() => import('./components/MemoryView').then(m => ({ def
 const VoiceView = lazy(() => import('./components/VoiceView').then(m => ({ default: m.VoiceView })));
 const SettingsView = lazy(() => import('./components/SettingsView').then(m => ({ default: m.SettingsView })));
 const DashboardView = lazy(() => import('./components/DashboardView').then(m => ({ default: m.DashboardView })));
+const AgentTemplateEditor = lazy(() => import('./components/AgentTemplateEditor').then(m => ({ default: m.AgentTemplateEditor })));
+const SkillDagEditor = lazy(() => import('./components/SkillDagEditor').then(m => ({ default: m.SkillDagEditor })));
+const RuntimeConsole = lazy(() => import('./components/RuntimeConsole').then(m => ({ default: m.RuntimeConsole })));
 const TeamWorkspace = lazy(() => import('./components/team').then(m => ({ default: m.TeamWorkspace })));
 
 const IDLE_MS = 15 * 60 * 1000;
@@ -54,14 +58,38 @@ export function App() {
   return (
     <ErrorBoundary>
       <Routes>
-        <Route path="/" element={<Navigate to="/chat" replace />} />
-        <Route path="/chat" element={<Layout><ChatView /></Layout>} />
-        <Route path="/team" element={<Layout><TeamWorkspace /></Layout>} />
-        <Route path="/memory" element={<Layout><MemoryView /></Layout>} />
-        <Route path="/voice" element={<Layout><VoiceView /></Layout>} />
-        <Route path="/settings" element={<Layout><SettingsView /></Layout>} />
-        <Route path="/dashboard" element={<Layout><DashboardView /></Layout>} />
-        <Route path="*" element={<Navigate to="/chat" replace />} />
+        <Route path="/" element={<Navigate to="/app" replace />} />
+
+        {/* Admin routes: /app/* with AdminLayout + Sidebar */}
+        <Route path="/app" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/runtime" element={<AdminLayout><RuntimeConsole /></AdminLayout>} />
+        <Route path="/app/models" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/knowledge" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/resources" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/skills/dags" element={<AdminLayout><SkillDagEditor /></AdminLayout>} />
+        <Route path="/app/agents" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/agents/templates" element={<AdminLayout><AgentTemplateEditor /></AdminLayout>} />
+        <Route path="/app/channels" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/permissions" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/status" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/alerts" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/reports" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/cost" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/oauth-clients" element={<AdminLayout><DashboardView /></AdminLayout>} />
+        <Route path="/app/audit" element={<AdminLayout><DashboardView /></AdminLayout>} />
+
+        {/* Chat routes: ChatLayout (preserves existing chat UI) */}
+        <Route path="/app/chat" element={<ChatLayout><ChatView /></ChatLayout>} />
+        <Route path="/app/team" element={<ChatLayout><TeamWorkspace /></ChatLayout>} />
+        <Route path="/app/memory" element={<ChatLayout><MemoryView /></ChatLayout>} />
+        <Route path="/app/voice" element={<ChatLayout><VoiceView /></ChatLayout>} />
+        <Route path="/app/settings" element={<ChatLayout><SettingsView /></ChatLayout>} />
+
+        {/* Backward compat: /admin/* and old paths redirect */}
+        <Route path="/admin/*" element={<Navigate to="/app/settings" replace />} />
+        <Route path="/dashboard" element={<Navigate to="/app" replace />} />
+
+        <Route path="*" element={<Navigate to="/app" replace />} />
       </Routes>
     </ErrorBoundary>
   );

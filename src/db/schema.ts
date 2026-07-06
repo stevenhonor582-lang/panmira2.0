@@ -875,3 +875,20 @@ export const embeddingJobs = pgTable('embedding_jobs', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp('completed_at', { withTimezone: true }),
 });
+
+// plan-H1+blueprint sprint: skill_dags table (visual skill authoring, 2026-07-07)
+export const skillDags = pgTable('skill_dags', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  skillId: varchar('skill_id', { length: 255 }).notNull().references(() => skills.id, { onDelete: 'cascade' }),
+  version: integer('version').notNull().default(1),
+  nodes: jsonb('nodes').notNull().default([]).$type<Array<{id: string; type: string; label: string; config: Record<string, unknown>; position?: {x: number; y: number}}>>(),
+  edges: jsonb('edges').notNull().default([]).$type<Array<{from: string; to: string; condition?: string; label?: string}>>(),
+  inputSchema: jsonb('input_schema').default({}).$type<Record<string, unknown>>(),
+  outputSchema: jsonb('output_schema').default({}).$type<Record<string, unknown>>(),
+  validationStatus: varchar('validation_status', { length: 20 }).notNull().default('pending'),
+  validationErrors: jsonb('validation_errors').default([]).$type<string[]>(),
+  authorId: uuid('author_id').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
