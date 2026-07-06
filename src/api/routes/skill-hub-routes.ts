@@ -6,6 +6,7 @@ import { jsonResponse, parseJsonBody } from './helpers.js';
 import type { RouteContext } from './types.js';
 import { SKILL_REGISTRY, refreshSkillRegistry } from '../../skills/skill-registry.js';
 import { installSkillFromHub, installFromGithub, syncSkillToBotStaging, isAdminBot, installSkillWithBinding } from '../skills-installer.js';
+import { recordSkillUsage } from '../../services/usage-tracker.js';
 
 export async function handleSkillHubRoutes(
   ctx: RouteContext,

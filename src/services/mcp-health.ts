@@ -4,6 +4,7 @@
  *   status: healthy | degraded | down
  */
 import type { mcpServers } from '../db/schema.js';
+import { recordMcpUsage } from './usage-tracker.js';
 
 export interface HealthResult {
   status: 'healthy' | 'degraded' | 'down';

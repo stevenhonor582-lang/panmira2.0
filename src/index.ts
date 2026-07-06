@@ -492,7 +492,7 @@ async function main() {
   ];
   for (const bridge of allBridgesForRecovery) {
     try {
-      const count = await bridge.notifyOrphanedTasks();
+      const count = await (bridge as any).notifyOrphanedTasks();
       if (count > 0) {
         logger.info({ count }, 'Sent task recovery notifications');
       }
