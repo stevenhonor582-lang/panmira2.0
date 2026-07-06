@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { NavLink } from 'react-router-dom';
 import { useStore } from '../store';
 import s from './DashboardView.module.css';
 
@@ -32,6 +33,19 @@ interface TokenTypeShare {
   label: string;
   value: number;
   color: string;
+}
+
+interface DashboardStats {
+  counts: {
+    llm: number;
+    embedding: number;
+    mcp: number;
+    knowledgeBases: number;
+    agents: number;
+    oauthClients: number;
+    skills: number;
+  };
+  trends: Array<{ date: string; token: number; skill: number; mcp: number; knowledge: number }>;
 }
 
 interface ActivityItem {
@@ -95,6 +109,14 @@ async function fetchJSON(url: string, token: string | null): Promise<any> {
   const res = await fetch(url, { headers });
   if (!res.ok) return null;
   return res.json();
+}
+
+async function fetchDashboardStats(token: string | null): Promise<DashboardStats | null> {
+  try {
+    return await fetchJSON('/api/v2/admin/dashboard/stats', token);
+  } catch {
+    return null;
+  }
 }
 
 async function fetchDashboardData(token: string | null): Promise<DashboardData> {
@@ -380,6 +402,7 @@ export function DashboardView() {
   const [error, setError] = useState('');
   const [memoryStats, setMemoryStats] = useState<any[]>([]);
   const [showMemories, setShowMemories] = useState(false);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -389,6 +412,7 @@ export function DashboardView() {
       setData(d);
       // Fetch memory stats
       fetchJSON('/api/memories/stats', token).then((s:any) => setMemoryStats(s?.stats||[])).catch(() => {});
+      fetchDashboardStats(token).then(setStats);
     } catch {
       setError(t('dashboard.loadFailed'));
     } finally {
@@ -423,6 +447,39 @@ export function DashboardView() {
 
   return (
     <div className={s.root}>
+      <section className={s.resourcesOverview} data-testid="resources-overview">
+        <h2 className={s.sectionTitle}>{t('dashboard.overviewTitle')}</h2>
+        <div className={s.statCards}>
+          <NavLink to="/app/models" className={s.statCard} data-testid="stat-llm">
+            <div className={s.statLabel}>{t('dashboard.llm')}</div>
+            <div className={s.statValue}>{stats?.counts.llm ?? 0}</div>
+          </NavLink>
+          <NavLink to="/app/models" className={s.statCard} data-testid="stat-embedding">
+            <div className={s.statLabel}>{t('dashboard.embedding')}</div>
+            <div className={s.statValue}>{stats?.counts.embedding ?? 0}</div>
+          </NavLink>
+          <NavLink to="/app/knowledge" className={s.statCard} data-testid="stat-knowledgeBases">
+            <div className={s.statLabel}>{t('dashboard.kb')}</div>
+            <div className={s.statValue}>{stats?.counts.knowledgeBases ?? 0}</div>
+          </NavLink>
+          <NavLink to="/app/agents" className={s.statCard} data-testid="stat-agents">
+            <div className={s.statLabel}>{t('dashboard.agents')}</div>
+            <div className={s.statValue}>{stats?.counts.agents ?? 0}</div>
+          </NavLink>
+        </div>
+        <div className={s.quickActions}>
+          <NavLink to="/app/agents" className={s.quickAction}>
+            + {t('dashboard.newAgent')}
+          </NavLink>
+          <NavLink to="/app/knowledge" className={s.quickAction}>
+            + {t('dashboard.uploadDoc')}
+          </NavLink>
+          <NavLink to="/app/channels" className={s.quickAction}>
+            + {t('dashboard.connectChannel')}
+          </NavLink>
+        </div>
+      </section>
+
       <div className={s.header}>
         <div>
           <h1 className={s.title}>{t('dashboard.title')}</h1>
