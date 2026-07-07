@@ -1052,3 +1052,19 @@ export const agentMessages = pgTable('agent_messages', {
 }, (t) => ({
   runIdx: index('agent_messages_run_idx').on(t.runId),
 }));
+
+// ── Phase 4 Level 4 Fix 3: Rate limit persistence (reload-bypass defense) ────
+//
+// Persists in-memory rate-limit state to DB so pm2 reloads / crashes don't
+// reset daily caps (otherwise an attacker can trigger reloads to bypass limit).
+
+export const rateLimitState = pgTable('rate_limit_state', {
+  userId: uuid('user_id').primaryKey(),
+  rateCount: integer('rate_count').notNull().default(0),
+  rateResetAt: timestamp('rate_reset_at', { withTimezone: true }).notNull(),
+  tokensUsed: integer('tokens_used').notNull().default(0),
+  tokensResetAt: timestamp('tokens_reset_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  updatedIdx: index('rate_limit_state_updated_idx').on(t.updatedAt),
+}));
