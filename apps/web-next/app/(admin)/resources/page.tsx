@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, Server, Puzzle, Plug, Loader2 } from "lucide-react";
+import { Plus, Server, Puzzle, Plug, Loader2, GitBranch } from "lucide-react";
+import { InstallGitBranchDialog } from "./_components/install-github-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +30,8 @@ export default function ResourcesPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [deleting, setDeleting] = useState<McpServer | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [ghOpen, setGhOpen] = useState(false);
+  const [ghKind, setGhKind] = useState<"skill" | "mcp" | "auto">("auto");
 
   const loadMcp = async () => {
     setLoadingMcp(true);
@@ -98,7 +101,11 @@ export default function ResourcesPage() {
 
         {/* MCP Tab */}
         <TabsContent value="mcp" className="space-y-3">
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => { setGhKind("mcp"); setGhOpen(true); }} variant="outline" className="gap-1.5">
+              <GitBranch className="size-4" />
+              从 GitHub 安装 MCP
+            </Button>
             <Button onClick={() => setMcpDialogOpen(true)} className="gap-1.5">
               <Plus className="size-4" />
               新建 MCP
@@ -168,6 +175,12 @@ export default function ResourcesPage() {
 
         {/* Plugins Tab */}
         <TabsContent value="plugins" className="space-y-3">
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => { setGhKind("skill"); setGhOpen(true); }} variant="outline" className="gap-1.5">
+              <GitBranch className="size-4" />
+              从 GitHub 安装 Skill
+            </Button>
+          </div>
           <Card>
             <CardContent className="p-0">
               {loadingPlugin ? (
@@ -235,6 +248,15 @@ export default function ResourcesPage() {
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         onConfirm={handleDeleteMcp}
+      />
+      <InstallGitBranchDialog
+        open={ghOpen}
+        onOpenChange={setGhOpen}
+        kind={ghKind}
+        onInstalled={() => {
+          if (ghKind === "skill" || ghKind === "auto") loadPlugins();
+          if (ghKind === "mcp" || ghKind === "auto") loadMcp();
+        }}
       />
     </div>
   );

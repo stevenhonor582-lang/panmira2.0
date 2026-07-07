@@ -19,6 +19,9 @@ import {
   Mic,
   MessageSquare,
   Users,
+  Clock,
+  Workflow,
+  Brain,
   type LucideIcon,
 } from "lucide-react";
 
@@ -57,6 +60,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "📚 数智与记忆",
     items: [
       { label: "知识库总览", href: "/knowledge", icon: Database },
+      { label: "Memory 管理", href: "/memory", icon: Brain, badge: "NEW" },
     ],
   },
   {
