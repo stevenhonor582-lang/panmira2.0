@@ -125,6 +125,28 @@ function PipelineNode({ id, data, selected }: NodeProps<PipelineRFNode>) {
 }
 
 const nodeTypes = { pipeline: PipelineNode };
+/**
+ * L9 #C: Edge gating condition union. Stored on react-flow edge data so the
+ * canvas preserves it across selection/save. Mirrors the backend
+ * `PipelineEdge.condition` (src/services/pipeline-engine.ts).
+ */
+type EdgeCondition = "always" | "success" | "failure";
+
+const CONDITION_OPTIONS: Array<{ value: EdgeCondition; label: string; hint: string }> = [
+  { value: "always",   label: "总是执行 (always)",   hint: "无论上游成功失败都会跑 — 默认值" },
+  { value: "success",  label: "上游成功才跑 (success)", hint: "上游 status=success 才执行" },
+  { value: "failure",  label: "上游失败才跑 (failure)", hint: "上游 status=failed 才执行 (兜底分支)" },
+];
+
+function getEdgeCondition(edge: RFEdge): EdgeCondition {
+  const raw = (edge.data as { condition?: unknown } | undefined)?.condition;
+  return raw === "success" || raw === "failure" || raw === "always" ? raw : "always";
+}
+
+function setEdgesCondition(eds: RFEdge[], ids: Set<string>, condition: EdgeCondition): RFEdge[] {
+  return eds.map((e) => (ids.has(e.id) ? { ...e, data: { ...(e.data ?? {}), condition } } : e));
+}
+
 
 function hasCycle(edges: RFEdge[]): boolean {
   const adj = new Map<string, string[]>();
@@ -203,6 +225,20 @@ function Editor() {
 
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<PipelineRFNode>([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<RFEdge>([]);
+  // L9 #C: track selected edges so the right-side panel can edit their condition.
+  const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([]);
+
+  const selectedEdges = useMemo(
+    () => rfEdges.filter((e) => selectedEdgeIds.includes(e.id)),
+    [rfEdges, selectedEdgeIds],
+  );
+
+  const setEdgeConditionBulk = useCallback(
+    (cond: EdgeCondition) => {
+      setRfEdges((eds) => setEdgesCondition(eds, new Set(selectedEdgeIds), cond));
+    },
+    [selectedEdgeIds, setRfEdges],
+  );
 
   const counterRef = useRef(0);
   const nextNodeId = useCallback(() => {
@@ -592,6 +628,71 @@ function Editor() {
                     })}
                   </div>
                 </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* L9 #C: edge condition editor — applied to the currently selected edge(s). */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-1.5">
+                <GitBranch className="size-3.5" />
+                边条件
+                <Badge variant="secondary" className="ml-auto text-[10px]">
+                  选中 {selectedEdges.length}
+                </Badge>
+              </CardTitle>
+              <CardDescription>
+                选中画布上的一条或多条边,然后选择触发条件。
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {selectedEdges.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  尚未选中边。点击画布上的连线即可在此编辑其 condition。
+                </p>
+              ) : (
+                <>
+                  <p className="text-[10px] font-mono text-muted-foreground">
+                    {selectedEdges
+                      .slice(0, 3)
+                      .map((e) => `${e.source} → ${e.target}`)
+                      .join(" · ")}
+                    {selectedEdges.length > 3 ? ` (+${selectedEdges.length - 3})` : ""}
+                  </p>
+                  <div className="space-y-1.5">
+                    {CONDITION_OPTIONS.map((opt) => {
+                      // mixed = selected edges don't all share the same condition
+                      const allMatch = selectedEdges.every(
+                        (e) => getEdgeCondition(e) === opt.value,
+                      );
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setEdgeConditionBulk(opt.value)}
+                          className={
+                            "w-full text-left rounded-md border px-2.5 py-1.5 transition-colors " +
+                            (allMatch && selectedEdges.length > 0
+                              ? "border-primary bg-primary/10"
+                              : "border-border hover:bg-accent")
+                          }
+                          aria-pressed={allMatch && selectedEdges.length > 0}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-medium">{opt.label}</span>
+                            {allMatch && selectedEdges.length > 0 && (
+                              <Badge variant="default" className="text-[9px] px-1 py-0">
+                                当前
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">{opt.hint}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
               )}
             </CardContent>
           </Card>

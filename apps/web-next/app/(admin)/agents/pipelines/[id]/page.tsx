@@ -149,12 +149,16 @@ function dagToReactFlow(
       unchanged: { stroke: "hsl(var(--primary))", strokeWidth: 2, dashed: false },
     };
     const v = strokeByState[state];
+    const cond = (e as { condition?: unknown }).condition;
     return {
       id: key,
       source: e.from,
       target: e.to,
       markerEnd: { type: MarkerType.ArrowClosed, color: v.stroke },
       style: { stroke: v.stroke, strokeWidth: v.strokeWidth, strokeDasharray: v.dashed ? "6 4" : undefined },
+      ...(cond === "success" || cond === "failure" || cond === "always"
+        ? { data: { condition: cond } }
+        : {}),
     };
   });
   return { nodes: rfNodes, edges: rfEdges };
