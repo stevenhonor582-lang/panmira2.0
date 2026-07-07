@@ -5,6 +5,7 @@ import { agentPipelines, pipelineRuns, agentMessages } from "../../db/schema.js"
 import { jsonResponse, parseJsonBody } from "./helpers.js";
 import { requireBearer, requireScopes } from "../oauth-middleware.js";
 import { validatePipeline, executePipeline } from "../../services/pipeline-engine.js";
+import { checkRateLimit, checkDailyTokenCap, recordTokenUsage } from "../../middleware/pipeline-rate-limit.js";
 
 async function listPipelines(req: http.IncomingMessage, res: http.ServerResponse) {
   const ctx = await requireBearer(req, res); if (!ctx) return;
@@ -107,6 +108,26 @@ async function triggerPipeline(req: http.IncomingMessage, res: http.ServerRespon
   const ctx = await requireBearer(req, res); if (!ctx) return;
   const check = requireScopes(ctx, ["agent:admin", "agent:run"]);
   if (!check.ok) { jsonResponse(res, 403, { error: "insufficient_scope", missing: check.missing }); return; }
+
+  // Rate limit (fail-open if check throws)
+  try {
+    const rl = checkRateLimit(ctx.userId || "anonymous");
+    if (!rl.ok) {
+      res.setHeader("Retry-After", String(rl.retryAfter || 60));
+      jsonResponse(res, 429, { error: "rate_limited", retryAfter: rl.retryAfter });
+      return;
+    }
+  } catch { /* fail-open */ }
+
+  // Daily token cap (estimate 0 = unknown upfront; checked again after run)
+  try {
+    const cap = checkDailyTokenCap(ctx.userId || "anonymous", 0);
+    if (!cap.ok) {
+      jsonResponse(res, 429, { error: "daily_token_cap_exceeded", currentUsage: cap.currentUsage, limit: cap.limit });
+      return;
+    }
+  } catch { /* fail-open */ }
+
   const rows = await db.select().from(agentPipelines).where(eq(agentPipelines.id, id)).limit(1);
   if (rows.length === 0) { jsonResponse(res, 404, { error: "pipeline_not_found" }); return; }
   const body = await parseJsonBody(req);
