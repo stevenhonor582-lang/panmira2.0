@@ -7,6 +7,8 @@ import { FeishuSenderAdapter } from './feishu-sender-adapter.js';
 import { MessageBridge } from '../bridge/message-bridge.js';
 import type { ChatSessionStore } from '../db/chat-session-store.js';
 import type { GroupCoordinator } from '../api/group-coordinator.js';
+import { pool } from '../db/index.js';
+import { triggerPipelineForBot } from '../services/pipeline-bot-trigger.js';
 import type { DiscoveredGroupStore } from '../db/discovered-group-store.js';
 
 export interface FeishuBotHandle {
@@ -16,6 +18,53 @@ export interface FeishuBotHandle {
   config: BotConfig;
   sender: FeishuSenderAdapter;
   feishuClient: lark.Client;
+}
+
+
+/** Look up bot_configs.agent_template_id for this bot (cached per bot). */
+const botAgentTemplateCache = new Map<string, string | null>();
+async function getBotAgentTemplateId(botName: string): Promise<string | null> {
+  if (botAgentTemplateCache.has(botName)) return botAgentTemplateCache.get(botName)!;
+  try {
+    const r = await pool.query('SELECT agent_template_id FROM bot_configs WHERE name = $1 AND is_active = true LIMIT 1', [botName]);
+    const id = r.rows[0]?.agent_template_id ?? null;
+    botAgentTemplateCache.set(botName, id);
+    return id;
+  } catch {
+    botAgentTemplateCache.set(botName, null);
+    return null;
+  }
+}
+
+/** Try to trigger a matching pipeline; on success, send the result and stop. Fall back to MessageBridge otherwise. */
+async function tryPipelineThenBridge(
+  botConfig: any,
+  botLogger: any,
+  rawSender: any,
+  msg: any,
+  bridge: any,
+): Promise<void> {
+  const agentTemplateId = await getBotAgentTemplateId(botConfig.name);
+  if (agentTemplateId && msg.text && msg.chatId) {
+    const runIdHint = `bot-${msg.messageId || Date.now()}`;
+    const result = await triggerPipelineForBot(agentTemplateId, msg.text, runIdHint);
+    if (result) {
+      botLogger.info(
+        { bot: botConfig.name, runId: result.runId, outputLen: result.output.length },
+        'Pipeline triggered by bot message — sending response',
+      );
+      const text = result.output.trim() || '(pipeline returned empty response)';
+      try {
+        await rawSender.sendText(msg.chatId, text);
+      } catch (e: any) {
+        botLogger.warn({ err: e?.message }, 'Failed to send pipeline response; falling back to bridge');
+        await bridge.handleMessage(msg);
+      }
+      return;
+    }
+  }
+  // Fallback: standard bot flow
+  await bridge.handleMessage(msg);
 }
 
 export async function startFeishuBot(
@@ -67,8 +116,9 @@ export async function startFeishuBot(
     botConfig,
     botLogger,
     (msg) => {
-      bridge.handleMessage(msg).catch((err) => {
-        botLogger.error({ err, msg }, 'Unhandled error in message bridge');
+      // Phase 3 #2: try pipeline trigger before falling back to MessageBridge
+      tryPipelineThenBridge(botConfig, botLogger, rawSender, msg, bridge).catch((err) => {
+        botLogger.error({ err, msg }, 'Unhandled error in pipeline-then-bridge dispatcher');
       });
     },
     botOpenId,
