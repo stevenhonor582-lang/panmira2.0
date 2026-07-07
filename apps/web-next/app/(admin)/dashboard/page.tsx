@@ -1,43 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { RefreshCw, Loader2 } from "lucide-react";
+import { useMemo } from "react";
+import { RefreshCw, XCircle } from "lucide-react";
 import { api } from "@/lib/api";
 import { usePolling } from "@/lib/use-polling";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  ChartLegend,
-  ChartLegendContent,
-  type ChartConfig,
-} from "@/components/ui/chart";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Line,
-  LineChart,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-  ResponsiveContainer,
-} from "recharts";
-import {
-  Bot,
-  Database,
-  Cpu,
-  Plug,
-  KeyRound,
-  Wrench,
-  Hash,
-  type LucideIcon,
-} from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { FeatureCards, FEATURE_CARDS, type FeatureCardSpec } from "./_components/feature-cards";
+import { StatusOverview } from "./_components/status-overview";
+import { RecentResources, type RecentResource } from "./_components/recent-resources";
+import { UsageTrendChart } from "./_components/usage-trend-chart";
 
 interface DashboardStats {
   counts: {
@@ -58,57 +29,114 @@ interface DashboardStats {
   }>;
 }
 
-interface CountCard {
-  key: keyof DashboardStats["counts"];
-  label: string;
-  desc: string;
-  icon: LucideIcon;
-  tone: "primary" | "blue" | "emerald" | "amber" | "violet" | "rose" | "slate";
+interface SystemStatus {
+  counts: {
+    llm: number;
+    embedding: number;
+    mcp: number;
+    kb: number;
+    agent: number;
+    oauth: number;
+  };
+  usageToday: Record<string, number>;
+  errorsLast24h: number;
+  timestamp: string;
 }
 
-const COUNT_CARDS: CountCard[] = [
-  { key: "agents", label: "Agent", desc: "业务 Agent 数量", icon: Bot, tone: "primary" },
-  { key: "llm", label: "LLM 模型", desc: "LLM Provider 池", icon: Cpu, tone: "blue" },
-  { key: "knowledgeBases", label: "数智底座 KB", desc: "知识库数量", icon: Database, tone: "emerald" },
-  { key: "oauthClients", label: "OAuth Client", desc: "外部接入凭证", icon: KeyRound, tone: "amber" },
-  { key: "skills", label: "Skill", desc: "Skill 池", icon: Wrench, tone: "violet" },
-  { key: "mcp", label: "MCP Server", desc: "已注册 MCP", icon: Plug, tone: "rose" },
-  { key: "embedding", label: "Embedding", desc: "向量模型", icon: Hash, tone: "slate" },
-];
+interface ChannelItem {
+  id: string;
+  pattern: string | null;
+  targetBots: string[];
+  enabled: boolean;
+  createdAt?: string;
+}
 
-const TONE_CLASSES: Record<CountCard["tone"], { bg: string; fg: string; ring: string }> = {
-  primary: { bg: "bg-primary/10", fg: "text-primary", ring: "ring-primary/20" },
-  blue: { bg: "bg-blue-500/10", fg: "text-blue-500", ring: "ring-blue-500/20" },
-  emerald: { bg: "bg-emerald-500/10", fg: "text-emerald-500", ring: "ring-emerald-500/20" },
-  amber: { bg: "bg-amber-500/10", fg: "text-amber-500", ring: "ring-amber-500/20" },
-  violet: { bg: "bg-violet-500/10", fg: "text-violet-500", ring: "ring-violet-500/20" },
-  rose: { bg: "bg-rose-500/10", fg: "text-rose-500", ring: "ring-rose-500/20" },
-  slate: { bg: "bg-slate-500/10", fg: "text-slate-500", ring: "ring-slate-500/20" },
-};
-
-const chartConfig = {
-  token: { label: "Token 用量", color: "oklch(0.642 0.169 38.58)" },
-  skill: { label: "Skill 调用", color: "oklch(0.6 0.18 280)" },
-  mcp: { label: "MCP 调用", color: "oklch(0.65 0.2 145)" },
-  knowledge: { label: "KB 检索", color: "oklch(0.62 0.18 230)" },
-} satisfies ChartConfig;
+interface DashboardData {
+  stats: DashboardStats;
+  status: SystemStatus | null;
+  channels: ChannelItem[];
+}
 
 export default function DashboardPage() {
-  const { data: stats, error, refresh, nextIn } = usePolling<DashboardStats>({
-    fetcher: () => api<DashboardStats>("/api/v2/admin/dashboard/stats"),
+  const fetcher = useMemo(
+    () => async (): Promise<DashboardData> => {
+      const [stats, status, channels] = await Promise.all([
+        api<DashboardStats>("/api/v2/admin/dashboard/stats"),
+        api<SystemStatus>("/api/v2/admin/status").catch(() => null),
+        api<{ channels: ChannelItem[] }>("/api/v2/admin/channels").catch(() => ({ channels: [] })),
+      ]);
+      return { stats, status, channels: channels.channels ?? [] };
+    },
+    [],
+  );
+
+  const { data, error, refresh, nextIn, loading } = usePolling<DashboardData>({
+    fetcher,
     intervalMs: 60000,
   });
 
+  const stats = data?.stats ?? null;
+  const status = data?.status ?? null;
+  const channels = data?.channels ?? [];
+
+  // 4 大类可点击卡片数值
+  const featureValues: Record<FeatureCardSpec["key"], number> = {
+    agents: stats?.counts.agents ?? 0,
+    llm: (stats?.counts.llm ?? 0) + (stats?.counts.embedding ?? 0),
+    kb: (stats?.counts.knowledgeBases ?? 0) + (stats?.counts.skills ?? 0),
+    channels: channels.length,
+  };
+
+  const totalResources = stats
+    ? stats.counts.llm + stats.counts.embedding + stats.counts.mcp + stats.counts.skills
+    : null;
+
+  // 近期 7 天资源
+  const recentResources = useMemo<RecentResource[]>(() => {
+    const items: RecentResource[] = [];
+    for (const c of channels.slice(0, 6)) {
+      items.push({
+        id: `ch-${c.id}`,
+        kind: "channel",
+        name: c.pattern || c.id,
+        meta: `${c.targetBots?.length ?? 0} 个 bot`,
+        at: c.createdAt ?? "",
+        href: "/channels",
+      });
+    }
+    if (stats) {
+      items.push({
+        id: "stat-mcp",
+        kind: "mcp",
+        name: `MCP Servers · ${stats.counts.mcp}`,
+        meta: "已注册 MCP",
+        at: "",
+        href: "/resources",
+      });
+      items.push({
+        id: "stat-skill",
+        kind: "skill",
+        name: `Skill Pool · ${stats.counts.skills}`,
+        meta: "技能池",
+        at: "",
+        href: "/resources",
+      });
+    }
+    return items;
+  }, [channels, stats]);
+
   const errorMsg = error instanceof Error ? error.message : null;
+
+  // 静默引用以满足 lint:FEATURE_CARDS 在外部导出
+  void FEATURE_CARDS;
 
   return (
     <div className="space-y-5">
-      {/* Header */}
       <header className="flex items-center justify-between gap-3">
         <div className="space-y-1">
           <h2 className="text-xl font-semibold tracking-tight">总览 Dashboard</h2>
           <p className="text-sm text-muted-foreground">
-            数智资源总览 · 实时数据 · 每 60s 自动刷新
+            数智资源 + 运行状态 + 最近接入 · 每 60s 自动刷新
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -123,110 +151,19 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {/* Status cards */}
-      <section className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-        {COUNT_CARDS.map((card) => {
-          const Icon = card.icon;
-          const tone = TONE_CLASSES[card.tone];
-          const value = stats?.counts[card.key];
-          return (
-            <Card key={card.key} className="gap-1 py-3.5">
-              <CardContent className="px-3.5 space-y-1">
-                <div className="flex items-center justify-between">
-                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
-                    {card.label}
-                  </p>
-                  <div
-                    className={`size-6 grid place-items-center rounded-md ${tone.bg} ${tone.fg}`}
-                  >
-                    <Icon className="size-3.5" />
-                  </div>
-                </div>
-                {value === undefined ? (
-                  <Skeleton className="h-8 w-12" />
-                ) : (
-                  <p className="text-2xl font-semibold tracking-tight tabular-nums">
-                    {value}
-                  </p>
-                )}
-                <p className="text-[11px] text-muted-foreground leading-tight">
-                  {card.desc}
-                </p>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </section>
+      {errorMsg && (
+        <Card className="border-destructive/40 bg-destructive/5">
+          <CardContent className="p-3 text-sm text-destructive flex items-center gap-2">
+            <XCircle className="size-4" />
+            加载失败:{errorMsg}
+          </CardContent>
+        </Card>
+      )}
 
-      {/* Trend chart */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">近 7 天用量趋势</CardTitle>
-          <CardDescription>
-            按日聚合 · token / skill / mcp / knowledge
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {errorMsg ? (
-            <div className="h-72 grid place-items-center text-sm text-destructive">
-              加载失败:{errorMsg}
-            </div>
-          ) : !stats ? (
-            <Skeleton className="h-72 w-full" />
-          ) : stats.trends.length === 0 ? (
-            <div className="h-72 grid place-items-center text-sm text-muted-foreground">
-              暂无数据 — 等用量上报后会自动出现
-            </div>
-          ) : (
-            <ChartContainer config={chartConfig} className="h-72 w-full">
-              <LineChart
-                data={stats.trends}
-                margin={{ top: 8, right: 12, left: 0, bottom: 4 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis
-                  dataKey="date"
-                  tickLine={false}
-                  axisLine={false}
-                  tick={{ fontSize: 11 }}
-                  tickFormatter={(v: string) => v.slice(5)}
-                />
-                <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <ChartLegend content={<ChartLegendContent />} />
-                <Line
-                  type="monotone"
-                  dataKey="token"
-                  stroke="var(--color-token)"
-                  strokeWidth={2}
-                  dot={{ r: 3 }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="skill"
-                  stroke="var(--color-skill)"
-                  strokeWidth={2}
-                  dot={{ r: 3 }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="mcp"
-                  stroke="var(--color-mcp)"
-                  strokeWidth={2}
-                  dot={{ r: 3 }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="knowledge"
-                  stroke="var(--color-knowledge)"
-                  strokeWidth={2}
-                  dot={{ r: 3 }}
-                />
-              </LineChart>
-            </ChartContainer>
-          )}
-        </CardContent>
-      </Card>
+      <FeatureCards loading={loading && !stats} values={featureValues} />
+      <StatusOverview status={status} totalResources={totalResources} />
+      <UsageTrendChart trends={stats?.trends ?? null} loading={loading && !stats} />
+      <RecentResources resources={recentResources} />
     </div>
   );
 }
