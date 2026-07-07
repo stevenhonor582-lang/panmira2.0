@@ -93,6 +93,10 @@ export default function RuntimeConsolePage() {
 
   return (
     <div className="space-y-6 p-6">
+      <div className="rounded-md border border-blue-500/30 bg-blue-500/5 px-3 py-2 text-xs text-muted-foreground flex items-center gap-2">
+        <Activity className="size-3.5 text-blue-500" />
+        顶部状态条已实时显示活跃 bot/agent/pipeline 数 · 此页为详细视图(可中断 session)
+      </div>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Runtime Console</h1>

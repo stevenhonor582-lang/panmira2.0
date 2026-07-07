@@ -46,9 +46,9 @@ const NAV_GROUPS: NavGroup[] = [
     title: "🤖 Bot 工作室",
     items: [
       { label: "Agent 模板", href: "/agents", icon: Bot, badge: "MVP" },
-      { label: "定时任务 / 事件", href: "/agents/jobs", icon: Activity, badge: "NEW" },
-      { label: "多 Agent 编排", href: "/agents/pipelines", icon: Activity, badge: "NEW" },
-      { label: "Bot 对话日志", href: "/bots/conversations", icon: MessageSquare, badge: "NEW" },
+      { label: "定时任务 / 事件", href: "/agents/jobs", icon: Clock, badge: "NEW" },
+      { label: "多 Agent 编排", href: "/agents/pipelines", icon: Workflow, badge: "NEW" },
+      { label: "Bot 对话日志", href: "/logs", icon: MessageSquare, badge: "NEW" },
       { label: "Runtime Console", href: "/runtime", icon: Activity, badge: "NEW" },
       { label: "蓝图深度编辑器", href: "/agents/templates", icon: Activity, badge: "NEW" },
     ],

@@ -14,6 +14,7 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { Moon, Sun, LogOut, User, Bell, ChevronRight } from "lucide-react";
+import { TopbarActiveStatus } from "./topbar-active";
 import { getUser, logout, type AuthUser } from "@/lib/auth";
 import { NAV_LABEL_MAP, NAV_GROUP_MAP } from "./sidebar";
 
@@ -68,6 +69,8 @@ export function Topbar() {
       </div>
 
       <div className="flex items-center gap-1">
+        <TopbarActiveStatus />
+        <Separator orientation="vertical" className="h-5 mx-1" />
         <Button
           variant="ghost"
           size="icon-sm"
