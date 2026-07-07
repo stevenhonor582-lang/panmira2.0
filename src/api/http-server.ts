@@ -32,6 +32,8 @@ import { handleOAuthRoutes } from './routes/oauth-routes.js';
 import { handleResourceRoutes } from './routes/resource-routes.js';
 import { handleRuntimeRoutes } from './routes/runtime-routes.js';
 import { handleSkillDagRoutes } from './routes/skill-dag-routes.js';
+import { handleScheduledJobsRoutes } from './routes/scheduled-jobs-routes.js';
+import { handleAgentRunLogsRoutes } from './routes/agent-run-logs-routes.js';
 import { handleKnowledgeBaseRoutes } from './routes/knowledge-base-routes.js';
 import { handleAgentKnowledgeRoutes } from './routes/agent-knowledge-routes.js';
 import { handleAgentRunRoutes } from './routes/agent-run-routes.js';
@@ -712,6 +714,18 @@ ${content}
       if (url.startsWith("/api/v2/admin/skill-dags")) {
         if (await handleSkillDagRoutes(req, res, method, url)) return;
         jsonResponse(res, 404, { error: "Skill DAG route not found" });
+        return;
+      }
+
+      // Phase 1: Scheduled Jobs + Agent Run Logs
+      if (url.startsWith("/api/v2/admin/scheduled-jobs")) {
+        if (await handleScheduledJobsRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: "Scheduled job route not found" });
+        return;
+      }
+      if (url.startsWith("/api/v2/admin/agent-run-logs")) {
+        if (await handleAgentRunLogsRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: "Agent run log route not found" });
         return;
       }
 

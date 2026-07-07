@@ -1,6 +1,7 @@
 import {
   pgTable,
   uniqueIndex,
+  index,
   uuid,
   varchar,
   text,
@@ -89,6 +90,8 @@ export const agents = pgTable('agents', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   displayName: text('display_name'),
   version: integer('version').default(1),
+  deploymentType: varchar('deployment_type', { length: 30 }).notNull().default('bot'),
+  // 'bot' | 'job' | 'api' | 'mixed'
 });
 
 export const memories = pgTable('memories', {
@@ -153,8 +156,10 @@ export const botConfigs = pgTable('bot_configs', {
   botId: uuid('bot_id').defaultRandom(),
   remark: text('remark').default(''),
   displayName: text('display_name'),
+  agentTemplateId: uuid('agent_template_id').references(() => agents.id, { onDelete: 'set null' }),
 }, (t) => ({
   nameIdx: uniqueIndex('bot_configs_name_unique').on(t.name),
+  templateIdx: index('bot_configs_template_idx').on(t.agentTemplateId),
 }));
 
 // ── bot_secrets ──────────────────────────────────────────────────────────────
@@ -892,3 +897,65 @@ export const skillDags = pgTable('skill_dags', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+
+// ── Phase 1: 3 deployment forms (Bot / Job / API) ──────────────────────────
+
+// scheduled_jobs: cron/event/manual triggers for Agent internal processing
+export const scheduledJobs = pgTable('scheduled_jobs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  agentTemplateId: uuid('agent_template_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 200 }).notNull(),
+  description: text('description'),
+  triggerType: varchar('trigger_type', { length: 20 }).notNull(),
+  // 'cron' | 'event' | 'manual'
+  cronExpression: varchar('cron_expression', { length: 100 }),
+  // for cron: standard 5-field cron expression (e.g., '0 23 * * *' = 每天23点)
+  eventTopic: varchar('event_topic', { length: 200 }),
+  // for event: topic name (e.g., 'order.created', 'invoice.paid')
+  inputTemplate: jsonb('input_template').default({}),
+  // for event: template to extract input from event payload
+  enabled: boolean('enabled').notNull().default(true),
+  lastRunAt: timestamp('last_run_at', { withTimezone: true }),
+  lastStatus: varchar('last_status', { length: 20 }),
+  // 'success' | 'failed' | 'timeout' | 'running'
+  lastDurationMs: integer('last_duration_ms'),
+  lastError: text('last_error'),
+  runCount: integer('run_count').notNull().default(0),
+  successCount: integer('success_count').notNull().default(0),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  templateIdx: index('scheduled_jobs_template_idx').on(t.agentTemplateId),
+  triggerIdx: index('scheduled_jobs_trigger_idx').on(t.triggerType),
+}));
+
+// agent_run_logs: unified call log for all deployment forms
+export const agentRunLogs = pgTable('agent_run_logs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  agentTemplateId: uuid('agent_template_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  deploymentType: varchar('deployment_type', { length: 20 }).notNull(),
+  // 'bot' | 'job' | 'api'
+  deploymentRefId: varchar('deployment_ref_id', { length: 255 }),
+  // bot_id / job_id / api_caller_id
+  userId: uuid('user_id').references(() => users.id),
+  // null for jobs
+  sessionId: varchar('session_id', { length: 255 }),
+  inputSummary: text('input_summary'),
+  outputSummary: text('output_summary'),
+  durationMs: integer('duration_ms'),
+  tokensUsed: integer('tokens_used'),
+  costUsd: numeric('cost_usd').default('0'),
+  status: varchar('status', { length: 20 }).notNull(),
+  // 'success' | 'failed' | 'timeout'
+  errorMessage: text('error_message'),
+  metadata: jsonb('metadata').default({}),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  templateIdx: index('agent_run_logs_template_idx').on(t.agentTemplateId),
+  createdIdx: index('agent_run_logs_created_idx').on(t.createdAt),
+  typeIdx: index('agent_run_logs_type_idx').on(t.deploymentType),
+}));
