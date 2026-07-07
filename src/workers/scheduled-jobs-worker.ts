@@ -9,6 +9,7 @@
 import { pool } from '../db/index.js';
 import { nextCronOccurrence, isValidCron } from '../scheduler/cron-utils.js';
 import { findPipelinesForAgent, triggerPipelineForBot } from '../services/pipeline-bot-trigger.js';
+import { sanitizeErrorMessage } from '../services/pipeline-engine.js';
 import type { Logger } from '../utils/logger.js';
 
 interface ScheduledJobRow {
@@ -101,7 +102,7 @@ export async function runDueJob(
          run_count = COALESCE(run_count, 0) + 1,
          success_count = COALESCE(success_count, 0) + $4
      WHERE id = $5`,
-    [ok ? 'success' : 'failed', durationMs, error ?? null, ok ? 1 : 0, job.id],
+    [ok ? 'success' : 'failed', durationMs, error ? sanitizeErrorMessage(new Error(error)) : null, ok ? 1 : 0, job.id],
   );
   return { ok, error, durationMs };
 }

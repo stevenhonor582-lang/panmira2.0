@@ -128,7 +128,7 @@ async function triggerPipeline(req: http.IncomingMessage, res: http.ServerRespon
 
   const result = await executePipeline(
     pipeline, run.id,
-    { triggeredBy, triggeredByRef: triggeredByRef || undefined, initialInput },
+    { triggeredBy, triggeredByRef: triggeredByRef || undefined, initialInput, tenantId: ctx.tenantId },
     async (nodeId, state) => {
       const current = await db.select().from(pipelineRuns).where(eq(pipelineRuns.id, run.id)).limit(1);
       if (current.length === 0) return;
