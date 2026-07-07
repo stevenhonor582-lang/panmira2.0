@@ -30,6 +30,10 @@
 - `web/src/App.tsx`:3 个新路由
 - `web/src/i18n/locales/{zh,en}.json`:runtime + blueprint + dag keys
 
+## ⚠️ Build Script 修复(commit 3c173531)
+
+`npm run build` 原本调 `tsc` 默认用 `tsconfig.json` 但有 `noEmit: true`,**导致 dist 不更新**(静默跳过编译)。已改为 `tsc -p tsconfig.build.json`(emit 模式)。新加后端文件后如发现路由 404,先 `rm -rf dist && npm run build && pm2 reload panmira`。
+
 ## 部署状态
 
 - **branch**: `fix/memory-system-2026-06-27` 已 merge + push
@@ -40,7 +44,7 @@
   - https://deepx.fun/web/app/runtime → 200 (SPA fallback)
   - https://deepx.fun/web/app/agents/templates → 200
   - https://deepx.fun/web/app/skills/dags → 200
-- **API e2e**: `runtime/stats` 返回 404 — 需后续用 admin token 验证 scope 中间件(可能 scope 未匹配 admin role)
+- **API e2e** ✅: 用 admin JWT 实测全部 200,返回真实数据(stats / sessions / skill-dags)
 
 ## 验证步骤
 
