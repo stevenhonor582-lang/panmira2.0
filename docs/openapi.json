@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "panmira N1 API",
-    "version": "1.6.0",
-    "description": "panmira N1 OpenAPI 3.0 spec. IA v6 (commit 95b16907 + IA v6 alignment, 2026-07-08). New IA v6 module paths under /api/v2/{overview,people,employees,tasks,foundation,channels,models}. Old paths under /api/v2/admin/* carry Deprecation: true + Sunset: 2026-08-01 headers.",
+    "version": "1.7.0",
+    "description": "panmira N1 OpenAPI 3.0 spec. A1 (2026-07-08): users extended with phone/sid/role(admin|operator|member)/lock fields, JWT rotated + TTLs tightened (access 1h, refresh 30d), 2-step login at /api/auth/login/step1+step2, RBAC enforced via src/middleware/rbac.ts. Backwards compat: legacy /api/auth/login returns Deprecation headers.",
     "contact": {
       "name": "panmira"
     }
@@ -326,7 +326,7 @@
       },
       "post": {
         "summary": "Submit login credentials",
-        "description": "Submit password for authentication.",
+        "description": "[DEPRECATED 2026-09-01] Use /api/auth/login/step1 + /api/auth/login/step2 instead. Submit password for authentication.",
         "tags": [
           "auth"
         ],
@@ -901,7 +901,7 @@
     },
     "/api/auth/users": {
       "get": {
-        "summary": "List users",
+        "summary": "A1 列出用户 (admin / operator)",
         "description": "List all users in current tenant. Scope: user:admin.",
         "tags": [
           "auth"
@@ -943,6 +943,48 @@
           },
           "429": {
             "description": "Rate limit exceeded"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "A1 创建用户 (admin 全权;operator 仅 member)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/A1CreateUserRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "$ref": "#/components/schemas/A1User"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数错误 / email 已存在"
+          },
+          "401": {
+            "description": "需要 Bearer token"
+          },
+          "403": {
+            "description": "需要 admin 或 operator 角色"
           }
         }
       }
@@ -11902,6 +11944,117 @@
           }
         }
       }
+    },
+    "/api/auth/login/step1": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "A1 登录 step1: 账号密码 → 返回 verificationCode (不返回 token)",
+        "description": "5 分钟 TTL。失败 5 次 → 账户 locked 30 分钟。开发态默认在响应里回传 verificationCode (通过 PANMIRA_DEV_RETURN_CODE=false 关闭)。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/A1LoginStep1Request"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK — 返回 verificationCode + user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/A1LoginStep1Response"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "缺少 email/password"
+          },
+          "401": {
+            "description": "账号或密码错误"
+          },
+          "423": {
+            "description": "账户已锁定(locked_until 未到期)"
+          },
+          "429": {
+            "description": "IP 级速率限制(60s 内 5 次)"
+          }
+        }
+      }
+    },
+    "/api/auth/login/step2": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "A1 登录 step2: verificationCode → 完整 token pair",
+        "description": "5 分钟内有效。错误码会被记入 failed_attempts;5 次后自动锁 30 分钟。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/A1LoginStep2Request"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK — 返回 accessToken/refreshToken + user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/A1LoginTokenResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "缺少 email 或 code"
+          },
+          "401": {
+            "description": "code 无效或过期"
+          }
+        }
+      }
+    },
+    "/api/auth/login/lockout": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "查询账户锁定状态",
+        "parameters": [
+          {
+            "name": "email",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "email"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/A1LockoutStatus"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -12238,6 +12391,225 @@
           },
           "chunkOverlap": {
             "type": "integer"
+          }
+        }
+      },
+      "A1User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "nullable": true
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "operator",
+              "member"
+            ]
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "avatarUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "tenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sid": {
+            "type": "string",
+            "nullable": true,
+            "description": "格式 metmira:<handle>"
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "failedAttempts": {
+            "type": "integer"
+          },
+          "lockedUntil": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "isActive"
+        ]
+      },
+      "A1LoginStep1Request": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "password": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
+      },
+      "A1LoginStep1Response": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "user": {
+            "$ref": "#/components/schemas/A1User"
+          },
+          "verificationCode": {
+            "type": "string",
+            "description": "开发态回传;生产通过短信/邮件发送"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresInSeconds": {
+            "type": "integer"
+          },
+          "nextStep": {
+            "type": "string"
+          }
+        }
+      },
+      "A1LoginStep2Request": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "verificationCode": {
+            "type": "string",
+            "minLength": 6,
+            "maxLength": 6
+          }
+        },
+        "required": [
+          "email",
+          "verificationCode"
+        ]
+      },
+      "A1LoginTokenResponse": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/A1User"
+          },
+          "accessToken": {
+            "type": "string",
+            "description": "JWT HS256, TTL 1h"
+          },
+          "refreshToken": {
+            "type": "string",
+            "description": "JWT HS256, TTL 30d"
+          },
+          "expiresIn": {
+            "type": "integer",
+            "description": "access token 过期秒数 = 3600"
+          }
+        }
+      },
+      "A1LockoutStatus": {
+        "type": "object",
+        "properties": {
+          "exists": {
+            "type": "boolean"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "lockedUntil": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "remainingMinutes": {
+            "type": "integer"
+          },
+          "failedAttempts": {
+            "type": "integer"
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        }
+      },
+      "A1CreateUserRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 6
+          },
+          "name": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "operator",
+              "member"
+            ],
+            "default": "member"
+          }
+        },
+        "required": [
+          "email",
+          "password",
+          "name"
+        ]
+      },
+      "A1UpdateUserRequest": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "operator",
+              "member"
+            ]
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "unlock": {
+            "type": "boolean"
           }
         }
       }
