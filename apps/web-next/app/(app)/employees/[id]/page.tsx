@@ -1,3 +1,16 @@
+"use client";
+
+/**
+ * /employees/[id] — agent detail page (P7-B2).
+ *
+ * Client component (the tab render-function pattern would otherwise leak
+ * a server-side render function into a client child). Uses React.use() to
+ * unwrap the Next.js 16 params/searchParams promises on the client.
+ */
+
+import * as React from "react";
+import { useParams, useSearchParams } from "next/navigation";
+
 import { AgentHeader } from "./_components/agent-header";
 import { EmployeeTabs } from "./_components/tab-tabs";
 import { TabBasics } from "./_components/tab-basics";
@@ -9,15 +22,11 @@ import { TabTasks } from "./_components/tab-tasks";
 import { TabLogs } from "./_components/tab-logs";
 import type { EmployeeTabValue } from "./_components/tab-tabs";
 
-export default async function Page({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string }>;
-}) {
-  const { id } = await params;
-  const { tab } = await searchParams;
+export default function Page() {
+  const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
+  const id = params?.id ?? "";
+  const tab = searchParams?.get("tab") ?? undefined;
   const initial = (tab ?? "basics") as EmployeeTabValue;
 
   return (
