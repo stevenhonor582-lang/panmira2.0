@@ -314,6 +314,88 @@ async function invokeAgent(
   return await invokeRealAgent(agent, input, ctx);
 }
 
+/**
+ * Compute "levels" for parallel execution:
+ * - level 0: nodes with no predecessors
+ * - level n+1: max(predecessor levels) + 1
+ * Nodes at the same level have no dependencies between them and can run in parallel.
+ */
+export function computeLevels(nodes: PipelineNode[], edges: PipelineEdge[]): Map<string, number> {
+  const predecessors = new Map<string, string[]>();
+  for (const n of nodes) predecessors.set(n.id, []);
+  for (const e of edges ?? []) predecessors.get(e.to)?.push(e.from);
+
+  const levels = new Map<string, number>();
+  // Iterative computation: keep going until stable (handles arbitrary DAGs)
+  let changed = true;
+  for (const n of nodes) levels.set(n.id, 0);
+  let safety = nodes.length * 2; // prevent infinite loop
+  while (changed && safety-- > 0) {
+    changed = false;
+    for (const n of nodes) {
+      const preds = predecessors.get(n.id) ?? [];
+      if (preds.length === 0) {
+        if (levels.get(n.id) !== 0) { levels.set(n.id, 0); changed = true; }
+        continue;
+      }
+      const maxPred = Math.max(...preds.map(p => levels.get(p) ?? 0));
+      const newLevel = maxPred + 1;
+      if (levels.get(n.id) !== newLevel) { levels.set(n.id, newLevel); changed = true; }
+    }
+  }
+  return levels;
+}
+
+/** Run a single node with retry on failure. Exposed for testing. */
+export async function runNodeWithRetry(
+  node: PipelineNode,
+  input: unknown,
+  ctx: InvokeContext,
+  retryPolicy: Pipeline['retryPolicy'],
+  onNodeUpdate: (nodeId: string, state: NodeState) => Promise<void>,
+  state: NodeState,
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise(r => setTimeout(r, ms)),
+): Promise<NodeState> {
+  const maxAttempts = Math.max(1, retryPolicy?.maxAttempts ?? 1);
+  const backoffMs = Math.max(0, retryPolicy?.backoffMs ?? 0);
+  let attempt = 0;
+  let lastError: string | undefined;
+  while (attempt < maxAttempts) {
+    attempt++;
+    const startedAt = new Date().toISOString();
+    state.status = 'running';
+    state.startedAt = startedAt;
+    state.input = input;
+    await onNodeUpdate(node.id, state);
+    const nodeStart = Date.now();
+    try {
+      const { output, tokensUsed } = await invokeAgent(node, input, ctx);
+      return {
+        status: 'success',
+        input,
+        output,
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        durationMs: Date.now() - nodeStart,
+        tokensUsed,
+      };
+    } catch (e: unknown) {
+      lastError = e instanceof Error ? e.message : String(e);
+      if (attempt < maxAttempts && backoffMs > 0) {
+        await sleep(backoffMs);
+      }
+    }
+  }
+  return {
+    status: 'failed',
+    input,
+    error: lastError ?? 'unknown error after retries',
+    startedAt: state.startedAt,
+    finishedAt: new Date().toISOString(),
+    durationMs: 0,
+  };
+}
+
 export async function executePipeline(
   pipeline: Pipeline,
   runId: string,
@@ -331,74 +413,109 @@ export async function executePipeline(
     };
   }
   const order = validation.order;
-  const states: Record<string, NodeState> = {};
-  for (const n of order) states[n.id] = { status: 'pending' };
 
-  // Build input map: for each node, its inputs come from outputs of its predecessors
+  // Predecessor map for input composition
   const predecessors = new Map<string, string[]>();
   for (const n of order) predecessors.set(n.id, []);
   for (const e of pipeline.edges ?? []) predecessors.get(e.to)?.push(e.from);
 
   const ctx: InvokeContext = { useMockLlm, runId };
-  let currentInput: unknown = trigger.initialInput ?? { initial: true };
+
+  // Group nodes by level (parallel within level)
+  const levels = computeLevels(order, pipeline.edges ?? []);
+  const byLevel = new Map<number, PipelineNode[]>();
+  for (const n of order) {
+    const lv = levels.get(n.id) ?? 0;
+    if (!byLevel.has(lv)) byLevel.set(lv, []);
+    byLevel.get(lv)!.push(n);
+  }
+  const sortedLevels = Array.from(byLevel.keys()).sort((a, b) => a - b);
+
+  const states: Record<string, NodeState> = {};
+  for (const n of order) states[n.id] = { status: 'pending' };
+
+  // Pre-compute per-node input
+  const nodeInput = new Map<string, unknown>();
+  for (const n of order) {
+    const preds = predecessors.get(n.id) ?? [];
+    if (preds.length === 0) {
+      nodeInput.set(n.id, { ...(n.inputTemplate ?? {}), ...(trigger.initialInput ?? {}) });
+    }
+  }
+
   let failed = false;
 
-  for (const node of order) {
+  for (const lv of sortedLevels) {
     if (failed) {
-      states[node.id] = { status: 'skipped' };
-      await onNodeUpdate(node.id, states[node.id]);
+      for (const node of byLevel.get(lv)!) {
+        states[node.id] = { status: 'skipped' };
+        await onNodeUpdate(node.id, states[node.id]);
+      }
       continue;
     }
 
-    // Compose input from predecessors' outputs
-    const preds = predecessors.get(node.id) ?? [];
-    if (preds.length > 0) {
+    const levelNodes = byLevel.get(lv)!;
+    // Compose inputs for nodes whose predecessors completed in earlier levels
+    for (const node of levelNodes) {
+      const preds = predecessors.get(node.id) ?? [];
+      if (preds.length === 0) continue;
       const composed: Record<string, unknown> = { ...(node.inputTemplate ?? {}) };
       for (const predId of preds) {
         const predOutput = states[predId]?.output;
-        const outputKey = pipeline.nodes.find(n => n.id === predId)?.outputKey ?? predId;
+        const outputKey = pipeline.nodes.find(nn => nn.id === predId)?.outputKey ?? predId;
         composed[outputKey] = predOutput;
       }
-      currentInput = composed;
-    } else {
-      currentInput = { ...(node.inputTemplate ?? {}), ...(trigger.initialInput ?? {}) };
+      nodeInput.set(node.id, composed);
     }
 
-    states[node.id] = { status: 'running', input: currentInput, startedAt: new Date().toISOString() };
-    await onNodeUpdate(node.id, states[node.id]);
+    // Run all nodes in this level in parallel
+    const results = await Promise.all(
+      levelNodes.map(async (node) => {
+        const input = nodeInput.get(node.id);
+        return await runNodeWithRetry(
+          node, input, ctx, pipeline.retryPolicy, onNodeUpdate,
+          states[node.id] ?? { status: 'pending' },
+        );
+      }),
+    );
 
-    const nodeStart = Date.now();
-    try {
-      const { output, tokensUsed } = await invokeAgent(node, currentInput, ctx);
-      states[node.id] = {
-        status: 'success',
-        input: currentInput,
-        output,
-        startedAt: states[node.id].startedAt,
-        finishedAt: new Date().toISOString(),
-        durationMs: Date.now() - nodeStart,
-        tokensUsed,
-      };
-      currentInput = output;
-    } catch (e: unknown) {
-      states[node.id] = {
-        status: 'failed',
-        input: currentInput,
-        error: e instanceof Error ? e.message : String(e),
-        startedAt: states[node.id].startedAt,
-        finishedAt: new Date().toISOString(),
-        durationMs: Date.now() - nodeStart,
-      };
-      failed = true;
+    // Apply results
+    for (let i = 0; i < levelNodes.length; i++) {
+      const node = levelNodes[i]!;
+      const finalState = results[i]!;
+      states[node.id] = finalState;
+      await onNodeUpdate(node.id, finalState);
+      if (finalState.status === 'failed') {
+        failed = true;
+      }
     }
-    await onNodeUpdate(node.id, states[node.id]);
+  }
+
+  // Determine final result: last successful level's outputs
+  let result: unknown;
+  if (!failed) {
+    const lastLevel = sortedLevels[sortedLevels.length - 1];
+    if (lastLevel !== undefined) {
+      const lastNodes = byLevel.get(lastLevel)!;
+      if (lastNodes.length === 1) {
+        result = states[lastNodes[0]!.id]?.output;
+      } else {
+        // Multiple nodes at last level: combine outputs
+        const combined: Record<string, unknown> = {};
+        for (const n of lastNodes) {
+          const key = n.outputKey ?? n.id;
+          combined[key] = states[n.id]?.output;
+        }
+        result = combined;
+      }
+    }
   }
 
   return {
     runId,
     status: failed ? 'failed' : 'completed',
     nodeStates: states,
-    result: failed ? undefined : currentInput,
+    result: failed ? undefined : result,
     error: failed ? 'One or more nodes failed' : undefined,
     durationMs: Date.now() - startTime,
   };
