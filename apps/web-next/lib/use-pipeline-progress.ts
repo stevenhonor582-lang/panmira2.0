@@ -6,6 +6,11 @@
  * Connects to /ws and listens for messages with type='pipeline_progress'.
  * Filters by pipelineId so multiple pipelines can coexist.
  *
+ * L10: Optional botId filter so an admin watching one bot's activity
+ *      does not get flooded by events from other bots. State now also
+ *      surfaces botId / chatId from the event so the UI can render the
+ *      trigger context (e.g. "bot=feishu-main / chat=oc_xxx").
+ *
  * Falls back gracefully: if WS is unavailable, returns initial state with wsConnected=false.
  * The component can then optionally show a "polling fallback" message.
  */
@@ -22,6 +27,18 @@ export interface PipelineProgressState {
   error: string | null;
   /** ISO timestamp of last update */
   lastUpdate: string | null;
+  /** L10: Bot that triggered this run (Feishu/Telegram bot name). null = not bot-triggered. */
+  botId: string | null;
+  /** L10: Chat / conversation ID where the run was triggered. */
+  chatId: string | null;
+}
+
+export interface UsePipelineProgressOptions {
+  /**
+   * 若设置,只接受 botId 匹配的事件(过滤其他 bot 的进度)。
+   * 不设置 = 不过滤。
+   */
+  botId?: string;
 }
 
 export interface UsePipelineProgressResult {
@@ -38,6 +55,8 @@ const INITIAL: PipelineProgressState = {
   progress: 0,
   error: null,
   lastUpdate: null,
+  botId: null,
+  chatId: null,
 };
 
 function deriveWsUrl(): string | null {
@@ -49,7 +68,11 @@ function deriveWsUrl(): string | null {
   return `${proto}//${window.location.host}/ws${qs}`;
 }
 
-export function usePipelineProgress(pipelineId: string): UsePipelineProgressResult {
+export function usePipelineProgress(
+  pipelineId: string,
+  opts?: UsePipelineProgressOptions,
+): UsePipelineProgressResult {
+  const botIdFilter = opts?.botId;
   const [state, setState] = useState<PipelineProgressState>(INITIAL);
   const [wsConnected, setWsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
@@ -83,6 +106,11 @@ export function usePipelineProgress(pipelineId: string): UsePipelineProgressResu
             const msg = JSON.parse(evt.data);
             if (msg?.type !== "pipeline_progress") return;
             if (msg.pipelineId !== pipelineId) return;
+            // L10: 按 bot 过滤,空 botId 永远不匹配(避免 admin 视图混进全局事件)
+            if (botIdFilter !== undefined) {
+              const evBotId = (msg.botId ?? null) as string | null;
+              if (evBotId !== botIdFilter) return;
+            }
             setState({
               runId: msg.runId ?? null,
               status: msg.status ?? null,
@@ -92,6 +120,8 @@ export function usePipelineProgress(pipelineId: string): UsePipelineProgressResu
               progress: Math.max(0, Math.min(100, Number(msg.progress ?? 0))),
               error: msg.error ?? null,
               lastUpdate: msg.ts ?? new Date().toISOString(),
+              botId: (msg.botId ?? null) as string | null,
+              chatId: (msg.chatId ?? null) as string | null,
             });
           } catch {
             // ignore malformed messages
@@ -110,7 +140,9 @@ export function usePipelineProgress(pipelineId: string): UsePipelineProgressResu
       wsRef.current?.close();
       wsRef.current = null;
     };
-  }, [pipelineId]);
+    // botIdFilter participates in identity so changes take effect on reconnect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pipelineId, botIdFilter]);
 
   return { state, wsConnected };
 }

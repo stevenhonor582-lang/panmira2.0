@@ -47,7 +47,16 @@ async function tryPipelineThenBridge(
   const agentTemplateId = await getBotAgentTemplateId(botConfig.name);
   if (agentTemplateId && msg.text && msg.chatId) {
     const runIdHint = `bot-${msg.messageId || Date.now()}`;
-    const result = await triggerPipelineForBot(agentTemplateId, msg.text, runIdHint);
+    // L10: 把 bot / chat 上下文传给 pipeline-bot-trigger,
+    //      让 WS 进度事件带上 botId / chatId,前端可按 bot 过滤。
+    const result = await triggerPipelineForBot(
+      agentTemplateId,
+      msg.text,
+      runIdHint,
+      undefined,
+      'first',
+      { botId: botConfig.name, chatId: msg.chatId },
+    );
     if (result) {
       botLogger.info(
         { bot: botConfig.name, runId: result.runId, outputLen: result.output.length },
