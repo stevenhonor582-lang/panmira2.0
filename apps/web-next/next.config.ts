@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  basePath: "/web-next",
+  basePath: "", // 切换: 服务根路径
   trailingSlash: true,
   allowedDevOrigins: ["deepx.fun", "*.deepx.fun", "localhost", "127.0.0.1"],
 
