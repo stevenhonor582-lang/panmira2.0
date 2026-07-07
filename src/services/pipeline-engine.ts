@@ -1,13 +1,26 @@
 /**
- * Pipeline execution engine (Phase 2):
+ * Pipeline execution engine (Phase 2 + Phase 3 real LLM):
  *
  * - Parse DAG (nodes + edges)
  * - Topological sort
  * - Execute nodes sequentially, passing output of n as input of n+1
  * - Write per-node state to pipeline_runs.node_states
- * - In v0: simulated agent invocation (returns mock output based on agentTemplateId).
- *         Real LLM invocation comes in Phase 3.
+ * - Phase 3: Real LLM invocation via callLlm + agent template (systemPrompt / tools / KB refs)
+ *   Follows the same pattern as src/api/routes/agent-run-routes.ts:23-166
+ *   (Option C: complete single-agent invocation)
  */
+import { db } from '../db/index.js';
+import { agents, agentKnowledgeRefs } from '../db/schema.js';
+import { eq } from 'drizzle-orm';
+import {
+  callLlm,
+  LlmCallError,
+  type LlmTool,
+  type LlmMessage,
+} from './llm-client.js';
+import { buildRagContext } from './rag-service.js';
+import { executeTool } from './tool-executor.js';
+import { recordTokenUsage } from './usage-tracker.js';
 
 export interface PipelineNode {
   id: string;
@@ -57,6 +70,26 @@ export interface RunResult {
   result?: unknown;
   error?: string;
   durationMs: number;
+}
+
+export interface InvokeContext {
+  useMockLlm: boolean;
+  runId: string;
+}
+
+/** Serialize arbitrary input for LLM. Truncate huge payloads to keep LLM context sane. */
+export function stringifyInput(input: unknown): string {
+  if (input === null || input === undefined) return '';
+  if (typeof input === 'string') return input;
+  try {
+    const s = JSON.stringify(input, null, 2);
+    if (s.length > 8000) {
+      return s.slice(0, 8000) + '\n...[truncated, full output in pipeline_runs.node_states]';
+    }
+    return s;
+  } catch {
+    return String(input);
+  }
 }
 
 // Detect cycle using DFS (returns nodes in cycle if found, empty if acyclic)
@@ -146,21 +179,139 @@ export function validatePipeline(p: Pipeline): { ok: true; order: PipelineNode[]
   return { ok: true, order };
 }
 
-// v0 simulated agent invocation.
-// Phase 3 will replace with real LLM call using agentTemplateId + input.
-async function invokeAgent(node: PipelineNode, input: unknown): Promise<{ output: unknown; tokensUsed: number }> {
-  // Simulate work
-  await new Promise(r => setTimeout(r, 50));
+type AgentRow = typeof agents.$inferSelect;
+
+/**
+ * Real LLM agent invocation (Phase 3).
+ * Pattern: load agent template → optional RAG → callLlm → optional 1-hop tool_use loop.
+ * Mirrors agent-run-routes.ts:23-166 for consistency.
+ */
+async function invokeRealAgent(
+  agent: AgentRow,
+  input: unknown,
+  ctx: InvokeContext,
+): Promise<{ output: unknown; tokensUsed: number }> {
+  // 1. KB refs (RAG injection is conditional)
+  const refs = await db.select().from(agentKnowledgeRefs)
+    .where(eq(agentKnowledgeRefs.agentId, agent.id));
+
+  // 2. Compose system prompt (RAG appended if refs present)
+  let systemPrompt = agent.systemPrompt ?? '';
+  if (refs.length > 0) {
+    try {
+      const rag = await buildRagContext({
+        agentId: agent.id,
+        userQuery: stringifyInput(input),
+        userId: 'pipeline:' + ctx.runId,
+        tenantId: 'system',
+        topK: 5,
+        mode: 'hybrid',
+        minScore: 0,
+      });
+      if (rag?.prompt) {
+        systemPrompt = systemPrompt ? `${systemPrompt}\n\n${rag.prompt}` : rag.prompt;
+      }
+    } catch (e) {
+      console.warn(`[pipeline] RAG failed for agent ${agent.id}:`, (e as Error).message);
+    }
+  }
+
+  // 3. Build messages + tools
+  const messages: LlmMessage[] = [{ role: 'user', content: stringifyInput(input) }];
+  const tools: LlmTool[] | undefined =
+    Array.isArray(agent.tools) && (agent.tools as unknown[]).length > 0
+      ? (agent.tools as LlmTool[])
+      : undefined;
+
+  // 4. First LLM call
+  let result = await callLlm({
+    system: systemPrompt,
+    messages,
+    tools,
+    maxTokens: 1024,
+  });
+
+  // 5. tool_use 1-hop loop (matches agent-run-routes.ts:88-117)
+  if (tools && result.toolUses.length > 0) {
+    const toolCall = result.toolUses[0]!;
+    let toolResult: { output: unknown; error?: string };
+    try {
+      toolResult = await executeTool(toolCall.name, toolCall.input, { agentId: agent.id, tenantId: 'system' });
+    } catch (e) {
+      throw new Error(`tool ${toolCall.name} failed: ${(e as Error).message}`);
+    }
+    messages.push({ role: 'assistant', content: result.text || '' });
+    messages.push({
+      role: 'user',
+      content: `Tool ${toolCall.name} result: ${JSON.stringify(toolResult.output).slice(0, 2000)}`,
+    });
+    const follow = await callLlm({
+      system: systemPrompt,
+      messages,
+      tools,
+      maxTokens: 1024,
+    });
+    result = {
+      ...result,
+      text: follow.text,
+      usage: {
+        inputTokens: result.usage.inputTokens + follow.usage.inputTokens,
+        outputTokens: result.usage.outputTokens + follow.usage.outputTokens,
+        totalTokens: result.usage.totalTokens + follow.usage.totalTokens,
+      },
+      durationMs: result.durationMs + follow.durationMs,
+    };
+  }
+
+  // 6. Token usage accounting (fire-and-forget; tenantId='system' is fine for pipeline runs)
+  if (result.usage.totalTokens > 0) {
+    try {
+      recordTokenUsage('system', `pipeline:agent:${agent.id}`, result.usage.totalTokens);
+    } catch {
+      // never let accounting break execution
+    }
+  }
+
   return {
     output: {
-      agent: node.label,
-      agentTemplateId: node.agentTemplateId,
-      receivedInput: input,
-      producedAt: new Date().toISOString(),
-      result: `[${node.label}] processed`,
+      text: result.text,
+      agentId: agent.id,
+      model: result.model,
+      provider: result.provider,
+      toolCalls: result.toolUses,
     },
-    tokensUsed: 100 + Math.floor(Math.random() * 200),
+    tokensUsed: result.usage.totalTokens,
   };
+}
+
+/**
+ * Phase 3 invokeAgent. Mock-mode short-circuits; real mode loads agent + delegates to invokeRealAgent.
+ */
+async function invokeAgent(
+  node: PipelineNode,
+  input: unknown,
+  ctx: InvokeContext,
+): Promise<{ output: unknown; tokensUsed: number }> {
+  if (ctx.useMockLlm) {
+    return {
+      output: {
+        text: `[MOCK ${node.label}] received ${stringifyInput(input).slice(0, 200)}`,
+        agentId: node.agentTemplateId,
+        mock: true,
+      },
+      tokensUsed: 0,
+    };
+  }
+
+  const [agent] = await db
+    .select()
+    .from(agents)
+    .where(eq(agents.id, node.agentTemplateId))
+    .limit(1);
+  if (!agent) {
+    throw new Error(`agent ${node.agentTemplateId} not found`);
+  }
+  return await invokeRealAgent(agent, input, ctx);
 }
 
 export async function executePipeline(
@@ -168,6 +319,7 @@ export async function executePipeline(
   runId: string,
   trigger: RunTrigger,
   onNodeUpdate: (nodeId: string, state: NodeState) => Promise<void>,
+  useMockLlm: boolean = false,
 ): Promise<RunResult> {
   const startTime = Date.now();
   const validation = validatePipeline(pipeline);
@@ -187,6 +339,7 @@ export async function executePipeline(
   for (const n of order) predecessors.set(n.id, []);
   for (const e of pipeline.edges ?? []) predecessors.get(e.to)?.push(e.from);
 
+  const ctx: InvokeContext = { useMockLlm, runId };
   let currentInput: unknown = trigger.initialInput ?? { initial: true };
   let failed = false;
 
@@ -216,7 +369,7 @@ export async function executePipeline(
 
     const nodeStart = Date.now();
     try {
-      const { output, tokensUsed } = await invokeAgent(node, currentInput);
+      const { output, tokensUsed } = await invokeAgent(node, currentInput, ctx);
       states[node.id] = {
         status: 'success',
         input: currentInput,
