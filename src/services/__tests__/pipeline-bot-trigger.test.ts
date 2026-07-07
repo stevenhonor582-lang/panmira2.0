@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../db/index.js', () => ({
   db: { execute: vi.fn() },
@@ -8,6 +8,7 @@ vi.mock('../../db/index.js', () => ({
 import { db } from '../../db/index.js';
 import { executePipeline } from '../pipeline-engine.js';
 import { findPipelinesForAgent, triggerPipelineForBot, invalidatePipelineCache } from '../pipeline-bot-trigger.js';
+import { setPipelineWsHandle } from '../../api/pipeline-events.js';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -197,5 +198,168 @@ describe('pipeline-bot-trigger › cache diagnostics (Phase 4 Level 3 Fix 3)', (
     expect(getCacheSize()).toBe(1);
     await findPipelinesForAgent('a-diag-2');
     expect(getCacheSize()).toBe(2);
+  });
+});
+
+describe('pipeline-bot-trigger › L10: bot-triggered WS progress broadcast', () => {
+  let broadcastAll: ReturnType<typeof vi.fn>;
+  let clientCount: ReturnType<typeof vi.fn>;
+  let broadcastEvents: Array<Record<string, unknown>>;
+
+  beforeEach(() => {
+    broadcastEvents = [];
+    broadcastAll = vi.fn((msg: Record<string, unknown>) => { broadcastEvents.push(msg); });
+    clientCount = vi.fn().mockReturnValue(1);
+    setPipelineWsHandle({
+      broadcastBotList: vi.fn(),
+      subscriptions: {} as never,
+      broadcastAll: broadcastAll as never,
+      clientCount: clientCount as never,
+    });
+  });
+
+  afterEach(() => {
+    setPipelineWsHandle(undefined);
+  });
+
+  it('传 broadcast 上下文 → 每个 onNodeUpdate 都 broadcast pipeline_progress,bobot/chat/triggeredBy 字段带上', async () => {
+    (db.execute as any).mockResolvedValue([
+      makeRow({
+        id: 'p-2',
+        nodes: [
+          { id: 'n1', label: 'A', agentTemplateId: 'a-1' },
+          { id: 'n2', label: 'B', agentTemplateId: 'a-1' },
+        ],
+      }),
+    ]);
+    const execSpy = vi.spyOn(await import('../pipeline-engine.js'), 'executePipeline');
+    execSpy.mockImplementation(async (_pipeline, _runId, _trigger, onNodeUpdate) => {
+      // 模拟引擎依次触发 n1 → n2
+      await onNodeUpdate!('n1', { status: 'success' } as any);
+      await onNodeUpdate!('n2', { status: 'success' } as any);
+      return {
+        runId: 'run-1',
+        status: 'completed' as const,
+        nodeStates: {
+          n1: { status: 'success', output: { text: 'final', model: 'm', provider: 'p' }, tokensUsed: 5 },
+          n2: { status: 'success', output: { text: 'final', model: 'm', provider: 'p' }, tokensUsed: 5 },
+        },
+        result: { text: 'final' },
+        durationMs: 10,
+      };
+    });
+
+    const out = await triggerPipelineForBot(
+      'a-1', 'hello', 'run-1', undefined, 'first',
+      { botId: 'feishu-main', chatId: 'oc_chat_123' },
+    );
+
+    expect(out).not.toBeNull();
+    // 2 per-node broadcasts + 1 terminal = 3
+    expect(broadcastAll).toHaveBeenCalledTimes(3);
+
+    // 第一个事件:n1 刚完成 → completedNodes=1/2=50%
+    const ev1 = broadcastEvents[0] as Record<string, unknown>;
+    expect(ev1.type).toBe('pipeline_progress');
+    expect(ev1.runId).toBe('run-1');
+    expect(ev1.pipelineId).toBe('p-2');
+    expect(ev1.status).toBe('running');
+    expect(ev1.currentNodeId).toBe('n1');
+    expect(ev1.completedNodes).toBe(1);
+    expect(ev1.totalNodes).toBe(2);
+    expect(ev1.botId).toBe('feishu-main');
+    expect(ev1.chatId).toBe('oc_chat_123');
+    expect(ev1.triggeredBy).toBe('bot');
+
+    // 第二个事件:n2 完成 → 2/2=100%
+    const ev2 = broadcastEvents[1] as Record<string, unknown>;
+    expect(ev2.currentNodeId).toBe('n2');
+    expect(ev2.completedNodes).toBe(2);
+    expect(ev2.progress).toBe(100);
+
+    // 终态事件:status=completed, currentNodeId=null
+    const ev3 = broadcastEvents[2] as Record<string, unknown>;
+    expect(ev3.status).toBe('completed');
+    expect(ev3.currentNodeId).toBeNull();
+    expect(ev3.botId).toBe('feishu-main');
+    expect(ev3.chatId).toBe('oc_chat_123');
+    expect(ev3.triggeredBy).toBe('bot');
+  });
+
+  it('不传 broadcast 上下文 → onNodeUpdate 不 broadcast', async () => {
+    (db.execute as any).mockResolvedValue([makeRow()]);
+    const execSpy = vi.spyOn(await import('../pipeline-engine.js'), 'executePipeline');
+    execSpy.mockImplementation(async (_pipeline, _runId, _trigger, onNodeUpdate) => {
+      await onNodeUpdate!('n1', { status: 'success' } as any);
+      return {
+        runId: 'run-1',
+        status: 'completed' as const,
+        nodeStates: { n1: { status: 'success', output: { text: 'ok', model: 'm', provider: 'p' }, tokensUsed: 1 } },
+        result: { text: 'ok' },
+        durationMs: 1,
+      };
+    });
+    const out = await triggerPipelineForBot('a-1', 'hi', 'run-1'); // 5 参,默认 'first',不传 broadcast
+    expect(out).not.toBeNull();
+    expect(broadcastAll).not.toHaveBeenCalled();
+  });
+
+  it('broadcast 部分字段为空对象 → 事件中 botId/chatId 都 undefined', async () => {
+    (db.execute as any).mockResolvedValue([makeRow()]);
+    const execSpy = vi.spyOn(await import('../pipeline-engine.js'), 'executePipeline');
+    execSpy.mockImplementation(async (_pipeline, _runId, _trigger, onNodeUpdate) => {
+      await onNodeUpdate!('n1', { status: 'success' } as any);
+      return {
+        runId: 'run-1',
+        status: 'completed' as const,
+        nodeStates: { n1: { status: 'success', output: { text: 'ok', model: 'm', provider: 'p' }, tokensUsed: 1 } },
+        result: { text: 'ok' },
+        durationMs: 1,
+      };
+    });
+    await triggerPipelineForBot('a-1', 'hi', 'run-1', undefined, 'first', {});
+    expect(broadcastEvents.length).toBeGreaterThanOrEqual(2);
+    const ev = broadcastEvents[0] as Record<string, unknown>;
+    expect(ev.botId).toBeUndefined();
+    expect(ev.chatId).toBeUndefined();
+    expect(ev.triggeredBy).toBe('bot');
+  });
+
+  it('run failed → 终态事件 broadcast status=failed,不再继续下游', async () => {
+    (db.execute as any).mockResolvedValue([makeRow()]);
+    const execSpy = vi.spyOn(await import('../pipeline-engine.js'), 'executePipeline');
+    execSpy.mockResolvedValue({
+      runId: 'run-1',
+      status: 'failed',
+      nodeStates: { n1: { status: 'failed', error: 'boom' } },
+      error: 'boom',
+      durationMs: 5,
+    });
+    const out = await triggerPipelineForBot(
+      'a-1', 'hi', 'run-1', undefined, 'first',
+      { botId: 'tg-bot', chatId: 'chat-99' },
+    );
+    expect(out).toBeNull();
+    // 1 个终态事件(broadcastAll 是在 onNodeUpdate 之外)
+    expect(broadcastAll).toHaveBeenCalledTimes(1);
+    const ev = broadcastEvents[0] as Record<string, unknown>;
+    expect(ev.status).toBe('failed');
+    expect(ev.triggeredBy).toBe('bot');
+    expect(ev.botId).toBe('tg-bot');
+    expect(ev.chatId).toBe('chat-99');
+  });
+
+  it('executePipeline 抛错 → broadcast status=failed,不抛', async () => {
+    (db.execute as any).mockResolvedValue([makeRow()]);
+    const execSpy = vi.spyOn(await import('../pipeline-engine.js'), 'executePipeline');
+    execSpy.mockImplementation(async () => { throw new Error('synthetic'); });
+    const out = await triggerPipelineForBot(
+      'a-1', 'hi', 'run-1', undefined, 'first',
+      { botId: 'b1', chatId: 'c1' },
+    );
+    expect(out).toBeNull();
+    expect(broadcastAll).toHaveBeenCalledTimes(1);
+    const ev = broadcastEvents[0] as Record<string, unknown>;
+    expect(ev.status).toBe('failed');
   });
 });

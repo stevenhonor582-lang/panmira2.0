@@ -70,3 +70,81 @@ describe('pipeline-events (L7 WS progress)', () => {
     })).not.toThrow();
   });
 });
+
+describe('pipeline-events (L10 bot schema)', () => {
+  let broadcastAll: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    broadcastAll = vi.fn();
+    setPipelineWsHandle({
+      broadcastBotList: vi.fn(),
+      subscriptions: {} as never,
+      broadcastAll: broadcastAll as never,
+      clientCount: vi.fn().mockReturnValue(1) as never,
+    });
+  });
+
+  it('broadcasts botId / chatId / triggeredBy fields when provided', () => {
+    broadcastPipelineProgress({
+      type: 'pipeline_progress',
+      runId: 'r1',
+      pipelineId: 'p1',
+      status: 'running',
+      currentNodeId: 'n2',
+      completedNodes: 1,
+      totalNodes: 3,
+      progress: 33,
+      botId: 'feishu-main',
+      chatId: 'oc_chat_xyz',
+      triggeredBy: 'bot',
+      ts: '2026-07-07T18:00:00Z',
+    });
+
+    expect(broadcastAll).toHaveBeenCalledOnce();
+    const payload = broadcastAll.mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.botId).toBe('feishu-main');
+    expect(payload.chatId).toBe('oc_chat_xyz');
+    expect(payload.triggeredBy).toBe('bot');
+  });
+
+  it('bot fields are optional (omit safely)', () => {
+    broadcastPipelineProgress({
+      type: 'pipeline_progress',
+      runId: 'r1',
+      pipelineId: 'p1',
+      status: 'completed',
+      currentNodeId: null,
+      completedNodes: 3,
+      totalNodes: 3,
+      progress: 100,
+      ts: '2026-07-07T18:00:00Z',
+    });
+
+    expect(broadcastAll).toHaveBeenCalledOnce();
+    const payload = broadcastAll.mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.botId).toBeUndefined();
+    expect(payload.chatId).toBeUndefined();
+    expect(payload.triggeredBy).toBeUndefined();
+  });
+
+  it('triggeredBy accepts all union variants', () => {
+    const variants = ['user', 'bot', 'cron', 'event', 'api'] as const;
+    for (const v of variants) {
+      broadcastAll.mockClear();
+      broadcastPipelineProgress({
+        type: 'pipeline_progress',
+        runId: 'r1',
+        pipelineId: 'p1',
+        status: 'running',
+        currentNodeId: null,
+        completedNodes: 0,
+        totalNodes: 1,
+        progress: 0,
+        triggeredBy: v,
+        ts: '2026-07-07T18:00:00Z',
+      });
+      const payload = broadcastAll.mock.calls[0][0] as Record<string, unknown>;
+      expect(payload.triggeredBy).toBe(v);
+    }
+  });
+});

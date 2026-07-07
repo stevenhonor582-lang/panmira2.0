@@ -12,16 +12,28 @@
  *                      pipeline, null if that pipeline failed).
  * - 'race':            run all in parallel; return the first one that finishes with
  *                      status='completed'. If all fail, return null.
+ *
+ * L10: 每条 run 都通过 pipeline-events.ts 把节点进度推到 WS(包含 botId / chatId),
+ *      客户端 usePipelineProgress 可按 botId 过滤只听某个 bot 的进度。
  */
 import { db } from '../db/index.js';
 import { sql } from 'drizzle-orm';
 import { executePipeline, type Pipeline, type RunResult } from './pipeline-engine.js';
+import { broadcastPipelineProgress, computeNodeProgress } from '../api/pipeline-events.js';
 
 export type TriggerStrategy = 'first' | 'all' | 'race';
 
 export interface PipelineTriggerResult {
   output: string;
   runId: string;
+}
+
+/**
+ * 可选的 WS 广播上下文。不传 = 不广播(保留 Phase 3 行为,避免给 cron 等非 bot 场景引入噪音)。
+ */
+export interface BotBroadcastContext {
+  botId?: string;
+  chatId?: string;
 }
 
 interface BotPipelineRow extends Record<string, unknown> {
@@ -86,27 +98,113 @@ export async function findPipelinesForAgent(agentTemplateId: string): Promise<Pi
 }
 
 /**
+ * 计算并广播一次 pipeline_progress。失败仅日志,不抛出。
+ */
+function safeBroadcast(ev: Parameters<typeof broadcastPipelineProgress>[0]): void {
+  try {
+    broadcastPipelineProgress(ev);
+  } catch (e) {
+    console.warn('[pipeline-bot-trigger] broadcast failed:', (e as Error).message);
+  }
+}
+
+/**
  * Run a single pipeline and convert the RunResult into a {output, runId} (or null on failure).
  * Extracted so 'first' / 'all' / 'race' strategies can share the same error-handling shape.
+ *
+ * If `broadcastCtx` is provided, each onNodeUpdate also broadcasts a pipeline_progress
+ * event; a final event with the actual terminal status is broadcast when the run finishes.
  */
 async function runOnePipeline(
   pipeline: Pipeline,
   message: string,
   runIdHint: string,
   tenantId: string | undefined,
+  broadcastCtx?: BotBroadcastContext,
 ): Promise<PipelineTriggerResult | null> {
+  // Per-run live state accumulator for accurate progress counts.
+  // Only used when broadcastCtx is provided; populated on every node update.
+  const liveStates: Record<string, { status?: string }> = {};
+
   let result: RunResult;
   try {
     result = await executePipeline(
       pipeline,
       runIdHint,
       { triggeredBy: 'bot', initialInput: { message }, tenantId },
-      async () => { /* no-op progress reporter; UI sees it via API */ },
+      async (nodeId, state) => {
+        if (!broadcastCtx) return;
+        // Update accumulator; emit a per-node progress event.
+        liveStates[nodeId] = state as { status?: string };
+        const totalNodes = pipeline.nodes.length;
+        const { completedNodes, progress } = computeNodeProgress(
+          liveStates as Record<string, { status?: string } | undefined>,
+          totalNodes,
+        );
+        safeBroadcast({
+          type: 'pipeline_progress',
+          runId: runIdHint,
+          pipelineId: pipeline.id,
+          status: 'running',
+          currentNodeId: nodeId,
+          completedNodes,
+          totalNodes,
+          progress,
+          botId: broadcastCtx.botId,
+          chatId: broadcastCtx.chatId,
+          triggeredBy: 'bot',
+          ts: new Date().toISOString(),
+        });
+      },
       false, // useMockLlm
     );
   } catch {
+    if (broadcastCtx) {
+      const totalNodes = pipeline.nodes.length;
+      const { completedNodes, progress } = computeNodeProgress(
+        liveStates as Record<string, { status?: string } | undefined>,
+        totalNodes,
+      );
+      safeBroadcast({
+        type: 'pipeline_progress',
+        runId: runIdHint,
+        pipelineId: pipeline.id,
+        status: 'failed',
+        currentNodeId: null,
+        completedNodes,
+        totalNodes,
+        progress,
+        botId: broadcastCtx.botId,
+        chatId: broadcastCtx.chatId,
+        triggeredBy: 'bot',
+        ts: new Date().toISOString(),
+      });
+    }
     return null;
   }
+
+  if (broadcastCtx) {
+    const totalNodes = pipeline.nodes.length;
+    const { completedNodes, progress } = computeNodeProgress(
+      result.nodeStates as unknown as Record<string, { status?: string } | undefined>,
+      totalNodes,
+    );
+    safeBroadcast({
+      type: 'pipeline_progress',
+      runId: result.runId,
+      pipelineId: pipeline.id,
+      status: result.status,
+      currentNodeId: null,
+      completedNodes,
+      totalNodes,
+      progress,
+      botId: broadcastCtx.botId,
+      chatId: broadcastCtx.chatId,
+      triggeredBy: 'bot',
+      ts: new Date().toISOString(),
+    });
+  }
+
   if (result.status !== 'completed') return null;
 
   const lastNodeId = pipeline.nodes[pipeline.nodes.length - 1]?.id;
@@ -130,6 +228,10 @@ async function runOnePipeline(
  * `tenantId` (optional) is forwarded into the RunTrigger so the pipeline's RAG lookups
  * and tool executions are scoped to the calling tenant. If omitted, executePipeline
  * falls back to 'system' (single-tenant behavior).
+ *
+ * `broadcast` (optional) — if provided, each pipeline run also broadcasts pipeline_progress
+ * events to all WS clients with `botId` / `chatId` populated. Use this for bot-initiated
+ * triggers so the admin UI can show real-time progress. Omit for cron/scheduled jobs.
  */
 export async function triggerPipelineForBot(
   agentTemplateId: string,
@@ -137,6 +239,7 @@ export async function triggerPipelineForBot(
   runIdHint: string,
   tenantId?: string,
   strategy?: 'first' | 'race',
+  broadcast?: BotBroadcastContext,
 ): Promise<PipelineTriggerResult | null>;
 export async function triggerPipelineForBot(
   agentTemplateId: string,
@@ -144,6 +247,7 @@ export async function triggerPipelineForBot(
   runIdHint: string,
   tenantId: string | undefined,
   strategy: 'all',
+  broadcast?: BotBroadcastContext,
 ): Promise<Array<PipelineTriggerResult | null>>;
 export async function triggerPipelineForBot(
   agentTemplateId: string,
@@ -151,6 +255,7 @@ export async function triggerPipelineForBot(
   runIdHint: string,
   tenantId?: string,
   strategy: TriggerStrategy = 'first',
+  broadcast?: BotBroadcastContext,
 ): Promise<PipelineTriggerResult | null | Array<PipelineTriggerResult | null>> {
   const pipelines = await findPipelinesForAgent(agentTemplateId);
   if (pipelines.length === 0) {
@@ -160,12 +265,12 @@ export async function triggerPipelineForBot(
   }
 
   if (strategy === 'first') {
-    return runOnePipeline(pipelines[0]!, message, runIdHint, tenantId);
+    return runOnePipeline(pipelines[0]!, message, runIdHint, tenantId, broadcast);
   }
 
   if (strategy === 'all') {
     return Promise.all(
-      pipelines.map((p) => runOnePipeline(p, message, runIdHint, tenantId)),
+      pipelines.map((p) => runOnePipeline(p, message, runIdHint, tenantId, broadcast)),
     );
   }
 
@@ -175,7 +280,7 @@ export async function triggerPipelineForBot(
   // pipeline fails, Promise.any throws AggregateError -> return null.
   try {
     return await Promise.any(
-      pipelines.map((p) => runOnePipeline(p, message, runIdHint, tenantId)),
+      pipelines.map((p) => runOnePipeline(p, message, runIdHint, tenantId, broadcast)),
     );
   } catch {
     return null;
