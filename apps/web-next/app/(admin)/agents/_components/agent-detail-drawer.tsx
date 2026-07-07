@@ -14,7 +14,20 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Pencil, Trash2, Bot, Calendar, Hash, Power, GitBranch, Plug, ExternalLink } from "lucide-react";
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  Bot,
+  Calendar,
+  Hash,
+  GitBranch,
+  Plug,
+  ExternalLink,
+  Database,
+  Wrench,
+  Link as LinkIcon,
+} from "lucide-react";
 import type { Agent, TriggerStrategy } from "./types";
 import { api } from "@/lib/api";
 
@@ -25,6 +38,26 @@ interface ChannelBinding {
   targetBots: string[];
   priority: number;
   enabled: boolean;
+}
+
+interface KBRef {
+  id: string;
+  name: string;
+  type: string;
+  documentCount: number;
+  indexStatus: string;
+}
+
+interface SkillRef {
+  id: string;
+  name: string;
+  kind: "skill" | "mcp";
+  description?: string;
+}
+
+interface ApiEnvelope<T> {
+  success?: boolean;
+  data?: T;
 }
 
 interface Props {
@@ -52,6 +85,12 @@ function readStrategy(a: Agent): TriggerStrategy {
   return raw === "all" || raw === "race" || raw === "first" ? raw : "first";
 }
 
+function readRefs<T = string>(a: Agent, key: string): T[] {
+  const orch = a.orchestration as Record<string, unknown> | undefined;
+  const raw = orch?.[key];
+  return Array.isArray(raw) ? (raw as T[]) : [];
+}
+
 export function AgentDetailDrawer({
   agent,
   open,
@@ -61,6 +100,11 @@ export function AgentDetailDrawer({
 }: Props) {
   const [channels, setChannels] = useState<ChannelBinding[]>([]);
   const [channelsLoading, setChannelsLoading] = useState(false);
+  const [kbs, setKbs] = useState<KBRef[]>([]);
+  const [kbsLoading, setKbsLoading] = useState(false);
+  const [skills, setSkills] = useState<SkillRef[]>([]);
+  const [mcps, setMcps] = useState<SkillRef[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
 
   useEffect(() => {
     if (!agent || !open) return;
@@ -68,7 +112,7 @@ export function AgentDetailDrawer({
     api<{ channels: ChannelBinding[] }>("/api/v2/admin/channels")
       .then((r) => {
         const matched = (r.channels ?? []).filter((c) =>
-          Array.isArray(c.targetBots) && c.targetBots.includes(agent.name)
+          Array.isArray(c.targetBots) && c.targetBots.includes(agent.name),
         );
         setChannels(matched);
       })
@@ -76,8 +120,37 @@ export function AgentDetailDrawer({
       .finally(() => setChannelsLoading(false));
   }, [agent, open]);
 
+  useEffect(() => {
+    if (!agent || !open) return;
+    setKbsLoading(true);
+    api<ApiEnvelope<KBRef[]>>("/api/v2/admin/knowledge-bases")
+      .then((r) => setKbs(r.data ?? []))
+      .catch(() => setKbs([]))
+      .finally(() => setKbsLoading(false));
+  }, [agent, open]);
+
+  useEffect(() => {
+    if (!agent || !open) return;
+    setSkillsLoading(true);
+    Promise.all([
+      api<ApiEnvelope<SkillRef[]>>("/api/v2/admin/skills").catch(() => ({ data: [] })),
+      api<ApiEnvelope<SkillRef[]>>("/api/v2/admin/mcps").catch(() => ({ data: [] })),
+    ])
+      .then(([s, m]) => {
+        setSkills(s.data ?? []);
+        setMcps(m.data ?? []);
+      })
+      .finally(() => setSkillsLoading(false));
+  }, [agent, open]);
+
   if (!agent) return null;
   const strategy = readStrategy(agent);
+  const boundKbIds = new Set(readRefs(agent, "kbRefs"));
+  const boundSkillIds = new Set(readRefs(agent, "skillRefs"));
+  const boundMcpIds = new Set(readRefs(agent, "mcpRefs"));
+  const boundKbs = kbs.filter((k) => boundKbIds.has(k.id));
+  const boundSkills = skills.filter((s) => boundSkillIds.has(s.id));
+  const boundMcps = mcps.filter((s) => boundMcpIds.has(s.id));
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange} swipeDirection="right">
@@ -205,7 +278,98 @@ export function AgentDetailDrawer({
 
           <Separator />
 
-          {/* Channels — 逻辑反转：在这个 agent 上下文里管理 channel，不再单独的 Bot 配置页 */}
+          {/* RAG 知识库绑定 */}
+          <section className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                RAG 知识库 ({kbsLoading ? "…" : boundKbs.length})
+              </p>
+              <Link
+                href="/knowledge"
+                className="text-[11px] text-primary hover:underline inline-flex items-center gap-1"
+              >
+                <Plus className="size-3" />
+                管理 KB
+                <ExternalLink className="size-2.5" />
+              </Link>
+            </div>
+            {kbsLoading ? (
+              <Skeleton className="h-10 w-full" />
+            ) : boundKbs.length === 0 ? (
+              <p className="text-muted-foreground text-xs">
+                未绑定 RAG · 编辑 Agent → "RAG" tab 添加 KB
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                {boundKbs.map((k) => (
+                  <div
+                    key={k.id}
+                    className="flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5"
+                  >
+                    <Database className="size-3 text-muted-foreground shrink-0" />
+                    <div className="flex-1 min-w-0 text-xs">
+                      <p className="font-medium truncate">{k.name}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        <Badge variant="outline" className="text-[9px] mr-1">{k.type}</Badge>
+                        {k.documentCount} 文档 · {k.indexStatus}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* Skill 地图绑定 */}
+          <section className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                Skill 地图 ({skillsLoading ? "…" : boundSkills.length + boundMcps.length})
+              </p>
+              <Link
+                href="/resources"
+                className="text-[11px] text-primary hover:underline inline-flex items-center gap-1"
+              >
+                <Plus className="size-3" />
+                管理 Skill
+                <ExternalLink className="size-2.5" />
+              </Link>
+            </div>
+            {skillsLoading ? (
+              <Skeleton className="h-10 w-full" />
+            ) : boundSkills.length === 0 && boundMcps.length === 0 ? (
+              <p className="text-muted-foreground text-xs">
+                未绑定 Skill · 编辑 Agent → "Skill" tab 添加
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                {boundSkills.map((s) => (
+                  <div
+                    key={s.id}
+                    className="flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5"
+                  >
+                    <Wrench className="size-3 text-muted-foreground shrink-0" />
+                    <p className="font-mono text-xs truncate flex-1">{s.name}</p>
+                    <Badge variant="outline" className="text-[9px]">skill</Badge>
+                  </div>
+                ))}
+                {boundMcps.map((s) => (
+                  <div
+                    key={s.id}
+                    className="flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5"
+                  >
+                    <LinkIcon className="size-3 text-muted-foreground shrink-0" />
+                    <p className="font-mono text-xs truncate flex-1">{s.name}</p>
+                    <Badge variant="outline" className="text-[9px]">mcp</Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <Separator />
+
+          {/* Channels */}
           <section className="space-y-2">
             <div className="flex items-center justify-between gap-2">
               <p className="text-[11px] uppercase tracking-wider text-muted-foreground">

@@ -8,6 +8,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { FlowNav } from "../_components/flow-nav";
+import Link from "next/link";
+import { HelpCircle } from "lucide-react";
+
+const FLOW_STEPS = [
+  { label: "1. 模板", href: "/agents" },
+  { label: "2. 编排", href: "/agents/pipelines" },
+  { label: "3. 蓝图", href: "/agents/templates" },
+];
 
 interface Pipeline {
   id: string;
@@ -91,9 +100,16 @@ export default function PipelinesPage() {
 
   return (
     <div className="space-y-6 p-6">
+      <FlowNav steps={FLOW_STEPS} current="/agents/pipelines" />
+
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">多 Agent 编排 (Pipelines)</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight">多 Agent 编排 (Pipelines)</h1>
+            <Link href="/agents/onboarding" className="text-muted-foreground hover:text-primary" title="了解模板/编排/蓝图三者关系">
+              <HelpCircle className="size-4" />
+            </Link>
+          </div>
           <p className="text-sm text-muted-foreground">
             把多个 Agent 串成 DAG,自动传递状态。多用于"内容生产""订单处理"等内部业务流水线。
           </p>

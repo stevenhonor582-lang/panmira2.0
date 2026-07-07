@@ -19,6 +19,10 @@ import {
   Mic,
   MessageSquare,
   Users,
+  Clock,
+  Workflow,
+  Webhook,
+  Compass,
   type LucideIcon,
 } from "lucide-react";
 
@@ -151,7 +155,7 @@ export function Sidebar() {
       </nav>
 
       <div className="p-3 border-t border-sidebar-border text-[10px] text-muted-foreground">
-        <div>v0.1 · Phase1 清理</div>
+        <div>v0.3 · Phase3 流程整合</div>
       </div>
     </aside>
   );
