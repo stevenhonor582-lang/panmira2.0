@@ -43,6 +43,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "总览 Dashboard", href: "/dashboard", icon: LayoutDashboard },
       { label: "Agent", href: "/agents", icon: Bot, badge: "MVP" },
+      { label: "Agent 执行蓝图", href: "/agents/templates", icon: Bot, badge: "NEW" },
     ],
   },
   {
@@ -57,6 +58,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "监控",
     items: [
       { label: "实时状态", href: "/status", icon: Activity },
+      { label: "Runtime Console", href: "/runtime", icon: Activity, badge: "NEW" },
       { label: "预警中心", href: "/alerts", icon: AlertTriangle },
       { label: "异常诊断", href: "/diagnose", icon: FileSearch },
     ],
@@ -82,6 +84,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Bots", href: "/settings/bots", icon: Bot },
       { label: "Projects", href: "/settings/projects", icon: FolderOpen },
+      { label: "Skill DAG 编写", href: "/skills/dags", icon: Workflow, badge: "NEW" },
       { label: "Coordinator", href: "/settings/coordinator", icon: Workflow },
       { label: "Chain Editor", href: "/settings/chain-editor", icon: Activity },
       { label: "Memory", href: "/memory", icon: Brain },
