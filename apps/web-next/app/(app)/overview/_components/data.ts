@@ -1,6 +1,15 @@
+
 // /overview 共享数据适配层
 // 适配 backend 返回的不同响应结构,提供稳定的 view-model 给页面组件。
 import { api } from "@/lib/api";
+
+// 在客户端请求 API 时,优先用 NEXT_PUBLIC_API_BASE (build-time inlined)
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
+function fullPath(p: string): string {
+  if (!API_BASE) return p;
+  if (p.startsWith("http")) return p;
+  return API_BASE + p;
+}
 
 export interface Person {
   id: string;
@@ -66,7 +75,7 @@ export interface CostBreakdown {
 // --- fetchers -----------------------------------------------------------
 
 export async function fetchPeople(): Promise<Person[]> {
-  const res = await api<{ users?: Person[] } | Person[]>("/api/auth/users");
+  const res = await api<{ users?: Person[] } | Person[]>(fullPath("/api/auth/users"));
   if (Array.isArray(res)) return res as Person[];
   return res.users ?? [];
 }
@@ -78,7 +87,7 @@ export async function fetchPerson(id: string): Promise<Person | null> {
 
 export async function fetchAgents(): Promise<DigitalEmployee[]> {
   const res = await api<{ agents?: DigitalEmployee[] } | DigitalEmployee[]>(
-    "/api/v2/admin/agents",
+    fullPath("/api/v2/admin/agents"),
   );
   if (Array.isArray(res)) return res as DigitalEmployee[];
   return res.agents ?? [];
@@ -90,14 +99,14 @@ export async function fetchAgent(id: string): Promise<DigitalEmployee | null> {
 }
 
 export async function fetchPipelines(): Promise<Pipeline[]> {
-  const res = await api<{ data?: Pipeline[] } | Pipeline[]>("/api/v2/admin/pipelines");
+  const res = await api<{ data?: Pipeline[] } | Pipeline[]>(fullPath("/api/v2/admin/pipelines"));
   if (Array.isArray(res)) return res as Pipeline[];
   return res.data ?? [];
 }
 
 export async function fetchTasksStats(): Promise<TasksStats | null> {
   try {
-    const res = await api<{ data?: TasksStats } | TasksStats>("/api/v2/tasks/stats");
+    const res = await api<{ data?: TasksStats } | TasksStats>(fullPath("/api/v2/tasks/stats"));
     if ("data" in (res as any) && (res as any).data) return (res as any).data;
     return res as TasksStats;
   } catch {
@@ -113,7 +122,7 @@ export async function fetchRunLogStats(): Promise<{
   totalTokens: number;
 } | null> {
   try {
-    const res = await api<{ data?: any }>("/api/v2/admin/agent-run-logs/stats");
+    const res = await api<{ data?: any }>(fullPath("/api/v2/admin/agent-run-logs/stats"));
     return res.data ?? null;
   } catch {
     return null;
@@ -122,7 +131,7 @@ export async function fetchRunLogStats(): Promise<{
 
 export async function fetchCost(): Promise<CostBreakdown | null> {
   try {
-    const res = await api<CostBreakdown>("/api/v2/admin/cost");
+    const res = await api<CostBreakdown>(fullPath("/api/v2/admin/cost"));
     return res ?? null;
   } catch {
     return null;
@@ -132,7 +141,7 @@ export async function fetchCost(): Promise<CostBreakdown | null> {
 export async function fetchActivityEvents(limit = 20): Promise<ActivityEvent[]> {
   try {
     const res = await api<{ events?: ActivityEvent[] } | ActivityEvent[]>(
-      `/api/activity/events?limit=${limit}`,
+      fullPath(`/api/activity/events?limit=${limit}`),
     );
     if (Array.isArray(res)) return res;
     return res.events ?? [];

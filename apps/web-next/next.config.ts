@@ -50,6 +50,13 @@ const nextConfig: NextConfig = {
 
     ];
   },
+
+  // /api/* 反代到后端 9100,避免 CORS + trailingSlash 冲突
+  async rewrites() {
+    return [
+      { source: "/api/:path*", destination: "http://localhost:9100/api/:path*" },
+    ];
+  },
 };
 
 export default nextConfig;
