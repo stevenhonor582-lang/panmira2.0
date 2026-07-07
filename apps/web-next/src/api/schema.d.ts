@@ -623,7 +623,7 @@ export type paths = {
         put?: never;
         /**
          * Submit login credentials
-         * @description Submit password for authentication.
+         * @description [DEPRECATED 2026-09-01] Use /api/auth/login/step1 + /api/auth/login/step2 instead. Submit password for authentication.
          */
         post: {
             parameters: {
@@ -675,6 +675,172 @@ export type paths = {
                 };
                 /** @description Rate limit exceeded */
                 429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/login/lockout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询账户锁定状态 */
+        get: {
+            parameters: {
+                query: {
+                    email: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["A1LockoutStatus"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/login/step1": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * A1 登录 step1: 账号密码 → 返回 verificationCode (不返回 token)
+         * @description 5 分钟 TTL。失败 5 次 → 账户 locked 30 分钟。开发态默认在响应里回传 verificationCode (通过 PANMIRA_DEV_RETURN_CODE=false 关闭)。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["A1LoginStep1Request"];
+                };
+            };
+            responses: {
+                /** @description OK — 返回 verificationCode + user */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["A1LoginStep1Response"];
+                    };
+                };
+                /** @description 缺少 email/password */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 账号或密码错误 */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 账户已锁定(locked_until 未到期) */
+                423: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description IP 级速率限制(60s 内 5 次) */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/login/step2": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * A1 登录 step2: verificationCode → 完整 token pair
+         * @description 5 分钟内有效。错误码会被记入 failed_attempts;5 次后自动锁 30 分钟。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["A1LoginStep2Request"];
+                };
+            };
+            responses: {
+                /** @description OK — 返回 accessToken/refreshToken + user */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["A1LoginTokenResponse"];
+                    };
+                };
+                /** @description 缺少 email 或 code */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description code 无效或过期 */
+                401: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -1076,7 +1242,7 @@ export type paths = {
             cookie?: never;
         };
         /**
-         * List users
+         * A1 列出用户 (admin / operator)
          * @description List all users in current tenant. Scope: user:admin.
          */
         get: {
@@ -1137,7 +1303,54 @@ export type paths = {
             };
         };
         put?: never;
-        post?: never;
+        /** A1 创建用户 (admin 全权;operator 仅 member) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["A1CreateUserRequest"];
+                };
+            };
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            user?: components["schemas"]["A1User"];
+                        };
+                    };
+                };
+                /** @description 参数错误 / email 已存在 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 需要 Bearer token */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 需要 admin 或 operator 角色 */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -14695,6 +14908,82 @@ export type paths = {
 export type webhooks = Record<string, never>;
 export type components = {
     schemas: {
+        A1CreateUserRequest: {
+            /** Format: email */
+            email: string;
+            name: string;
+            password: string;
+            phone?: string | null;
+            /**
+             * @default member
+             * @enum {string}
+             */
+            role: "admin" | "operator" | "member";
+        };
+        A1LockoutStatus: {
+            exists?: boolean;
+            failedAttempts?: number;
+            isActive?: boolean;
+            locked?: boolean;
+            /** Format: date-time */
+            lockedUntil?: string | null;
+            remainingMinutes?: number;
+        };
+        A1LoginStep1Request: {
+            /** Format: email */
+            email: string;
+            password: string;
+        };
+        A1LoginStep1Response: {
+            /** Format: date-time */
+            expiresAt?: string;
+            expiresInSeconds?: number;
+            nextStep?: string;
+            success?: boolean;
+            user?: components["schemas"]["A1User"];
+            /** @description 开发态回传;生产通过短信/邮件发送 */
+            verificationCode?: string;
+        };
+        A1LoginStep2Request: {
+            /** Format: email */
+            email: string;
+            verificationCode: string;
+        };
+        A1LoginTokenResponse: {
+            /** @description JWT HS256, TTL 1h */
+            accessToken?: string;
+            /** @description access token 过期秒数 = 3600 */
+            expiresIn?: number;
+            /** @description JWT HS256, TTL 30d */
+            refreshToken?: string;
+            user?: components["schemas"]["A1User"];
+        };
+        A1UpdateUserRequest: {
+            isActive?: boolean;
+            phone?: string | null;
+            /** @enum {string} */
+            role?: "admin" | "operator" | "member";
+            unlock?: boolean;
+        };
+        A1User: {
+            avatarUrl?: string | null;
+            /** Format: email */
+            email?: string | null;
+            failedAttempts?: number;
+            /** Format: uuid */
+            id: string;
+            isActive: boolean;
+            /** Format: date-time */
+            lockedUntil?: string | null;
+            name?: string;
+            phone?: string | null;
+            /** @enum {string} */
+            role: "admin" | "operator" | "member";
+            /** @description 格式 metmira:<handle> */
+            sid?: string | null;
+            /** Format: uuid */
+            tenantId?: string;
+        };
         Agent: {
             boundary?: Record<string, never>;
             capabilities?: unknown[];

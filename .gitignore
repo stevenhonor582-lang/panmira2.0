@@ -80,3 +80,14 @@ src/**/*.js.map
 
 # Git worktrees (isolated workspaces for subagent-driven execution)
 .worktrees/
+
+# ── Secrets & credentials (hard rules) ─────────────────────
+# 严禁提交真实凭证。Rotate any leaked secret in production.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+secrets/
+.claude/SECURITY.local.md

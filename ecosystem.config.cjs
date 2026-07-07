@@ -31,7 +31,7 @@ module.exports = {
     },
     {
       name: 'web-next',
-      script: 'npx next start -p 3200 -H 127.0.0.1',
+      script: 'node node_modules/next/dist/bin/next start -p 3200 -H 127.0.0.1',
       cwd: '/home/ubuntu/panmira-N1/apps/web-next',
       exec_mode: 'fork',
       instances: 1,
