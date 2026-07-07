@@ -48,6 +48,15 @@ import { handleModelsPoolRoutes } from './routes/models-pool-routes.js';
 import { handleAgentsCrudRoutes } from './routes/agents-crud-routes.js';
 import { handleChannelsRoutes } from './routes/channels-routes.js';
 import { handleMonitoringRoutes } from './routes/monitoring-routes.js';
+// IA v6: 新路由(2026-07-08)
+import { handleOverviewRoutes } from './routes/overview-routes.js';
+import { handlePeopleRoutes } from './routes/people-routes.js';
+import { handleEmployeesRoutes } from './routes/employees-routes.js';
+import { handleTasksRoutes } from './routes/tasks-routes.js';
+import { handleFoundationRoutes } from './routes/foundation-routes.js';
+import { handleChannelsRoutesV6 } from './routes/channels-routes.js';
+import { handleModelsV6Routes } from './routes/models-routes.js';
+import { addDeprecationHeader } from './routes/helpers.js';
 import { handleOpsRoutes } from './routes/ops-routes.js';
 import { handleTenantQuotaRoutes } from './routes/tenant-quota-routes.js';
 import { handleMaintenanceRoutes } from './routes/maintenance-routes.js';
@@ -723,6 +732,7 @@ ${content}
 
       // Phase 1: Scheduled Jobs + Agent Run Logs
       if (url.startsWith("/api/v2/admin/scheduled-jobs")) {
+        addDeprecationHeader(res, '/api/v2/tasks/scheduled');
         if (await handleScheduledJobsRoutes(req, res, method, url)) return;
         jsonResponse(res, 404, { error: "Scheduled job route not found" });
         return;
@@ -735,6 +745,7 @@ ${content}
 
       // Phase 2: Multi-agent Pipelines
       if (url.startsWith("/api/v2/admin/pipelines")) {
+        addDeprecationHeader(res, '/api/v2/tasks/pipelines');
         if (await handlePipelineRoutes(req, res, method, url)) return;
         if (await handleAdminCacheRoutes(req, res, method, url)) return;
         jsonResponse(res, 404, { error: "Pipeline route not found" });
@@ -756,7 +767,13 @@ ${content}
       }
 
       // Plan B-3: Reports
+        if (url.startsWith("/api/v2/admin/agents")) {
+          addDeprecationHeader(res, '/api/v2/employees');
+        }
         if (await handleAgentsCrudRoutes(req, res, method, url)) return;
+        if (url.startsWith("/api/v2/admin/channels")) {
+          addDeprecationHeader(res, '/api/v2/channels');
+        }
         if (await handleChannelsRoutes(req, res, method, url)) return;
         if (await handleModelsPoolRoutes(req, res, method, url)) return;
         if (await handleMonitoringRoutes(req, res, method, url)) return;
@@ -784,7 +801,43 @@ ${content}
 
 
 
-      // Plan D: Channel usage (IM handlers 调用)
+      // IA v6 新路由(2026-07-08) — 公司综阅/组织部/数字员工/任务/数智底座/资源频道
+      if (url.startsWith('/api/v2/overview')) {
+        if (await handleOverviewRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Overview route not found' });
+        return;
+      }
+      if (url.startsWith('/api/v2/people')) {
+        if (await handlePeopleRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'People route not found' });
+        return;
+      }
+      if (url.startsWith('/api/v2/employees')) {
+        if (await handleEmployeesRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Employee route not found' });
+        return;
+      }
+      if (url.startsWith('/api/v2/tasks')) {
+        if (await handleTasksRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Tasks route not found' });
+        return;
+      }
+      if (url.startsWith('/api/v2/foundation')) {
+        if (await handleFoundationRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Foundation route not found' });
+        return;
+      }
+      if (url.startsWith('/api/v2/channels')) {
+        if (await handleChannelsRoutesV6(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Channels v6 route not found' });
+        return;
+      }
+      if (url.startsWith('/api/v2/models')) {
+        if (await handleModelsV6Routes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Models v6 route not found' });
+        return;
+      }
+            // Plan D: Channel usage (IM handlers 调用)
       if (url.startsWith('/api/v2/admin/channels/')) {
         if (await handleChannelUsageRoutes(req, res, method, url)) return;
         jsonResponse(res, 404, { error: 'Channel route not found' });

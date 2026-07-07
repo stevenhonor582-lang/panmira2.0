@@ -11,6 +11,36 @@ export class PayloadTooLargeError extends Error {
   constructor() { super('Request body too large (max 1 MB)'); }
 }
 
+// ── IA v6: 统一响应信封 ─────────────────────────────────────────────────
+export interface ApiResponse<T = unknown> {
+  success: boolean;
+  data?: T;
+  error?: { code: string; message: string; details?: unknown };
+  meta?: { total: number; page: number; limit: number };
+}
+
+export function ok<T>(data: T, meta?: { total: number; page: number; limit: number }): ApiResponse<T> {
+  return { success: true, data, ...(meta && { meta }) };
+}
+
+export function fail(code: string, message: string, details?: unknown): ApiResponse {
+  return { success: false, error: { code, message, details } };
+}
+
+export function paginated<T>(items: T[], total: number, page: number, limit: number): ApiResponse<{ items: T[]; total: number; page: number; limit: number }> {
+  return { success: true, data: { items, total, page, limit } };
+}
+// ────────────────────────────────────────────────────────────────────────
+
+// IA v6: 标记老路径为 deprecated(2026-08-01 Sunset)
+export function addDeprecationHeader(res: http.ServerResponse, successor?: string) {
+  res.setHeader('Deprecation', 'true');
+  res.setHeader('Sunset', '2026-08-01');
+  if (successor) {
+    res.setHeader('Link', `<${successor}>; rel="successor-version"`);
+  }
+}
+
 export function jsonResponse(res: http.ServerResponse, status: number, body: unknown): void {
   const json = JSON.stringify(body);
   res.writeHead(status, { 'Content-Type': 'application/json' });

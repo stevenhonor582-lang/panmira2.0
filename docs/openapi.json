@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "panmira N1 API",
-    "version": "1.1.0",
-    "description": "panmira N1 OpenAPI 3.0 spec. L5-L12 era (commit c2a9e725). Chat and team routes marked for deletion are NOT included. 93 source routes scanned; auto-merged into OpenAPI.",
+    "version": "1.6.0",
+    "description": "panmira N1 OpenAPI 3.0 spec. IA v6 (commit 95b16907 + IA v6 alignment, 2026-07-08). New IA v6 module paths under /api/v2/{overview,people,employees,tasks,foundation,channels,models}. Old paths under /api/v2/admin/* carry Deprecation: true + Sunset: 2026-08-01 headers.",
     "contact": {
       "name": "panmira"
     }
@@ -254,6 +254,26 @@
     {
       "name": "costs",
       "description": "costs endpoints"
+    },
+    {
+      "name": "company-overview",
+      "description": "公司综阅(默认入口 /)"
+    },
+    {
+      "name": "people",
+      "description": "组织部(IA v6 /api/v2/people)"
+    },
+    {
+      "name": "digital-employees",
+      "description": "数字员工(IA v6 /api/v2/employees)"
+    },
+    {
+      "name": "foundation",
+      "description": "数智底座(IA v6 /api/v2/foundation)"
+    },
+    {
+      "name": "channels",
+      "description": "资源频道·接入点(IA v6 /api/v2/channels)"
     }
   ],
   "paths": {
@@ -2449,7 +2469,7 @@
     "/api/v2/admin/pipelines": {
       "get": {
         "summary": "List pipelines",
-        "description": "List all pipelines (DAGs) in current tenant. **L5 new endpoint.** Scope: agent:read, agent:admin.",
+        "description": "[DEPRECATED 2026-07-08 — Sunset 2026-08-01] Use new IA v6 path. List all pipelines (DAGs) in current tenant. **L5 new endpoint.** Scope: agent:read, agent:admin.",
         "tags": [
           "pipelines"
         ],
@@ -2491,11 +2511,12 @@
           "429": {
             "description": "Rate limit exceeded"
           }
-        }
+        },
+        "deprecated": true
       },
       "post": {
         "summary": "Create pipeline",
-        "description": "Create a new pipeline. **L5 new endpoint.** Supports retryPolicy (L8), triggerType. Scope: agent:admin.",
+        "description": "[DEPRECATED 2026-07-08 — Sunset 2026-08-01] Use new IA v6 path. Create a new pipeline. **L5 new endpoint.** Supports retryPolicy (L8), triggerType. Scope: agent:admin.",
         "tags": [
           "pipelines"
         ],
@@ -2547,7 +2568,8 @@
               }
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/api/v2/admin/pipelines/{id}": {
@@ -2960,7 +2982,7 @@
     "/api/v2/admin/scheduled-jobs": {
       "get": {
         "summary": "List scheduled jobs",
-        "description": "List all scheduled jobs (cron/event/manual). Scope: agent:read, agent:admin.",
+        "description": "[DEPRECATED 2026-07-08 — Sunset 2026-08-01] Use new IA v6 path. List all scheduled jobs (cron/event/manual). Scope: agent:read, agent:admin.",
         "tags": [
           "scheduled-jobs"
         ],
@@ -3002,11 +3024,12 @@
           "429": {
             "description": "Rate limit exceeded"
           }
-        }
+        },
+        "deprecated": true
       },
       "post": {
         "summary": "Create job",
-        "description": "Create a new scheduled job. Scope: agent:admin.",
+        "description": "[DEPRECATED 2026-07-08 — Sunset 2026-08-01] Use new IA v6 path. Create a new scheduled job. Scope: agent:admin.",
         "tags": [
           "scheduled-jobs"
         ],
@@ -3058,7 +3081,8 @@
               }
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/api/v2/admin/scheduled-jobs/{id}": {
@@ -9253,7 +9277,7 @@
     "/api/v2/admin/channels": {
       "get": {
         "summary": "List channels",
-        "description": "List configured channels. Scope: channel:read.",
+        "description": "[DEPRECATED 2026-07-08 — Sunset 2026-08-01] Use new IA v6 path. List configured channels. Scope: channel:read.",
         "tags": [
           "admin-channels"
         ],
@@ -9295,11 +9319,12 @@
           "429": {
             "description": "Rate limit exceeded"
           }
-        }
+        },
+        "deprecated": true
       },
       "post": {
         "summary": "Create channel",
-        "description": "Register a new channel. Scope: channel:admin.",
+        "description": "[DEPRECATED 2026-07-08 — Sunset 2026-08-01] Use new IA v6 path. Register a new channel. Scope: channel:admin.",
         "tags": [
           "admin-channels"
         ],
@@ -9341,7 +9366,8 @@
           "429": {
             "description": "Rate limit exceeded"
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/api/v2/admin/channels/{id}": {
@@ -10058,7 +10084,9 @@
           "500": {
             "description": "Internal server error"
           }
-        }
+        },
+        "description": "[DEPRECATED 2026-07-08 — Sunset 2026-08-01] Use new IA v6 path. ",
+        "deprecated": true
       }
     },
     "/api/auth/change-password": {
@@ -11377,6 +11405,500 @@
           },
           "500": {
             "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/api/v2/overview": {
+      "get": {
+        "tags": [
+          "company-overview"
+        ],
+        "summary": "公司综阅(默认入口)",
+        "description": "5 大模块统计 + 模块导航",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {},
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      }
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "total": {
+                          "type": "integer"
+                        },
+                        "page": {
+                          "type": "integer"
+                        },
+                        "limit": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/people": {
+      "get": {
+        "tags": [
+          "people"
+        ],
+        "summary": "组织部列表",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          },
+          {
+            "name": "department",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {},
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      }
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "total": {
+                          "type": "integer"
+                        },
+                        "page": {
+                          "type": "integer"
+                        },
+                        "limit": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/people/{id}": {
+      "get": {
+        "tags": [
+          "people"
+        ],
+        "summary": "Person 详情",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Person UUID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "people"
+        ],
+        "summary": "更新 People 扩展档案",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Person UUID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v2/people/stats": {
+      "get": {
+        "tags": [
+          "people"
+        ],
+        "summary": "组织部统计",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v2/employees": {
+      "get": {
+        "tags": [
+          "digital-employees"
+        ],
+        "summary": "数字员工列表",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "inactive"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {},
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      }
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "total": {
+                          "type": "integer"
+                        },
+                        "page": {
+                          "type": "integer"
+                        },
+                        "limit": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/employees/{id}": {
+      "get": {
+        "tags": [
+          "digital-employees"
+        ],
+        "summary": "数字员工详情",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Employee UUID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v2/employees/stats": {
+      "get": {
+        "tags": [
+          "digital-employees"
+        ],
+        "summary": "数字员工统计",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v2/tasks": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "任务列表(pipelines + scheduled-jobs 聚合)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v2/tasks/stats": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "任务统计",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v2/foundation": {
+      "get": {
+        "tags": [
+          "foundation"
+        ],
+        "summary": "数智底座总览",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v2/foundation/memory": {
+      "get": {
+        "tags": [
+          "foundation"
+        ],
+        "summary": "记忆列表",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v2/foundation/knowledge": {
+      "get": {
+        "tags": [
+          "foundation"
+        ],
+        "summary": "知识库列表",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v2/channels": {
+      "get": {
+        "tags": [
+          "channels"
+        ],
+        "summary": "资源频道·接入点列表",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "feishu",
+                "telegram",
+                "wechat",
+                "webhook",
+                "cli",
+                "custom"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v2/channels/{id}": {
+      "get": {
+        "tags": [
+          "channels"
+        ],
+        "summary": "接入点详情",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Endpoint UUID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v2/channels/health": {
+      "get": {
+        "tags": [
+          "channels"
+        ],
+        "summary": "接入点健康监测",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v2/models": {
+      "get": {
+        "tags": [
+          "models"
+        ],
+        "summary": "资源频道·LLM 模型池列表",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v2/models/{id}": {
+      "get": {
+        "tags": [
+          "models"
+        ],
+        "summary": "LLM 模型详情",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Provider ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
           }
         }
       }
