@@ -215,6 +215,8 @@ function Editor() {
   const [name, setName] = useState("新建 Pipeline");
   const [description, setDescription] = useState("");
   const [triggerType, setTriggerType] = useState("manual");
+  const [retryMaxAttempts, setRetryMaxAttempts] = useState(1);
+  const [retryBackoffMs, setRetryBackoffMs] = useState(1000);
 
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(true);
@@ -353,6 +355,7 @@ function Editor() {
         name: name.trim(),
         description: description.trim() || undefined,
         triggerType,
+        retryPolicy: { maxAttempts: retryMaxAttempts, backoffMs: retryBackoffMs },
         nodes: rfNodes.map((n) => ({
           id: n.id,
           label: n.data.label.trim(),
@@ -427,6 +430,29 @@ function Editor() {
                 <option value="cron">定时</option>
                 <option value="event">事件</option>
               </select>
+            </div>
+            <div className="w-[110px] space-y-1.5">
+              <Label htmlFor="pl-retry-attempts" title="LLM 调用失败时,每个节点最多重试次数">重试次数</Label>
+              <Input
+                id="pl-retry-attempts"
+                type="number"
+                min={1}
+                max={10}
+                value={retryMaxAttempts}
+                onChange={(e) => setRetryMaxAttempts(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
+              />
+            </div>
+            <div className="w-[130px] space-y-1.5">
+              <Label htmlFor="pl-retry-backoff" title="每次重试前的等待毫秒数 (退避)">退避 (ms)</Label>
+              <Input
+                id="pl-retry-backoff"
+                type="number"
+                min={0}
+                max={60000}
+                step={100}
+                value={retryBackoffMs}
+                onChange={(e) => setRetryBackoffMs(Math.max(0, Math.min(60000, Number(e.target.value) || 0)))}
+              />
             </div>
             <div className="flex items-center gap-2">
               <Button onClick={handleSave} disabled={saving || validationErrors.length > 0}>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Workflow, Play, RefreshCw, Plus, Trash2, GitBranch, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { api } from "@/lib/api";
+import { triggerPipelineAsync } from "@/lib/pipeline-trigger";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -53,14 +54,20 @@ export default function PipelinesPage() {
     setTriggeringId(id);
     setToast(null);
     try {
-      const r = await api<{ success: boolean; data: { status: string; durationMs: number; error?: string } }>(
-        `/api/v2/admin/pipelines/${id}/trigger`,
-        { method: "POST", body: { triggeredBy: "user", initialInput: { startedBy: "admin" } } }
+      // L6: async mode — POST with ?async=true so server returns 202 immediately.
+      // Background progress is observed via L7 WS hook on the detail page.
+      const r = await triggerPipelineAsync(
+        { pipelineId: id, triggeredBy: "user", initialInput: { startedBy: "admin" } },
+        fetch,
       );
-      if (r.data.error) {
-        setToast({ kind: "err", text: `运行失败: ${r.data.error}` });
+      if (r.kind === "failed") {
+        setToast({ kind: "err", text: `运行失败: ${r.error}` });
+      } else if (r.kind === "accepted") {
+        setToast({ kind: "ok", text: `Pipeline 已启动 · run ${r.runId.slice(0, 8)}… · 跳转到详情看进度` });
+        // Jump to detail page where L7 WS progress is wired
+        setTimeout(() => { window.location.href = `/agents/pipelines/${id}?run=${r.runId}`; }, 600);
       } else {
-        setToast({ kind: "ok", text: `运行成功 · ${r.data.durationMs}ms · status=${r.data.status}` });
+        setToast({ kind: "ok", text: `运行完成 · ${r.durationMs}ms · status=${r.status}` });
       }
       await load();
     } catch (e: unknown) {
