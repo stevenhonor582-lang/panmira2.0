@@ -46,6 +46,20 @@
   - https://deepx.fun/web/app/skills/dags → 200
 - **API e2e** ✅: 用 admin JWT 实测全部 200,返回真实数据(stats / sessions / skill-dags)
 
+## ⚠️ Nginx 修复(commit fc5710d7 + 服务器侧)
+
+`/web/` 之前没在 nginx,所有 `/web/*` 兜底到 panmira 后端 → 404。已加 nginx location:
+
+```nginx
+location /web/ {
+    alias /home/ubuntu/panmira/dist/web/;
+    try_files $uri $uri/ /web/index.html;
+}
+location = /favicon.ico { return 204; }
+```
+
+外加 `chmod o+x /home/ubuntu`(让 www-data traverse)。
+
 ## 验证步骤
 
 浏览器:
