@@ -238,3 +238,200 @@ describe('pipeline-engine › inter-node flow + stringify (Task 6)', () => {
     expect(out).toContain('truncated');
   });
 });
+
+describe('pipeline-engine › retry (Phase 3 #5)', () => {
+  it('node 失败 → 重试 1 次成功 → 节点 success', async () => {
+    const { db } = await import('../../db/index.js');
+    const fakeAgent = { id: 'a-retry', name: 'R', systemPrompt: 's', tools: [] };
+    (db.select as any).mockReturnValue({
+      from: () => ({ where: () => ({ limit: () => Promise.resolve([fakeAgent]) }) }),
+    });
+    const { callLlm } = await import('../llm-client.js');
+    (callLlm as any)
+      .mockRejectedValueOnce(new Error('first try failed'))
+      .mockResolvedValueOnce({
+        text: 'OK', toolUses: [],
+        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        model: 'm', provider: 'p', durationMs: 1,
+      });
+
+    const pipeline = {
+      id: 'p', name: 't',
+      nodes: [{ id: 'n', label: 'R', agentTemplateId: 'a-retry' }],
+      edges: [],
+      retryPolicy: { maxAttempts: 2, backoffMs: 0 },
+    };
+    const result = await executePipeline(
+      pipeline, 'r', { triggeredBy: 'user' as const }, async () => {}, false,
+    );
+    expect(result.status).toBe('completed');
+    expect(callLlm).toHaveBeenCalledTimes(2);
+    expect(result.nodeStates.n.tokensUsed).toBe(2);
+  });
+
+  it('node 失败 3 次 (maxAttempts=3) → 节点 failed', async () => {
+    const { db } = await import('../../db/index.js');
+    const fakeAgent = { id: 'a-fail', name: 'F', systemPrompt: 's', tools: [] };
+    (db.select as any).mockReturnValue({
+      from: () => ({ where: () => ({ limit: () => Promise.resolve([fakeAgent]) }) }),
+    });
+    const { callLlm } = await import('../llm-client.js');
+    (callLlm as any).mockRejectedValue(new Error('always fails'));
+
+    const pipeline = {
+      id: 'p', name: 't',
+      nodes: [{ id: 'n', label: 'F', agentTemplateId: 'a-fail' }],
+      edges: [],
+      retryPolicy: { maxAttempts: 3, backoffMs: 0 },
+    };
+    const result = await executePipeline(
+      pipeline, 'r', { triggeredBy: 'user' as const }, async () => {}, false,
+    );
+    expect(result.status).toBe('failed');
+    expect(callLlm).toHaveBeenCalledTimes(3);
+    expect(result.nodeStates.n.error).toContain('always fails');
+  });
+
+  it('backoff 0 不 sleep, 3 次快速跑完', async () => {
+    const { db } = await import('../../db/index.js');
+    const fakeAgent = { id: 'a-bf', name: 'B', systemPrompt: 's', tools: [] };
+    (db.select as any).mockReturnValue({
+      from: () => ({ where: () => ({ limit: () => Promise.resolve([fakeAgent]) }) }),
+    });
+    const { callLlm } = await import('../llm-client.js');
+    (callLlm as any).mockRejectedValue(new Error('x'));
+
+    const t0 = Date.now();
+    await executePipeline(
+      { id: 'p', name: 't', nodes: [{ id: 'n', label: 'B', agentTemplateId: 'a-bf' }], edges: [], retryPolicy: { maxAttempts: 3, backoffMs: 0 } },
+      'r', { triggeredBy: 'user' as const }, async () => {}, false,
+    );
+    const elapsed = Date.now() - t0;
+    expect(elapsed).toBeLessThan(500); // 3 retries, no backoff, should be fast
+  });
+});
+
+describe('pipeline-engine › parallel (Phase 3 #5)', () => {
+  it('2 节点无 edge → 同 level 并行跑 (调用次数 ≥ 2)', async () => {
+    const { db } = await import('../../db/index.js');
+    const callOrder: string[] = [];
+    let i = 0;
+    (db.select as any).mockImplementation(() => ({
+      from: () => ({
+        where: () => ({
+          limit: () => {
+            i++;
+            const a = i % 2 === 1
+              ? { id: 'aP', name: 'P', systemPrompt: 'P', tools: [] }
+              : { id: 'aQ', name: 'Q', systemPrompt: 'Q', tools: [] };
+            return Promise.resolve([a]);
+          },
+        }),
+      }),
+    }));
+    const { callLlm } = await import('../llm-client.js');
+    (callLlm as any).mockImplementation(async () => {
+      const id = callOrder.length === 0 ? 'aP' : 'aQ';
+      callOrder.push(id);
+      // Simulate work; if truly parallel, total time < 2x single time
+      await new Promise(r => setTimeout(r, 50));
+      return {
+        text: 'ok-' + id, toolUses: [],
+        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        model: 'm', provider: 'p', durationMs: 50,
+      };
+    });
+
+    const t0 = Date.now();
+    const result = await executePipeline(
+      {
+        id: 'p', name: 't',
+        nodes: [
+          { id: 'nP', label: 'P', agentTemplateId: 'aP' },
+          { id: 'nQ', label: 'Q', agentTemplateId: 'aQ' },
+        ],
+        edges: [], // no edges → both at level 0
+      },
+      'r', { triggeredBy: 'user' as const }, async () => {}, false,
+    );
+    const elapsed = Date.now() - t0;
+    expect(result.status).toBe('completed');
+    // If serial, ~100ms (2 * 50). If parallel, ~50ms. Allow some slack.
+    expect(elapsed).toBeLessThan(90);
+    expect(result.nodeStates.nP.status).toBe('success');
+    expect(result.nodeStates.nQ.status).toBe('success');
+  });
+
+  it('A → B (有 edge) 仍串行 (B 收到 A 的 output)', async () => {
+    const { db } = await import('../../db/index.js');
+    let i = 0;
+    (db.select as any).mockImplementation(() => ({
+      from: () => ({
+        where: () => ({
+          limit: () => {
+            i++;
+            const a = i % 2 === 1
+              ? { id: 'aA', name: 'A', systemPrompt: 'A', tools: [] }
+              : { id: 'aB', name: 'B', systemPrompt: 'B', tools: [] };
+            return Promise.resolve([a]);
+          },
+        }),
+      }),
+    }));
+    const { callLlm } = await import('../llm-client.js');
+    (callLlm as any)
+      .mockResolvedValueOnce({
+        text: 'A-out', toolUses: [],
+        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        model: 'm', provider: 'p', durationMs: 1,
+      })
+      .mockResolvedValueOnce({
+        text: 'B-out', toolUses: [],
+        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        model: 'm', provider: 'p', durationMs: 1,
+      });
+
+    const result = await executePipeline(
+      {
+        id: 'p', name: 't',
+        nodes: [
+          { id: 'n1', label: 'A', agentTemplateId: 'aA' },
+          { id: 'n2', label: 'B', agentTemplateId: 'aB' },
+        ],
+        edges: [{ from: 'n1', to: 'n2' }],
+      },
+      'r', { triggeredBy: 'user' as const }, async () => {}, false,
+    );
+    expect(result.status).toBe('completed');
+    const secondCall = (callLlm as any).mock.calls[1][0];
+    expect(secondCall.messages[0].content).toContain('A-out');
+  });
+
+  it('computeLevels: 1 → 2 → 3 链 → level 0,1,2', async () => {
+    const { computeLevels } = await import('../pipeline-engine.js');
+    const nodes = [
+      { id: 'a', label: 'A', agentTemplateId: 'x' },
+      { id: 'b', label: 'B', agentTemplateId: 'x' },
+      { id: 'c', label: 'C', agentTemplateId: 'x' },
+    ];
+    const edges = [{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }];
+    const levels = computeLevels(nodes, edges);
+    expect(levels.get('a')).toBe(0);
+    expect(levels.get('b')).toBe(1);
+    expect(levels.get('c')).toBe(2);
+  });
+
+  it('computeLevels: 两个独立节点 + 一个 join → 0, 0, 1', async () => {
+    const { computeLevels } = await import('../pipeline-engine.js');
+    const nodes = [
+      { id: 'a', label: 'A', agentTemplateId: 'x' },
+      { id: 'b', label: 'B', agentTemplateId: 'x' },
+      { id: 'c', label: 'C', agentTemplateId: 'x' },
+    ];
+    const edges = [{ from: 'a', to: 'c' }, { from: 'b', to: 'c' }];
+    const levels = computeLevels(nodes, edges);
+    expect(levels.get('a')).toBe(0);
+    expect(levels.get('b')).toBe(0);
+    expect(levels.get('c')).toBe(1);
+  });
+});
