@@ -127,4 +127,34 @@ describe('buildRagContext', () => {
     expect(result.retrievedChunks.length).toBe(1);
     expect(result.retrievedChunks[0]!.chunkId).toBe('c1');
   });
+
+  it('pipeline context: userId=null + tenantId=null 不应抛 uuid 错误', async () => {
+    // 模拟 pipeline 触发场景:pipeline-engine.ts:234 把 userId='pipeline:'+ctx.runId 改成 null
+    // 修复前: 'pipeline:xxx' 被 buildVisibilityWhere cast 成 uuid 报错
+    // 修复后: null → 跳过 private + tenant 过滤,正常返回
+    let callCount = 0;
+    (db.select as any).mockImplementation(() => ({
+      from: () => {
+        callCount++;
+        if (callCount === 1) return makeChainable([{ id: 'ref-1', agentId: 'agent-1', kbId: 'kb-1' }]);
+        return makeChainable([{ id: 'kb-1', tenantId: null }]);
+      },
+    }));
+    (hybridSearch as any).mockResolvedValue([
+      { chunkId: 'c1', documentId: 'kb-1::d1', content: 'chunk content', score: 0.9 },
+    ]);
+
+    const result = await buildRagContext({
+      agentId: 'agent-1',
+      userQuery: 'pipeline question',
+      userId: null,         // ← pipeline 没有真实 user
+      tenantId: null,       // ← cron 没有 tenantId
+    });
+
+    expect(result.usedKbIds).toEqual(['kb-1']);
+    expect(result.retrievedChunks.length).toBe(1);
+    expect(hybridSearch).toHaveBeenCalledWith(expect.objectContaining({
+      visibilityFilter: { userId: null, tenantId: null },
+    }));
+  });
 });

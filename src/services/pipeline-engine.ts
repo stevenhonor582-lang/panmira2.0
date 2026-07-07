@@ -233,8 +233,11 @@ async function invokeRealAgent(
       const rag = await buildRagContext({
         agentId: agent.id,
         userQuery: stringifyInput(input),
-        userId: 'pipeline:' + ctx.runId,
-        tenantId,
+        // Pipelines don't represent a real user → null excludes private KBs by design.
+        // Previously this was `'pipeline:' + ctx.runId` which crashed hybrid-search
+        // when buildVisibilityWhere cast it to uuid: invalid input syntax for type uuid.
+        userId: null,
+        tenantId: ctx.tenantId && ctx.tenantId !== 'system' ? ctx.tenantId : null,
         topK: 5,
         mode: 'hybrid',
         minScore: 0,
