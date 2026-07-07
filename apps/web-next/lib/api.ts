@@ -1,48 +1,54 @@
-import { getToken, clearSession } from "./auth";
+import createClient from 'openapi-fetch';
+import type { paths } from '../src/api/schema';
 
-export class ApiError extends Error {
-  constructor(public status: number, message: string, public body?: unknown) {
-    super(message);
-  }
-}
+const baseUrl = (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_BASE) || '';
 
-export interface ApiOptions extends Omit<RequestInit, "body"> {
-  body?: unknown;
-  /** 跳过自动 401 跳转(用于 login 等) */
-  skipAuthRedirect?: boolean;
-}
+const realClient = createClient<paths>({ baseUrl, credentials: 'include' });
 
-export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Promise<T> {
-  const { body, skipAuthRedirect, headers, ...rest } = opts;
+let authToken: string | null = null;
+export function setAuthToken(token: string | null) { authToken = token; }
+if (typeof window !== 'undefined') authToken = localStorage.getItem('panmira.token');
 
-  const token = getToken();
-  const finalHeaders: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(headers as Record<string, string> | undefined),
-  };
-  if (token) finalHeaders.Authorization = `Bearer ${token}`;
+realClient.use({
+  async onRequest({ request }) {
+    if (authToken) request.headers.set('Authorization', `Bearer ${authToken}`);
+    return request;
+  },
+  async onResponse({ response }) {
+    if (response.status === 401 && typeof window !== 'undefined') window.location.href = '/login/';
+    return response;
+  },
+});
 
-  const init: RequestInit = {
-    ...rest,
-    headers: finalHeaders,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  };
+export const typedApi = realClient;
 
-  const res = await fetch(path, init);
-
-  if (res.status === 401 && !skipAuthRedirect) {
-    clearSession();
-    if (typeof window !== "undefined") {
-      window.location.href = "/login";
+function compatCall<T = any>(url: string, init?: { method?: string; body?: any; headers?: any; [k: string]: any }): Promise<T> {
+  const token = authToken || (typeof window !== 'undefined' ? localStorage.getItem('panmira.token') : null);
+  const headers: Record<string, string> = { ...((init?.headers as any) || {}) };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  let body: BodyInit | undefined;
+  if (init?.body !== undefined) {
+    if (typeof init.body === 'string' || init.body instanceof FormData) {
+      body = init.body;
+    } else {
+      headers['Content-Type'] = headers['Content-Type'] || 'application/json';
+      body = JSON.stringify(init.body);
     }
-    throw new ApiError(401, "Unauthorized");
   }
-
-  if (!res.ok) {
-    const errBody = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, errBody.error ?? `HTTP ${res.status}`, errBody);
-  }
-
-  if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  return fetch(url, { ...init, headers, body, credentials: 'include' }).then(async (r) => {
+    if (r.status === 401 && typeof window !== 'undefined') window.location.href = '/login/';
+    const ct = r.headers.get('content-type') || '';
+    const data = ct.includes('application/json') ? await r.json() : await r.text();
+    return data as T;
+  });
 }
+
+export const api: <T = any>(url: string, init?: { method?: string; body?: any; headers?: any; [k: string]: any }) => Promise<T> = compatCall;
+export const realApi = compatCall;
+
+export type ApiResponse<T> = {
+  success: boolean;
+  data?: T;
+  error?: { code: string; message: string; details?: unknown };
+  meta?: { total: number; page: number; limit: number };
+};
