@@ -140,11 +140,21 @@ async function triggerPipeline(req: http.IncomingMessage, res: http.ServerRespon
   // return 202 immediately so HTTP doesn't block 8+ seconds on LLM calls.
   const isAsync = parseQueryBool(req.url, "async");
 
+  // Snapshot current node labels so Diff can detect label renames later.
+  // Map: { [nodeId]: label }. Always snapshot at trigger time, even for async runs.
+  const labelSnapshot: Record<string, string> = {};
+  for (const n of (rows[0].nodes ?? []) as Array<{ id: string; label?: string }>) {
+    if (n && typeof n.id === "string") {
+      labelSnapshot[n.id] = typeof n.label === "string" ? n.label : "";
+    }
+  }
+
   const [run] = await db.insert(pipelineRuns).values({
     tenantId: ctx.tenantId, pipelineId: id,
     triggeredBy, triggeredByRef,
     status: isAsync ? "pending" : "running",
     nodeStates: {} as never,
+    labelSnapshot: labelSnapshot as never,
   } as never).returning();
 
   const pipeline = {

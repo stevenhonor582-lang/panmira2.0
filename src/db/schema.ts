@@ -1026,6 +1026,9 @@ export const pipelineRuns = pgTable('pipeline_runs', {
     durationMs?: number;
     tokensUsed?: number;
   }>>(),
+  // Snapshot of node labels at trigger time, so Diff can detect label renames.
+  // Format: { [nodeId]: label }. Nullable for backward compat with old runs.
+  labelSnapshot: jsonb('label_snapshot').$type<Record<string, string> | null>(),
   // Final result
   result: jsonb('result'),
   error: text('error'),
