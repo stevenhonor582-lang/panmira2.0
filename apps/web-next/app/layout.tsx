@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Outfit, Fira_Code } from "next/font/google";
 import "./globals.css";
+import { ThemeProvider } from "@/components/theme/theme-provider";
 
 const outfit = Outfit({
   variable: "--font-outfit",
@@ -15,8 +16,8 @@ const firaCode = Fira_Code({
 });
 
 export const metadata: Metadata = {
-  title: "Panmira Admin",
-  description: "数智资源管理 SaaS · Admin",
+  title: "Panmira · 数智资源管理",
+  description: "Panmira IA v6 · 数字员工平台",
 };
 
 export default function RootLayout({
@@ -30,7 +31,17 @@ export default function RootLayout({
       className={`${outfit.variable} ${firaCode.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="min-h-full font-sans">{children}</body>
+      <body className="min-h-full font-sans">
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          themes={["light", "dark", "system"]}
+          disableTransitionOnChange
+        >
+          {children}
+        </ThemeProvider>
+      </body>
     </html>
   );
 }
