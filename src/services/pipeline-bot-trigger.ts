@@ -5,10 +5,24 @@
  * - If not found / fails, return null (caller falls back to standard bot flow)
  *
  * Caches agentTemplateId → Pipeline[] on first lookup to avoid per-message DB hits.
+ *
+ * Level 5 #C: Trigger strategy for multi-pipeline agents.
+ * - 'first' (default): run only pipelines[0]. Backwards compatible with Phase 3.
+ * - 'all':             run every matching pipeline in parallel; return array (one entry per
+ *                      pipeline, null if that pipeline failed).
+ * - 'race':            run all in parallel; return the first one that finishes with
+ *                      status='completed'. If all fail, return null.
  */
 import { db } from '../db/index.js';
 import { sql } from 'drizzle-orm';
 import { executePipeline, type Pipeline, type RunResult } from './pipeline-engine.js';
+
+export type TriggerStrategy = 'first' | 'all' | 'race';
+
+export interface PipelineTriggerResult {
+  output: string;
+  runId: string;
+}
 
 interface BotPipelineRow extends Record<string, unknown> {
   id: string;
@@ -72,23 +86,15 @@ export async function findPipelinesForAgent(agentTemplateId: string): Promise<Pi
 }
 
 /**
- * Trigger the first matching pipeline for this agent template. Returns the last node's output text
- * and the run id, or null if no pipeline / pipeline failed (caller should fall back).
- *
- * `tenantId` (optional) is forwarded into the RunTrigger so the pipeline's RAG lookups
- * and tool executions are scoped to the calling tenant. If omitted, executePipeline
- * falls back to 'system' (single-tenant behavior).
+ * Run a single pipeline and convert the RunResult into a {output, runId} (or null on failure).
+ * Extracted so 'first' / 'all' / 'race' strategies can share the same error-handling shape.
  */
-export async function triggerPipelineForBot(
-  agentTemplateId: string,
+async function runOnePipeline(
+  pipeline: Pipeline,
   message: string,
   runIdHint: string,
-  tenantId?: string,
-): Promise<{ output: string; runId: string } | null> {
-  const pipelines = await findPipelinesForAgent(agentTemplateId);
-  if (pipelines.length === 0) return null;
-  const pipeline = pipelines[0]!;
-
+  tenantId: string | undefined,
+): Promise<PipelineTriggerResult | null> {
   let result: RunResult;
   try {
     result = await executePipeline(
@@ -103,9 +109,75 @@ export async function triggerPipelineForBot(
   }
   if (result.status !== 'completed') return null;
 
-  // Extract last node's text output
   const lastNodeId = pipeline.nodes[pipeline.nodes.length - 1]?.id;
-  const lastOutput = lastNodeId ? (result.nodeStates[lastNodeId]?.output as { text?: string } | undefined) : undefined;
+  const lastOutput = lastNodeId
+    ? (result.nodeStates[lastNodeId]?.output as { text?: string } | undefined)
+    : undefined;
   const text = lastOutput?.text ?? '';
   return { output: text, runId: result.runId };
+}
+
+/**
+ * Trigger pipelines for a bot message.
+ *
+ * - strategy 'first' (default): only run pipelines[0]. Returns the single result or null.
+ *   Backwards compatible with Phase 3 callers (feishu-bot-starter).
+ * - strategy 'all':             run every matching pipeline in parallel; returns one entry per
+ *                               pipeline (null = that pipeline failed).
+ * - strategy 'race':            run all in parallel; return the first pipeline that finishes
+ *                               with status='completed'. Returns null if every pipeline failed.
+ *
+ * `tenantId` (optional) is forwarded into the RunTrigger so the pipeline's RAG lookups
+ * and tool executions are scoped to the calling tenant. If omitted, executePipeline
+ * falls back to 'system' (single-tenant behavior).
+ */
+export async function triggerPipelineForBot(
+  agentTemplateId: string,
+  message: string,
+  runIdHint: string,
+  tenantId?: string,
+  strategy?: 'first' | 'race',
+): Promise<PipelineTriggerResult | null>;
+export async function triggerPipelineForBot(
+  agentTemplateId: string,
+  message: string,
+  runIdHint: string,
+  tenantId: string | undefined,
+  strategy: 'all',
+): Promise<Array<PipelineTriggerResult | null>>;
+export async function triggerPipelineForBot(
+  agentTemplateId: string,
+  message: string,
+  runIdHint: string,
+  tenantId?: string,
+  strategy: TriggerStrategy = 'first',
+): Promise<PipelineTriggerResult | null | Array<PipelineTriggerResult | null>> {
+  const pipelines = await findPipelinesForAgent(agentTemplateId);
+  if (pipelines.length === 0) {
+    // 'all' must always return an array so callers can iterate uniformly;
+    // for 'first' / 'race' a no-match bot run is null (no pipeline to run).
+    return strategy === 'all' ? [] : null;
+  }
+
+  if (strategy === 'first') {
+    return runOnePipeline(pipelines[0]!, message, runIdHint, tenantId);
+  }
+
+  if (strategy === 'all') {
+    return Promise.all(
+      pipelines.map((p) => runOnePipeline(p, message, runIdHint, tenantId)),
+    );
+  }
+
+  // strategy === 'race': first pipeline to finish with status='completed' wins.
+  // Promise.any waits for the first fulfilled promise; runOnePipeline rejections are
+  // swallowed (returns null) and rejections are converted to null by us. So if every
+  // pipeline fails, Promise.any throws AggregateError -> return null.
+  try {
+    return await Promise.any(
+      pipelines.map((p) => runOnePipeline(p, message, runIdHint, tenantId)),
+    );
+  } catch {
+    return null;
+  }
 }
