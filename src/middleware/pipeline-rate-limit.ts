@@ -1,17 +1,34 @@
 /**
- * Pipeline Rate Limiter (Phase 4 Level 3 Fix 2 + Level 4 #1):
+ * Pipeline Rate Limiter (Phase 4 Level 3 Fix 2 + Level 4 #1 + Level 12):
  * - Per-user rolling 1-minute rate limit (default 5/min — tightened in L4)
  * - Per-user rolling daily token cap (default 50,000 tokens/day — tightened in L4)
  * - In-memory Map-based, fail-open if anything throws
  * - Configurable via env: PIPELINE_RATE_LIMIT_PER_MIN, PIPELINE_DAILY_TOKEN_LIMIT
  * - Per-user override map (admin can grant higher/lower limits without restart)
+ * - L4 DB persistence (rate_limit_state table, periodic flush)
  *
- * Level 4 hardening:
- * - Defaults tightened (10/min -> 5/min; 100k -> 50k)
- * - Production env-var check: if NODE_ENV=production and no env override, log warning
- * - Per-user override Map<userId, { ratePerMin?, dailyTokens? }>
- *   checkRateLimit / checkDailyTokenCap / _inspect consult override first, fall back to default
+ * Level 12 hardening:
+ * - Redis hot path via INCR + EXPIRE (Lua-atomic) for callers that can await.
+ *   Falls back to in-memory on Redis failure (transient outage, disabled via
+ *   DISABLE_REDIS_RATE_LIMIT, or pre-init connection error).
+ * - In-memory Map mirrors Redis so the L4 DB flush logic keeps working
+ *   unchanged. When Redis fails, the same in-memory Map becomes the only
+ *   source of truth (L4 degraded-but-correct mode).
+ * - Override resolution stays in-process (in-memory Map). Overrides are
+ *   admin-set, low-frequency — no need for Redis hop there.
+ *
+ * Sync API (checkRateLimit / checkDailyTokenCap / recordTokenUsage) is kept
+ * for backward compat with existing callers (pipeline-routes uses sync). It
+ * uses in-memory only; cross-instance sharing requires the Async variants
+ * (checkRateLimitAsync / checkDailyTokenCapAsync / recordTokenUsageAsync).
  */
+
+import { getRedisClient, redisAvailable } from './redis-client.js';
+import {
+  checkRedisRateLimit,
+  checkRedisDailyTokenCap,
+  recordRedisTokenUsage,
+} from './redis-rate-limiter.js';
 
 const DEFAULT_RATE_PER_MIN = Number(process.env.PIPELINE_RATE_LIMIT_PER_MIN) || 5;
 const DEFAULT_DAILY_TOKENS = Number(process.env.PIPELINE_DAILY_TOKEN_LIMIT) || 50_000;
@@ -91,13 +108,13 @@ export function getOverride(userId: string): UserOverride | undefined {
   return overrides.get(userId);
 }
 
-/**
- * Check if user can trigger a pipeline right now.
- * Returns ok=true if allowed; ok=false with retryAfter (seconds) if rate-limited.
- * Effective per-min limit: user override > DEFAULT_RATE_PER_MIN.
- */
-export function checkRateLimit(userId: string, now: number = Date.now()): { ok: boolean; retryAfter?: number; limit: number } {
-  const limit = getEffectiveRatePerMin(userId);
+// ─── In-memory implementations (fallback path + sync API) ─────────────────
+
+function inMemoryCheckRateLimit(
+  userId: string,
+  limit: number,
+  now: number,
+): { ok: boolean; retryAfter?: number; limit: number } {
   const b = rateMap.get(userId);
   if (!b || b.resetAt <= now) {
     rateMap.set(userId, { count: 1, resetAt: now + ONE_MIN_MS });
@@ -110,17 +127,12 @@ export function checkRateLimit(userId: string, now: number = Date.now()): { ok: 
   return { ok: true, limit };
 }
 
-/**
- * Check if user has remaining daily token budget.
- * @param prospectiveTokens tokens this run will consume (estimate; 0 means unknown)
- * Effective daily cap: user override > DEFAULT_DAILY_TOKENS.
- */
-export function checkDailyTokenCap(
+function inMemoryCheckDailyTokenCap(
   userId: string,
-  prospectiveTokens: number = 0,
-  now: number = Date.now(),
+  prospectiveTokens: number,
+  now: number,
+  limit: number,
 ): { ok: boolean; currentUsage: number; limit: number } {
-  const limit = getEffectiveDailyTokens(userId);
   const b = tokenMap.get(userId);
   if (!b || b.resetAt <= now) {
     const newUsage = prospectiveTokens;
@@ -135,14 +147,150 @@ export function checkDailyTokenCap(
   };
 }
 
-/** Record actual token usage after a pipeline run completes. */
-export function recordTokenUsage(userId: string, tokens: number, now: number = Date.now()): void {
+function inMemoryRecordTokenUsage(userId: string, tokens: number, now: number): void {
   const b = tokenMap.get(userId);
   if (!b || b.resetAt <= now) {
     tokenMap.set(userId, { tokens, resetAt: now + ONE_DAY_MS });
     return;
   }
   b.tokens += tokens;
+}
+
+// ─── Sync API (in-memory; preserved for backward compat) ─────────────────
+
+/**
+ * Check if user can trigger a pipeline right now. Sync; uses in-memory Map.
+ * For cross-instance sharing via Redis, use checkRateLimitAsync instead.
+ * Effective per-min limit: user override > DEFAULT_RATE_PER_MIN.
+ */
+export function checkRateLimit(userId: string, now: number = Date.now()): { ok: boolean; retryAfter?: number; limit: number } {
+  const limit = getEffectiveRatePerMin(userId);
+  const result = inMemoryCheckRateLimit(userId, limit, now);
+  dirty.add(userId);
+  return result;
+}
+
+/**
+ * Check if user has remaining daily token budget. Sync; uses in-memory Map.
+ * For cross-instance sharing via Redis, use checkDailyTokenCapAsync instead.
+ * @param prospectiveTokens tokens this run will consume (estimate; 0 means unknown)
+ */
+export function checkDailyTokenCap(
+  userId: string,
+  prospectiveTokens: number = 0,
+  now: number = Date.now(),
+): { ok: boolean; currentUsage: number; limit: number } {
+  const limit = getEffectiveDailyTokens(userId);
+  const result = inMemoryCheckDailyTokenCap(userId, prospectiveTokens, now, limit);
+  dirty.add(userId);
+  return result;
+}
+
+/** Record actual token usage after a pipeline run completes. Sync; in-memory. */
+export function recordTokenUsage(userId: string, tokens: number, now: number = Date.now()): void {
+  if (tokens <= 0) return;
+  inMemoryRecordTokenUsage(userId, tokens, now);
+  dirty.add(userId);
+}
+
+// ─── Async API (Redis hot path; in-memory fallback + DB flush shadow) ─────
+
+/**
+ * Async variant of checkRateLimit. Goes through Redis when available, falls
+ * back to in-memory on Redis failure. Use this in async hot paths (e.g.
+ * pipeline-routes) to get cross-instance rate-limit sharing.
+ */
+export async function checkRateLimitAsync(
+  userId: string,
+  now: number = Date.now(),
+): Promise<{ ok: boolean; retryAfter?: number; limit: number }> {
+  const limit = getEffectiveRatePerMin(userId);
+  if (redisAvailable()) {
+    try {
+      const c = await getRedisClient();
+      if (c) {
+        const result = await checkRedisRateLimit(userId, limit, ONE_MIN_MS, now);
+        // Mirror to in-memory shadow so DB flush picks up the same state.
+        const b = rateMap.get(userId);
+        if (!b || b.resetAt <= now) {
+          rateMap.set(userId, { count: result.count, resetAt: now + ONE_MIN_MS });
+        } else {
+          b.count = Math.max(b.count, result.count);
+        }
+        dirty.add(userId);
+        return { ok: result.ok, retryAfter: result.retryAfter, limit: result.limit };
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('[pipeline-rate-limit] redis failed, fallback:', (e as Error).message);
+    }
+  }
+  const result = inMemoryCheckRateLimit(userId, limit, now);
+  dirty.add(userId);
+  return result;
+}
+
+/**
+ * Async variant of checkDailyTokenCap. Read-only (does not record usage).
+ */
+export async function checkDailyTokenCapAsync(
+  userId: string,
+  prospectiveTokens: number = 0,
+  now: number = Date.now(),
+): Promise<{ ok: boolean; currentUsage: number; limit: number }> {
+  const limit = getEffectiveDailyTokens(userId);
+  if (redisAvailable()) {
+    try {
+      const c = await getRedisClient();
+      if (c) {
+        const result = await checkRedisDailyTokenCap(userId, prospectiveTokens, limit, now);
+        // Mirror to in-memory shadow for DB flush.
+        const b = tokenMap.get(userId);
+        if (!b || b.resetAt <= now) {
+          tokenMap.set(userId, { tokens: result.currentUsage, resetAt: now + ONE_DAY_MS });
+        } else {
+          b.tokens = result.currentUsage;
+        }
+        dirty.add(userId);
+        return result;
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('[pipeline-rate-limit] redis failed, fallback:', (e as Error).message);
+    }
+  }
+  const result = inMemoryCheckDailyTokenCap(userId, prospectiveTokens, now, limit);
+  dirty.add(userId);
+  return result;
+}
+
+/**
+ * Async variant of recordTokenUsage. INCRBY + EXPIRE atomically via Lua.
+ */
+export async function recordTokenUsageAsync(userId: string, tokens: number, now: number = Date.now()): Promise<void> {
+  if (tokens <= 0) return;
+  if (redisAvailable()) {
+    try {
+      const c = await getRedisClient();
+      if (c) {
+        await recordRedisTokenUsage(userId, tokens, now);
+        // Mirror in-memory shadow.
+        const b = tokenMap.get(userId);
+        if (!b || b.resetAt <= now) {
+          tokenMap.set(userId, { tokens, resetAt: now + ONE_DAY_MS });
+        } else {
+          b.tokens += tokens;
+        }
+        dirty.add(userId);
+        return;
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('[pipeline-rate-limit] redis failed, fallback:', (e as Error).message);
+    }
+  }
+  inMemoryRecordTokenUsage(userId, tokens, now);
+  dirty.add(userId);
 }
 
 /** Diagnostic: inspect current state (for tests / admin). */
@@ -290,13 +438,6 @@ export async function flushToDb(): Promise<number> {
     process.stderr.write(`[rate-limit] flushToDb failed: ${(err as Error).message}\n`);
     return 0;  // leave dirty set intact so next flush retries
   }
-}
-
-/**
- * Mark a user dirty (called by check/record functions). Internal use.
- */
-function markDirty(userId: string): void {
-  dirty.add(userId);
 }
 
 /** Start the periodic flush timer. Idempotent. */
