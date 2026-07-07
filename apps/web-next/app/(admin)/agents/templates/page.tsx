@@ -8,6 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
+import { FlowNav } from "../_components/flow-nav";
+import Link from "next/link";
+import { HelpCircle } from "lucide-react";
+
+const FLOW_STEPS = [
+  { label: "1. 模板", href: "/agents" },
+  { label: "2. 编排", href: "/agents/pipelines" },
+  { label: "3. 蓝图", href: "/agents/templates" },
+];
 
 interface Agent {
   id: string;
@@ -96,9 +105,16 @@ export default function AgentTemplateEditorPage() {
 
   return (
     <div className="space-y-6 p-6">
+      <FlowNav steps={FLOW_STEPS} current="/agents/templates" />
+
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Agent 执行蓝图</h1>
-        <p className="text-sm text-muted-foreground">编辑 Agent 的完整执行配置(身份/编排/工具/边界)</p>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight">Agent 执行蓝图</h1>
+          <Link href="/agents/onboarding" className="text-muted-foreground hover:text-primary" title="了解模板/编排/蓝图三者关系">
+            <HelpCircle className="size-4" />
+          </Link>
+        </div>
+        <p className="text-sm text-muted-foreground">编辑 Agent 的完整执行配置(身份/编排/工具/边界/RAG/Skill)</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-6">

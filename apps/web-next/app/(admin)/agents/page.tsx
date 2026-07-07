@@ -24,6 +24,15 @@ import { AgentDetailDrawer } from "./_components/agent-detail-drawer";
 import { AgentDeleteDialog } from "./_components/agent-delete-dialog";
 import { AgentCard } from "./_components/agent-card";
 import type { Agent, AgentCreate } from "./_components/types";
+import { FlowNav } from "./_components/flow-nav";
+import Link from "next/link";
+import { HelpCircle } from "lucide-react";
+
+const FLOW_STEPS = [
+  { label: "1. 模板", href: "/agents" },
+  { label: "2. 编排", href: "/agents/pipelines" },
+  { label: "3. 蓝图", href: "/agents/templates" },
+];
 
 type ViewMode = "card" | "table";
 
@@ -110,9 +119,16 @@ export default function AgentsPage() {
 
   return (
     <div className="space-y-5">
+      <FlowNav steps={FLOW_STEPS} current="/agents" />
+
       <header className="flex items-center justify-between gap-3">
         <div className="space-y-1">
-          <h2 className="text-xl font-semibold tracking-tight">Agent 模板</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-semibold tracking-tight">Agent</h2>
+            <Link href="/agents/onboarding" className="text-muted-foreground hover:text-primary" title="了解模板/编排/蓝图三者关系">
+              <HelpCircle className="size-4" />
+            </Link>
+          </div>
           <p className="text-sm text-muted-foreground">
             业务 Agent 列表 · {agents.length} 个 · 视图 {view === "card" ? "卡片" : "表格"}
           </p>
