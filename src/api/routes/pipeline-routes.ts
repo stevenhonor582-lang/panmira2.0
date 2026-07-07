@@ -135,10 +135,15 @@ async function triggerPipeline(req: http.IncomingMessage, res: http.ServerRespon
   const triggeredByRef = body.triggeredByRef ? String(body.triggeredByRef) : null;
   const initialInput = (body.initialInput || {}) as Record<string, unknown>;
 
+  // Async mode (?async=true): write run as 'pending', kick off in background,
+  // return 202 immediately so HTTP doesn't block 8+ seconds on LLM calls.
+  const isAsync = parseQueryBool(req.url, "async");
+
   const [run] = await db.insert(pipelineRuns).values({
     tenantId: ctx.tenantId, pipelineId: id,
     triggeredBy, triggeredByRef,
-    status: "running", nodeStates: {} as never,
+    status: isAsync ? "pending" : "running",
+    nodeStates: {} as never,
   } as never).returning();
 
   const pipeline = {
@@ -146,6 +151,21 @@ async function triggerPipeline(req: http.IncomingMessage, res: http.ServerRespon
     nodes: rows[0].nodes as never, edges: (rows[0].edges || []) as never,
     timeoutMs: rows[0].timeoutMs ?? undefined, retryPolicy: rows[0].retryPolicy as never,
   };
+
+  if (isAsync) {
+    // Background: fire-and-forget. setImmediate releases the request immediately,
+    // unhandled rejection is logged so we don't silently lose the run.
+    setImmediate(() => {
+      runPipelineInBackground(pipeline, run.id, triggeredBy, triggeredByRef, initialInput, ctx.tenantId, id)
+        .catch((e) => console.error(`[pipeline-async] run ${run.id} failed:`, e));
+    });
+    res.statusCode = 202;
+    jsonResponse(res, 202, {
+      success: true,
+      data: { runId: run.id, status: "pending", pollUrl: `/api/v2/admin/pipelines/${id}/runs/${run.id}` },
+    });
+    return;
+  }
 
   const result = await executePipeline(
     pipeline, run.id,
@@ -158,28 +178,92 @@ async function triggerPipeline(req: http.IncomingMessage, res: http.ServerRespon
     },
   );
 
+  await finalizeRun(run.id, id, result);
+  jsonResponse(res, 200, {
+    success: true,
+    data: { runId: run.id, status: result.status, durationMs: result.durationMs, result: result.result, error: result.error },
+  });
+}
+
+/**
+ * Run a pipeline in the background (for async mode).
+ * Updates run status: pending → running → completed/failed.
+ */
+async function runPipelineInBackground(
+  pipeline: { id: string; name: string; nodes: unknown; edges: unknown; timeoutMs?: number; retryPolicy: unknown },
+  runId: string,
+  triggeredBy: "user" | "bot" | "cron" | "event" | "api",
+  triggeredByRef: string | null,
+  initialInput: Record<string, unknown>,
+  tenantId: string | null | undefined,
+  pipelineId: string,
+): Promise<void> {
+  await db.update(pipelineRuns)
+    .set({ status: "running", startedAt: new Date() } as never)
+    .where(eq(pipelineRuns.id, runId));
+
+  let result;
+  try {
+    result = await executePipeline(
+      pipeline as never, runId,
+      { triggeredBy, triggeredByRef: triggeredByRef || undefined, initialInput, tenantId: tenantId ?? undefined },
+      async (nodeId, state) => {
+        const current = await db.select().from(pipelineRuns).where(eq(pipelineRuns.id, runId)).limit(1);
+        if (current.length === 0) return;
+        const merged = { ...(current[0].nodeStates || {}), [nodeId]: state };
+        await db.update(pipelineRuns).set({ nodeStates: merged as never, currentNodeId: nodeId }).where(eq(pipelineRuns.id, runId));
+      },
+    );
+  } catch (e) {
+    // executePipeline should not throw — but guard anyway so we don\'t leak pending runs.
+    await db.update(pipelineRuns).set({
+      status: "failed",
+      error: (e as Error).message || "pipeline_threw",
+      finishedAt: new Date(),
+      currentNodeId: null,
+    } as never).where(eq(pipelineRuns.id, runId));
+    return;
+  }
+
+  await finalizeRun(runId, pipelineId, result);
+}
+
+/** Finalize run row + bump pipeline aggregate stats. Shared by sync + async paths. */
+async function finalizeRun(
+  runId: string,
+  pipelineId: string,
+  result: { status: string; result?: unknown; error?: string; nodeStates: unknown; durationMs: number },
+): Promise<void> {
   await db.update(pipelineRuns).set({
     status: result.status,
-    result: result.result || null,
+    result: (result.result as never) || null,
     error: result.error || null,
     nodeStates: result.nodeStates as never,
     finishedAt: new Date(),
     durationMs: result.durationMs,
     currentNodeId: null,
-  } as never).where(eq(pipelineRuns.id, run.id));
+  } as never).where(eq(pipelineRuns.id, runId));
 
   const isSuccess = result.status === "completed";
   const sqlUpdate = "UPDATE agent_pipelines SET run_count = run_count + 1"
     + (isSuccess ? ", success_count = success_count + 1" : "")
     + ", avg_duration_ms = COALESCE((avg_duration_ms * run_count + "
     + result.durationMs + ") / (run_count + 1), " + result.durationMs
-    + ") WHERE id = '" + id + "'";
+    + ") WHERE id = '" + pipelineId + "'";
   await db.execute(sqlUpdate as never);
+}
 
-  jsonResponse(res, 200, {
-    success: true,
-    data: { runId: run.id, status: result.status, durationMs: result.durationMs, result: result.result, error: result.error },
-  });
+/** Parse a boolean query parameter (?async=true&foo=bar). Accepts true/1/yes. */
+function parseQueryBool(url: string | undefined, key: string): boolean {
+  if (!url) return false;
+  const qIdx = url.indexOf("?");
+  if (qIdx === -1) return false;
+  const qs = url.slice(qIdx + 1);
+  for (const part of qs.split("&")) {
+    const [k, v] = part.split("=");
+    if (k === key && v && /^(true|1|yes)$/i.test(decodeURIComponent(v))) return true;
+  }
+  return false;
 }
 
 export async function handlePipelineRoutes(req: http.IncomingMessage, res: http.ServerResponse, method: string, url: string) {
