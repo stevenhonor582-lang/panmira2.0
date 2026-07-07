@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   Drawer,
   DrawerContent,
@@ -11,8 +13,19 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Pencil, Trash2, Bot, Calendar, Hash, Power, GitBranch } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Plus, Pencil, Trash2, Bot, Calendar, Hash, Power, GitBranch, Plug, ExternalLink } from "lucide-react";
 import type { Agent, TriggerStrategy } from "./types";
+import { api } from "@/lib/api";
+
+interface ChannelBinding {
+  id: string;
+  groupId: string | null;
+  pattern: string | null;
+  targetBots: string[];
+  priority: number;
+  enabled: boolean;
+}
 
 interface Props {
   agent: Agent | null;
@@ -46,6 +59,23 @@ export function AgentDetailDrawer({
   onEdit,
   onDelete,
 }: Props) {
+  const [channels, setChannels] = useState<ChannelBinding[]>([]);
+  const [channelsLoading, setChannelsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!agent || !open) return;
+    setChannelsLoading(true);
+    api<{ channels: ChannelBinding[] }>("/api/v2/admin/channels")
+      .then((r) => {
+        const matched = (r.channels ?? []).filter((c) =>
+          Array.isArray(c.targetBots) && c.targetBots.includes(agent.name)
+        );
+        setChannels(matched);
+      })
+      .catch(() => setChannels([]))
+      .finally(() => setChannelsLoading(false));
+  }, [agent, open]);
+
   if (!agent) return null;
   const strategy = readStrategy(agent);
 
@@ -110,7 +140,6 @@ export function AgentDetailDrawer({
 
           <Separator />
 
-          {/* L9 #C: trigger strategy preview (read-only — edit happens in the dialog) */}
           <section className="space-y-2">
             <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
               Pipeline 触发策略
@@ -136,9 +165,7 @@ export function AgentDetailDrawer({
             {agent.capabilities && agent.capabilities.length > 0 ? (
               <div className="flex flex-wrap gap-1.5">
                 {agent.capabilities.map((c) => (
-                  <Badge key={c} variant="secondary">
-                    {c}
-                  </Badge>
+                  <Badge key={c} variant="secondary">{c}</Badge>
                 ))}
               </div>
             ) : (
@@ -153,9 +180,7 @@ export function AgentDetailDrawer({
             {agent.tools && agent.tools.length > 0 ? (
               <div className="flex flex-wrap gap-1.5">
                 {agent.tools.map((t) => (
-                  <Badge key={t} variant="outline">
-                    {t}
-                  </Badge>
+                  <Badge key={t} variant="outline">{t}</Badge>
                 ))}
               </div>
             ) : (
@@ -170,16 +195,62 @@ export function AgentDetailDrawer({
               </p>
               <ul className="space-y-1 text-xs">
                 {agent.ironLaws.map((law, i) => (
-                  <li
-                    key={i}
-                    className="rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-1.5"
-                  >
+                  <li key={i} className="rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-1.5">
                     {law}
                   </li>
                 ))}
               </ul>
             </section>
           )}
+
+          <Separator />
+
+          {/* Channels — 逻辑反转：在这个 agent 上下文里管理 channel，不再单独的 Bot 配置页 */}
+          <section className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                Channels ({channelsLoading ? "…" : channels.length})
+              </p>
+              <Link
+                href="/channels"
+                className="text-[11px] text-primary hover:underline inline-flex items-center gap-1"
+              >
+                <Plus className="size-3" />
+                新建路由
+                <ExternalLink className="size-2.5" />
+              </Link>
+            </div>
+            {channelsLoading ? (
+              <Skeleton className="h-12 w-full" />
+            ) : channels.length === 0 ? (
+              <p className="text-muted-foreground text-xs">
+                暂无 channel 路由到此 agent · 在
+                <Link href="/channels" className="ml-1 text-primary hover:underline">Channel 接入</Link>
+                中创建(targetBots 加上 <code className="font-mono">{agent.name}</code>)
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                {channels.map((c) => (
+                  <div
+                    key={c.id}
+                    className="flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5"
+                  >
+                    <Plug className="size-3 text-muted-foreground shrink-0" />
+                    <div className="flex-1 min-w-0 text-xs">
+                      <div className="flex items-center gap-2">
+                        {c.groupId && <Badge variant="outline" className="text-[10px]">{c.groupId}</Badge>}
+                        {c.pattern && <span className="font-mono text-[11px] truncate">{c.pattern}</span>}
+                      </div>
+                      <p className="text-[10px] text-muted-foreground font-mono mt-0.5">id: {c.id} · priority {c.priority}</p>
+                    </div>
+                    <Badge variant={c.enabled ? "default" : "secondary"} className="text-[10px]">
+                      {c.enabled ? "启用" : "停用"}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
 
           <Separator />
 
@@ -203,11 +274,7 @@ export function AgentDetailDrawer({
         </div>
 
         <DrawerFooter className="border-t flex-row justify-between">
-          <Button
-            variant="destructive"
-            onClick={() => onDelete(agent)}
-            className="gap-1.5"
-          >
+          <Button variant="destructive" onClick={() => onDelete(agent)} className="gap-1.5">
             <Trash2 className="size-3.5" />
             删除
           </Button>
