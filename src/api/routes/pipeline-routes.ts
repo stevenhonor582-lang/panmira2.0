@@ -1,5 +1,6 @@
 import type http from "node:http";
 import { eq, and, desc } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "../../db/index.js";
 import { agentPipelines, pipelineRuns, agentMessages } from "../../db/schema.js";
 import { jsonResponse, parseJsonBody } from "./helpers.js";
@@ -7,6 +8,32 @@ import { requireBearer, requireScopes } from "../oauth-middleware.js";
 import { validatePipeline, executePipeline } from "../../services/pipeline-engine.js";
 import { checkRateLimit, checkDailyTokenCap, recordTokenUsage } from "../../middleware/pipeline-rate-limit.js";
 import { broadcastPipelineProgress, type PipelineProgressEvent } from "../pipeline-events.js";
+
+/**
+ * L8: retry policy schema. Exported for tests.
+ * Bounds chosen to keep UI sensible (1-10 attempts) and prevent sleep storms (max 60s).
+ */
+export const RetryPolicySchema = z.object({
+  maxAttempts: z.number().int().min(1).max(10).default(1),
+  backoffMs: z.number().int().min(0).max(60_000).default(1000),
+}).strict();
+
+export type RetryPolicyInput = z.infer<typeof RetryPolicySchema>;
+
+/** Validate + normalize retryPolicy payload; returns either { ok, value } or { ok: false, errors }. */
+export function parseRetryPolicy(
+  input: unknown,
+): { ok: true; value: RetryPolicyInput } | { ok: false; errors: string[] } {
+  if (input === undefined || input === null) {
+    return { ok: true, value: { maxAttempts: 1, backoffMs: 1000 } };
+  }
+  const result = RetryPolicySchema.safeParse(input);
+  if (result.success) return { ok: true, value: result.data };
+  return {
+    ok: false,
+    errors: result.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`),
+  };
+}
 
 async function listPipelines(req: http.IncomingMessage, res: http.ServerResponse) {
   const ctx = await requireBearer(req, res); if (!ctx) return;
@@ -35,7 +62,12 @@ async function createPipeline(req: http.IncomingMessage, res: http.ServerRespons
   const triggerType = body.triggerType || "manual";
   const triggerConfig = body.triggerConfig || {};
   const timeoutMs = typeof body.timeoutMs === "number" ? body.timeoutMs : 600000;
-  const retryPolicy = body.retryPolicy || { maxAttempts: 1, backoffMs: 1000 };
+  const retryParsed = parseRetryPolicy(body.retryPolicy);
+  if (!retryParsed.ok) {
+    jsonResponse(res, 400, { error: "invalid_retry_policy", details: retryParsed.errors });
+    return;
+  }
+  const retryPolicy = retryParsed.value;
   if (!name || !nodes || !Array.isArray(nodes) || nodes.length === 0) {
     jsonResponse(res, 400, { error: "name + non-empty nodes required" });
     return;
@@ -68,6 +100,14 @@ async function updatePipeline(req: http.IncomingMessage, res: http.ServerRespons
   if ("triggerConfig" in body) update.triggerConfig = body.triggerConfig;
   if ("timeoutMs" in body && typeof body.timeoutMs === "number") update.timeoutMs = body.timeoutMs;
   if ("enabled" in body) update.enabled = Boolean(body.enabled);
+  if ("retryPolicy" in body) {
+    const retryParsed = parseRetryPolicy(body.retryPolicy);
+    if (!retryParsed.ok) {
+      jsonResponse(res, 400, { error: "invalid_retry_policy", details: retryParsed.errors });
+      return;
+    }
+    update.retryPolicy = retryParsed.value as never;
+  }
   await db.update(agentPipelines).set(update).where(eq(agentPipelines.id, id));
   jsonResponse(res, 200, { success: true });
 }

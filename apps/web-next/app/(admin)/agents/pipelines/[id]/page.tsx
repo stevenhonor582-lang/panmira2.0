@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Play, RefreshCw, Trash2, GitBranch, Clock, ArrowRight, Plus, Minus, Pencil, Info } from "lucide-react";
 import { api } from "@/lib/api";
+import { triggerPipelineAsync } from "@/lib/pipeline-trigger";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PipelineProgress } from "@/components/pipeline-progress";
@@ -220,6 +221,7 @@ export default function PipelineDetailPage({ params }: { params: { id: string } 
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [triggering, setTriggering] = useState(false);
+  const [activeTab, setActiveTab] = useState("dag");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -241,12 +243,20 @@ export default function PipelineDetailPage({ params }: { params: { id: string } 
     setTriggering(true);
     setToast(null);
     try {
-      const r = await api<{ success: boolean; data: { status: string; durationMs: number; runId: string; error?: string } }>(
-        `/api/v2/admin/pipelines/${params.id}/trigger`,
-        { method: "POST", body: { triggeredBy: "user", initialInput: { startedBy: "ui" } } }
+      // L6: async mode — server returns 202 + runId immediately. L7 WS broadcasts per-node progress.
+      const r = await triggerPipelineAsync(
+        { pipelineId: params.id, triggeredBy: "user", initialInput: { startedBy: "ui" } },
+        fetch,
       );
-      if (r.data.error) setToast({ kind: "err", text: `失败: ${r.data.error}` });
-      else setToast({ kind: "ok", text: `完成 · ${r.data.durationMs}ms · status=${r.data.status}` });
+      if (r.kind === "failed") {
+        setToast({ kind: "err", text: `失败: ${r.error}` });
+      } else if (r.kind === "accepted") {
+        setToast({ kind: "ok", text: `Pipeline 已启动 · run ${r.runId.slice(0, 8)}… · 查看运行历史` });
+        // Auto-switch to runs tab so user sees the new run + L7 progress (no polling)
+        setActiveTab("runs");
+      } else {
+        setToast({ kind: "ok", text: `完成 · ${r.durationMs}ms · status=${r.status}` });
+      }
       await load();
     } catch (e: unknown) {
       setToast({ kind: "err", text: e instanceof Error ? e.message : String(e) });
@@ -338,7 +348,7 @@ export default function PipelineDetailPage({ params }: { params: { id: string } 
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="dag" className="space-y-4">
+      <Tabs defaultValue="dag" value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="dag">DAG 视图</TabsTrigger>
           <TabsTrigger value="diff">Diff</TabsTrigger>
