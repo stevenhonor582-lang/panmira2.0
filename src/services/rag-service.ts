@@ -10,8 +10,10 @@ import { hybridSearch, type SearchResult, type SearchMode } from './hybrid-searc
 export interface RagOptions {
   agentId: string;
   userQuery: string;
-  userId: string;
-  tenantId: string;
+  /** Pipeline context: pass null to skip private KB visibility filter. */
+  userId: string | null;
+  /** Pipeline context: pass null when no real tenant (e.g. cron without tenantId). */
+  tenantId: string | null;
   topK?: number;       // 默认 5
   mode?: SearchMode;  // 默认 hybrid
   minScore?: number;   // 过滤低分 chunk, 默认 0

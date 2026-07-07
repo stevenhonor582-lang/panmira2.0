@@ -20,7 +20,7 @@ export interface SearchOptions {
   mode?: SearchMode;      // 默认 hybrid
   vectorLimit?: number;   // 默认 20
   bm25Limit?: number;     // 默认 20
-  visibilityFilter?: { userId: string; teamId?: string; tenantId: string };
+  visibilityFilter?: { userId: string | null; teamId?: string; tenantId: string | null };
 }
 
 export interface SearchResult {
@@ -79,7 +79,7 @@ export function rrfFuse(
 /** 构造 visibility 过滤 SQL 条件 */
 function buildVisibilityWhere(
   kbIds: string[],
-  filter?: { userId: string; teamId?: string; tenantId: string },
+  filter?: { userId: string | null; teamId?: string; tenantId: string | null },
 ): { sql: string; params: any[] } {
   const params: any[] = [];
   let where = `d.kb_id = ANY($${params.push(kbIds)}::uuid[])`;
@@ -91,8 +91,10 @@ function buildVisibilityWhere(
       OR d.visibility = 'team'
       ${filter.userId ? `OR (d.visibility = 'private' AND d.owner_user_id = $${params.push(filter.userId)}::uuid)` : ''}
     )`;
-    // tenant 隔离
-    where += ` AND d.kb_id IN (SELECT id FROM knowledge_bases WHERE tenant_id = $${params.push(filter.tenantId)}::uuid)`;
+    // tenant 隔离 — skip when null (pipeline runs without tenantId, e.g. cron)
+    if (filter.tenantId) {
+      where += ` AND d.kb_id IN (SELECT id FROM knowledge_bases WHERE tenant_id = $${params.push(filter.tenantId)}::uuid)`;
+    }
   }
 
   return { sql: where, params };
@@ -103,7 +105,7 @@ export async function vectorSearch(
   query: string,
   kbIds: string[],
   limit: number,
-  filter?: { userId: string; teamId?: string; tenantId: string },
+  filter?: { userId: string | null; teamId?: string; tenantId: string | null },
 ): Promise<SearchResult[]> {
   if (kbIds.length === 0) return [];
   if (!query.trim()) return [];
@@ -151,7 +153,7 @@ export async function bm25Search(
   query: string,
   kbIds: string[],
   limit: number,
-  filter?: { userId: string; teamId?: string; tenantId: string },
+  filter?: { userId: string | null; teamId?: string; tenantId: string | null },
 ): Promise<SearchResult[]> {
   if (kbIds.length === 0) return [];
   if (!query.trim()) return [];
