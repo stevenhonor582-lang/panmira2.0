@@ -9,6 +9,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ReactFlow, Background, Controls, MiniMap, type Node as RFNode, type Edge as RFEdge, MarkerType } from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 
 interface DagNode { id: string; label: string; agentTemplateId: string; }
 interface DagEdge { from: string; to: string; }
@@ -104,6 +106,27 @@ function layoutNodes(nodes: DagNode[], edges: DagEdge[]): Map<string, { x: numbe
   return positions;
 }
 
+function dagToReactFlow(nodes: DagNode[], edges: DagEdge[], positions: Map<string, { x: number; y: number; level: number }>): { nodes: RFNode[]; edges: RFEdge[] } {
+  const rfNodes: RFNode[] = nodes.map((n) => {
+    const pos = positions.get(n.id) ?? { x: 0, y: 0, level: 0 };
+    return {
+      id: n.id,
+      position: { x: pos.x, y: pos.y },
+      data: { label: n.label, agentId: n.agentTemplateId },
+      type: "default",
+      style: { width: 160, background: "hsl(var(--card))", color: "hsl(var(--foreground))", border: "1px solid hsl(var(--primary))", borderRadius: 8, padding: 8, fontSize: 12 },
+    };
+  });
+  const rfEdges: RFEdge[] = edges.map((e) => ({
+    id: e.from + "->" + e.to,
+    source: e.from,
+    target: e.to,
+    markerEnd: { type: MarkerType.ArrowClosed, color: "hsl(var(--primary))" },
+    style: { stroke: "hsl(var(--primary))", strokeWidth: 2 },
+  }));
+  return { nodes: rfNodes, edges: rfEdges };
+}
+
 export default function PipelineDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const [pipeline, setPipeline] = useState<Pipeline | null>(null);
@@ -169,6 +192,7 @@ export default function PipelineDetailPage({ params }: { params: { id: string } 
   const positions = layoutNodes(pipeline.nodes, pipeline.edges);
   const maxX = Math.max(...Array.from(positions.values()).map(p => p.x)) + 160;
   const maxY = Math.max(...Array.from(positions.values()).map(p => p.y)) + 80;
+  const { nodes: rfNodes, edges: rfEdges } = dagToReactFlow(pipeline.nodes, pipeline.edges, positions);
 
   return (
     <div className="space-y-6 p-6">
@@ -222,48 +246,23 @@ export default function PipelineDetailPage({ params }: { params: { id: string } 
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="overflow-auto border rounded-lg bg-muted/20 p-4" style={{ minHeight: Math.max(220, maxY + 20) }}>
-            <svg width={maxX} height={maxY} className="block">
-              <defs>
-                <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-                  <polygon points="0 0, 10 3.5, 0 7" fill="currentColor" />
-                </marker>
-              </defs>
-              {/* Edges */}
-              {pipeline.edges.map((e, i) => {
-                const from = positions.get(e.from);
-                const to = positions.get(e.to);
-                if (!from || !to) return null;
-                const x1 = from.x + 140;
-                const y1 = from.y + 30;
-                const x2 = to.x;
-                const y2 = to.y + 30;
-                return (
-                  <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
-                    stroke="currentColor" strokeWidth={2} className="text-primary/60"
-                    markerEnd="url(#arrowhead)" />
-                );
-              })}
-              {/* Nodes */}
-              {pipeline.nodes.map((n) => {
-                const pos = positions.get(n.id);
-                if (!pos) return null;
-                return (
-                  <g key={n.id} transform={`translate(${pos.x},${pos.y})`}>
-                    <rect width={140} height={60} rx={8} fill="hsl(var(--card))" stroke="hsl(var(--primary))" strokeWidth={2} />
-                    <text x={70} y={20} textAnchor="middle" className="fill-foreground font-medium" fontSize={13}>
-                      {n.label}
-                    </text>
-                    <text x={70} y={38} textAnchor="middle" className="fill-muted-foreground" fontSize={10}>
-                      {n.id}
-                    </text>
-                    <text x={70} y={52} textAnchor="middle" className="fill-muted-foreground" fontSize={9}>
-                      agent:{n.agentTemplateId.slice(0, 8)}…
-                    </text>
-                  </g>
-                );
-              })}
-            </svg>
+          <div className="border rounded-lg bg-muted/20 overflow-hidden" style={{ height: Math.max(360, maxY + 40) }}>
+            <ReactFlow
+              nodes={rfNodes}
+              edges={rfEdges}
+              fitView
+              fitViewOptions={{ padding: 0.2 }}
+              minZoom={0.3}
+              maxZoom={2}
+              proOptions={{ hideAttribution: true }}
+              nodesDraggable={false}
+              nodesConnectable={false}
+              elementsSelectable
+            >
+              <Background gap={20} size={1} />
+              <Controls showInteractive={false} />
+              <MiniMap pannable zoomable className="!bg-card" />
+            </ReactFlow>
           </div>
         </CardContent>
       </Card>
