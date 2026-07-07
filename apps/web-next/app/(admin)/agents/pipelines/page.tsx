@@ -46,18 +46,40 @@ export default function PipelinesPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  const [triggeringId, setTriggeringId] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
   async function handleTrigger(id: string) {
-    await api(`/api/v2/admin/pipelines/${id}/trigger`, {
-      method: "POST",
-      body: { triggeredBy: "user", initialInput: { startedBy: "admin" } },
-    });
-    await load();
+    setTriggeringId(id);
+    setToast(null);
+    try {
+      const r = await api<{ success: boolean; data: { status: string; durationMs: number; error?: string } }>(
+        `/api/v2/admin/pipelines/${id}/trigger`,
+        { method: "POST", body: { triggeredBy: "user", initialInput: { startedBy: "admin" } } }
+      );
+      if (r.data.error) {
+        setToast({ kind: "err", text: `运行失败: ${r.data.error}` });
+      } else {
+        setToast({ kind: "ok", text: `运行成功 · ${r.data.durationMs}ms · status=${r.data.status}` });
+      }
+      await load();
+    } catch (e: unknown) {
+      setToast({ kind: "err", text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setTriggeringId(null);
+      setTimeout(() => setToast(null), 4000);
+    }
   }
 
   async function handleDelete(id: string) {
     if (!confirm("确认删除?")) return;
-    await api(`/api/v2/admin/pipelines/${id}`, { method: "DELETE" });
-    await load();
+    try {
+      await api(`/api/v2/admin/pipelines/${id}`, { method: "DELETE" });
+      await load();
+    } catch (e: unknown) {
+      setToast({ kind: "err", text: e instanceof Error ? e.message : String(e) });
+      setTimeout(() => setToast(null), 4000);
+    }
   }
 
   return (
@@ -138,8 +160,8 @@ export default function PipelinesPage() {
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button size="sm" variant="outline" className="flex-1" onClick={() => handleTrigger(p.id)}>
-                      <Play className="size-3.5 mr-1" /> 运行
+                    <Button size="sm" variant="outline" className="flex-1" onClick={() => handleTrigger(p.id)} disabled={triggeringId === p.id}>
+                      {triggeringId === p.id ? "运行中…" : <><Play className="size-3.5 mr-1" /> 运行</>}
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => handleDelete(p.id)}>
                       <Trash2 className="size-3.5" />
@@ -151,6 +173,10 @@ export default function PipelinesPage() {
           })}
         </div>
       )}
-    </div>
-  );
+      {toast && (
+        <div className={"fixed bottom-6 right-6 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium " + (toast.kind === "ok" ? "bg-emerald-600 text-white" : "bg-rose-600 text-white")}>
+          {toast.text}
+        </div>
+      )}
+    </div>  );
 }
