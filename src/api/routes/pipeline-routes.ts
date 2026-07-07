@@ -186,18 +186,18 @@ export async function handlePipelineRoutes(req: http.IncomingMessage, res: http.
   if (!url.startsWith("/api/v2/admin/pipelines")) return false;
   const runMatch = url.match(/^\/api\/v2\/admin\/pipelines\/([^/]+)\/runs\/([^/?]+)$/);
   if (runMatch && method === "GET") { await getRun(req, res, runMatch[2]); return true; }
-  const runsListMatch = url.match(/^\/api\/v2\/admin\/pipelines\/([^/]+)\/runs$/);
+  const runsListMatch = url.match(/^\/api\/v2\/admin\/pipelines\/([^/]+)\/runs(?:\?.*)?$/);
   if (runsListMatch && method === "GET") { await listRuns(req, res, url); return true; }
-  const triggerMatch = url.match(/^\/api\/v2\/admin\/pipelines\/([^/]+)\/trigger$/);
+  const triggerMatch = url.match(/^\/api\/v2\/admin\/pipelines\/([^/]+)\/trigger(?:\?.*)?$/);
   if (triggerMatch && method === "POST") { await triggerPipeline(req, res, triggerMatch[1]); return true; }
-  const idMatch = url.match(/^\/api\/v2\/admin\/pipelines\/([^/?]+)$/);
+  const idMatch = url.match(/^\/api\/v2\/admin\/pipelines\/([^/?]+)(?:\?.*)?$/);
   if (idMatch && idMatch[1]) {
     const id = idMatch[1];
     if (method === "GET") { await getPipeline(req, res, id); return true; }
     if (method === "PATCH") { await updatePipeline(req, res, id); return true; }
     if (method === "DELETE") { await deletePipeline(req, res, id); return true; }
   }
-  if (url === "/api/v2/admin/pipelines" || url.startsWith("/api/v2/admin/pipelines?")) {
+  if (url === "/api/v2/admin/pipelines" || url === "/api/v2/admin/pipelines/" || url.startsWith("/api/v2/admin/pipelines?") || url.startsWith("/api/v2/admin/pipelines/?")) {
     if (method === "GET") { await listPipelines(req, res); return true; }
     if (method === "POST") { await createPipeline(req, res); return true; }
   }
