@@ -11,8 +11,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Pencil, Trash2, Bot, Calendar, Hash, Power } from "lucide-react";
-import type { Agent } from "./types";
+import { Pencil, Trash2, Bot, Calendar, Hash, Power, GitBranch } from "lucide-react";
+import type { Agent, TriggerStrategy } from "./types";
 
 interface Props {
   agent: Agent | null;
@@ -20,6 +20,23 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   onEdit: (agent: Agent) => void;
   onDelete: (agent: Agent) => void;
+}
+
+const STRATEGY_LABEL: Record<TriggerStrategy, string> = {
+  first: "first · 跑首 pipeline",
+  all: "all · 并行跑全部",
+  race: "race · 先完胜",
+};
+
+const STRATEGY_DESCRIPTION: Record<TriggerStrategy, string> = {
+  first: "默认 · 单 pipeline 行为 · Phase 3 兼容",
+  all: "返回数组 (各 pipeline 独立回复)",
+  race: "首响优先 (最快完成的 pipeline)",
+};
+
+function readStrategy(a: Agent): TriggerStrategy {
+  const raw = (a.orchestration as { triggerStrategy?: unknown } | undefined)?.triggerStrategy;
+  return raw === "all" || raw === "race" || raw === "first" ? raw : "first";
 }
 
 export function AgentDetailDrawer({
@@ -30,6 +47,7 @@ export function AgentDetailDrawer({
   onDelete,
 }: Props) {
   if (!agent) return null;
+  const strategy = readStrategy(agent);
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange} swipeDirection="right">
@@ -91,6 +109,25 @@ export function AgentDetailDrawer({
           </section>
 
           <Separator />
+
+          {/* L9 #C: trigger strategy preview (read-only — edit happens in the dialog) */}
+          <section className="space-y-2">
+            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+              Pipeline 触发策略
+              <span className="ml-2 text-[10px] font-normal normal-case text-muted-foreground/80">
+                (bot 命中多 pipeline 时)
+              </span>
+            </p>
+            <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2">
+              <GitBranch className="size-4 text-muted-foreground" />
+              <div className="flex-1">
+                <p className="font-mono text-xs">{STRATEGY_LABEL[strategy]}</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  {STRATEGY_DESCRIPTION[strategy]}
+                </p>
+              </div>
+            </div>
+          </section>
 
           <section className="space-y-2">
             <p className="text-[11px] uppercase tracking-wider text-muted-foreground">

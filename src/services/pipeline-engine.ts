@@ -31,10 +31,22 @@ export interface PipelineNode {
   timeoutMs?: number;
 }
 
+/**
+ * L9 #C: Edge gating condition.
+ *  - 'always'   : traverse regardless of upstream result (default if omitted)
+ *  - 'success'  : only traverse when upstream status === 'success'
+ *  - 'failure'  : only traverse when upstream status === 'failed'
+ *
+ * The engine still ignores this for traversal in Phase 4 — the type is reserved
+ * so the frontend can persist and visualise intent, and so Phase 5 can implement
+ * skipping without a schema migration.
+ */
+export type EdgeCondition = 'always' | 'success' | 'failure';
+
 export interface PipelineEdge {
   from: string;
   to: string;
-  condition?: string;
+  condition?: EdgeCondition;
 }
 
 export interface Pipeline {
@@ -169,9 +181,14 @@ export function validatePipeline(p: Pipeline): { ok: true; order: PipelineNode[]
   const errors: string[] = [];
   if (!p.nodes || p.nodes.length === 0) errors.push('Pipeline must have at least one node');
   const nodeIds = new Set(p.nodes.map(n => n.id));
-  for (const e of p.edges ?? []) {
+  for (let i = 0; i < (p.edges ?? []).length; i++) {
+    const e = p.edges![i]!;
     if (!nodeIds.has(e.from)) errors.push(`Edge from "${e.from}" references unknown node`);
     if (!nodeIds.has(e.to)) errors.push(`Edge to "${e.to}" references unknown node`);
+    // L9 #C: edge condition validation.
+    if (e.condition !== undefined && e.condition !== 'always' && e.condition !== 'success' && e.condition !== 'failure') {
+      errors.push(`Edge ${e.from} -> ${e.to} has invalid condition "${String(e.condition)}" (expected always | success | failure)`);
+    }
   }
   for (const n of p.nodes) {
     if (!n.agentTemplateId) errors.push(`Node "${n.id}" missing agentTemplateId`);
