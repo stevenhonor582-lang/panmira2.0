@@ -12,6 +12,7 @@ import type { PeerManager } from './peer-manager.js';
 
 import { AsyncTaskStore } from './async-task-store.js';
 import { setupWebSocketServer, serveStaticFiles, type WebSocketHandle } from '../web/ws-server.js';
+import { setPipelineWsHandle } from './pipeline-events.js';
 import { IntentRouter } from './intent-router.js';
 import { CircuitBreaker } from './circuit-breaker.js';
 import { BudgetManager } from './budget-manager.js';
@@ -918,6 +919,9 @@ ${content}
 
   // Wire WebSocket handle to scheduler so scheduled tasks stream updates to clients
   scheduler.setWebSocketHandle(ws.handle);
+
+  // L7: Wire WS handle to pipeline-events for async run progress push
+  setPipelineWsHandle(ws.handle);
 
   // Wire activity events: each bridge records to ActivityStore and broadcasts to WS clients
   for (const bot of registry.listRegistered()) {
