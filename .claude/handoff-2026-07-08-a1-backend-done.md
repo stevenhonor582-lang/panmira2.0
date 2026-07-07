@@ -109,7 +109,7 @@ $ psql "$DATABASE_URL" -v ON_ERROR_STOP=on -f migrations/2026_07_08_a1_users.sql
 
 `.env` 已替换 (旧值备份到 `.env.bak.a1-20260708-04xx`)。新值:
 ```
-JWT_SECRET=733f756469d8ad77933147e776838649039ffeb9bb8fe32b74b156852cd54c02
+JWT_SECRET=<JWT_SECRET_ROTATED>
 ```
 (JWT_SECRET_HEADER 已脱敏,真实值请查 /home/ubuntu/panmira-N1/.env)
 

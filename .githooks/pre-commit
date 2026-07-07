@@ -1,0 +1,6 @@
+#!/bin/bash
+# 拒绝含已知泄漏凭证的 commit
+if git diff --cached | grep -E "(733f756469d8ad77933147e776838649039ffeb9bb8fe32b74b156852cd54c02|8c3e58c273f3dc74a9d5642b19de1882e338e94255f2633aeca662313c2e8347|sk-68232cd5177642a3a0aea42c3a7d8b85|sk-dcgktybutfitkgzbpkqvbuhkqcndzycjakpgnfddtbqwinaf|1e917bef6cd4ef6e7a301a64fd147e9c00f2cde7edb9e105)"; then
+  echo "BLOCKED: contains leaked credentials"
+  exit 1
+fi
