@@ -35,6 +35,7 @@ import { handleSkillDagRoutes } from './routes/skill-dag-routes.js';
 import { handleScheduledJobsRoutes } from './routes/scheduled-jobs-routes.js';
 import { handleAgentRunLogsRoutes } from "./routes/agent-run-logs-routes.js";
 import { handlePipelineRoutes } from "./routes/pipeline-routes.js";
+import { handleAdminCacheRoutes } from "./routes/admin-cache-routes.js";
 import { handleKnowledgeBaseRoutes } from './routes/knowledge-base-routes.js';
 import { handleAgentKnowledgeRoutes } from './routes/agent-knowledge-routes.js';
 import { handleAgentRunRoutes } from './routes/agent-run-routes.js';
@@ -733,6 +734,7 @@ ${content}
       // Phase 2: Multi-agent Pipelines
       if (url.startsWith("/api/v2/admin/pipelines")) {
         if (await handlePipelineRoutes(req, res, method, url)) return;
+        if (await handleAdminCacheRoutes(req, res, method, url)) return;
         jsonResponse(res, 404, { error: "Pipeline route not found" });
         return;
       }

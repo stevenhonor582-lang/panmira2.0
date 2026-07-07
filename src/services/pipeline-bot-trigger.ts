@@ -28,6 +28,11 @@ export function invalidatePipelineCache(agentTemplateId?: string): void {
   else pipelineCache.clear();
 }
 
+/** Get current cache size (diagnostic / admin endpoint). */
+export function getCacheSize(): number {
+  return pipelineCache.size;
+}
+
 /**
  * Find all pipelines whose nodes reference the given agent template id.
  * Cached after first lookup.
