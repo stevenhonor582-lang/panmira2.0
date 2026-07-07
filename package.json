@@ -1,11 +1,11 @@
 {
   "name": "panmira",
   "version": "1.0.0",
-  "description": "Panmira — Bridge service connecting IM bots (Feishu/Lark, Telegram) to Claude Code Agent SDK",
+  "description": "Panmira \u2014 Bridge service connecting IM bots (Feishu/Lark, Telegram) to Claude Code Agent SDK",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "build": "npm run build:web && tsc && cp -r src/memory/static dist/memory/static && cp -r config dist/config && node scripts/copy-web-staging.mjs",
+    "build": "tsc -p tsconfig.build.json && cp -r src/memory/static dist/memory/static && cp -r config dist/config && node scripts/copy-web-staging.mjs",
     "build:web": "cd web && npm install --include=dev && ./node_modules/.bin/vite build",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
