@@ -17,7 +17,7 @@
 | tests/pipeline-engine.test.ts (新增) | engines/claude/executor.ts 及其他 engines |
 | docs/superpowers/specs/2026-07-07-pipeline-real-llm-design.md (本文件) | agent-run-routes.ts (它是模板,不是改的对象) |
 | .claude/handoff-2026-07-07-pipeline-real-llm.md (完成后) | pipeline-routes.ts (API 层不动) |
-| src/db/migrations/0023_*.sql (DB 列) | tool-executor.ts / rag-service.ts / llm-client.ts (复用,不重写) |
+|  | tool-executor.ts / rag-service.ts / llm-client.ts (复用,不重写) |
 | | 其他无关模块(bot, voice, embedder) |
 | | /home/ubuntu/panmira-N1 (永不动) |
 
@@ -114,9 +114,11 @@ async function invokeAgent(
 - stringifyInput():null/undefined → "",对象 → JSON.stringify(obj, null, 2) 后截断到 8000 字符
 - 大对象截断时附加提示,完整内容在 pipeline_runs.node_states 可查
 
-### 3.4 PipelineNode 字段扩展
+### 3.4 Schema 与字段
 
-不新增 schema 列(避免 DB migration)。useMockLlm 开关在 pipeline_runs 层(per-run),默认 false。
+不改任何 DB schema。useMockLlm 开关在 pipeline_runs 层(per-run,默认值 false 通过 trigger body 传入)。
+
+不新增 PipelineNode 字段。如果将来需要 per-node mock,在 PipelineNode 加 mock?: boolean(YAGNI,本设计不需要)。
 
 ### 3.5 错误处理
 
@@ -130,7 +132,7 @@ async function invokeAgent(
 
 ### 3.6 Token 累加
 
-pipeline_runs 加列 total_tokens_used INTEGER。每节点 tokensUsed 累加到 run 级;前端 DAG timeline 已展示 per-node,再加 sum。
+不存 run-level total 列。前端 GET run 详情时,API 层从 pipeline_runs.node_states JSON 各节点的 tokensUsed 求和返回 totalTokens 字段(DAG timeline 已展示 per-node,加一个 sum 即可)。
 
 ### 3.7 性能
 
@@ -159,7 +161,7 @@ tests/pipeline-engine.test.ts (vitest, 单文件 ~250 行):
 ```bash
 cd /home/ubuntu/panmira
 npm run build                # tsc -p tsconfig.build.json + vite + copy
-psql ... -f src/db/migrations/0023_*.sql  # DB 列
+# (no DB migration needed — total computed from node_states JSON)
 pm2 reload panmira           # 后端 reload(前端不用动)
 ```
 
