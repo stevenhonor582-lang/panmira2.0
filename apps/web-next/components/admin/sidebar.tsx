@@ -51,10 +51,10 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: "🤖 Bot 工作室",
     items: [
-      { label: "Bot 列表", href: "/agents", icon: Bot, badge: "MVP" },
+      { label: "Agent 模板", href: "/agents", icon: Bot, badge: "MVP" },
       { label: "Bot 对话日志", href: "/bots/conversations", icon: MessageSquare, badge: "NEW" },
       { label: "Runtime Console", href: "/runtime", icon: Activity, badge: "NEW" },
-      { label: "Agent 执行蓝图", href: "/agents/templates", icon: Workflow, badge: "NEW" },
+      { label: "蓝图深度编辑器", href: "/agents/templates", icon: Workflow, badge: "NEW" },
     ],
   },
   {
@@ -88,12 +88,12 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "OAuth Client", href: "/oauth-clients", icon: KeyRound },
       { label: "权限配置", href: "/permissions", icon: ShieldCheck },
-      { label: "Bots (实例管理)", href: "/settings/bots", icon: Bot },
+      { label: "Bot 实例配置", href: "/settings/bots", icon: Bot },
       { label: "Projects", href: "/settings/projects", icon: FolderOpen },
-      { label: "Skill DAG 编写", href: "/skills/dags", icon: Workflow, badge: "NEW" },
+      { label: "Skill DAG", href: "/skills/dags", icon: Workflow, badge: "NEW" },
       { label: "Coordinator", href: "/settings/coordinator", icon: Workflow },
       { label: "Chain Editor", href: "/settings/chain-editor", icon: Activity },
-      { label: "Memory", href: "/memory", icon: Brain },
+      { label: "Memory 系统层", href: "/memory", icon: Brain },
       { label: "Voice", href: "/voice", icon: Mic },
       { label: "设置", href: "/settings", icon: Settings },
     ],
