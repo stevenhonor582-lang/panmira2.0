@@ -959,3 +959,96 @@ export const agentRunLogs = pgTable('agent_run_logs', {
   createdIdx: index('agent_run_logs_created_idx').on(t.createdAt),
   typeIdx: index('agent_run_logs_type_idx').on(t.deploymentType),
 }));
+
+
+// ── Phase 2: Multi-Agent Pipeline (DAG orchestration) ───────────────────────
+
+export const agentPipelines = pgTable('agent_pipelines', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 200 }).notNull(),
+  description: text('description'),
+  // DAG definition
+  nodes: jsonb('nodes').notNull().default([]).$type<Array<{
+    id: string;
+    label: string;
+    agentTemplateId: string;
+    inputTemplate?: Record<string, unknown>;
+    outputKey?: string;  // which key in node_state to pass forward
+    timeoutMs?: number;
+  }>>(),
+  edges: jsonb('edges').notNull().default([]).$type<Array<{
+    from: string;
+    to: string;
+    condition?: string;  // optional: only follow if expression true
+  }>>(),
+  // Trigger config
+  triggerType: varchar('trigger_type', { length: 20 }).notNull().default('manual'),
+  // 'bot' | 'cron' | 'event' | 'manual' | 'api'
+  triggerConfig: jsonb('trigger_config').default({}),
+  // Execution config
+  timeoutMs: integer('timeout_ms').default(600000),  // 10 min default
+  retryPolicy: jsonb('retry_policy').default({ maxAttempts: 1, backoffMs: 1000 }),
+  enabled: boolean('enabled').notNull().default(true),
+  // Stats
+  runCount: integer('run_count').notNull().default(0),
+  successCount: integer('success_count').notNull().default(0),
+  avgDurationMs: integer('avg_duration_ms'),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  tenantIdx: index('agent_pipelines_tenant_idx').on(t.tenantId),
+  enabledIdx: index('agent_pipelines_enabled_idx').on(t.enabled),
+}));
+
+export const pipelineRuns = pgTable('pipeline_runs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  pipelineId: uuid('pipeline_id').notNull().references(() => agentPipelines.id, { onDelete: 'cascade' }),
+  // Trigger info
+  triggeredBy: varchar('triggered_by', { length: 30 }).notNull(),
+  // 'user' | 'bot' | 'cron' | 'event' | 'api'
+  triggeredByRef: varchar('triggered_by_ref', { length: 255 }),
+  // bot_id / user_id / job_id
+  // State
+  status: varchar('status', { length: 20 }).notNull().default('running'),
+  // 'running' | 'completed' | 'failed' | 'timeout' | 'cancelled'
+  currentNodeId: varchar('current_node_id', { length: 100 }),
+  // Per-node execution state
+  nodeStates: jsonb('node_states').notNull().default({}).$type<Record<string, {
+    status: 'pending' | 'running' | 'success' | 'failed' | 'skipped';
+    input?: unknown;
+    output?: unknown;
+    error?: string;
+    startedAt?: string;
+    finishedAt?: string;
+    durationMs?: number;
+    tokensUsed?: number;
+  }>>(),
+  // Final result
+  result: jsonb('result'),
+  error: text('error'),
+  // Timing
+  startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
+  finishedAt: timestamp('finished_at', { withTimezone: true }),
+  durationMs: integer('duration_ms'),
+}, (t) => ({
+  pipelineIdx: index('pipeline_runs_pipeline_idx').on(t.pipelineId),
+  statusIdx: index('pipeline_runs_status_idx').on(t.status),
+  startedIdx: index('pipeline_runs_started_idx').on(t.startedAt),
+}));
+
+// Inter-agent messages (for debugging/audit)
+export const agentMessages = pgTable('agent_messages', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  runId: uuid('run_id').notNull().references(() => pipelineRuns.id, { onDelete: 'cascade' }),
+  fromAgentId: uuid('from_agent_id').references(() => agents.id),
+  fromNodeId: varchar('from_node_id', { length: 100 }),
+  toAgentId: uuid('to_agent_id').references(() => agents.id),
+  toNodeId: varchar('to_node_id', { length: 100 }),
+  payload: jsonb('payload').default({}),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  runIdx: index('agent_messages_run_idx').on(t.runId),
+}));

@@ -54,6 +54,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Agent 模板", href: "/agents", icon: Bot, badge: "MVP" },
       { label: "定时任务 / 事件", href: "/agents/jobs", icon: Clock, badge: "NEW" },
+      { label: "多 Agent 编排", href: "/agents/pipelines", icon: Workflow, badge: "NEW" },
       { label: "Bot 对话日志", href: "/bots/conversations", icon: MessageSquare, badge: "NEW" },
       { label: "Runtime Console", href: "/runtime", icon: Activity, badge: "NEW" },
       { label: "蓝图深度编辑器", href: "/agents/templates", icon: Workflow, badge: "NEW" },
@@ -93,8 +94,6 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Bot 实例配置", href: "/settings/bots", icon: Bot },
       { label: "Projects", href: "/settings/projects", icon: FolderOpen },
       { label: "Skill DAG", href: "/skills/dags", icon: Workflow, badge: "NEW" },
-      { label: "Coordinator", href: "/settings/coordinator", icon: Workflow },
-      { label: "Chain Editor", href: "/settings/chain-editor", icon: Activity },
       { label: "Memory 系统层", href: "/memory", icon: Brain },
       { label: "Voice", href: "/voice", icon: Mic },
       { label: "设置", href: "/settings", icon: Settings },

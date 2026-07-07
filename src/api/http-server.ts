@@ -33,7 +33,8 @@ import { handleResourceRoutes } from './routes/resource-routes.js';
 import { handleRuntimeRoutes } from './routes/runtime-routes.js';
 import { handleSkillDagRoutes } from './routes/skill-dag-routes.js';
 import { handleScheduledJobsRoutes } from './routes/scheduled-jobs-routes.js';
-import { handleAgentRunLogsRoutes } from './routes/agent-run-logs-routes.js';
+import { handleAgentRunLogsRoutes } from "./routes/agent-run-logs-routes.js";
+import { handlePipelineRoutes } from "./routes/pipeline-routes.js";
 import { handleKnowledgeBaseRoutes } from './routes/knowledge-base-routes.js';
 import { handleAgentKnowledgeRoutes } from './routes/agent-knowledge-routes.js';
 import { handleAgentRunRoutes } from './routes/agent-run-routes.js';
@@ -726,6 +727,13 @@ ${content}
       if (url.startsWith("/api/v2/admin/agent-run-logs")) {
         if (await handleAgentRunLogsRoutes(req, res, method, url)) return;
         jsonResponse(res, 404, { error: "Agent run log route not found" });
+        return;
+      }
+
+      // Phase 2: Multi-agent Pipelines
+      if (url.startsWith("/api/v2/admin/pipelines")) {
+        if (await handlePipelineRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: "Pipeline route not found" });
         return;
       }
 
