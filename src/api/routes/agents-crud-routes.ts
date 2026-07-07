@@ -91,6 +91,11 @@ export async function handleAgentsCrudRoutes(
       if (body.description !== undefined) updates.description = body.description;
       if (body.systemPrompt !== undefined) updates.systemPrompt = body.systemPrompt;
       if (body.isActive !== undefined) updates.isActive = !!body.isActive;
+      if (body.deploymentType !== undefined) updates.deploymentType = body.deploymentType;
+      if (body.orchestration !== undefined) updates.orchestration = body.orchestration;
+      if (body.tools !== undefined) updates.tools = body.tools;
+      if (body.boundary !== undefined) updates.boundary = body.boundary;
+      if (body.ironLaws !== undefined) updates.ironLaws = body.ironLaws;
       const [row] = await db.update(agents).set(updates).where(eq(agents.id, id)).returning();
       if (!row) { jsonResponse(res, 404, { error: 'not_found' }); return true; }
       jsonResponse(res, 200, { agent: row });
