@@ -79,6 +79,21 @@ export async function runDueJob(
   if (!job.agentTemplateId) {
     error = 'no agent_template_id';
   } else {
+    // Look up the owning tenant for this job so the pipeline run is multi-tenant scoped.
+    // If the job is somehow missing (deleted concurrently) or has no tenant_id, fall back
+    // to 'system' to preserve single-tenant behavior.
+    let tenantId: string | undefined;
+    try {
+      const tRes = await poolOverride.query(
+        `SELECT tenant_id FROM scheduled_jobs WHERE id = $1`,
+        [job.id],
+      );
+      const row = tRes.rows?.[0] as { tenant_id?: string | null } | undefined;
+      tenantId = row?.tenant_id ?? undefined;
+    } catch {
+      // ignore; tenantId stays undefined → executePipeline falls back to 'system'
+    }
+
     const pipelines = await findPipelinesForAgent(job.agentTemplateId);
     if (pipelines.length === 0) {
       error = 'no matching pipeline';
@@ -87,6 +102,7 @@ export async function runDueJob(
         job.agentTemplateId,
         JSON.stringify(job.input),
         `cron-${job.id}-${Date.now()}`,
+        tenantId,
       );
       if (out) ok = true;
       else error = 'pipeline failed';
