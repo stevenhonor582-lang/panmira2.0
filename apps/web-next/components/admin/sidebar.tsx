@@ -22,6 +22,8 @@ import {
   Brain,
   FolderOpen,
   Workflow,
+  MessageSquare,
+  BookOpen,
   type LucideIcon,
 } from "lucide-react";
 
@@ -39,50 +41,54 @@ interface NavGroup {
 
 const NAV_GROUPS: NavGroup[] = [
   {
-    title: "工作台",
+    title: "🎛️ 控制台",
     items: [
       { label: "总览 Dashboard", href: "/dashboard", icon: LayoutDashboard },
-      { label: "Agent", href: "/agents", icon: Bot, badge: "MVP" },
-      { label: "Agent 执行蓝图", href: "/agents/templates", icon: Bot, badge: "NEW" },
-    ],
-  },
-  {
-    title: "资源池",
-    items: [
-      { label: "模型池", href: "/models", icon: Cpu },
-      { label: "数智底座 KB", href: "/knowledge", icon: Database },
-      { label: "Skill / MCP", href: "/resources", icon: Wrench },
-    ],
-  },
-  {
-    title: "监控",
-    items: [
-      { label: "实时状态", href: "/status", icon: Activity },
-      { label: "Runtime Console", href: "/runtime", icon: Activity, badge: "NEW" },
       { label: "预警中心", href: "/alerts", icon: AlertTriangle },
       { label: "异常诊断", href: "/diagnose", icon: FileSearch },
     ],
   },
   {
-    title: "运营",
+    title: "🤖 Bot 工作室",
     items: [
-      { label: "Channel", href: "/channels", icon: Plug },
+      { label: "Bot 列表", href: "/agents", icon: Bot, badge: "MVP" },
+      { label: "Bot 对话日志", href: "/bots/conversations", icon: MessageSquare, badge: "NEW" },
+      { label: "Runtime Console", href: "/runtime", icon: Activity, badge: "NEW" },
+      { label: "Agent 执行蓝图", href: "/agents/templates", icon: Workflow, badge: "NEW" },
+    ],
+  },
+  {
+    title: "📚 数智与记忆",
+    items: [
+      { label: "知识库总览", href: "/knowledge", icon: Database },
+      { label: "公共记忆", href: "/kb/public", icon: BookOpen, badge: "NEW" },
+      { label: "数字员工记忆", href: "/kb/agents", icon: BookOpen, badge: "NEW" },
+      { label: "项目记忆", href: "/kb/projects", icon: BookOpen, badge: "NEW" },
+      { label: "数智底座 (Embedding)", href: "/kb/embedding", icon: Cpu },
+    ],
+  },
+  {
+    title: "🔌 资源池",
+    items: [
+      { label: "模型池 (LLM)", href: "/models", icon: Cpu },
+      { label: "Skill / MCP", href: "/resources", icon: Wrench },
+    ],
+  },
+  {
+    title: "📊 运营",
+    items: [
+      { label: "Channel 接入", href: "/channels", icon: Plug },
       { label: "资源报表", href: "/reports", icon: ScrollText },
       { label: "成本分析", href: "/cost", icon: DollarSign },
       { label: "审计日志", href: "/audit", icon: ShieldCheck },
     ],
   },
   {
-    title: "权限",
+    title: "⚙️ 系统",
     items: [
       { label: "OAuth Client", href: "/oauth-clients", icon: KeyRound },
-      { label: "Permissions", href: "/permissions", icon: ShieldCheck },
-    ],
-  },
-  {
-    title: "系统",
-    items: [
-      { label: "Bots", href: "/settings/bots", icon: Bot },
+      { label: "权限配置", href: "/permissions", icon: ShieldCheck },
+      { label: "Bots (实例管理)", href: "/settings/bots", icon: Bot },
       { label: "Projects", href: "/settings/projects", icon: FolderOpen },
       { label: "Skill DAG 编写", href: "/skills/dags", icon: Workflow, badge: "NEW" },
       { label: "Coordinator", href: "/settings/coordinator", icon: Workflow },

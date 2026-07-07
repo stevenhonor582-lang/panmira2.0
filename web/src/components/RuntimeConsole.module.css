@@ -1,0 +1,15 @@
+.root { padding: 1.5rem; max-width: 1400px; margin: 0 auto; }
+.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+.title { font-size: 1.5rem; font-weight: 600; margin: 0; }
+.controls { display: flex; gap: 0.5rem; align-items: center; }
+.loading { padding: 2rem; text-align: center; color: #666; }
+.empty { padding: 2rem; text-align: center; color: #888; }
+.section { margin-bottom: 1.5rem; }
+.sectionTitle { font-size: 1rem; font-weight: 500; margin: 0 0 0.5rem; }
+.jsonEditor { width: 100%; min-height: 300px; font-family: 'Fira Code', monospace; font-size: 0.875rem; padding: 0.75rem; border: 1px solid var(--border, rgba(255,255,255,0.08)); border-radius: 6px; background: var(--bg-elevated, #1a1a1f); color: inherit; resize: vertical; }
+.errorList { list-style: none; padding: 0; margin: 0; }
+.errorList li { padding: 0.5rem; background: rgba(255, 0, 0, 0.08); border-radius: 4px; margin-bottom: 0.25rem; color: #ff6b6b; font-family: monospace; font-size: 0.85rem; }
+.actions { display: flex; gap: 0.75rem; align-items: center; margin-top: 1rem; }
+.saveBtn, .validateBtn, .createBtn, .refreshBtn { padding: 0.5rem 1rem; background: var(--accent, #6366f1); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.875rem; }
+.saveBtn:disabled, .validateBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+.message { font-size: 0.875rem; color: var(--text-secondary, #aaa); }

@@ -5,6 +5,7 @@ export const SIDEBAR_GROUPS: SidebarGroup[] = [
     label: '工作台',
     items: [
       { to: '/app', label: '总览' },
+      { to: '/app/runtime', label: 'Runtime Console' },
       { to: '/app/status', label: '实时状态' },
       { to: '/app/alerts', label: '预警中心' },
     ],
@@ -15,12 +16,14 @@ export const SIDEBAR_GROUPS: SidebarGroup[] = [
       { to: '/app/models', label: '模型池' },
       { to: '/app/knowledge', label: '数智底座' },
       { to: '/app/resources', label: 'Skill / MCP 池' },
+      { to: '/app/skills/dags', label: 'Skill DAG 编写' },
     ],
   },
   {
     label: '配置',
     items: [
       { to: '/app/agents', label: 'Agent 列表' },
+      { to: '/app/agents/templates', label: '执行蓝图' },
       { to: '/app/channels', label: 'Channel 接入' },
       { to: '/app/permissions', label: '权限配置' },
     ],

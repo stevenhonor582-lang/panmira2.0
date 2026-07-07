@@ -416,6 +416,7 @@ function handleDiscovery(req: http.IncomingMessage, res: http.ServerResponse) {
       'knowledge:read', 'knowledge:write', 'knowledge:admin',
       'pipeline:read', 'pipeline:trigger',
       'audit:read', 'oauth:admin',
+      'runtime:read', 'runtime:admin',
     ],
   });
 }
