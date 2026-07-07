@@ -109,4 +109,62 @@ describe('scheduled-jobs-worker › runDueJob', () => {
     expect(r.ok).toBe(false);
     expect(r.error).toBe('pipeline failed');
   });
+
+  it('Level4 多租户: 读 scheduled_jobs.tenant_id 透传到 triggerPipelineForBot 第 4 参', async () => {
+    // runDueJob 调两次 pool.query:第一次 SELECT tenant_id,第二次 UPDATE
+    (pool.query as any).mockImplementation(async (sqlText: string) => {
+      if (/SELECT tenant_id FROM scheduled_jobs/i.test(sqlText)) {
+        return { rows: [{ tenant_id: 'tenant-cron-1' }] };
+      }
+      return { rowCount: 1 };
+    });
+    (botTrigger.findPipelinesForAgent as any).mockResolvedValue([{ id: 'p-1' }]);
+    (botTrigger.triggerPipelineForBot as any).mockResolvedValue({ output: 'ok', runId: 'r-1' });
+    const r = await runDueJob({ id: 'j-1', name: 'X', agentTemplateId: 'a-1', input: {}, nextDue: 0 });
+    expect(r.ok).toBe(true);
+    expect(botTrigger.triggerPipelineForBot).toHaveBeenCalledWith(
+      'a-1',
+      expect.any(String),
+      expect.stringMatching(/^cron-j-1-/),
+      'tenant-cron-1', // 第 4 参 tenantId
+    );
+  });
+
+  it('Level4 多租户: job 缺 tenant_id → triggerPipelineForBot 第 4 参为 undefined(fallback system)', async () => {
+    (pool.query as any).mockImplementation(async (sqlText: string) => {
+      if (/SELECT tenant_id FROM scheduled_jobs/i.test(sqlText)) {
+        return { rows: [{ tenant_id: null }] };
+      }
+      return { rowCount: 1 };
+    });
+    (botTrigger.findPipelinesForAgent as any).mockResolvedValue([{ id: 'p-1' }]);
+    (botTrigger.triggerPipelineForBot as any).mockResolvedValue({ output: 'ok', runId: 'r-1' });
+    const r = await runDueJob({ id: 'j-1', name: 'X', agentTemplateId: 'a-1', input: {}, nextDue: 0 });
+    expect(r.ok).toBe(true);
+    expect(botTrigger.triggerPipelineForBot).toHaveBeenCalledWith(
+      'a-1',
+      expect.any(String),
+      expect.stringMatching(/^cron-j-1-/),
+      undefined,
+    );
+  });
+
+  it('Level4 多租户: SELECT tenant_id 抛错 → 仍跑 pipeline,tenantId 传 undefined', async () => {
+    (pool.query as any).mockImplementation(async (sqlText: string) => {
+      if (/SELECT tenant_id FROM scheduled_jobs/i.test(sqlText)) {
+        throw new Error('db blip');
+      }
+      return { rowCount: 1 };
+    });
+    (botTrigger.findPipelinesForAgent as any).mockResolvedValue([{ id: 'p-1' }]);
+    (botTrigger.triggerPipelineForBot as any).mockResolvedValue({ output: 'ok', runId: 'r-1' });
+    const r = await runDueJob({ id: 'j-1', name: 'X', agentTemplateId: 'a-1', input: {}, nextDue: 0 });
+    expect(r.ok).toBe(true);
+    expect(botTrigger.triggerPipelineForBot).toHaveBeenCalledWith(
+      'a-1',
+      expect.any(String),
+      expect.stringMatching(/^cron-j-1-/),
+      undefined,
+    );
+  });
 });

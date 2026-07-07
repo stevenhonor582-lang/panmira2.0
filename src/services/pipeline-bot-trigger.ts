@@ -74,11 +74,16 @@ export async function findPipelinesForAgent(agentTemplateId: string): Promise<Pi
 /**
  * Trigger the first matching pipeline for this agent template. Returns the last node's output text
  * and the run id, or null if no pipeline / pipeline failed (caller should fall back).
+ *
+ * `tenantId` (optional) is forwarded into the RunTrigger so the pipeline's RAG lookups
+ * and tool executions are scoped to the calling tenant. If omitted, executePipeline
+ * falls back to 'system' (single-tenant behavior).
  */
 export async function triggerPipelineForBot(
   agentTemplateId: string,
   message: string,
   runIdHint: string,
+  tenantId?: string,
 ): Promise<{ output: string; runId: string } | null> {
   const pipelines = await findPipelinesForAgent(agentTemplateId);
   if (pipelines.length === 0) return null;
@@ -89,7 +94,7 @@ export async function triggerPipelineForBot(
     result = await executePipeline(
       pipeline,
       runIdHint,
-      { triggeredBy: 'bot', initialInput: { message } },
+      { triggeredBy: 'bot', initialInput: { message }, tenantId },
       async () => { /* no-op progress reporter; UI sees it via API */ },
       false, // useMockLlm
     );

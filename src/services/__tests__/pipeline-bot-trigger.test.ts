@@ -141,6 +141,50 @@ describe('pipeline-bot-trigger › triggerPipelineForBot', () => {
     const out = await triggerPipelineForBot('a-1', 'hi', 'run-1');
     expect(out).toBeNull();
   });
+
+  it('Level4 多租户: 第 4 参 tenantId 透传到 executePipeline 的 RunTrigger', async () => {
+    (db.execute as any).mockResolvedValue([makeRow({ id: 'p-tenant' })]);
+    const execSpy = vi.spyOn(await import('../pipeline-engine.js'), 'executePipeline');
+    execSpy.mockResolvedValue({
+      runId: 'run-tenant',
+      status: 'completed',
+      nodeStates: { n1: { status: 'success', output: { text: 'ok' }, tokensUsed: 1 } },
+      result: { text: 'ok' },
+      durationMs: 10,
+    });
+    await triggerPipelineForBot('a-1', 'hi', 'run-tenant', 'tenant-abc');
+    expect(execSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'p-tenant' }),
+      'run-tenant',
+      expect.objectContaining({
+        triggeredBy: 'bot',
+        initialInput: { message: 'hi' },
+        tenantId: 'tenant-abc',
+      }),
+      expect.any(Function),
+      false,
+    );
+  });
+
+  it('Level4 多租户: 不传 tenantId → RunTrigger.tenantId 为 undefined(executePipeline fallback system)', async () => {
+    (db.execute as any).mockResolvedValue([makeRow()]);
+    const execSpy = vi.spyOn(await import('../pipeline-engine.js'), 'executePipeline');
+    execSpy.mockResolvedValue({
+      runId: 'r',
+      status: 'completed',
+      nodeStates: { n1: { status: 'success', output: { text: 'ok' }, tokensUsed: 1 } },
+      result: { text: 'ok' },
+      durationMs: 1,
+    });
+    await triggerPipelineForBot('a-1', 'hi', 'r');
+    expect(execSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      'r',
+      expect.objectContaining({ tenantId: undefined }),
+      expect.any(Function),
+      false,
+    );
+  });
 });
 
 describe('pipeline-bot-trigger › cache diagnostics (Phase 4 Level 3 Fix 3)', () => {
