@@ -6,6 +6,7 @@ import { jsonResponse, parseJsonBody } from "./helpers.js";
 import { requireBearer, requireScopes } from "../oauth-middleware.js";
 import { validatePipeline, executePipeline } from "../../services/pipeline-engine.js";
 import { checkRateLimit, checkDailyTokenCap, recordTokenUsage } from "../../middleware/pipeline-rate-limit.js";
+import { broadcastPipelineProgress, type PipelineProgressEvent } from "../pipeline-events.js";
 
 async function listPipelines(req: http.IncomingMessage, res: http.ServerResponse) {
   const ctx = await requireBearer(req, res); if (!ctx) return;
@@ -148,8 +149,8 @@ async function triggerPipeline(req: http.IncomingMessage, res: http.ServerRespon
 
   const pipeline = {
     id: rows[0].id, name: rows[0].name,
-    nodes: rows[0].nodes as never, edges: (rows[0].edges || []) as never,
-    timeoutMs: rows[0].timeoutMs ?? undefined, retryPolicy: rows[0].retryPolicy as never,
+    nodes: (rows[0].nodes ?? []) as unknown[], edges: ((rows[0].edges as unknown[]) || []),
+    timeoutMs: rows[0].timeoutMs ?? undefined, retryPolicy: rows[0].retryPolicy as unknown,
   };
 
   if (isAsync) {
@@ -168,17 +169,26 @@ async function triggerPipeline(req: http.IncomingMessage, res: http.ServerRespon
   }
 
   const result = await executePipeline(
-    pipeline, run.id,
+    pipeline as never, run.id,
     { triggeredBy, triggeredByRef: triggeredByRef || undefined, initialInput, tenantId: ctx.tenantId },
     async (nodeId, state) => {
       const current = await db.select().from(pipelineRuns).where(eq(pipelineRuns.id, run.id)).limit(1);
       if (current.length === 0) return;
       const merged = { ...(current[0].nodeStates || {}), [nodeId]: state };
       await db.update(pipelineRuns).set({ nodeStates: merged as never, currentNodeId: nodeId }).where(eq(pipelineRuns.id, run.id));
+      // L7: broadcast per-node progress
+      emitPipelineProgress(
+        run.id,
+        id,
+        "running",
+        nodeId,
+        merged,
+        Array.isArray(pipeline.nodes) ? pipeline.nodes.length : 0,
+      );
     },
   );
 
-  await finalizeRun(run.id, id, result);
+  await finalizeRun(run.id, id, result, Array.isArray(pipeline.nodes) ? pipeline.nodes.length : 0);
   jsonResponse(res, 200, {
     success: true,
     data: { runId: run.id, status: result.status, durationMs: result.durationMs, result: result.result, error: result.error },
@@ -190,7 +200,7 @@ async function triggerPipeline(req: http.IncomingMessage, res: http.ServerRespon
  * Updates run status: pending → running → completed/failed.
  */
 async function runPipelineInBackground(
-  pipeline: { id: string; name: string; nodes: unknown; edges: unknown; timeoutMs?: number; retryPolicy: unknown },
+  pipeline: { id: string; name: string; nodes: unknown[]; edges: unknown[]; timeoutMs?: number; retryPolicy: unknown },
   runId: string,
   triggeredBy: "user" | "bot" | "cron" | "event" | "api",
   triggeredByRef: string | null,
@@ -202,6 +212,10 @@ async function runPipelineInBackground(
     .set({ status: "running", startedAt: new Date() } as never)
     .where(eq(pipelineRuns.id, runId));
 
+  const totalNodes = Array.isArray((pipeline as { nodes?: unknown[] }).nodes)
+    ? (pipeline as { nodes: unknown[] }).nodes.length
+    : 0;
+
   let result;
   try {
     result = await executePipeline(
@@ -212,20 +226,24 @@ async function runPipelineInBackground(
         if (current.length === 0) return;
         const merged = { ...(current[0].nodeStates || {}), [nodeId]: state };
         await db.update(pipelineRuns).set({ nodeStates: merged as never, currentNodeId: nodeId }).where(eq(pipelineRuns.id, runId));
+        // L7: broadcast per-node progress
+        emitPipelineProgress(runId, pipelineId, "running", nodeId, merged, totalNodes);
       },
     );
   } catch (e) {
     // executePipeline should not throw — but guard anyway so we don\'t leak pending runs.
+    const errMsg = (e as Error).message || "pipeline_threw";
     await db.update(pipelineRuns).set({
       status: "failed",
-      error: (e as Error).message || "pipeline_threw",
+      error: errMsg,
       finishedAt: new Date(),
       currentNodeId: null,
     } as never).where(eq(pipelineRuns.id, runId));
+    emitPipelineProgress(runId, pipelineId, "failed", null, {}, totalNodes, errMsg);
     return;
   }
 
-  await finalizeRun(runId, pipelineId, result);
+  await finalizeRun(runId, pipelineId, result, totalNodes);
 }
 
 /** Finalize run row + bump pipeline aggregate stats. Shared by sync + async paths. */
@@ -233,6 +251,7 @@ async function finalizeRun(
   runId: string,
   pipelineId: string,
   result: { status: string; result?: unknown; error?: string; nodeStates: unknown; durationMs: number },
+  totalNodes: number = 0,
 ): Promise<void> {
   await db.update(pipelineRuns).set({
     status: result.status,
@@ -251,7 +270,59 @@ async function finalizeRun(
     + result.durationMs + ") / (run_count + 1), " + result.durationMs
     + ") WHERE id = '" + pipelineId + "'";
   await db.execute(sqlUpdate as never);
+
+  // L7: broadcast final status (allow custom status strings like 'timeout'/'cancelled')
+  const allowedStatuses = ["pending", "running", "completed", "failed", "timeout", "cancelled"] as const;
+  const wsStatus = (allowedStatuses as readonly string[]).includes(result.status)
+    ? (result.status as PipelineProgressEvent["status"])
+    : "failed";
+  emitPipelineProgress(
+    runId,
+    pipelineId,
+    wsStatus,
+    null,
+    (result.nodeStates as Record<string, unknown>) ?? {},
+    totalNodes,
+    result.error,
+  );
 }
+/** Compute progress 0-100 from nodeStates. Success/failed/skipped = completed. */
+function computeProgress(nodeStates: Record<string, unknown>, totalNodes: number): number {
+  if (totalNodes <= 0) return 0;
+  let done = 0;
+  for (const k in nodeStates) {
+    const s = (nodeStates[k] as { status?: string })?.status;
+    if (s === "success" || s === "failed" || s === "skipped") done++;
+  }
+  return Math.min(100, Math.round((done / totalNodes) * 100));
+}
+
+/** Emit pipeline_progress event (best-effort, WS 失败不影响 pipeline) */
+function emitPipelineProgress(
+  runId: string,
+  pipelineId: string,
+  status: PipelineProgressEvent["status"],
+  currentNodeId: string | null,
+  nodeStates: Record<string, unknown>,
+  totalNodes: number,
+  error?: string,
+): void {
+  broadcastPipelineProgress({
+    type: "pipeline_progress",
+    runId,
+    pipelineId,
+    status,
+    currentNodeId,
+    completedNodes: Object.values(nodeStates).filter((n: any) =>
+      n?.status === "success" || n?.status === "failed" || n?.status === "skipped",
+    ).length,
+    totalNodes,
+    progress: computeProgress(nodeStates, totalNodes),
+    error,
+    ts: new Date().toISOString(),
+  });
+}
+
 
 /** Parse a boolean query parameter (?async=true&foo=bar). Accepts true/1/yes. */
 function parseQueryBool(url: string | undefined, key: string): boolean {

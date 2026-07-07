@@ -7,6 +7,7 @@ import { ArrowLeft, Play, RefreshCw, Trash2, GitBranch, Clock, ArrowRight, Plus,
 import { api } from "@/lib/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { PipelineProgress } from "@/components/pipeline-progress";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -329,6 +330,13 @@ export default function PipelineDetailPage({ params }: { params: { id: string } 
           </Button>
         </div>
       </div>
+
+      {/* L7: real-time progress bar — subscribes to /ws pipeline_progress events */}
+      <Card>
+        <CardContent className="pt-6">
+          <PipelineProgress pipelineId={pipeline.id} showIdle />
+        </CardContent>
+      </Card>
 
       <Tabs defaultValue="dag" className="space-y-4">
         <TabsList>
