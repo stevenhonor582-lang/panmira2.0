@@ -12,6 +12,7 @@ import { BotRegistry } from './api/bot-registry.js';
 import { NullSender } from './web/null-sender.js';
 import { PeerManager } from './api/peer-manager.js';
 import { TaskScheduler } from './scheduler/task-scheduler.js';
+import { startScheduledJobsWorker } from './workers/scheduled-jobs-worker.js';
 import { startMvRefreshCron } from './services/mv-refresh-cron.js';
 import { startEmbeddingWorker } from './services/embedding-worker.js';
 import { startApiServer } from './api/http-server.js';
@@ -329,6 +330,9 @@ async function main() {
 
   // Plan D: 启动 MV 物化视图定时刷新 (5 分钟)
   startMvRefreshCron();
+
+  // Plan D / Phase 3 #3: scan scheduled_jobs cron, run matching pipelines
+  startScheduledJobsWorker(logger);
 
   // Plan F: 启动 embedding worker (5s poll, 异步嵌入队列)
   startEmbeddingWorker();
