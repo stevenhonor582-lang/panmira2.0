@@ -36,6 +36,7 @@ import { handleScheduledJobsRoutes } from './routes/scheduled-jobs-routes.js';
 import { handleAgentRunLogsRoutes } from "./routes/agent-run-logs-routes.js";
 import { handlePipelineRoutes } from "./routes/pipeline-routes.js";
 import { handleAdminCacheRoutes } from "./routes/admin-cache-routes.js";
+import { handleAdminRateLimitRoutes } from "./routes/admin-ratelimit-routes.js";
 import { handleKnowledgeBaseRoutes } from './routes/knowledge-base-routes.js';
 import { handleAgentKnowledgeRoutes } from './routes/agent-knowledge-routes.js';
 import { handleAgentRunRoutes } from './routes/agent-run-routes.js';
@@ -736,6 +737,13 @@ ${content}
         if (await handlePipelineRoutes(req, res, method, url)) return;
         if (await handleAdminCacheRoutes(req, res, method, url)) return;
         jsonResponse(res, 404, { error: "Pipeline route not found" });
+        return;
+      }
+
+      // Level 4: Admin rate-limit override + inspect
+      if (url.startsWith("/api/v2/admin/rate-limit")) {
+        if (await handleAdminRateLimitRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: "Rate limit admin route not found" });
         return;
       }
 
