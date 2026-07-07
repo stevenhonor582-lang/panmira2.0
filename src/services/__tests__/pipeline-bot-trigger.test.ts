@@ -142,3 +142,16 @@ describe('pipeline-bot-trigger › triggerPipelineForBot', () => {
     expect(out).toBeNull();
   });
 });
+
+describe('pipeline-bot-trigger › cache diagnostics (Phase 4 Level 3 Fix 3)', () => {
+  it('getCacheSize 返 0 初始 / 1 after first lookup', async () => {
+    const { findPipelinesForAgent, getCacheSize, invalidatePipelineCache } = await import('../pipeline-bot-trigger.js');
+    invalidatePipelineCache();
+    expect(getCacheSize()).toBe(0);
+    (db.execute as any).mockResolvedValue([makeRow()]);
+    await findPipelinesForAgent('a-diag');
+    expect(getCacheSize()).toBe(1);
+    await findPipelinesForAgent('a-diag-2');
+    expect(getCacheSize()).toBe(2);
+  });
+});
