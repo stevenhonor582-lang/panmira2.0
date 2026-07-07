@@ -66,7 +66,7 @@ export function OAuthDialog({ open, onOpenChange, onSubmit }: Props) {
   if (newSecret) {
     return (
       <Dialog open={open} onOpenChange={handleClose}>
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-amber-500">
               <AlertTriangle className="size-4" />
@@ -96,7 +96,7 @@ export function OAuthDialog({ open, onOpenChange, onSubmit }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) reset(); onOpenChange(o); }}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>新建 OAuth Client</DialogTitle>
           <DialogDescription>

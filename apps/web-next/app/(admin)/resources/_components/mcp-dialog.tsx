@@ -49,7 +49,7 @@ export function McpDialog({ open, onOpenChange, onSubmit }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) reset(); onOpenChange(o); }}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-w-4xl">
         <DialogHeader>
           <DialogTitle>新建 MCP Server</DialogTitle>
           <DialogDescription>
@@ -91,7 +91,7 @@ export function McpDialog({ open, onOpenChange, onSubmit }: Props) {
           {authType === "api_key" && (
             <div className="space-y-1.5">
               <Label htmlFor="mcp-key">API Key</Label>
-              <Input id="mcp-key" type="password" value={apiKey}
+              <Input id="mcp-key" type="text" value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder="sk-..." />
             </div>

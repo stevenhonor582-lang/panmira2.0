@@ -64,13 +64,16 @@ export function ModelDialog({ open, onOpenChange, initial, onSubmit }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-w-4xl">
         <DialogHeader>
           <DialogTitle>{isEdit ? "编辑模型" : "新建模型"}</DialogTitle>
           <DialogDescription>
             {isEdit
               ? `修改 ${initial!.name} 的配置`
-              : "添加一个 LLM 或 Embedding 模型 Provider"}
+              : "添加一个 LLM 或 Embedding 模型 Provider · Base URL 形如 https://api.openai.com/v1"}
+            <a href="https://platform.openai.com/docs/api-reference" target="_blank" rel="noreferrer" className="text-[11px] text-primary hover:underline mt-1 inline-block">
+              查看 LLM API 文档参考 →
+            </a>
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-3.5">
@@ -118,6 +121,7 @@ export function ModelDialog({ open, onOpenChange, initial, onSubmit }: Props) {
                 onChange={(e) => setModel(e.target.value)}
                 placeholder="如:gpt-4 / claude-3-5-sonnet"
                 required
+                className="font-mono text-xs"
               />
             </div>
             <div className="space-y-1.5">
@@ -126,10 +130,11 @@ export function ModelDialog({ open, onOpenChange, initial, onSubmit }: Props) {
               </Label>
               <Input
                 id="apiKey"
-                type="password"
+                type="text"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder="sk-..."
+                className="font-mono text-xs"
               />
             </div>
           </div>
