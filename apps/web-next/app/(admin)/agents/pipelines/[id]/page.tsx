@@ -52,6 +52,9 @@ interface Run {
   result: unknown;
   error: string | null;
   nodeStates?: Record<string, NodeState>;
+  // L11: snapshot of node labels at trigger time, used by Diff to detect renames.
+  // Old runs (pre-L11) have null/undefined — Diff should skip those gracefully.
+  labelSnapshot?: Record<string, string> | null;
 }
 
 const STATUS_TONE: Record<string, string> = {
@@ -122,22 +125,33 @@ function dagToReactFlow(
   positions: Map<string, { x: number; y: number; level: number }>,
   diffOverlay?: Map<string, "added" | "removed" | "unchanged">,
   edgeOverlay?: Map<string, "added" | "removed" | "changed" | "unchanged">,
+  labelOverlay?: Map<string, LabelDiff>,
 ): { nodes: RFNode[]; edges: RFEdge[] } {
   const rfNodes: RFNode[] = nodes.map((n) => {
     const pos = positions.get(n.id) ?? { x: 0, y: 0, level: 0 };
     const state = diffOverlay?.get(n.id) ?? "unchanged";
+    const lbl = labelOverlay?.get(n.id);
     const styleByState: Record<string, React.CSSProperties> = {
       added: { width: 160, background: "rgba(16, 185, 129, 0.18)", color: "hsl(var(--foreground))", border: "2px solid rgb(16, 185, 129)", borderRadius: 8, padding: 8, fontSize: 12 },
       removed: { width: 160, background: "rgba(244, 63, 94, 0.18)", color: "hsl(var(--foreground))", border: "2px dashed rgb(244, 63, 94)", borderRadius: 8, padding: 8, fontSize: 12, textDecoration: "line-through", opacity: 0.85 },
       unchanged: { width: 160, background: "hsl(var(--card))", color: "hsl(var(--foreground))", border: "1px solid hsl(var(--primary))", borderRadius: 8, padding: 8, fontSize: 12 },
     };
+    const baseStyle = styleByState[state];
+    // L11: yellow border + annotation when label changed.
+    const labelChanged = lbl?.status === "changed";
+    const finalStyle: React.CSSProperties = labelChanged
+      ? { ...baseStyle, border: "2px solid rgb(234, 179, 8)", background: "rgba(234, 179, 8, 0.12)" }
+      : baseStyle;
     const badge = state === "added" ? " ＋ 新增" : state === "removed" ? " － 已删除" : "";
+    const sub = labelChanged
+      ? `\nwas: "${lbl!.oldLabel}" → now: "${lbl!.newLabel}"`
+      : "";
     return {
       id: n.id,
       position: { x: pos.x, y: pos.y },
-      data: { label: `${n.label}${badge}` },
+      data: { label: `${n.label}${badge}${sub}` },
       type: "default",
-      style: styleByState[state],
+      style: finalStyle,
     };
   });
   const rfEdges: RFEdge[] = edges.map((e) => {
@@ -168,6 +182,37 @@ function dagToReactFlow(
 type DiffKind = "added" | "removed" | "unchanged";
 type EdgeDiffKind = "added" | "removed" | "changed" | "unchanged";
 
+// L11: per-node label rename info. 'unchanged' = same label in baseline + current.
+export type LabelDiff = { status: "unchanged" | "changed" | "added" | "missingBaseline"; oldLabel: string; newLabel: string };
+
+function computeLabelDiff(
+  current: Pipeline,
+  baseline: Run | null,
+): Map<string, LabelDiff> {
+  const out = new Map<string, LabelDiff>();
+  const baselineLabels = baseline?.labelSnapshot ?? null;
+  for (const n of current.nodes) {
+    const cur = n.label;
+    if (!baselineLabels) {
+      // No baseline snapshot → can't tell. Mark unchanged so we don't false-positive.
+      out.set(n.id, { status: "unchanged", oldLabel: "", newLabel: cur });
+      continue;
+    }
+    if (!(n.id in baselineLabels)) {
+      // New node — handled by nodeDiff=added; here we just record label for display.
+      out.set(n.id, { status: "added", oldLabel: "", newLabel: cur });
+      continue;
+    }
+    const old = baselineLabels[n.id] ?? "";
+    if (old === cur) {
+      out.set(n.id, { status: "unchanged", oldLabel: old, newLabel: cur });
+    } else {
+      out.set(n.id, { status: "changed", oldLabel: old, newLabel: cur });
+    }
+  }
+  return out;
+}
+
 function computeDiff(
   current: Pipeline,
   latestRun: Run | null,
@@ -175,8 +220,9 @@ function computeDiff(
   nodeDiff: Map<string, DiffKind>;
   edgeDiff: Map<string, EdgeDiffKind>;
   extraGhostNodes: DagNode[];
-  stats: { added: number; removed: number; edgesAdded: number; edgesRemoved: number; edgesChanged: number };
+  stats: { added: number; removed: number; edgesAdded: number; edgesRemoved: number; edgesChanged: number; labelsChanged: number };
   hasBaseline: boolean;
+  labelDiff: Map<string, LabelDiff>;
 } {
   const nodeDiff = new Map<string, DiffKind>();
   const edgeDiff = new Map<string, EdgeDiffKind>();
@@ -207,15 +253,18 @@ function computeDiff(
     else edgeDiff.set(key, "unchanged");
   }
 
+  const labelDiff = computeLabelDiff(current, latestRun);
+  const labelsChanged = Array.from(labelDiff.values()).filter(v => v.status === "changed").length;
   const stats = {
     added: Array.from(nodeDiff.values()).filter(v => v === "added").length,
     removed: Array.from(nodeDiff.values()).filter(v => v === "removed").length,
     edgesAdded: Array.from(edgeDiff.values()).filter(v => v === "added").length,
     edgesRemoved: Array.from(edgeDiff.values()).filter(v => v === "removed").length,
     edgesChanged: Array.from(edgeDiff.values()).filter(v => v === "changed").length,
+    labelsChanged,
   };
 
-  return { nodeDiff, edgeDiff, extraGhostNodes, stats, hasBaseline: !!latestRun };
+  return { nodeDiff, edgeDiff, extraGhostNodes, stats, hasBaseline: !!latestRun, labelDiff };
 }
 
 export default function PipelineDetailPage({ params }: { params: { id: string } }) {
@@ -299,7 +348,7 @@ export default function PipelineDetailPage({ params }: { params: { id: string } 
   const diffNodes = [...pipeline.nodes, ...diff.extraGhostNodes];
   const diffPositions = layoutNodes(diffNodes, diff.extraGhostNodes.length > 0 ? [] : pipeline.edges);
   const diffMaxY = Math.max(...Array.from(diffPositions.values()).map(p => p.y)) + 80;
-  const diffRf = dagToReactFlow(diffNodes, pipeline.edges, diffPositions, diff.nodeDiff, diff.edgeDiff);
+  const diffRf = dagToReactFlow(diffNodes, pipeline.edges, diffPositions, diff.nodeDiff, diff.edgeDiff, diff.labelDiff);
 
   const baseline = runs.find(r => r.status !== "running") ?? null;
 
@@ -430,6 +479,9 @@ export default function PipelineDetailPage({ params }: { params: { id: string } 
                   <Badge variant="outline" className="bg-yellow-500/15 text-yellow-700 border-yellow-500/30">
                     <Pencil className="inline size-3 mr-1" /> {diff.stats.edgesChanged} 改动连线
                   </Badge>
+                  <Badge variant="outline" className="bg-yellow-500/15 text-yellow-700 border-yellow-500/30">
+                    <Pencil className="inline size-3 mr-1" /> {diff.stats.labelsChanged} label 改名
+                  </Badge>
                   <span className="text-muted-foreground">·</span>
                   <span className="text-muted-foreground">新增连线 +{diff.stats.edgesAdded} · 删除连线 -{diff.stats.edgesRemoved}</span>
                 </div>
@@ -454,9 +506,13 @@ export default function PipelineDetailPage({ params }: { params: { id: string } 
                     <span className="inline-block w-6 h-0.5" style={{ background: "rgb(234, 179, 8)" }} />
                     改动连线 (黄)
                   </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="inline-block size-3 rounded-sm" style={{ background: "rgba(234, 179, 8, 0.25)", border: "2px solid rgb(234, 179, 8)" }} />
+                    label 改名 (黄)
+                  </span>
                 </div>
                 <div className="mt-1 text-[11px]">
-                  基线 = 最新一次 completed/failed run 的 nodeStates(包含实际跑过的节点 id);label 改动无法检测(nodeStates 不存历史 label)。
+                  基线 = 最新一次 completed/failed run 的 nodeStates(包含实际跑过的节点 id) + labelSnapshot(节点 label 历史)。黄色 = label 改名。
                 </div>
               </div>
             </div>
@@ -537,6 +593,31 @@ export default function PipelineDetailPage({ params }: { params: { id: string } 
                 </CardContent>
               </Card>
             </div>
+          )}
+
+          {diff.hasBaseline && diff.stats.labelsChanged > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Pencil className="size-4 text-yellow-700" />
+                  Label 改名 ({diff.stats.labelsChanged})
+                </CardTitle>
+                <CardDescription>节点 id 未变,但 label 被修改</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-0 text-xs space-y-1">
+                {Array.from(diff.labelDiff.entries())
+                  .filter(([, v]) => v.status === "changed")
+                  .map(([id, v]) => (
+                    <div key={id} className="flex items-center gap-2 font-mono">
+                      <span className="text-yellow-700">~</span>
+                      <span className="text-rose-600 line-through opacity-70">{v.oldLabel}</span>
+                      <span className="text-muted-foreground">→</span>
+                      <span className="text-emerald-600">{v.newLabel}</span>
+                      <span className="text-muted-foreground">({id})</span>
+                    </div>
+                  ))}
+              </CardContent>
+            </Card>
           )}
         </TabsContent>
 
