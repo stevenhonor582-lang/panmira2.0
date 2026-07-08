@@ -1,10 +1,35 @@
 "use client";
 import * as React from "react";
-import { logSeries } from "../../_lib/data";
+import { fetchLogSeries, type LogEntry } from "../../_lib/data";
 import { ScrollText } from "lucide-react";
 
 export function TabLogs({ id }: { id: string }) {
-  const series = React.useMemo(() => logSeries(id), [id]);
+  const [series, setSeries] = React.useState<LogEntry[]>([]);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    fetchLogSeries(id)
+      .then((rows) => {
+        if (alive) setSeries(rows);
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [id]);
+
+  if (loading) {
+    return <LoadingShell />;
+  }
+
+  if (series.length === 0) {
+    return <EmptyState id={id} />;
+  }
+
   const okCount = series.filter((s) => s.ok).length;
   const failCount = series.length - okCount;
   const avg = Math.round(series.reduce((s, x) => s + x.ms, 0) / series.length);
@@ -68,11 +93,7 @@ export function TabLogs({ id }: { id: string }) {
   );
 }
 
-function Chart({
-  series,
-}: {
-  series: { ts: string; task: string; ok: boolean; ms: number }[];
-}) {
+function Chart({ series }: { series: LogEntry[] }) {
   const max = Math.max(...series.map((s) => s.ms), 100);
   return (
     <div className="rounded-2xl bg-card p-6 ring-1 ring-border">
@@ -93,6 +114,40 @@ function Chart({
         <span>{new Date(series[0].ts).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })}</span>
         <span>{new Date(series[series.length - 1].ts).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })}</span>
       </div>
+    </div>
+  );
+}
+
+function LoadingShell() {
+  return (
+    <div className="space-y-6">
+      <header className="flex items-end justify-between border-b border-border pb-4">
+        <div className="space-y-2">
+          <div className="h-4 w-32 rounded bg-muted/60 animate-pulse" />
+          <div className="h-3 w-64 rounded bg-muted/40 animate-pulse" />
+        </div>
+      </header>
+      <div className="h-40 rounded-2xl bg-muted/40 animate-pulse" />
+      <div className="h-48 rounded-2xl bg-muted/40 animate-pulse" />
+    </div>
+  );
+}
+
+function EmptyState({ id }: { id: string }) {
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-3xl border border-dashed border-border py-20 text-center">
+      <ScrollText className="size-6 text-foreground/35" />
+      <span className="font-mono text-[10.5px] uppercase tracking-[0.22em] text-foreground/40">
+        暂无日志数据
+      </span>
+      <p className="max-w-[44ch] text-sm text-foreground/60">
+        后端尚无 per-agent log series endpoint (预计 P10 后续接入)。
+        {id ? (
+          <span className="block mt-1 font-mono text-[11px] text-foreground/35">
+            agent id · {id.slice(0, 8)}…
+          </span>
+        ) : null}
+      </p>
     </div>
   );
 }

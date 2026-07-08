@@ -1,5 +1,5 @@
 import * as React from "react";
-import { findAgent } from "../../_lib/data";
+import { useAgent, useAgents, findAgent, type Agent } from "../../_lib/data";
 import { ListChecks } from "lucide-react";
 
 const PIPELINES = [
@@ -10,7 +10,8 @@ const PIPELINES = [
 ];
 
 export function TabTasks({ id }: { id: string }) {
-  const agent = findAgent(id);
+  const { agent, loading: agentLoading } = useAgent(id);
+  if (agentLoading) return <div className="h-48 rounded-2xl bg-muted/40 animate-pulse" />;
   if (!agent) return null;
 
   return (

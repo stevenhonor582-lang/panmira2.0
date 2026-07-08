@@ -1,9 +1,10 @@
 import * as React from "react";
-import { findAgent } from "../../_lib/data";
+import { useAgent, useAgents, findAgent, type Agent } from "../../_lib/data";
 import { Brain, Clock, Database, Archive } from "lucide-react";
 
 export function TabMemory({ id }: { id: string }) {
-  const agent = findAgent(id);
+  const { agent, loading: agentLoading } = useAgent(id);
+  if (agentLoading) return <div className="h-48 rounded-2xl bg-muted/40 animate-pulse" />;
   if (!agent) return null;
   const m = agent.memoryLayers;
   const total = m.short + m.long + m.permanent;

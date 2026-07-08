@@ -1,9 +1,10 @@
 import * as React from "react";
-import { findAgent } from "../../_lib/data";
+import { useAgent, useAgents, findAgent, type Agent } from "../../_lib/data";
 import { BrainCircuit, ShieldCheck } from "lucide-react";
 
 export function TabPersona({ id }: { id: string }) {
-  const agent = findAgent(id);
+  const { agent, loading: agentLoading } = useAgent(id);
+  if (agentLoading) return <div className="h-48 rounded-2xl bg-muted/40 animate-pulse" />;
   if (!agent) return null;
   return (
     <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">

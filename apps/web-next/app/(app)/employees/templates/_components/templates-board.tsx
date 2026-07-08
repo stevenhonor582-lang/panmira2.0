@@ -1,21 +1,23 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { TEMPLATE_PRESETS, AGENTS } from "../../_lib/data";
+import { TEMPLATE_PRESETS, useAgents, type Agent } from "../../_lib/data";
 import { AvatarMark } from "../../_components/avatar-mark";
 import { ArrowUpRight, Plus, Lock, Globe2 } from "lucide-react";
 
-const MINE = AGENTS.filter((a) => a.ownerName === "史德飞" && a.templateSource === null);
+// MINE moved inside component to use the live fetched agent list.
 
 export function TemplatesBoard() {
   const [tab, setTab] = React.useState<"mine" | "public">("mine");
   const [mounted, setMounted] = React.useState(false);
+  const { agents, loading: agentsLoading } = useAgents();
+  const MINE = agents.filter((a) => a.templateSource === null);
   React.useEffect(() => {
     const t = setTimeout(() => setMounted(true), 30);
     return () => clearTimeout(t);
   }, []);
 
-  const totalMine = MINE.length;
+  const totalMine = agents.length;
   const totalPublic = TEMPLATE_PRESETS.length;
 
   return (
@@ -65,15 +67,32 @@ export function TemplatesBoard() {
         })}
       </div>
 
-      {tab === "mine" ? <MineGrid mounted={mounted} /> : <PublicGrid mounted={mounted} />}
+      {tab === "mine" ? <MineGrid mounted={mounted} agents={MINE} loading={agentsLoading} /> : <PublicGrid mounted={mounted} />}
     </div>
   );
 }
 
-function MineGrid({ mounted }: { mounted: boolean }) {
+function MineGrid({ mounted, agents, loading }: { mounted: boolean; agents: Agent[]; loading: boolean }) {
+  if (loading) {
+    return <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      {Array.from({ length: 3 }).map((_, i) => (
+        <div key={i} className="h-48 rounded-3xl bg-muted/30 animate-pulse" />
+      ))}
+    </div>;
+  }
+  if (agents.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-2 rounded-3xl border border-dashed border-border py-16 text-center">
+        <p className="font-mono text-[10.5px] uppercase tracking-[0.22em] text-foreground/40">
+          暂无自有 bot
+        </p>
+        <p className="text-[13px] text-foreground/55">从模板创建你的第一个数字员工</p>
+      </div>
+    );
+  }
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-      {MINE.map((a, i) => (
+      {agents.map((a, i) => (
         <div
           key={a.id}
           className={

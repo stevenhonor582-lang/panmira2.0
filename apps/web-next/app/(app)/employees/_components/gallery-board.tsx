@@ -1,6 +1,11 @@
 "use client";
 import * as React from "react";
-import { AGENTS, sortByOwnerFirst, facets as buildFacets, type Agent } from "../_lib/data";
+import {
+  fetchAgents,
+  sortByOwnerFirst,
+  facets as buildFacets,
+  type Agent,
+} from "../_lib/data";
 import { AgentCard, type AgentCardSize } from "./agent-card";
 import { FilterBar, type FilterState, EMPTY_FILTER } from "./filter-bar";
 
@@ -16,12 +21,30 @@ const ROLE_LABEL: Record<string, string> = {
 export function GalleryBoard() {
   const [filter, setFilter] = React.useState<FilterState>(EMPTY_FILTER);
   const [mounted, setMounted] = React.useState(false);
+  const [agents, setAgents] = React.useState<Agent[]>([]);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    fetchAgents()
+      .then((list) => {
+        if (alive) setAgents(list);
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   React.useEffect(() => {
     const t = setTimeout(() => setMounted(true), 30);
     return () => clearTimeout(t);
   }, []);
 
-  const all = React.useMemo(() => sortByOwnerFirst(AGENTS), []);
+  const all = React.useMemo(() => sortByOwnerFirst(agents), [agents]);
   const list = React.useMemo(() => {
     return all.filter((a) => {
       if (filter.role !== "all" && a.role !== filter.role) return false;
@@ -53,7 +76,7 @@ export function GalleryBoard() {
 
   return (
     <div className="space-y-8">
-      <Header />
+      <Header count={agents.length} loading={loading} />
 
       <FilterBar
         value={filter}
@@ -62,7 +85,9 @@ export function GalleryBoard() {
         resultCount={list.length}
       />
 
-      {list.length === 0 ? (
+      {loading ? (
+        <LoadingGrid />
+      ) : list.length === 0 ? (
         <EmptyState />
       ) : (
         <AsymGrid agents={list} mounted={mounted} />
@@ -71,7 +96,7 @@ export function GalleryBoard() {
   );
 }
 
-function Header() {
+function Header({ count, loading }: { count: number; loading: boolean }) {
   return (
     <header className="flex items-end justify-between gap-6 border-b border-border pb-7">
       <div className="space-y-3">
@@ -84,17 +109,22 @@ function Header() {
         </h1>
         <p className="max-w-[55ch] text-[15px] leading-relaxed text-foreground/65">
           每个员工都是一组指令 + 一段人格 + 一条调用链。
-          这里一共 <span className="font-mono text-foreground/90">8</span> 个,
-          其中 <span className="font-medium text-foreground">5</span> 个是史德飞的主理 bot。
+          {loading ? (
+            <>正在拉取最新员工…</>
+          ) : (
+            <>
+              这里一共 <span className="font-mono text-foreground/90">{count}</span> 个。
+            </>
+          )}
         </p>
       </div>
       <div className="hidden lg:flex shrink-0 flex-col items-end gap-2 text-right">
         <span className="text-[10.5px] font-mono uppercase tracking-[0.22em] text-foreground/40">
-          默认排序
+          数据源
         </span>
-        <span className="text-sm text-foreground/80">主理人 · 史德飞优先</span>
+        <span className="text-sm text-foreground/80">digital_employees view</span>
         <span className="font-mono text-[11px] text-foreground/40">
-          updated 2026-07-08 · 04:18
+          GET /api/v2/employees
         </span>
       </div>
     </header>
@@ -136,6 +166,19 @@ function AsymGrid({ agents, mounted }: { agents: Agent[]; mounted: boolean }) {
         >
           <AgentCard agent={a} size={layout[i]} />
         </div>
+      ))}
+    </div>
+  );
+}
+
+function LoadingGrid() {
+  return (
+    <div className="grid auto-rows-[180px] grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div
+          key={i}
+          className="col-span-1 row-span-1 rounded-3xl bg-muted/40 ring-1 ring-border animate-pulse"
+        />
       ))}
     </div>
   );

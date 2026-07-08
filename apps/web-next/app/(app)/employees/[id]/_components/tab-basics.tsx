@@ -1,9 +1,11 @@
 import * as React from "react";
-import { AGENTS, findAgent } from "../../_lib/data";
+import { useAgent, findAgent, useAgents, type Agent } from "../../_lib/data";
 import { Calendar, Tag, Cpu, GitBranch, User2 } from "lucide-react";
 
 export function TabBasics({ id }: { id: string }) {
-  const agent = findAgent(id) ?? AGENTS[0];
+  const { agent, loading: agentLoading } = useAgent(id);
+  if (agentLoading) return <div className="h-48 rounded-2xl bg-muted/40 animate-pulse" />;
+  if (!agent) return null;
   return (
     <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
       <div className="space-y-6">

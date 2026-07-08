@@ -2,12 +2,13 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { findAgent } from "../../_lib/data";
+import { useAgent, useAgents, findAgent, type Agent } from "../../_lib/data";
 import { AvatarMark, statusTone } from "../../_components/avatar-mark";
 import { ArrowLeft, User2, GitBranch, Hash } from "lucide-react";
 
 export function AgentHeader({ id }: { id: string }) {
-  const agent = findAgent(id);
+  const { agent, loading: agentLoading } = useAgent(id);
+  if (agentLoading) return <div className="h-48 rounded-2xl bg-muted/40 animate-pulse" />;
   if (!agent) {
     return (
       <div className="rounded-3xl border border-dashed border-border p-12 text-center">

@@ -1,16 +1,18 @@
 import * as React from "react";
-import { AGENTS, findAgent, type Agent } from "../../_lib/data";
+import { useAgent, findAgent, useAgents, type Agent } from "../../_lib/data";
 import { AvatarMark } from "../../_components/avatar-mark";
 import { Network, Bot, User2 } from "lucide-react";
 import Link from "next/link";
 
 export function TabCollab({ id }: { id: string }) {
-  const agent = findAgent(id);
+  const { agent, loading: agentLoading } = useAgent(id);
+  if (agentLoading) return <div className="h-48 rounded-2xl bg-muted/40 animate-pulse" />;
   if (!agent) return null;
 
-  const botNeighbours = agent.collaborators
+  const { agents: allAgents } = useAgents();
+  const botNeighbours = (agent.collaborators ?? [])
     .filter((c) => c.botId)
-    .map((c) => ({ agent: AGENTS.find((a) => a.id === c.botId), relation: c.relation }))
+    .map((c) => ({ agent: allAgents.find((a) => a.id === c.botId), relation: c.relation }))
     .filter((c): c is { agent: Agent; relation: string } => !!c.agent);
 
   return (
