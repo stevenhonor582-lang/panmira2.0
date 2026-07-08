@@ -38,11 +38,11 @@ function fmtRel(iso: string | null): string {
   if (!Number.isFinite(then)) return "—";
   const diff = Date.now() - then;
   const min = Math.floor(diff / 60000);
-  if (min < 60) return `${min}m ago`;
+  if (min < 60) return `${min} 分钟前`;
   const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
+  if (hr < 24) return `${hr} 小时前`;
   const d = Math.floor(hr / 24);
-  return `${d}d ago`;
+  return `${d} 天前`;
 }
 
 export default function L3Page() {
@@ -97,10 +97,10 @@ export default function L3Page() {
           className="h-7 rounded border border-border bg-background px-1.5 text-[11px] font-mono"
           title="最小重要度过滤"
         >
-          <option value={0}>imp ≥ 0</option>
-          <option value={0.5}>imp ≥ 0.5</option>
-          <option value={0.7}>imp ≥ 0.7</option>
-          <option value={0.8}>imp ≥ 0.8</option>
+          <option value={0}>重要度 ≥ 0</option>
+          <option value={0.5}>重要度 ≥ 0.5</option>
+          <option value={0.7}>重要度 ≥ 0.7</option>
+          <option value={0.8}>重要度 ≥ 0.8</option>
         </select>
         <Button size="sm" className="h-7 text-xs gap-1" onClick={() => setAddOpen(true)}>
           <Plus className="size-3" />
@@ -108,7 +108,7 @@ export default function L3Page() {
         </Button>
         <div className="ml-auto flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">
           <Lock className="size-3" />
-          {loading ? "loading…" : `${total} iron laws · showing ${laws.length}`}
+          {loading ? "加载中…" : `共 ${total} 条铁律 · 显示 ${laws.length} 条`}
         </div>
       </div>
 
@@ -121,7 +121,7 @@ export default function L3Page() {
         )}
         {!error && laws.length === 0 && !loading && (
           <div className="m-4 rounded-md border border-dashed border-border p-6 text-xs text-muted-foreground text-center">
-            L3 永久记忆为空。
+            L3 永久记忆为空 · 此层级存放不可违反的核心原则。
           </div>
         )}
         <div className="p-6 space-y-4">
@@ -130,7 +130,7 @@ export default function L3Page() {
               <div className="px-4 py-3 border-b border-border/60 bg-muted/30 flex items-center gap-2 flex-wrap">
                 <ShieldCheck className="size-3.5 text-emerald-500" />
                 <span className="text-xs font-medium truncate max-w-[40ch]">
-                  {law.subject || "(untitled)"}
+                  {law.subject || "(无主题)"}
                 </span>
                 {law.type && (
                   <Badge variant="outline" className="text-[10px] font-mono uppercase tracking-wider">
@@ -139,7 +139,7 @@ export default function L3Page() {
                 )}
                 {law.polarity === "negate" && (
                   <Badge variant="destructive" className="text-[10px] font-mono uppercase tracking-wider">
-                    negate
+                    撤销
                   </Badge>
                 )}
                 <span className="ml-auto text-[10px] text-muted-foreground/80 font-mono flex items-center gap-1">
@@ -156,7 +156,7 @@ export default function L3Page() {
               </div>
               <div className="px-4 py-3">
                 <p className="text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">
-                  {law.content || "(empty)"}
+                  {law.content || "(无内容)"}
                 </p>
                 {law.tags.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1">
@@ -169,17 +169,17 @@ export default function L3Page() {
                 )}
                 <Separator className="my-3" />
                 <dl className="grid grid-cols-3 gap-x-4 gap-y-1.5 text-[10px] font-mono">
-                  <dt className="text-muted-foreground">id</dt>
+                  <dt className="text-muted-foreground">ID</dt>
                   <dd className="col-span-2 truncate text-foreground/80">{law.id}</dd>
-                  <dt className="text-muted-foreground">hits</dt>
+                  <dt className="text-muted-foreground">命中</dt>
                   <dd className="col-span-2 text-foreground/80">{law.hitCount}</dd>
                   {law.importance !== null && (
                     <>
-                      <dt className="text-muted-foreground">importance</dt>
+                      <dt className="text-muted-foreground">重要度</dt>
                       <dd className="col-span-2 text-foreground/80">{law.importance.toFixed(2)}</dd>
                     </>
                   )}
-                  <dt className="text-muted-foreground">bot</dt>
+                  <dt className="text-muted-foreground">归属 Bot</dt>
                   <dd className="col-span-2 truncate text-foreground/80">{law.botId ?? "—"}</dd>
                 </dl>
               </div>

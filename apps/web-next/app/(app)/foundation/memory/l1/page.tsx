@@ -40,7 +40,7 @@ function SourceLabel({ tenantId, type }: { tenantId: string | null; type: string
   else if (tenantId?.startsWith("tenant:")) source = "task";
   const label = source === "channel" ? "频道"
     : source === "backfill" ? "回填"
-    : source === "task" ? "租户" : "用户";
+    : source === "task" ? "任务" : "用户";
   return (
     <Badge variant="outline" className="ml-auto text-[10px] font-mono uppercase tracking-wider">
       {label}{type ? ` · ${type}` : ""}
@@ -54,11 +54,11 @@ function fmtRel(iso: string | null): string {
   if (!Number.isFinite(then)) return "—";
   const diff = Date.now() - then;
   const min = Math.floor(diff / 60000);
-  if (min < 60) return `${min}m ago`;
+  if (min < 60) return `${min} 分钟前`;
   const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
+  if (hr < 24) return `${hr} 小时前`;
   const d = Math.floor(hr / 24);
-  return `${d}d ago`;
+  return `${d} 天前`;
 }
 
 export default function L1Page() {
@@ -103,7 +103,7 @@ export default function L1Page() {
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索 L1 短期上下文 content / subject…"
+            placeholder="搜索 L1 短期上下文 · 主题或内容…"
             className="pl-7 h-7 text-xs"
           />
         </div>
@@ -117,10 +117,10 @@ export default function L1Page() {
           className="h-7 rounded border border-border bg-background px-1.5 text-[11px] font-mono"
           title="最小重要度过滤"
         >
-          <option value={0}>imp ≥ 0</option>
-          <option value={0.5}>imp ≥ 0.5</option>
-          <option value={0.7}>imp ≥ 0.7</option>
-          <option value={0.8}>imp ≥ 0.8</option>
+          <option value={0}>重要度 ≥ 0</option>
+          <option value={0.5}>重要度 ≥ 0.5</option>
+          <option value={0.7}>重要度 ≥ 0.7</option>
+          <option value={0.8}>重要度 ≥ 0.8</option>
         </select>
         <Button size="sm" className="h-7 text-xs gap-1" onClick={() => setAddOpen(true)}>
           <Plus className="size-3" />
@@ -132,7 +132,7 @@ export default function L1Page() {
         </Button>
         <div className="ml-auto flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">
           <Zap className="size-3" />
-          {loading ? "loading…" : `${total} total · showing ${items.length}`}
+          {loading ? "加载中…" : `共 ${total} 条 · 显示 ${items.length} 条`}
         </div>
       </div>
 
@@ -146,7 +146,7 @@ export default function L1Page() {
           )}
           {!error && items.length === 0 && !loading && (
             <div className="m-4 rounded-md border border-dashed border-border p-6 text-xs text-muted-foreground text-center">
-              L1 短期记忆为空。memory pipeline 未活跃时正常 (最新一条可能超过 24h)。
+              L1 短期记忆为空 · 记忆管线未活跃时正常(最新一条可能超过 24h)。
             </div>
           )}
           <ul className="divide-y divide-border/60">
@@ -165,7 +165,7 @@ export default function L1Page() {
                     <div className="flex items-center gap-2">
                       <Bot className="size-3 text-muted-foreground shrink-0" />
                       <span className="text-xs font-medium truncate max-w-[16ch]">
-                        {item.subject || item.botId?.slice(0, 8) || "—"}
+                        {item.subject || item.botId?.slice(0, 8) || "(无主题)"}
                       </span>
                       <SourceLabel tenantId={item.tenantId} type={item.type} />
                     </div>
@@ -173,15 +173,15 @@ export default function L1Page() {
                       "mt-1.5 text-xs leading-relaxed line-clamp-2",
                       isActive ? "text-foreground" : "text-muted-foreground",
                     )}>
-                      {item.preview || "(empty)"}
+                      {item.preview || "(无内容)"}
                     </p>
                     <div className="mt-2 flex items-center gap-3 text-[10px] text-muted-foreground/80 font-mono">
                       <span className="flex items-center gap-1">
                         <MessageSquare className="size-2.5" />
-                        hits {item.hitCount}
+                        命中 {item.hitCount}
                       </span>
                       {item.importance !== null && (
-                        <span>imp {item.importance.toFixed(2)}</span>
+                        <span>重要度 {item.importance.toFixed(2)}</span>
                       )}
                       <span className="flex items-center gap-1">
                         <Clock className="size-2.5" />
@@ -205,12 +205,12 @@ export default function L1Page() {
                 <div className="flex items-center gap-2 flex-wrap">
                   <Bot className="size-4" />
                   <h2 className="text-sm font-semibold">
-                    {active.subject || "(no subject)"}
+                    {active.subject || "(无主题)"}
                   </h2>
                   <SourceLabel tenantId={active.tenantId} type={active.type} />
                   {active.importance !== null && (
                     <Badge variant="secondary" className="text-[10px] font-mono">
-                      imp {active.importance.toFixed(2)}
+                      重要度 {active.importance.toFixed(2)}
                     </Badge>
                   )}
                   <span className="ml-auto text-[10px] text-muted-foreground font-mono">
@@ -218,7 +218,7 @@ export default function L1Page() {
                   </span>
                 </div>
                 <p className="mt-2 text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">
-                  {active.content || "(empty content)"}
+                  {active.content || "(无内容)"}
                 </p>
               </div>
 
@@ -226,8 +226,8 @@ export default function L1Page() {
                 <>
                   <Separator />
                   <section>
-                    <h3 className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">
-                      tags
+                    <h3 className="text-[10px] tracking-wider text-muted-foreground/70 font-mono">
+                      标签
                     </h3>
                     <div className="mt-2 flex flex-wrap gap-1">
                       {active.tags.map((t) => (
@@ -243,34 +243,34 @@ export default function L1Page() {
               <Separator />
 
               <section>
-                <h3 className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">
-                  memory meta
+                <h3 className="text-[10px] tracking-wider text-muted-foreground/70 font-mono">
+                  记忆元信息
                 </h3>
                 <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-[11px]">
-                  <dt className="text-muted-foreground">memory id</dt>
+                  <dt className="text-muted-foreground">记忆 ID</dt>
                   <dd className="font-mono truncate">{active.id}</dd>
-                  <dt className="text-muted-foreground">layer</dt>
-                  <dd className="font-mono uppercase">l1</dd>
-                  <dt className="text-muted-foreground">type</dt>
+                  <dt className="text-muted-foreground">层级</dt>
+                  <dd className="font-mono">L1 短期</dd>
+                  <dt className="text-muted-foreground">类型</dt>
                   <dd className="font-mono">{active.type ?? "—"}</dd>
-                  <dt className="text-muted-foreground">polarity</dt>
+                  <dt className="text-muted-foreground">极性</dt>
                   <dd className="font-mono">{active.polarity ?? "—"}</dd>
-                  <dt className="text-muted-foreground">hit count</dt>
+                  <dt className="text-muted-foreground">命中次数</dt>
                   <dd className="font-mono">{active.hitCount}</dd>
-                  <dt className="text-muted-foreground">bot id</dt>
+                  <dt className="text-muted-foreground">归属 Bot</dt>
                   <dd className="font-mono truncate">{active.botId ?? "—"}</dd>
-                  <dt className="text-muted-foreground">tenant</dt>
+                  <dt className="text-muted-foreground">租户</dt>
                   <dd className="font-mono truncate">{active.tenantId ?? "—"}</dd>
-                  <dt className="text-muted-foreground">created</dt>
+                  <dt className="text-muted-foreground">创建</dt>
                   <dd className="font-mono">{fmtRel(active.createdAt)}</dd>
-                  <dt className="text-muted-foreground">updated</dt>
+                  <dt className="text-muted-foreground">更新</dt>
                   <dd className="font-mono">{fmtRel(active.updatedAt)}</dd>
                 </dl>
               </section>
             </div>
           ) : (
             <div className="p-6 grid place-items-center h-full text-xs text-muted-foreground">
-              {loading ? <Loader2 className="size-4 animate-spin" /> : "select a memory"}
+              {loading ? <Loader2 className="size-4 animate-spin" /> : "选择一条记忆查看详情"}
             </div>
           )}
         </div>

@@ -24,19 +24,19 @@ const LAYERS: LayerMeta[] = [
   {
     layer: "l1",
     href: "/foundation/memory/l1",
-    title: "L1 短期记忆",
+    title: "短期记忆 · L1",
     blurb: "24h 内所有 bot 交互上下文,自动衰减",
-    capacity: "rolling window",
-    retention: "24h → L2",
+    capacity: "24h 滚动窗口",
+    retention: "24h 后转 L2",
     icon: Clock,
     accent: "text-amber-600 dark:text-amber-400",
   },
   {
     layer: "l2",
     href: "/foundation/memory/l2",
-    title: "L2 长期记忆",
+    title: "长期记忆 · L2",
     blurb: "事实 · 经验 · 常用知识,人工可编辑",
-    capacity: "tenant scoped",
+    capacity: "租户范围",
     retention: "人工审阅",
     icon: Library,
     accent: "text-sky-600 dark:text-sky-400",
@@ -44,9 +44,9 @@ const LAYERS: LayerMeta[] = [
   {
     layer: "l3",
     href: "/foundation/memory/l3",
-    title: "L3 永久记忆",
+    title: "永久记忆 · L3",
     blurb: "Iron laws · 核心原则 · 5 个 bot 共享",
-    capacity: "immutable",
+    capacity: "不可变",
     retention: "永不衰减",
     icon: ShieldCheck,
     accent: "text-emerald-600 dark:text-emerald-400",
@@ -92,7 +92,7 @@ export default function MemoryLayout({ children }: { children: React.ReactNode }
     <div className="-m-6 flex h-[calc(100vh-3rem)] flex-col overflow-hidden">
       <header className="px-6 pt-5 pb-4 border-b border-border bg-background">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>数智底座</span>
+          <span>记忆沉淀</span>
           <ChevronRight className="size-3" />
           <span>记忆分层</span>
           <ChevronRight className="size-3" />
@@ -102,7 +102,7 @@ export default function MemoryLayout({ children }: { children: React.ReactNode }
         </div>
         <div className="mt-2 flex items-end justify-between gap-4">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight">记忆层级</h1>
+            <h1 className="text-xl font-semibold tracking-tight">记忆沉淀</h1>
             <p className="text-xs text-muted-foreground mt-0.5">
               短期上下文 · 长期事实 · 永久原则 — 三层互不污染,分层衰减
             </p>
@@ -126,7 +126,7 @@ export default function MemoryLayout({ children }: { children: React.ReactNode }
           <div className="px-4 pt-4 pb-2">
             <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">
               <Brain className="size-3" />
-              layers
+              层级
             </div>
           </div>
           <Separator />
@@ -143,20 +143,20 @@ export default function MemoryLayout({ children }: { children: React.ReactNode }
             <Separator className="my-3" />
             <div className="px-4 py-3 space-y-2">
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">
-                pipeline
+                流转
               </div>
               <div className="rounded-md border border-dashed border-border/60 p-2.5 space-y-1.5">
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="text-muted-foreground">L1 → L2</span>
-                  <span className="font-mono">auto</span>
+                  <span className="font-mono">自动</span>
                 </div>
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="text-muted-foreground">L2 → L3</span>
-                  <span className="font-mono">manual</span>
+                  <span className="font-mono">人工</span>
                 </div>
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="text-muted-foreground">L3 → </span>
-                  <span className="font-mono">never</span>
+                  <span className="font-mono">永不</span>
                 </div>
               </div>
             </div>
@@ -170,7 +170,7 @@ export default function MemoryLayout({ children }: { children: React.ReactNode }
         <aside className="flex flex-col min-h-0 bg-muted/20">
           <div className="px-4 pt-4 pb-2">
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">
-              contract
+              规约
             </div>
           </div>
           <Separator />
@@ -209,7 +209,7 @@ export default function MemoryLayout({ children }: { children: React.ReactNode }
                 <dl className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
                   <dt className="text-muted-foreground">24h 写入</dt>
                   <dd className="font-mono text-right">—</dd>
-                  <dt className="text-muted-foreground">promote L1→L2</dt>
+                  <dt className="text-muted-foreground">L1→L2 提升</dt>
                   <dd className="font-mono text-right">—</dd>
                   <dt className="text-muted-foreground">L3 修订</dt>
                   <dd className="font-mono text-right">—</dd>

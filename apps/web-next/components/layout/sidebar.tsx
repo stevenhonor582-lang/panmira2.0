@@ -78,13 +78,13 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     module: "foundation",
-    title: "数智底座",
+    title: "记忆沉淀",
     defaultHref: "/foundation/memory/l1",
     icon: Database,
     items: [
-      { label: "L1 记忆", href: "/foundation/memory/l1", icon: Brain },
-      { label: "L2 记忆", href: "/foundation/memory/l2", icon: Brain },
-      { label: "L3 记忆", href: "/foundation/memory/l3", icon: Brain },
+      { label: "短期记忆 · L1", href: "/foundation/memory/l1", icon: Brain },
+      { label: "长期记忆 · L2", href: "/foundation/memory/l2", icon: Brain },
+      { label: "永久记忆 · L3", href: "/foundation/memory/l3", icon: Brain },
       { label: "知识库", href: "/foundation/knowledge", icon: BookOpen },
       { label: "抽取", href: "/foundation/extraction", icon: FileSearch },
       { label: "反馈", href: "/foundation/feedback", icon: MessageSquareWarning },
