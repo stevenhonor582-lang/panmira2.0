@@ -222,8 +222,35 @@ export async function handleSkillHubRoutes(
     }
     const skillName = decodeURIComponent(url.split('/')[3]);
     const record = await store.get(skillName);
+    // R13E: attach usage stats from skill_usage table regardless of source
+    let usageStats = { totalCalls: 0, totalSuccess: 0, avgLatencyMs: 0, lastUsedAt: null as string | null, daily: [] as any[] };
+    try {
+      const { pool } = await import('../../db/index.js');
+      const { rows } = await pool.query(
+        `SELECT
+           COALESCE(sum(call_count), 0)::int AS total_calls,
+           COALESCE(sum(success_count), 0)::int AS total_success,
+           COALESCE(round(avg(avg_latency_ms)), 0)::int AS avg_latency,
+           max(created_at) AS last_used_at
+         FROM skill_usage WHERE skill_id = $1`,
+        [skillName],
+      );
+      const { rows: daily } = await pool.query(
+        `SELECT date, sum(call_count)::int AS calls, sum(success_count)::int AS ok
+         FROM skill_usage WHERE skill_id = $1
+         GROUP BY date ORDER BY date DESC LIMIT 30`,
+        [skillName],
+      );
+      usageStats = {
+        totalCalls: Number(rows[0]?.total_calls ?? 0),
+        totalSuccess: Number(rows[0]?.total_success ?? 0),
+        avgLatencyMs: Number(rows[0]?.avg_latency ?? 0),
+        lastUsedAt: rows[0]?.last_used_at ? new Date(rows[0].last_used_at).toISOString() : null,
+        daily: daily.map((r: any) => ({ date: r.date, calls: Number(r.calls), ok: Number(r.ok) })),
+      };
+    } catch { /* table missing — leave defaults */ }
     if (record) {
-      jsonResponse(res, 200, record);
+      jsonResponse(res, 200, { ...record, usage: usageStats });
       return true;
     }
     // Try peers
@@ -234,11 +261,35 @@ export async function handleSkillHubRoutes(
       if (match) {
         const full = await peerManager.fetchPeerSkill(match.peerName, skillName);
         if (full) {
-          jsonResponse(res, 200, { ...full, peerName: match.peerName, peerUrl: match.peerUrl });
+          jsonResponse(res, 200, { ...full, peerName: match.peerName, peerUrl: match.peerUrl, usage: usageStats });
           return true;
         }
       }
     }
+    // R13E: fallback — derive from bot_skill_bindings + agents.skills
+    try {
+      const { pool } = await import('../../db/index.js');
+      const { rows } = await pool.query(
+        `SELECT skill_name, bool_or(enabled) AS enabled, count(*)::int AS bot_count,
+           array_agg(DISTINCT bot_name) AS bots, max(installed_at) AS installed_at
+         FROM bot_skill_bindings WHERE skill_name = $1
+         GROUP BY skill_name`,
+        [skillName],
+      );
+      if (rows.length > 0) {
+        jsonResponse(res, 200, {
+          name: skillName,
+          description: `Bound to ${rows[0].bot_count} bot(s): ${(rows[0].bots || []).slice(0, 10).join(', ')}`,
+          source: 'custom',
+          enabled: !!rows[0].enabled,
+          tags: ['bot_binding'],
+          installedAt: rows[0].installed_at ? new Date(rows[0].installed_at).toISOString() : null,
+          bots: rows[0].bots || [],
+          usage: usageStats,
+        });
+        return true;
+      }
+    } catch { /* table missing */ }
     jsonResponse(res, 404, { error: `Skill not found: ${skillName}` });
     return true;
   }
@@ -428,6 +479,135 @@ export async function handleSkillHubRoutes(
     } catch (err: any) {
       logger.warn({ err: err.message, githubUrl }, 'Failed to install skill from GitHub');
       jsonResponse(res, 400, { error: err.message });
+    }
+    return true;
+  }
+
+  // R13E: POST /api/skills/install — unified install (URL/source aware)
+  // body: { source: 'github' | 'url' | 'hub', url: string, skillName?: string, botName?: string }
+  if (method === 'POST' && url === '/api/skills/install') {
+    const body = await parseJsonBody(req);
+    const src = (body.source as string) || 'url';
+    const skillUrl = (body.url as string) || (body.githubUrl as string) || '';
+    const skillName = body.skillName as string | undefined;
+    const botName = body.botName as string | undefined;
+    if (!skillUrl) {
+      jsonResponse(res, 400, { error: 'Missing url' });
+      return true;
+    }
+    try {
+      if (src === 'github' || skillUrl.includes('github.com')) {
+        const result = installFromGithub(skillUrl, skillName, logger);
+        if (!result.alreadyInstalled) {
+          const botWorkDirs = registry.list().map((b) => b.workingDirectory);
+          syncSkillToBotStaging(result.name, botWorkDirs, logger);
+          refreshSkillRegistry();
+        }
+        // Optional: bind to a specific bot
+        if (botName) {
+          try { await installSkillWithBinding(result.name, botName, 'global', logger); } catch { /* binding optional */ }
+        }
+        jsonResponse(res, 200, { installed: true, name: result.name, path: result.path, alreadyInstalled: result.alreadyInstalled });
+      } else {
+        // Generic URL — treat as raw skill_md URL, fetch and store
+        const resp = await fetch(skillUrl, { signal: AbortSignal.timeout(10000) });
+        if (!resp.ok) {
+          jsonResponse(res, 400, { error: `fetch_failed: HTTP ${resp.status}` });
+          return true;
+        }
+        const skillMd = await resp.text();
+        const name = skillName || skillUrl.split('/').pop()?.replace(/\.md$/i, '') || 'custom-skill';
+        if (store) {
+          const record = await store.publish({ name, skillMd, author: botName || 'installer' });
+          if (botName) {
+            try { await installSkillWithBinding(name, botName, 'global', logger); } catch { /* optional */ }
+          }
+          jsonResponse(res, 200, { installed: true, name: record.name, version: record.version });
+        } else {
+          jsonResponse(res, 503, { error: 'Skill Hub not available for URL install' });
+        }
+      }
+    } catch (err: any) {
+      logger.warn({ err: err.message, skillUrl }, 'Failed skill install');
+      jsonResponse(res, 400, { error: err.message });
+    }
+    return true;
+  }
+
+  // R13E: POST /api/skills/:name/enable — bind to a bot (body: { botName, enabled? })
+  if (method === 'POST' && /^\/api\/skills\/[^/]+\/enable$/.test(url)) {
+    const skillName = decodeURIComponent(url.split('/')[3]);
+    const body = await parseJsonBody(req);
+    const botName = body.botName as string;
+    const enabled = body.enabled !== false;
+    if (!botName) {
+      jsonResponse(res, 400, { error: 'Missing botName' });
+      return true;
+    }
+    try {
+      const { pool } = await import('../../db/index.js');
+      // Upsert binding
+      await pool.query(
+        `INSERT INTO bot_skill_bindings (bot_name, skill_name, enabled, installed_at)
+         VALUES ($1, $2, $3, now())
+         ON CONFLICT (bot_name, skill_name) DO UPDATE SET enabled = $3, installed_at = now()`,
+        [botName, skillName, enabled],
+      );
+      jsonResponse(res, 200, { botName, skillName, enabled });
+    } catch (err: any) {
+      jsonResponse(res, 500, { error: err?.message || 'Failed to enable skill' });
+    }
+    return true;
+  }
+
+  // R13E: DELETE /api/skills/:name/binding — unbind skill from a bot (body: { botName })
+  if (method === 'DELETE' && /^\/api\/skills\/[^/]+\/binding$/.test(url)) {
+    const skillName = decodeURIComponent(url.split('/')[3]);
+    const body = await parseJsonBody(req);
+    const botName = body.botName as string;
+    if (!botName) {
+      jsonResponse(res, 400, { error: 'Missing botName' });
+      return true;
+    }
+    try {
+      const { pool } = await import('../../db/index.js');
+      const result = await pool.query(
+        'DELETE FROM bot_skill_bindings WHERE bot_name = $1 AND skill_name = $2',
+        [botName, skillName],
+      );
+      jsonResponse(res, 200, { unbound: (result.rowCount ?? 0) > 0, botName, skillName });
+    } catch (err: any) {
+      jsonResponse(res, 500, { error: err?.message || 'Failed to unbind skill' });
+    }
+    return true;
+  }
+
+  // R13E: POST /api/skills/batch — batch enable/disable (body: { skillNames: string[], botName, enabled })
+  if (method === 'POST' && url === '/api/skills/batch') {
+    const body = await parseJsonBody(req);
+    const skillNames = Array.isArray(body.skillNames) ? body.skillNames : [];
+    const botName = body.botName as string;
+    const enabled = body.enabled !== false;
+    if (!botName || skillNames.length === 0) {
+      jsonResponse(res, 400, { error: 'botName and skillNames[] required' });
+      return true;
+    }
+    try {
+      const { pool } = await import('../../db/index.js');
+      // Build a batch upsert
+      let updated = 0;
+      for (const skillName of skillNames) {
+        await pool.query(
+          `INSERT INTO bot_skill_bindings (bot_name, skill_name, enabled, installed_at)
+           VALUES ($1, $2, $3, now())
+           ON CONFLICT (bot_name, skill_name) DO UPDATE SET enabled = $3, installed_at = now()`,
+          [botName, String(skillName), enabled],
+        );
+        updated++;
+      }
+      jsonResponse(res, 200, { updated, botName, enabled });
+    } catch (err: any) {
+      jsonResponse(res, 500, { error: err?.message || 'Batch update failed' });
     }
     return true;
   }
