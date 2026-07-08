@@ -1,309 +1,479 @@
-// /overview/diagnosis - 系统诊断
-// P10: 5+ real metrics + graceful empty state when backend not wired.
+"use client";
 
+// /overview/diagnosis — R14-E 真实健康度 + 动态刷新 + 优化建议并入
+//
+// 改造目标(用户原话):
+//   - "数字员工 0 / 系统健康度 80% 怎么算出来的" → 现在显示具体子项
+//   - "CPU 占用、API 平均延时 是不是动态" → 60s 自动重诊断 + 倒计时
+//   - "应该是核心功能健康" → 5 项: 系统服务/AI 大模型/知识库/任务/资源
+//   - "诊断是实时动态,还是标注时间" → 顶部显示 "诊断于 HH:MM:SS"
+//   - "优化建议应该和诊断放到一起" → 不健康项联动建议,出问题就给方案
+//
+// 后端契约: GET /api/v2/admin/diagnosis →
+//   { overallScore, checks[5], suggestions[], timestamp, nextCheckIn }
+
+import * as React from "react";
 import {
   Stethoscope,
   AlertTriangle,
-  Activity,
-  Bot,
   CheckCircle2,
   XCircle,
-  Clock,
-  Zap,
   Cpu,
   HardDrive,
-  Inbox,
+  Bot,
+  Zap,
+  RotateCw,
+  RefreshCw,
+  Lightbulb,
+  ArrowRight,
+  ServerCog,
+  Brain,
+  Database,
+  Workflow,
+  Activity,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { fetchAgents } from "../_components/data";
-import { KpiTile } from "../_components/kpi-tile";
-import { RagStatsSection } from "@/components/r10/sections";
+import { cn } from "@/lib/utils";
+import {
+  RadialBarChart,
+  RadialBar,
+  PolarAngleAxis,
+  ResponsiveContainer,
+} from "recharts";
 
-export const dynamic = "force-dynamic";
+// ─────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────
+type Status = "ok" | "warn" | "error";
 
-interface DiagnosisState {
-  totalAgents: number;
-  activeAgents: number;
-  inactiveAgents: number;
-  errorEvents: number;
-  recentActivity: number;
-  systemLoad: { cpu: number; memory: number; latencyMs: number };
-  checks: { id: string; label: string; status: "ok" | "warn" | "fail"; detail: string }[];
-  fetched: boolean;
+interface HealthCheck {
+  name: string;
+  status: Status;
+  value: string;
+  detail: string;
+  threshold: string;
 }
 
-async function loadDiagnosis(): Promise<DiagnosisState> {
-  // Try to pull the system health snapshot, gracefully fall back to derived
-  // numbers from existing endpoints.
-  let healthData: any = null;
-  try {
-    healthData = await api<any>("/api/v2/channels/health");
-  } catch {
-    healthData = null;
-  }
-  const agents = await fetchAgents();
-  const active = agents.filter((a) => a.status === "active").length;
-  const inactive = agents.length - active;
-  // Health checks: each derives from real backend reachability.
-  const checks: DiagnosisState["checks"] = [
-    {
-      id: "c1",
-      label: "API 网关",
-      status: "ok",
-      detail: `200 · ${agents.length > 0 ? `${agents.length} bots reachable` : "0 bots"}`,
-    },
-    {
-      id: "c2",
-      label: "Auth (Bearer)",
-      status: "ok",
-      detail: "accessToken 注入正常 · /api/auth/me 200",
-    },
-    {
-      id: "c3",
-      label: "Employees endpoint",
-      status: agents.length > 0 ? "ok" : "warn",
-      detail: agents.length > 0 ? `200 · ${agents.length} rows` : "200 · 0 rows",
-    },
-    {
-      id: "c4",
-      label: "LLM providers",
-      status: "ok",
-      detail: "5 provider_configs 全部连通",
-    },
-    {
-      id: "c5",
-      label: "MCP / OAuth / Routing",
-      status: "warn",
-      detail: "后端未实装对应端点 · 显示空状态",
-    },
-  ];
-  return {
-    totalAgents: agents.length,
-    activeAgents: active,
-    inactiveAgents: inactive,
-    errorEvents: 0,
-    recentActivity: 0,
-    systemLoad: { cpu: 18, memory: 42, latencyMs: 142 },
-    checks,
-    fetched: true,
-  };
+interface Suggestion {
+  impact: "high" | "medium" | "info";
+  target: string;
+  problem: string;
+  suggestion: string;
+  action: string | null;
 }
 
-export default async function DiagnosisPage() {
-  let data: DiagnosisState;
-  try {
-    data = await loadDiagnosis();
-  } catch {
-    data = {
-      totalAgents: 0,
-      activeAgents: 0,
-      inactiveAgents: 0,
-      errorEvents: 0,
-      recentActivity: 0,
-      systemLoad: { cpu: 0, memory: 0, latencyMs: 0 },
-      checks: [
-        { id: "c1", label: "API 网关", status: "fail", detail: "后端不响应" },
-      ],
-      fetched: false,
-    };
-  }
+interface DiagnosisData {
+  overallScore: number;
+  checks: HealthCheck[];
+  suggestions: Suggestion[];
+  timestamp: string;
+  nextCheckIn: number;
+}
 
-  const okCount = data.checks.filter((c) => c.status === "ok").length;
-  const warnCount = data.checks.filter((c) => c.status === "warn").length;
-  const failCount = data.checks.filter((c) => c.status === "fail").length;
-  const healthScore = data.checks.length === 0
-    ? 0
-    : Math.round((okCount * 100 + warnCount * 50) / data.checks.length);
+// ─────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────
+
+const ICON_FOR: Record<string, React.ComponentType<{ className?: string }>> = {
+  "系统服务": ServerCog,
+  "AI 大模型": Brain,
+  "知识库检索": Database,
+  "任务执行": Workflow,
+  "资源": Cpu,
+};
+
+function scoreHue(score: number): string {
+  if (score >= 80) return "text-emerald-600 dark:text-emerald-400";
+  if (score >= 60) return "text-amber-600 dark:text-amber-400";
+  return "text-rose-600 dark:text-rose-400";
+}
+
+function scoreFill(score: number): string {
+  if (score >= 80) return "#10b981"; // emerald-500
+  if (score >= 60) return "#f59e0b"; // amber-500
+  return "#f43f5e"; // rose-500
+}
+
+function statusBadge(status: Status): string {
+  if (status === "ok")
+    return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
+  if (status === "warn")
+    return "bg-amber-500/15 text-amber-700 dark:text-amber-300";
+  return "bg-rose-500/15 text-rose-700 dark:text-rose-300";
+}
+
+function StatusIcon({ status, className }: { status: Status; className?: string }) {
+  if (status === "ok") return <CheckCircle2 className={cn("size-4 text-emerald-600 dark:text-emerald-400", className)} />;
+  if (status === "warn") return <AlertTriangle className={cn("size-4 text-amber-600 dark:text-amber-400", className)} />;
+  return <XCircle className={cn("size-4 text-rose-600 dark:text-rose-400", className)} />;
+}
+
+function formatTimestamp(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString("zh-CN", {
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+    });
+  } catch {
+    return iso;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Main page
+// ─────────────────────────────────────────────────────────────
+
+export default function DiagnosisPage() {
+  const [data, setData] = React.useState<DiagnosisData | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [countdown, setCountdown] = React.useState(60);
+
+  const load = React.useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
+    setRefreshing(true);
+    try {
+      const r = await api<DiagnosisData>("/api/v2/admin/diagnosis");
+      setData(r);
+      setError(null);
+      setCountdown(r.nextCheckIn ?? 60);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "诊断失败");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  // 初次加载
+  React.useEffect(() => {
+    void load();
+  }, [load]);
+
+  // 倒计时 + 自动刷新
+  React.useEffect(() => {
+    if (!data) return;
+    const id = setInterval(() => {
+      setCountdown((c) => {
+        if (c <= 1) {
+          // 触发静默重诊断
+          void load({ silent: true });
+          return data.nextCheckIn ?? 60;
+        }
+        return c - 1;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [data, load]);
 
   return (
     <div className="space-y-8">
-      <Header
-        ok={okCount}
-        warn={warnCount}
-        fail={failCount}
-        score={healthScore}
-      />
-
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <KpiTile
-          icon={Bot}
-          label="数字员工"
-          value={String(data.totalAgents)}
-          hint={`${data.activeAgents} active · ${data.inactiveAgents} inactive`}
-          hue="emerald"
-        />
-        <KpiTile
-          icon={Activity}
-          label="系统健康度"
-          value={`${healthScore}/100`}
-          hint={`${okCount} ok · ${warnCount} warn · ${failCount} fail`}
-          hue={healthScore > 80 ? "emerald" : healthScore > 50 ? "amber" : "rose"}
-        />
-        <KpiTile
-          icon={Cpu}
-          label="CPU 占用"
-          value={`${data.systemLoad.cpu}%`}
-          hint="实时负载"
-          hue={data.systemLoad.cpu > 80 ? "rose" : "emerald"}
-        />
-        <KpiTile
-          icon={Clock}
-          label="API 平均延迟"
-          value={`${data.systemLoad.latencyMs} ms`}
-          hint="p50, 近 60s"
-          hue="sky"
-        />
-      </div>
-
-      <section className="space-y-3">
-        <h2 className="text-[13px] font-semibold tracking-tight text-foreground/80">
-          健康度检查 · {data.checks.length} 项
-        </h2>
-        <div className="overflow-hidden rounded-3xl ring-1 ring-border">
-          <ul className="divide-y divide-border bg-card">
-            {data.checks.map((c) => (
-              <li
-                key={c.id}
-                className="flex items-center justify-between gap-4 px-5 py-3.5"
-              >
-                <div className="flex items-center gap-3">
-                  {c.status === "ok" ? (
-                    <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" />
-                  ) : c.status === "warn" ? (
-                    <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400" />
-                  ) : (
-                    <XCircle className="size-4 text-rose-600 dark:text-rose-400" />
-                  )}
-                  <div>
-                    <div className="text-[13.5px] font-medium">{c.label}</div>
-                    <div className="font-mono text-[11px] text-foreground/55">
-                      {c.detail}
-                    </div>
-                  </div>
-                </div>
-                <span
-                  className={
-                    "rounded-sm px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide " +
-                    (c.status === "ok"
-                      ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                      : c.status === "warn"
-                      ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
-                      : "bg-rose-500/15 text-rose-700 dark:text-rose-300")
-                  }
-                >
-                  {c.status}
-                </span>
-              </li>
-            ))}
-          </ul>
+      {/* ─────── 顶部:标题 + 时间戳 + 手动刷新 ─────── */}
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="flex items-center gap-2 text-[18px] font-semibold tracking-tight">
+            <Stethoscope className="size-5 text-foreground/70" />
+            系统诊断
+          </h1>
+          <p className="mt-1 text-[12px] text-foreground/55">
+            {data ? (
+              <>
+                诊断于 <span className="font-mono">{formatTimestamp(data.timestamp)}</span>
+                <span className="mx-2 text-foreground/30">·</span>
+                下次自动诊断 <span className="font-mono">{countdown}s</span>
+              </>
+            ) : (
+              <>正在采集系统健康数据…</>
+            )}
+          </p>
         </div>
-      </section>
-
-      <section className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-3xl bg-card p-6 ring-1 ring-border">
-          <div className="mb-3 flex items-center gap-2">
-            <HardDrive className="size-4 text-muted-foreground" />
-            <h3 className="text-[13px] font-semibold tracking-tight">资源占用</h3>
-          </div>
-          <Meter label="CPU" value={data.systemLoad.cpu} max={100} />
-          <Meter label="Memory" value={data.systemLoad.memory} max={100} />
-          <Meter label="请求队列" value={Math.min(data.systemLoad.cpu * 1.2, 100)} max={100} />
-        </div>
-        <div className="rounded-3xl bg-card p-6 ring-1 ring-border">
-          <div className="mb-3 flex items-center gap-2">
-            <Zap className="size-4 text-muted-foreground" />
-            <h3 className="text-[13px] font-semibold tracking-tight">最近事件</h3>
-          </div>
-          {data.fetched ? (
-            <ul className="space-y-2 text-[13px]">
-              <li className="flex items-center justify-between rounded-2xl bg-muted/30 px-4 py-2.5">
-                <span className="font-mono text-[12px] text-foreground/75">system.snapshot</span>
-                <span className="font-mono text-[11px] text-foreground/45">just now</span>
-              </li>
-              <li className="flex items-center justify-between rounded-2xl bg-muted/30 px-4 py-2.5">
-                <span className="font-mono text-[12px] text-foreground/75">health.check</span>
-                <span className="font-mono text-[11px] text-foreground/45">1m ago</span>
-              </li>
-              <li className="flex items-center justify-between rounded-2xl bg-muted/30 px-4 py-2.5">
-                <span className="font-mono text-[12px] text-foreground/75">agents.rescan</span>
-                <span className="font-mono text-[11px] text-foreground/45">3m ago</span>
-              </li>
-            </ul>
-          ) : (
-            <EmptyEvents />
+        <button
+          type="button"
+          onClick={() => void load()}
+          disabled={refreshing || loading}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-1.5 text-[12px] font-medium transition",
+            "hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed",
           )}
-        </div>
-      </section>
+        >
+          <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
+          {refreshing ? "诊断中…" : "立即诊断"}
+        </button>
+      </header>
 
-      <RagStatsSection />
+      {loading ? (
+        <SkeletonDiagnosis />
+      ) : error ? (
+        <ErrorState message={error} onRetry={() => void load()} />
+      ) : data ? (
+        <>
+          {/* ─────── 综合健康分(圆环) ─────── */}
+          <OverallScoreCard
+            score={data.overallScore}
+            timestamp={data.timestamp}
+            okCount={data.checks.filter((c) => c.status === "ok").length}
+            warnCount={data.checks.filter((c) => c.status === "warn").length}
+            errCount={data.checks.filter((c) => c.status === "error").length}
+          />
+
+          {/* ─────── 5 项核心健康(横向 meter) ─────── */}
+          <section className="space-y-3">
+            <h2 className="text-[13px] font-semibold tracking-tight text-foreground/80">
+              核心功能健康度 · {data.checks.length} 项
+            </h2>
+            <div className="overflow-hidden rounded-3xl ring-1 ring-border">
+              <ul className="divide-y divide-border bg-card">
+                {data.checks.map((c) => {
+                  const Icon = ICON_FOR[c.name] ?? Activity;
+                  return (
+                    <li key={c.name} className="px-5 py-3.5">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <Icon className="size-4 text-foreground/55 shrink-0" />
+                          <div className="min-w-0">
+                            <div className="text-[13.5px] font-medium">{c.name}</div>
+                            <div className="font-mono text-[11px] text-foreground/55 truncate">
+                              {c.detail}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="font-mono text-[12px] text-foreground/80">{c.value}</span>
+                          <StatusIcon status={c.status} />
+                          <span
+                            className={cn(
+                              "rounded-sm px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide",
+                              statusBadge(c.status),
+                            )}
+                          >
+                            {c.status}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="mt-2 ml-7 font-mono text-[10.5px] text-foreground/40">
+                        阈值 {c.threshold}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </section>
+
+          {/* ─────── 优化建议(并入自 /optimization) ─────── */}
+          <OptimizationSection suggestions={data.suggestions} />
+        </>
+      ) : null}
     </div>
   );
 }
 
-function Header({
-  ok,
-  warn,
-  fail,
+// ─────────────────────────────────────────────────────────────
+// Sub-components
+// ─────────────────────────────────────────────────────────────
+
+function OverallScoreCard({
   score,
+  timestamp,
+  okCount,
+  warnCount,
+  errCount,
 }: {
-  ok: number;
-  warn: number;
-  fail: number;
   score: number;
+  timestamp: string;
+  okCount: number;
+  warnCount: number;
+  errCount: number;
 }) {
+  const data = [
+    {
+      name: "score",
+      value: score,
+      fill: scoreFill(score),
+    },
+  ];
   return (
-    <header className="flex flex-wrap items-end justify-between gap-6 border-b border-border pb-7">
-      <div className="space-y-3">
-        <div className="flex items-center gap-2 text-[10.5px] font-mono uppercase tracking-[0.22em] text-foreground/45">
-          <Stethoscope className="size-3.5" />
-          系统诊断 · IA v6
+    <section className="relative overflow-hidden rounded-3xl ring-1 ring-border bg-card">
+      <div className="grid gap-6 p-6 md:grid-cols-[260px_1fr] md:items-center">
+        {/* 圆环 */}
+        <div className="relative mx-auto h-[200px] w-[200px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <RadialBarChart
+              innerRadius="76%"
+              outerRadius="100%"
+              data={data}
+              startAngle={90}
+              endAngle={90 - 360 * (score / 100)}
+            >
+              <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
+              <RadialBar
+                background={{ fill: "var(--border, #e5e7eb)" }}
+                dataKey="value"
+                cornerRadius={12}
+              />
+            </RadialBarChart>
+          </ResponsiveContainer>
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <div className={cn("text-[44px] font-bold leading-none tabular-nums", scoreHue(score))}>
+              {score}
+            </div>
+            <div className="mt-1 text-[11px] uppercase tracking-wider text-foreground/50">
+              / 100
+            </div>
+          </div>
         </div>
-        <h1 className="text-5xl font-semibold tracking-tighter leading-[1.02] max-w-[16ch]">
-          系统健康度
-        </h1>
-        <p className="max-w-[55ch] text-[15px] leading-relaxed text-foreground/65">
-          实时检查 API 网关、Auth、员工注册、LLM provider 健康度。
-          任何一个降级都会在这里反映,搭配告警通道使用。
-        </p>
+
+        {/* 状态摘要 */}
+        <div className="space-y-4">
+          <div>
+            <div className="text-[11px] uppercase tracking-wider text-foreground/50">
+              综合健康分
+            </div>
+            <div className={cn("mt-0.5 text-[20px] font-semibold", scoreHue(score))}>
+              {score >= 80 ? "系统运行健康" : score >= 60 ? "存在需要关注的项" : "存在严重问题"}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <StatPill label="正常" value={okCount} tone="emerald" />
+            <StatPill label="警告" value={warnCount} tone="amber" />
+            <StatPill label="异常" value={errCount} tone="rose" />
+          </div>
+
+          <div className="text-[11.5px] text-foreground/55">
+            加权: 系统 25% · AI 30% · 知识库 20% · 任务 20% · 资源 5%
+          </div>
+        </div>
       </div>
-      <div className="hidden lg:flex shrink-0 flex-col items-end gap-2 text-right">
-        <span className="text-[10.5px] font-mono uppercase tracking-[0.22em] text-foreground/40">
-          score
-        </span>
-        <span className="font-mono text-3xl font-semibold tabular-nums">{score}</span>
-        <span className="font-mono text-[10.5px] text-foreground/45">
-          {ok} ok · {warn} warn · {fail} fail
-        </span>
-      </div>
-    </header>
+    </section>
   );
 }
 
-function Meter({ label, value, max }: { label: string; value: number; max: number }) {
-  const pct = Math.round((value / max) * 100);
-  const tone =
-    pct > 80 ? "bg-rose-500" : pct > 60 ? "bg-amber-500" : "bg-emerald-500";
+function StatPill({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: "emerald" | "amber" | "rose";
+}) {
+  const tones = {
+    emerald: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 ring-emerald-500/20",
+    amber: "bg-amber-500/10 text-amber-700 dark:text-amber-300 ring-amber-500/20",
+    rose: "bg-rose-500/10 text-rose-700 dark:text-rose-300 ring-rose-500/20",
+  };
   return (
-    <div className="mb-3 last:mb-0">
-      <div className="mb-1.5 flex items-center justify-between text-[12px]">
-        <span className="text-foreground/65">{label}</span>
-        <span className="font-mono tabular-nums text-foreground/80">{pct}%</span>
-      </div>
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted/60">
-        <div
-          className={"h-full rounded-full transition-all " + tone}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
+    <div className={cn("rounded-xl px-3 py-2 ring-1", tones[tone])}>
+      <div className="text-[18px] font-bold tabular-nums leading-none">{value}</div>
+      <div className="mt-1 text-[10.5px] uppercase tracking-wider opacity-80">{label}</div>
     </div>
   );
 }
 
-function EmptyEvents() {
+function OptimizationSection({ suggestions }: { suggestions: Suggestion[] }) {
+  const hasIssue = suggestions.some((s) => s.impact !== "info");
   return (
-    <div className="flex flex-col items-center gap-2 py-10 text-center">
-      <Inbox className="size-5 text-foreground/35" />
-      <p className="text-[13px] text-foreground/55">暂无最近事件</p>
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-[13px] font-semibold tracking-tight text-foreground/80">
+          优化建议 · {suggestions.length} 条 {hasIssue ? "" : "(全健康)"}
+        </h2>
+        {!hasIssue && (
+          <span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[11px] text-emerald-700 dark:text-emerald-300">
+            所有系统运行正常
+          </span>
+        )}
+      </div>
+      <ul className="space-y-2.5">
+        {suggestions.map((s, i) => {
+          const tone =
+            s.impact === "high" ? "rose" :
+            s.impact === "medium" ? "amber" : "emerald";
+          const ring =
+            s.impact === "high" ? "ring-rose-500/20 bg-rose-500/[0.04]" :
+            s.impact === "medium" ? "ring-amber-500/20 bg-amber-500/[0.04]" :
+            "ring-emerald-500/20 bg-emerald-500/[0.04]";
+          const label =
+            s.impact === "high" ? "高影响" :
+            s.impact === "medium" ? "中影响" : "信息";
+          const labelColor =
+            s.impact === "high" ? "bg-rose-500/15 text-rose-700 dark:text-rose-300" :
+            s.impact === "medium" ? "bg-amber-500/15 text-amber-700 dark:text-amber-300" :
+            "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
+          return (
+            <li
+              key={`${s.target}-${i}`}
+              className={cn("rounded-2xl p-4 ring-1", ring)}
+            >
+              <div className="flex items-start gap-3">
+                <Lightbulb
+                  className={cn(
+                    "size-4 mt-0.5 shrink-0",
+                    tone === "rose" && "text-rose-600 dark:text-rose-400",
+                    tone === "amber" && "text-amber-600 dark:text-amber-400",
+                    tone === "emerald" && "text-emerald-600 dark:text-emerald-400",
+                  )}
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[13.5px] font-medium">{s.target}</span>
+                    <span className={cn("rounded-sm px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide", labelColor)}>
+                      {label}
+                    </span>
+                  </div>
+                  {s.problem && (
+                    <div className="mt-1 font-mono text-[11px] text-foreground/55">
+                      问题: {s.problem}
+                    </div>
+                  )}
+                  <div className="mt-1.5 text-[12.5px] text-foreground/80">
+                    {s.suggestion}
+                  </div>
+                  {s.action && (
+                    <a
+                      href={s.action}
+                      className="mt-2 inline-flex items-center gap-1 text-[11.5px] font-medium text-foreground/70 hover:text-foreground hover:underline"
+                    >
+                      去修复 <ArrowRight className="size-3" />
+                    </a>
+                  )}
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+function SkeletonDiagnosis() {
+  return (
+    <div className="space-y-6 animate-pulse">
+      <div className="h-[260px] rounded-3xl bg-muted/40" />
+      <div className="h-[200px] rounded-3xl bg-muted/40" />
+      <div className="h-[120px] rounded-3xl bg-muted/40" />
+    </div>
+  );
+}
+
+function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="rounded-3xl ring-1 ring-rose-500/20 bg-rose-500/[0.04] p-8 text-center">
+      <AlertTriangle className="mx-auto size-6 text-rose-600 dark:text-rose-400" />
+      <div className="mt-2 text-[14px] font-medium">诊断失败</div>
+      <div className="mt-1 font-mono text-[11.5px] text-foreground/55">{message}</div>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-1.5 text-[12px] font-medium hover:bg-accent"
+      >
+        <RotateCw className="size-3.5" />
+        重试
+      </button>
     </div>
   );
 }
