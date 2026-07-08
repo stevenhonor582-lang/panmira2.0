@@ -147,6 +147,192 @@ export async function handleEmployeesRoutes(
     }
   }
 
+  // POST /api/v2/employees/test-config — R17-3 发布前测试
+  // 检查 model/skills/mcp/kb/folders/channels 引用是否有效
+  if (method === 'POST' && u.pathname === '/api/v2/employees/test-config') {
+    if (!requireAnyScope(ctx, ['agent:read', 'agent:admin', '*'])) {
+      jsonResponse(res, 403, fail('forbidden', '需要 agent:read 或 agent:admin'));
+      return true;
+    }
+    try {
+      const body = await parseJsonBody(req);
+      const providerId = typeof body?.providerId === 'string' ? body.providerId : '';
+      const providerModel = typeof body?.providerModel === 'string' ? body.providerModel : '';
+      const skillIds: string[] = Array.isArray(body?.skillIds) ? body.skillIds.filter((x) => typeof x === 'string') : [];
+      const mcpServerIds: string[] = Array.isArray(body?.mcpServerIds) ? body.mcpServerIds.filter((x) => typeof x === 'string') : [];
+      const kbFolderIds: string[] = Array.isArray(body?.kbFolderIds) ? body.kbFolderIds.filter((x) => typeof x === 'string') : [];
+      const knowledgeBaseIds: string[] = Array.isArray(body?.knowledgeBaseIds) ? body.knowledgeBaseIds.filter((x) => typeof x === 'string') : [];
+      const channelIds: string[] = Array.isArray(body?.channelIds) ? body.channelIds.filter((x) => typeof x === 'string') : [];
+
+      const results: Array<{ category: string; item: string; key: string; ok: boolean; detail: string }> = [];
+
+      // 1) 模型 / Provider — provider_configs
+      if (providerId) {
+        try {
+          const r = await pool.query(
+            `SELECT id, name, model, api_key_encrypted, base_url FROM provider_configs WHERE id = $1`,
+            [providerId],
+          );
+          if (r.rows.length === 0) {
+            results.push({ category: 'model', item: '模型', key: `model:${providerId}`, ok: false, detail: `provider_configs.id=${providerId} 不存在(可能已被删除)` });
+          } else {
+            const row = r.rows[0] as { name: string; model: string; api_key_encrypted: string | null; base_url: string };
+            const hasKey = !!row.api_key_encrypted && row.api_key_encrypted.length > 0;
+            const okModel = !!row.model;
+            const okFlag = hasKey && okModel;
+            const bits: string[] = [];
+            if (okModel) bits.push(`model=${row.model}`);
+            if (hasKey) bits.push('api_key 已配置');
+            else bits.push('⚠ api_key 未配置');
+            if (row.base_url) bits.push(`base_url=${row.base_url}`);
+            results.push({
+              category: 'model',
+              item: `模型 · ${row.name || providerModel || providerId}`,
+              key: `model:${providerId}`,
+              ok: okFlag,
+              detail: bits.join(' · '),
+            });
+          }
+        } catch (e) {
+          results.push({ category: 'model', item: '模型', key: `model:${providerId}`, ok: false, detail: `查询失败: ${String(e)}` });
+        }
+      } else {
+        results.push({ category: 'model', item: '模型', key: 'model', ok: false, detail: '未选择 provider(回到 Step 2 选模型)' });
+      }
+
+      // 2) 技能 — skills (按 id 或 name)
+      for (const sid of skillIds) {
+        try {
+          const r = await pool.query(
+            `SELECT id, name, description FROM skills WHERE id::text = $1 OR name = $2`,
+            [sid, sid],
+          );
+          if (r.rows.length === 0) {
+            results.push({ category: 'skill', item: `技能 · ${sid}`, key: `skill:${sid}`, ok: false, detail: '未找到(可能已被删除或重命名)' });
+          } else {
+            const row = r.rows[0] as { name: string; description: string };
+            const desc = row.description ? ` · ${row.description.slice(0, 40)}` : '';
+            results.push({ category: 'skill', item: `技能 · ${row.name}`, key: `skill:${sid}`, ok: true, detail: `已加载${desc}` });
+          }
+        } catch (e) {
+          results.push({ category: 'skill', item: `技能 · ${sid}`, key: `skill:${sid}`, ok: false, detail: `查询失败: ${String(e)}` });
+        }
+      }
+
+      // 3) MCP servers — mcp_servers
+      for (const mid of mcpServerIds) {
+        try {
+          const r = await pool.query(
+            `SELECT id, name, url, transport, health_status FROM mcp_servers WHERE id::text = $1`,
+            [mid],
+          );
+          if (r.rows.length === 0) {
+            results.push({ category: 'mcp', item: `MCP · ${mid}`, key: `mcp:${mid}`, ok: false, detail: '未找到' });
+          } else {
+            const row = r.rows[0] as { name: string; url: string; transport: string; health_status: string };
+            const healthOk = row.health_status === 'ok' || row.health_status === 'healthy' || row.health_status === 'unknown';
+            results.push({
+              category: 'mcp',
+              item: `MCP · ${row.name}`,
+              key: `mcp:${mid}`,
+              ok: healthOk,
+              detail: `transport=${row.transport} · health=${row.health_status} · url=${row.url || '(未配置)'}`,
+            });
+          }
+        } catch (e) {
+          results.push({ category: 'mcp', item: `MCP · ${mid}`, key: `mcp:${mid}`, ok: false, detail: `查询失败: ${String(e)}` });
+        }
+      }
+
+      // 4) 知识文件夹 — folders
+      for (const fid of kbFolderIds) {
+        try {
+          const r = await pool.query(`SELECT id, name, path FROM folders WHERE id = $1`, [fid]);
+          if (r.rows.length === 0) {
+            results.push({ category: 'folder', item: `文件夹 · ${fid}`, key: `folder:${fid}`, ok: false, detail: '未找到' });
+          } else {
+            const row = r.rows[0] as { name: string; path: string };
+            results.push({ category: 'folder', item: `文件夹 · ${row.name}`, key: `folder:${fid}`, ok: true, detail: `path=${row.path}` });
+          }
+        } catch (e) {
+          results.push({ category: 'folder', item: `文件夹 · ${fid}`, key: `folder:${fid}`, ok: false, detail: `查询失败: ${String(e)}` });
+        }
+      }
+
+      // 5) 知识库 — knowledge_bases
+      for (const kid of knowledgeBaseIds) {
+        try {
+          const r = await pool.query(
+            `SELECT kb.id, kb.name, kb.index_status, COUNT(d.id)::int AS docs
+             FROM knowledge_bases kb
+             LEFT JOIN documents d ON d.kb_id = kb.id::text OR d.knowledge_base_id = kb.id::text
+             WHERE kb.id::text = $1
+             GROUP BY kb.id, kb.name, kb.index_status`,
+            [kid],
+          );
+          if (r.rows.length === 0) {
+            results.push({ category: 'kb', item: `知识库 · ${kid}`, key: `kb:${kid}`, ok: false, detail: '未找到' });
+          } else {
+            const row = r.rows[0] as { name: string; index_status: string; docs: number };
+            const okIdx = row.index_status === 'ready' || row.index_status === 'indexed';
+            results.push({
+              category: 'kb',
+              item: `知识库 · ${row.name}`,
+              key: `kb:${kid}`,
+              ok: okIdx,
+              detail: `${row.docs} 文档 · index=${row.index_status}`,
+            });
+          }
+        } catch (e) {
+          results.push({ category: 'kb', item: `知识库 · ${kid}`, key: `kb:${kid}`, ok: false, detail: `查询失败: ${String(e)}` });
+        }
+      }
+
+      // 6) 频道绑定 — bot_configs (channelIds 实际上是 agent id 列表)
+      for (const cid of channelIds) {
+        try {
+          const r = await pool.query(
+            `SELECT a.id, a.name, a.status, b.id AS bot_id, b.platform, b.is_active
+             FROM agents a
+             LEFT JOIN bot_configs b ON b.bot_id::text = a.id::text
+             WHERE a.id::text = $1`,
+            [cid],
+          );
+          if (r.rows.length === 0) {
+            results.push({ category: 'channel', item: `频道 · ${cid}`, key: `channel:${cid}`, ok: false, detail: 'agent 未找到' });
+          } else {
+            const row = r.rows[0] as { name: string; status: string; bot_id: string | null; platform: string | null; is_active: boolean | null };
+            if (!row.bot_id) {
+              results.push({ category: 'channel', item: `频道 · ${row.name}`, key: `channel:${cid}`, ok: false, detail: 'agent 未绑定 bot_config(去频道页绑定)' });
+            } else if (!row.is_active) {
+              results.push({ category: 'channel', item: `频道 · ${row.name}`, key: `channel:${cid}`, ok: false, detail: `platform=${row.platform} · bot 已禁用` });
+            } else {
+              results.push({ category: 'channel', item: `频道 · ${row.name}`, key: `channel:${cid}`, ok: true, detail: `platform=${row.platform} · 已激活` });
+            }
+          }
+        } catch (e) {
+          results.push({ category: 'channel', item: `频道 · ${cid}`, key: `channel:${cid}`, ok: false, detail: `查询失败: ${String(e)}` });
+        }
+      }
+
+      const okCount = results.filter((r) => r.ok).length;
+      const failCount = results.length - okCount;
+      jsonResponse(res, 200, ok({
+        results,
+        summary: {
+          ok: okCount,
+          fail: failCount,
+          total: results.length,
+          allOk: failCount === 0,
+        },
+      }));
+      return true;
+    } catch (e) {
+      jsonResponse(res, 500, fail('internal_error', String(e)));
+      return true;
+    }
+  }
+
   // POST /api/v2/employees/from-template — 从模板复制创建独立 agent 实例
   if (method === 'POST' && u.pathname === '/api/v2/employees/from-template') {
     if (!requireAnyScope(ctx, ['agent:admin', '*'])) {
