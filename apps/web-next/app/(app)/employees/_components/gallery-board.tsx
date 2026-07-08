@@ -110,13 +110,15 @@ export function GalleryBoard() {
   const templatesCount = agents.filter((a) => a.isTemplate).length;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <Header
         instancesCount={instancesCount}
         templatesCount={templatesCount}
         loading={loading}
         boardTab={boardTab}
       />
+
+      <RoleLegend activeRole={filter.role === "all" ? null : filter.role} onPickRole={(r) => setFilter({ ...filter, role: r })} />
 
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="inline-flex items-center gap-1 rounded-full bg-muted/40 p-1 ring-1 ring-border">
@@ -241,6 +243,8 @@ function BoardTabButton({
   );
 }
 
+// R17-3: 平级卡片网格 — 统一尺寸,不再有 feature/tall/wide 大卡
+// 用户反馈:"一个特别大一个很长,造成错觉"
 function AsymGrid({
   agents, mounted, onChanged, boardTab,
 }: {
@@ -249,32 +253,20 @@ function AsymGrid({
   onChanged: () => void;
   boardTab: BoardTab;
 }) {
-  const layout: AgentCardSize[] = [
-    "feature", "regular", "compact", "regular", "tall", "wide", "regular", "compact",
-  ];
-
   return (
-    <div className="grid auto-rows-[180px] grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
       {agents.map((a, i) => (
         <div
           key={a.id}
           className={
-            "transition-all duration-500 ease-out " +
-            (mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4") +
-            " " +
-            (layout[i] === "feature"
-              ? "col-span-2 row-span-2"
-              : layout[i] === "wide"
-              ? "col-span-2"
-              : layout[i] === "tall"
-              ? "row-span-2"
-              : "")
+            "h-[280px] transition-all duration-500 ease-out " +
+            (mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4")
           }
-          style={{ transitionDelay: mounted ? `${i * 50}ms` : "0ms" }}
+          style={{ transitionDelay: mounted ? `${Math.min(i, 12) * 40}ms` : "0ms" }}
         >
           <AgentCard
             agent={a}
-            size={layout[i]}
+            size="regular"
             showManageActions
             onChanged={onChanged}
             isTemplateTab={boardTab === "templates"}
@@ -285,13 +277,90 @@ function AsymGrid({
   );
 }
 
+// 角色分工说明区 — 用户反馈:"角色分工几大类没看明白,从哪定义的?"
+const ROLE_GROUPS: { key: string; label: string; desc: string; glyph: string; hue: string }[] = [
+  { key: "full-stack-engineer",    label: "全栈工程师",  desc: "端到端开发,不传递任务",          glyph: "工", hue: "amber" },
+  { key: "copywriting-secretary",  label: "内容创作",    desc: "文案 / PPT / 方案 / 文档管家",    glyph: "文", hue: "rose" },
+  { key: "ops-engineer",           label: "运维部署",    desc: "部署 / 监控 / 24x7 / 可回滚",      glyph: "运", hue: "teal" },
+  { key: "customer-support",       label: "客服支持",    desc: "客户对接 / 情绪先行 / 升级同步",   glyph: "客", hue: "sky" },
+  { key: "research-analyst",       label: "调研分析",    desc: "多源交叉 / 结论附来源",           glyph: "研", hue: "indigo" },
+  { key: "test-bot",               label: "测试验证",    desc: "E2E 测试 / 回归守护",             glyph: "测", hue: "lime" },
+  { key: "general",                label: "通用对话",    desc: "基础对话 / 未分类角色",           glyph: "通", hue: "violet" },
+  { key: "engineering",            label: "工程(legacy)",desc: "历史保留,等同 full-stack",        glyph: "E",  hue: "zinc" },
+];
+
+function RoleLegend({
+  activeRole,
+  onPickRole,
+}: {
+  activeRole: string | null;
+  onPickRole: (r: string) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <section className="rounded-2xl border border-border bg-card/40 backdrop-blur-sm">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left"
+        aria-expanded={open}
+      >
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-foreground/45">角色分工 · 几大类</span>
+          <span className="text-[12px] text-foreground/60">从哪定义? — <code className="font-mono text-[11px] text-foreground/75">agents.role_template</code></span>
+        </div>
+        <span className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-foreground/45">
+          {open ? "收起 −" : "展开 +"}
+        </span>
+      </button>
+      {open && (
+        <div className="border-t border-border px-4 py-3">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {ROLE_GROUPS.map((r) => {
+              const on = activeRole === r.key;
+              return (
+                <button
+                  key={r.key}
+                  type="button"
+                  onClick={() => onPickRole(on ? "all" : r.key)}
+                  className={
+                    "group flex items-start gap-2.5 rounded-xl px-2.5 py-2 text-left text-[12px] ring-1 transition-all " +
+                    (on
+                      ? "bg-foreground/[0.04] ring-foreground/30"
+                      : "bg-background/40 ring-border hover:ring-foreground/20")
+                  }
+                >
+                  <span className={"mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold bg-" + r.hue + "-100 dark:bg-" + r.hue + "-900/40 text-" + r.hue + "-700 dark:text-" + r.hue + "-300"}>
+                    {r.glyph}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-medium text-foreground/85">{r.label}</span>
+                    <span className="block truncate font-mono text-[10.5px] text-foreground/45">{r.key}</span>
+                    <span className="mt-0.5 block text-[11px] leading-snug text-foreground/65">{r.desc}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-3 border-t border-border pt-2.5 text-[11px] text-foreground/55">
+            <span className="font-mono text-foreground/45">说明 ·</span>{" "}
+            <span className="text-foreground/75">主理人</span> 是这个员工的归属者(等同于 owner);
+            <span className="text-foreground/75"> 模板</span> 标记表示当前是模板(可被复制派生实例),没有"主理(系统模板)"这一概念。
+            点上面任一角色可快速筛选。
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function LoadingGrid() {
   return (
-    <div className="grid auto-rows-[180px] grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-      {Array.from({ length: 6 }).map((_, i) => (
+    <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+      {Array.from({ length: 10 }).map((_, i) => (
         <div
           key={i}
-          className="col-span-1 row-span-1 rounded-3xl bg-muted/40 ring-1 ring-border animate-pulse"
+          className="h-[280px] rounded-3xl bg-muted/40 ring-1 ring-border animate-pulse"
         />
       ))}
     </div>

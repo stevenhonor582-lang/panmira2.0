@@ -89,7 +89,7 @@ export function FilterBar({
             </Pill>
           ))}
         </Group>
-        <Group label="主理">
+        <Group label="主理人">
           <Pill active={value.owner === "all"} onClick={() => set("owner", "all")}>全部</Pill>
           {facets.owners.map(([o, n]) => (
             <Pill key={o} active={value.owner === o} onClick={() => set("owner", o)}>

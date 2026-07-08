@@ -28,6 +28,8 @@ const ROLE_LABEL: Record<string, string> = {
   "research-analyst": "调研分析",
 };
 
+// R17-3: 卡片统一尺寸 — 不再有 feature/tall/wide 区分
+// 保留 AgentCardSize 类型仅为向后兼容,所有尺寸渲染相同内容
 export type AgentCardSize = "feature" | "tall" | "wide" | "regular" | "compact";
 
 export function AgentCard({
@@ -43,6 +45,7 @@ export function AgentCard({
   onChanged?: () => void;
   isTemplateTab?: boolean;
 }) {
+  // 静默忽略 size —— 所有卡片渲染相同布局(用户反馈:平级排列)
   const ref = React.useRef<HTMLAnchorElement>(null);
   const router = useRouter();
   const [hover, setHover] = React.useState(false);
@@ -68,13 +71,7 @@ export function AgentCard({
 
   const roleLabel = ROLE_LABEL[agent.role] ?? agent.role;
   const t = statusTone(agent.status);
-
-  const avatarSize =
-    size === "feature" || size === "tall"
-      ? "xl"
-      : size === "compact"
-      ? "sm"
-      : "md";
+  const avatarSize = "md"; // 统一中尺寸头像
 
   const onAction = async (e: React.MouseEvent, action: "pause" | "activate" | "deprecate" | "toTemplate" | "toInstance") => {
     e.preventDefault();
@@ -185,7 +182,7 @@ export function AgentCard({
         </div>
       )}
 
-      <div className="relative flex h-full w-full flex-col p-6">
+      <div className="relative flex h-full w-full flex-col p-5">
         <div className="flex items-start justify-between gap-3">
           <AvatarMark glyph={agent.glyph} hue={agent.hue} size={avatarSize} />
           <div className="flex items-center gap-1.5 text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/60">
@@ -193,54 +190,50 @@ export function AgentCard({
             {t.label}
             {agent.isTemplate && (
               <span className="ml-1 rounded bg-foreground/10 px-1.5 py-0.5 text-[9.5px] tracking-[0.18em] text-foreground/70">
-                TPL
+                模板
               </span>
             )}
           </div>
         </div>
 
-        <div className="mt-auto flex flex-col gap-3">
+        <div className="mt-auto flex flex-col gap-2.5">
           <div>
             <div className="flex items-baseline gap-2">
-              <h3 className={cn("font-semibold tracking-tight leading-tight", size === "feature" ? "text-3xl" : size === "tall" ? "text-2xl" : "text-xl")}>
+              <h3 className="font-semibold tracking-tight leading-tight text-xl">
                 {agent.displayName || agent.name}
               </h3>
               <span className="text-xs font-mono text-foreground/40">v{agent.version}</span>
             </div>
-            <p className="mt-1 text-xs text-foreground/55 font-mono">{roleLabel} · {agent.complexity}</p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <span className="inline-flex items-center rounded-md bg-foreground/[0.06] px-2 py-0.5 text-[10.5px] font-medium text-foreground/75 ring-1 ring-inset ring-foreground/10">
+                {roleLabel}
+              </span>
+              <span className="text-[10.5px] font-mono text-foreground/45">{agent.complexity}</span>
+            </div>
           </div>
 
-          <p className={cn(
-            "text-foreground/75 leading-relaxed",
-            size === "feature"
-              ? "text-base line-clamp-5"
-              : size === "wide"
-              ? "text-sm line-clamp-3"
-              : size === "compact"
-              ? "text-xs line-clamp-2"
-              : "text-sm line-clamp-3",
-          )}>
+          <p className="text-foreground/75 leading-relaxed text-[13px] line-clamp-3">
             {agent.persona || agent.description || <span className="text-foreground/40">暂无人格定义</span>}
           </p>
 
-          {size !== "compact" && (
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-foreground/55 font-mono">
-              <span>{agent.model}</span>
-              <span>·</span>
-              <span>{(agent.contextWindow / 1000).toFixed(0)}k ctx</span>
-              {agent.workingDir && (
-                <>
-                  <span>·</span>
-                  <span title={agent.workingDir}>📁 {agent.workingDir.split("/").pop()}</span>
-                </>
-              )}
-            </div>
-          )}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-foreground/55 font-mono">
+            <span className="truncate">{agent.model}</span>
+            <span className="text-foreground/30">·</span>
+            <span>{(agent.contextWindow / 1000).toFixed(0)}k ctx</span>
+            {agent.workingDir && (
+              <>
+                <span className="text-foreground/30">·</span>
+                <span title={agent.workingDir} className="truncate">📁 {agent.workingDir.split("/").pop()}</span>
+              </>
+            )}
+          </div>
 
-          <div className="flex items-center justify-between text-[11px] text-foreground/45 font-mono">
-            <span>主理 · {agent.ownerName}</span>
-            <span className={cn("transition-opacity", hover ? "opacity-100" : "opacity-0")}>
-              查看详情 →
+          <div className="flex items-center justify-between border-t border-foreground/[0.06] pt-2.5 text-[11px] text-foreground/50 font-mono">
+            <span className="truncate" title={`主理人: ${agent.ownerName}`}>
+              主理人 · {agent.ownerName}
+            </span>
+            <span className={cn("transition-opacity shrink-0", hover ? "opacity-100" : "opacity-0")}>
+              详情 →
             </span>
           </div>
         </div>
