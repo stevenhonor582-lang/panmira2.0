@@ -1,6 +1,7 @@
 import type * as http from 'node:http';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import type { RouteContext } from './types.js';
+import { requireRole } from '../../middleware/rbac.js';
 
 export async function handleSessionRoutes(
   ctx: RouteContext,
@@ -17,8 +18,10 @@ export async function handleSessionRoutes(
     return true;
   }
 
-  // GET /api/sessions/all — list all sessions across all bots (summary, paginated)
+  // GET /api/sessions/all — P9 RBAC: admin only
   if (method === 'GET' && url.startsWith('/api/sessions/all')) {
+    const guard = await requireRole('admin')(req, res);
+    if (!guard) return true;
     const bots = ctx.registry.listRegistered();
     const all = await Promise.all(
       bots.map(async (b) => {

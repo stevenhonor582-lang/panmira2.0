@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import type * as http from 'node:http';
 import { jsonResponse, escapeHtml, wrapPreviewHtml } from './helpers.js';
+import { requireRole } from '../../middleware/rbac.js';
 import type { RouteContext } from './types.js';
 
 export async function handleFileRoutes(
@@ -187,8 +188,10 @@ export async function handleFileRoutes(
     return true;
   }
 
-  // GET /api/reports/:filename — serve HTML reports
+  // GET /api/reports/:filename — P9 RBAC: admin only
   if (method === 'GET' && url.startsWith('/api/reports/')) {
+    const guard = await requireRole('admin')(req, res);
+    if (!guard) return true;
     const filename = decodeURIComponent(url.slice('/api/reports/'.length).split('?')[0]);
     if (filename.includes('..') || filename.includes('/')) {
       res.writeHead(403, { 'Content-Type': 'text/plain' });

@@ -51,8 +51,9 @@ export async function handleAgentsCrudRoutes(
   if (!ctx) return true;
 
   if (method === 'GET' && u.pathname === '/api/v2/admin/agents') {
-    if (!requireAnyScope(ctx, ['agent:read', 'agent:admin'])) {
-      jsonResponse(res, 403, { error: 'insufficient_scope', required: 'agent:read OR agent:admin' });
+    // P9 RBAC (2026-07-08): admin only,operator 改 403
+    if (!requireAnyScope(ctx, ['agent:admin'])) {
+      jsonResponse(res, 403, { error: 'insufficient_scope', required: 'agent:admin (P9 RBAC)' });
       return true;
     }
     try {

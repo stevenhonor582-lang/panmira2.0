@@ -1,6 +1,7 @@
 import type * as http from 'node:http';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import type { RouteContext } from './types.js';
+import { requireRole } from '../../middleware/rbac.js';
 
 export async function handleProviderRoutes(
   ctx: RouteContext,
@@ -12,15 +13,19 @@ export async function handleProviderRoutes(
   const store = ctx.providerConfigStore;
   if (!store) return false;
 
-  // GET /api/providers
+  // GET /api/providers — P9 RBAC: admin only
   if (method === 'GET' && url === '/api/providers') {
+    const guard = await requireRole('admin')(req, res);
+    if (!guard) return true;
     const providers = await store.list();
     jsonResponse(res, 200, { providers });
     return true;
   }
 
-  // GET /api/providers/default
+  // GET /api/providers/default — P9 RBAC: admin only
   if (method === 'GET' && url === '/api/providers/default') {
+    const guard = await requireRole('admin')(req, res);
+    if (!guard) return true;
     const provider = await store.getDefault();
     jsonResponse(res, 200, { provider });
     return true;
@@ -137,8 +142,10 @@ export async function handleProviderRoutes(
     return true;
   }
 
-  // POST /api/providers — create
+  // POST /api/providers — P9 RBAC: admin only
   if (method === 'POST' && url === '/api/providers') {
+    const guard = await requireRole('admin')(req, res);
+    if (!guard) return true;
     const body = await parseJsonBody(req);
     const { name, type, baseUrl, apiKey, model, isDefault } = body as Record<string, any>;
     if (!name || !model) {

@@ -394,9 +394,9 @@ async function handleListUsers(
 ): Promise<boolean> {
   const ctx = await authenticate(req, res);
   if (!ctx) return true;
-  // 列表 — operator+ 可见
-  if (ctx.role !== 'admin' && ctx.role !== 'operator') {
-    jsonResponse(res, 403, { error: 'forbidden', message: '需要 operator 或 admin' });
+  // P9 RBAC (2026-07-08): 提升到 admin only,operator 改 403
+  if (ctx.role !== 'admin') {
+    jsonResponse(res, 403, { error: 'forbidden', message: '需要 admin (P9 RBAC)' });
     return true;
   }
   const users = await userStore.list();

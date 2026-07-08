@@ -2,6 +2,7 @@ import type * as http from 'node:http';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import { getTeamStatus } from '../team-status.js';
 import type { RouteContext } from './types.js';
+import { requireRole } from '../../middleware/rbac.js';
 
 export async function handleTeamRoutes(
   ctx: RouteContext,
@@ -97,8 +98,10 @@ export async function handleTeamRoutes(
     return true;
   }
 
-  // GET /api/costs/report
+  // GET /api/costs/report — P9 RBAC: admin only
   if (method === 'GET' && url.startsWith('/api/costs/report')) {
+    const guard = await requireRole('admin')(req, res);
+    if (!guard) return true;
     const parsed = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
     const period = (parsed.searchParams.get('period') || 'daily') as 'daily' | 'weekly' | 'monthly';
     jsonResponse(res, 200, { period, report: budgetManager.getReport(period) });
