@@ -151,6 +151,43 @@ export class ProviderConfigStore {
     return decrypt(rows[0].api_key_encrypted);
   }
 
+  /**
+   * Safe list — does NOT return decrypted api key.
+   * Returns hasApiKey boolean instead.
+   */
+  async listSafe(): Promise<Array<Omit<ProviderConfig, 'apiKeyEncrypted'> & { hasApiKey: boolean; apiKeyMasked: string | null }>> {
+    await this.init();
+    const { rows } = await pool.query('SELECT * FROM provider_configs ORDER BY name');
+    return rows.map((r: any) => {
+      const mapped = this.mapRow(r);
+      const { apiKeyEncrypted, ...rest } = mapped;
+      return {
+        ...rest,
+        hasApiKey: !!r.api_key_encrypted,
+        apiKeyMasked: r.api_key_encrypted ? '••••••' + (decrypt(r.api_key_encrypted).slice(-4) || '') : null,
+      };
+    });
+  }
+
+  /**
+   * Count agents currently pointing at this provider (via model_id FK).
+   */
+  async countAgentsUsing(id: string): Promise<number> {
+    await this.init();
+    const { rows } = await pool.query('SELECT count(*)::int AS n FROM agents WHERE model_id = $1', [id]);
+    return Number(rows[0]?.n ?? 0);
+  }
+
+  /**
+   * Delete only if no agents reference this provider. Returns {deleted, inUse, agentCount}.
+   */
+  async deleteIfNotInUse(id: string): Promise<{ deleted: boolean; inUse: boolean; agentCount: number }> {
+    const agentCount = await this.countAgentsUsing(id);
+    if (agentCount > 0) return { deleted: false, inUse: true, agentCount };
+    const deleted = await this.delete(id);
+    return { deleted, inUse: false, agentCount: 0 };
+  }
+
   private mapRow(r: any): ProviderConfig {
     return {
       id: r.id,

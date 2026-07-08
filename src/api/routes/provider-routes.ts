@@ -17,8 +17,25 @@ export async function handleProviderRoutes(
   if (method === 'GET' && url === '/api/providers') {
     const guard = await requireRole('admin')(req, res);
     if (!guard) return true;
-    const providers = await store.list();
+    const providers = await store.listSafe();
     jsonResponse(res, 200, { providers });
+    return true;
+  }
+
+  // GET /api/providers/:id — single provider, safe form (no plaintext key)
+  if (method === 'GET' && url.match(/^\/api\/providers\/[^/]+$/)) {
+    const guard = await requireRole('admin')(req, res);
+    if (!guard) return true;
+    const id = decodeURIComponent(url.split('/')[3]);
+    const p = await store.findById(id);
+    if (!p) {
+      jsonResponse(res, 404, { error: 'Provider not found' });
+      return true;
+    }
+    const { apiKeyEncrypted, ...safe } = p;
+    jsonResponse(res, 200, {
+      provider: { ...safe, hasApiKey: !!apiKeyEncrypted, apiKeyMasked: apiKeyEncrypted ? '••••' + apiKeyEncrypted.slice(-4) : null },
+    });
     return true;
   }
 
@@ -189,11 +206,103 @@ export async function handleProviderRoutes(
     return true;
   }
 
-  // DELETE /api/providers/:id
+  // DELETE /api/providers/:id — refuses if agents still reference it
   if (method === 'DELETE' && url.startsWith('/api/providers/')) {
+    const guard = await requireRole('admin')(req, res);
+    if (!guard) return true;
     const id = decodeURIComponent(url.slice('/api/providers/'.length));
-    const deleted = await store.delete(id);
-    jsonResponse(res, deleted ? 200 : 404, { deleted });
+    const result = await store.deleteIfNotInUse(id);
+    if (result.inUse) {
+      jsonResponse(res, 409, {
+        deleted: false,
+        error: 'provider_in_use',
+        message: `Provider is referenced by ${result.agentCount} agent(s). Reassign them first.`,
+        agentCount: result.agentCount,
+      });
+    } else {
+      jsonResponse(res, result.deleted ? 200 : 404, { deleted: result.deleted });
+    }
+    return true;
+  }
+
+  // POST /api/providers/:id/test — test connection using stored api_key (returns latency)
+  if (method === 'POST' && url.match(/^\/api\/providers\/[^/]+\/test$/)) {
+    const guard = await requireRole('admin')(req, res);
+    if (!guard) return true;
+    const id = decodeURIComponent(url.split('/')[3]);
+    const provider = await store.findById(id);
+    if (!provider) {
+      jsonResponse(res, 404, { ok: false, error: 'Provider not found' });
+      return true;
+    }
+    const decryptedKey = await store.getDecryptedApiKey(id);
+    const start = Date.now();
+    const base = (provider.baseUrl || '').replace(/\/$/, '');
+    const isAnthropic = /\/anthropic/i.test(base);
+    const isEmbedding = provider.type === 'embedding';
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(decryptedKey
+          ? isAnthropic
+            ? { 'x-api-key': decryptedKey, 'anthropic-version': '2023-06-01' }
+            : { Authorization: `Bearer ${decryptedKey}` }
+          : {}),
+      };
+      const testUrl = isEmbedding
+        ? `${base}/embeddings`
+        : isAnthropic
+          ? `${base}/v1/messages`
+          : `${base}/chat/completions`;
+      const body = isEmbedding
+        ? { model: provider.model || 'BAAI/bge-m3', input: ['ping'], encoding_format: 'float' }
+        : isAnthropic
+          ? { model: provider.model || 'claude-3-5-sonnet-20241022', messages: [{ role: 'user', content: 'Hi' }], max_tokens: 1 }
+          : { model: provider.model || 'gpt-3.5-turbo', messages: [{ role: 'user', content: 'Hi' }], max_tokens: 1, stream: false };
+      const r = await fetch(testUrl, {
+        method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      const latencyMs = Date.now() - start;
+      if (r.ok) {
+        jsonResponse(res, 200, { ok: true, latencyMs, model: provider.model });
+      } else {
+        const errText = await r.text().catch(() => '');
+        let errMsg = `HTTP ${r.status}`;
+        try {
+          const e = JSON.parse(errText);
+          errMsg = e?.error?.message || e?.message || errMsg;
+        } catch { /* keep default */ }
+        jsonResponse(res, 200, { ok: false, latencyMs, status: r.status, error: errMsg });
+      }
+    } catch (err: unknown) {
+      const latencyMs = Date.now() - start;
+      const msg = err instanceof Error && err.name === 'AbortError'
+        ? '连接超时 (10s)'
+        : err instanceof Error ? err.message : 'Unknown error';
+      jsonResponse(res, 200, { ok: false, latencyMs, error: msg });
+    }
+    return true;
+  }
+
+  // PATCH /api/providers/:id — alias for PUT (frontend convention)
+  if (method === 'PATCH' && url.startsWith('/api/providers/')) {
+    const guard = await requireRole('admin')(req, res);
+    if (!guard) return true;
+    const id = decodeURIComponent(url.slice('/api/providers/'.length));
+    if (!id || id.includes('/')) {
+      jsonResponse(res, 400, { error: 'Missing provider id' });
+      return true;
+    }
+    const body = await parseJsonBody(req);
+    const provider = await store.update(id, body as Record<string, any>);
+    if (!provider) {
+      jsonResponse(res, 404, { error: 'Provider not found' });
+      return true;
+    }
+    jsonResponse(res, 200, { provider });
     return true;
   }
 
