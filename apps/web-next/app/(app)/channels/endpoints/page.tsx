@@ -2,186 +2,202 @@
 
 import * as React from "react";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
-  StatusPill,
-  toneForEndpoint,
-} from "@/components/channels/status-pill";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChannelsPageShell, PageMeta } from "@/components/channels/page-shell";
 import { DenseTable, MonoCell, KeyCell } from "@/components/channels/dense-table";
+import { StatusPill, toneForEndpoint } from "@/components/channels/status-pill";
 import {
-  Cable,
-  ExternalLink,
-  Pencil,
-  Plus,
-  Trash2,
   ArrowDownToLine,
   ArrowUpFromLine,
+  Cable,
   Inbox,
+  MessageSquare,
+  Pencil,
+  Plus,
+  Power,
+  PowerOff,
+  RefreshCw,
+  Trash2,
+  Loader2,
 } from "lucide-react";
-import type {
-  EndpointInbound,
-  EndpointOutbound,
-} from "@/lib/channels/types";
 import { useFetch } from "@/lib/channels/use-fetch";
+import { mutate } from "@/lib/channels/api-mutations";
 
 /**
- * /channels/endpoints — 接入点双向.
+ * /channels/endpoints — 接入点双向
  *
- * Tab 1: Outbound  (我们接别人) — bot 关联的 webhook 通道 (飞书/钉钉/企微).
- * Tab 2: Inbound   (别人接我们) — 我们对外暴露的 callback endpoint.
+ * 出站(Outbound) = 我们接别人 (飞书/微信/企微/WhatsApp bot)
+ * 入站(Inbound)  = 别人接我们 (Webhook URL 接外部事件)
  *
- * The bot_configs.purpose field (A2) is used to partition: only
- * purpose in {outbound, both} shows on Outbound.
+ * 数据源: bot_configs 表
+ *   purpose = 'outbound' → 出站 tab
+ *   purpose = 'inbound'  → 入站 tab
  */
 
-const CHANNEL_LABEL: Record<string, string> = {
+type Platform = "feishu" | "wechat" | "wechatwork" | "whatsapp" | "webhook";
+
+const PLATFORM_LABEL: Record<Platform, string> = {
   feishu: "飞书",
-  dingtalk: "钉钉",
+  wechat: "微信",
   wechatwork: "企微",
-  slack: "Slack",
-  telegram: "Telegram",
+  whatsapp: "WhatsApp",
+  webhook: "Webhook",
 };
+
+const PLATFORM_FIELDS: Record<
+  Platform,
+  Array<{ key: string; label: string; placeholder: string }>
+> = {
+  feishu: [
+    { key: "appId", label: "App ID", placeholder: "cli_xxx" },
+    { key: "appSecret", label: "App Secret", placeholder: "xxx" },
+    { key: "verificationToken", label: "Verification Token", placeholder: "xxx" },
+    { key: "encryptKey", label: "Encrypt Key", placeholder: "xxx" },
+  ],
+  wechat: [
+    { key: "corpId", label: "Corp ID", placeholder: "wx_xxx" },
+    { key: "agentId", label: "Agent ID", placeholder: "1000001" },
+    { key: "secret", label: "Secret", placeholder: "xxx" },
+    { key: "token", label: "Token", placeholder: "xxx" },
+  ],
+  wechatwork: [
+    { key: "corpId", label: "Corp ID", placeholder: "ww_xxx" },
+    { key: "agentId", label: "Agent ID", placeholder: "1000001" },
+    { key: "secret", label: "Secret", placeholder: "xxx" },
+    { key: "token", label: "Token", placeholder: "xxx" },
+  ],
+  whatsapp: [
+    { key: "phoneNumberId", label: "Phone Number ID", placeholder: "123" },
+    { key: "accessToken", label: "Access Token", placeholder: "EAAGxxx" },
+    { key: "verifyToken", label: "Verify Token (Webhook)", placeholder: "xxx" },
+  ],
+  webhook: [
+    { key: "url", label: "URL", placeholder: "https://partner.example.com/hook" },
+    { key: "secret", label: "签名 Secret", placeholder: "xxx" },
+  ],
+};
+
+interface Endpoint {
+  id: string;
+  name: string;
+  displayName?: string;
+  platform: Platform;
+  config?: Record<string, any>;
+  isActive: boolean;
+  isHealthy?: boolean;
+  purpose: "outbound" | "inbound";
+  remark?: string;
+  botId?: string;
+  lastHealthCheckAt?: string;
+}
 
 export default function EndpointsPage() {
   const [tab, setTab] = React.useState<"outbound" | "inbound">("outbound");
 
-  // R13E: query bot_configs via new endpoints API with purpose filter
   const {
     data: obData,
     loading: obLoading,
     error: obError,
     refresh: refreshOb,
-  } = useFetch<{ data?: { items?: any[] } }>("/api/v2/channels/endpoints?purpose=outbound");
+  } = useFetch<{ data?: { items?: Endpoint[] } }>(
+    "/api/v2/channels/endpoints?purpose=outbound",
+  );
   const {
     data: ibData,
     loading: ibLoading,
     error: ibError,
     refresh: refreshIb,
-  } = useFetch<{ data?: { items?: any[] } }>("/api/v2/channels/endpoints?purpose=inbound");
+  } = useFetch<{ data?: { items?: Endpoint[] } }>(
+    "/api/v2/channels/endpoints?purpose=inbound",
+  );
 
-  const chLoading = obLoading || ibLoading;
-  const chError = obError || ibError;
-  const outboundRaw: any[] = (obData as any)?.data?.items ?? [];
-  const inboundRaw: any[] = (ibData as any)?.data?.items ?? [];
+  const outbound = obData?.data?.items ?? [];
+  const inbound = ibData?.data?.items ?? [];
 
-  // R13E: ALL useState hooks must run BEFORE any early return (Rules of Hooks)
   const [busy, setBusy] = React.useState(false);
   const [toast, setToast] = React.useState<string | null>(null);
   const [creating, setCreating] = React.useState(false);
-  const [createForm, setCreateForm] = React.useState({ name: "", platform: "feishu", purpose: "outbound", webhookUrl: "", remark: "" });
-
-  function asString(v: any, fallback = ""): string {
-    if (v == null) return fallback;
-    if (typeof v === "string") return v;
-    if (typeof v === "number" || typeof v === "boolean") return String(v);
-    return fallback;
-  }
-
-  const outbound: EndpointOutbound[] = outboundRaw.map((e: any) => ({
-    id: e.id,
-    channel: asString(e.platform, "feishu"),
-    botName: asString(e.displayName ?? e.name),
-    webhookUrl: asString(e.config?.webhook ?? e.config?.webhookUrl ?? e.config?.webhook_url),
-    status: e.isActive ? "active" as const : "paused" as const,
-    purpose: "outbound" as const,
-    remark: asString(e.remark) || undefined,
-  }));
-
-  const inbound: EndpointInbound[] = inboundRaw.map((e: any) => ({
-    id: e.id,
-    name: asString(e.name),
-    callbackUrl: asString(e.config?.callback_url ?? e.config?.callbackUrl),
-    allowedMethods: Array.isArray(e.config?.methods) ? e.config.methods.map(String)
-      : Array.isArray(e.config?.allowedMethods) ? e.config.allowedMethods.map(String)
-      : ["POST"],
-    apiVersion: asString(e.config?.api_version ?? e.config?.apiVersion, "v1"),
-    rateLimit: asString(e.config?.rate_limit ?? e.config?.rateLimit, "60/min"),
-    status: e.isActive ? "active" as const : "paused" as const,
-  }));
-
-  if (chError?.code === "not_implemented" && outbound.length === 0 && inbound.length === 0) {
-    return <EmptyShell kind="Endpoints (双向通道)" />;
-  }
-  if (chError && outbound.length === 0 && inbound.length === 0) {
-    return (
-      <ChannelsPageShell
-        meta={<PageMeta items={[{ label: "error", value: chError.message.slice(0, 24) }]} />}
-        toolbar={<></>}
-      >
-        <div className="rounded-2xl border border-rose-500/30 bg-rose-500/5 p-6 text-sm text-rose-700 dark:text-rose-300">
-          加载失败 · {chError.message}
-        </div>
-      </ChannelsPageShell>
-    );
-  }
-
-  if (chLoading) {
-    return (
-      <ChannelsPageShell
-        meta={<PageMeta items={[{ label: "loading", value: "…" }]} />}
-        toolbar={<></>}
-      >
-        <div className="h-64 rounded-2xl bg-muted/30 animate-pulse" />
-      </ChannelsPageShell>
-    );
-  }
-
-  const outboundActive = outbound.filter((e) => e.status === "active").length;
-  const inboundActive = inbound.filter((e) => e.status === "active").length;
+  const [editing, setEditing] = React.useState<Endpoint | null>(null);
 
   function notify(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(null), 3500);
   }
 
-  async function toggleEndpoint(e: EndpointOutbound | EndpointInbound, purpose: "outbound" | "inbound") {
+  const loading = obLoading || ibLoading;
+  const error = obError || ibError;
+
+  if (loading) {
+    return (
+      <ChannelsPageShell meta={<PageMeta items={[{ label: "加载", value: "…" }]} />} toolbar={<></>}>
+        <div className="h-64 rounded-2xl bg-muted/30 animate-pulse" />
+      </ChannelsPageShell>
+    );
+  }
+
+  if (error && outbound.length === 0 && inbound.length === 0) {
+    return (
+      <ChannelsPageShell
+        meta={<PageMeta items={[{ label: "错误", value: error.message.slice(0, 24) }]} />}
+        toolbar={<></>}
+      >
+        <div className="rounded-2xl border border-rose-500/30 bg-rose-500/5 p-6 text-sm text-rose-700 dark:text-rose-300">
+          加载失败 · {error.message}
+        </div>
+      </ChannelsPageShell>
+    );
+  }
+
+  const outboundActive = outbound.filter((e) => e.isActive).length;
+  const inboundActive = inbound.filter((e) => e.isActive).length;
+
+  async function toggleActive(e: Endpoint, purpose: "outbound" | "inbound") {
     setBusy(true);
     const r = await mutate("PATCH", `/api/v2/channels/endpoints/${e.id}`, {
-      body: { isActive: e.status !== "active" },
+      body: { isActive: !e.isActive },
       refresh: purpose === "outbound" ? refreshOb : refreshIb,
     });
     setBusy(false);
-    notify(r.ok ? "✓ 已切换" : `✗ ${r.error}`);
+    notify(r.ok ? `✓ 已${!e.isActive ? "启用" : "停用"} ${e.name}` : `✗ ${r.error}`);
   }
 
-  async function removeEndpoint(e: EndpointOutbound | EndpointInbound, purpose: "outbound" | "inbound") {
-    if (!confirm(`删除接入点 "${e.id.slice(0, 8)}"?`)) return;
+  async function remove(e: Endpoint, purpose: "outbound" | "inbound") {
+    if (!confirm(`删除接入点 "${e.name}"?`)) return;
     setBusy(true);
     const r = await mutate("DELETE", `/api/v2/channels/endpoints/${e.id}`, {
       refresh: purpose === "outbound" ? refreshOb : refreshIb,
     });
     setBusy(false);
-    notify(r.ok ? "✓ 已删除" : `✗ ${r.error}`);
+    notify(r.ok ? `✓ 已删除 ${e.name}` : `✗ ${r.error}`);
   }
 
-  async function createEndpoint() {
-    if (!createForm.name.trim()) return;
-    setBusy(true);
-    const body: Record<string, any> = {
-      name: createForm.name.trim(),
-      platform: createForm.platform,
-      purpose: createForm.purpose,
-      isActive: true,
-      remark: createForm.remark.trim(),
-    };
-    if (createForm.purpose === "outbound") {
-      body.config = { webhook: createForm.webhookUrl.trim() };
-    } else {
-      body.config = { allowedMethods: ["POST"], rateLimit: { windowMs: 60000, max: 100 } };
-    }
-    const r = await mutate("POST", `/api/v2/channels/endpoints`, {
-      body,
-      refresh: createForm.purpose === "outbound" ? refreshOb : refreshIb,
-    });
-    setBusy(false);
-    if (r.ok) {
-      setCreating(false);
-      setCreateForm({ name: "", platform: "feishu", purpose: "outbound", webhookUrl: "", remark: "" });
-      notify("✓ 已创建");
-    } else {
-      notify(`✗ ${r.error}`);
-    }
+  function getWebhookUrl(e: Endpoint): string {
+    if (!e.config) return "—";
+    return (
+      e.config.webhook ||
+      e.config.webhookUrl ||
+      e.config.webhook_url ||
+      e.config.callback_url ||
+      e.config.callbackUrl ||
+      "—"
+    );
   }
 
   return (
@@ -189,16 +205,16 @@ export default function EndpointsPage() {
       meta={
         <PageMeta
           items={[
-            { label: "outbound", value: outbound.length },
-            { label: "active-ob", value: outboundActive },
-            { label: "inbound", value: inbound.length },
-            { label: "active-ib", value: inboundActive },
+            { label: "出站", value: outbound.length },
+            { label: "出站启用", value: outboundActive },
+            { label: "入站", value: inbound.length },
+            { label: "入站启用", value: inboundActive },
           ]}
           footnote={
             <>
-              Outbound = 我们接别人(机器人对外发消息)。
-              Inbound = 别人接我们(回调 URL 接外部事件)。
-              A2 新字段 <code className="font-mono">bot_configs.purpose</code> 决定归类。
+              出站(Outbound) = 我们接别人(机器人对外发消息:飞书/微信/企微/WhatsApp)。
+              入站(Inbound) = 别人接我们(Webhook URL 接外部事件)。
+              数据存储于 <code className="font-mono">bot_configs</code> 表。
             </>
           }
         />
@@ -209,11 +225,23 @@ export default function EndpointsPage() {
             <Cable className="size-4 text-muted-foreground" />
             <h2 className="text-sm font-semibold tracking-tight">接入点 · 双向</h2>
             <span className="text-[11px] text-muted-foreground font-mono">
-              {outbound.length + inbound.length} total
+              {outbound.length + inbound.length} 个
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <Button size="sm" className="gap-1.5">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="gap-1.5"
+              onClick={() => {
+                refreshOb();
+                refreshIb();
+              }}
+            >
+              <RefreshCw className="size-3.5" />
+              刷新
+            </Button>
+            <Button size="sm" className="gap-1.5" onClick={() => setCreating(true)}>
               <Plus className="size-3.5" />
               新增接入点
             </Button>
@@ -225,14 +253,14 @@ export default function EndpointsPage() {
         <TabsList>
           <TabsTrigger value="outbound" className="gap-1.5">
             <ArrowUpFromLine className="size-3.5" />
-            Outbound · 我们接别人
+            出站 · 我们接别人
             <span className="font-mono text-[10px] text-muted-foreground ml-1">
               {outbound.length}
             </span>
           </TabsTrigger>
           <TabsTrigger value="inbound" className="gap-1.5">
             <ArrowDownToLine className="size-3.5" />
-            Inbound · 别人接我们
+            入站 · 别人接我们
             <span className="font-mono text-[10px] text-muted-foreground ml-1">
               {inbound.length}
             </span>
@@ -241,32 +269,68 @@ export default function EndpointsPage() {
 
         <TabsContent value="outbound" className="mt-4">
           <DenseTable
-            head={["Channel", "Bot", "Webhook", "Status", ""]}
+            head={["频道", "Bot 名称", "Webhook", "备注", "状态", ""]}
             rows={outbound.map((e) => ({
               cells: [
-                <div key="ch" className="flex items-center gap-2">
-                  <span className="font-mono text-[11px] uppercase tracking-wide bg-muted text-muted-foreground px-1.5 py-0.5 rounded-sm">
-                    {CHANNEL_LABEL[e.channel] ?? e.channel}
-                  </span>
+                <span
+                  key="ch"
+                  className="font-mono text-[11px] uppercase tracking-wide bg-muted text-muted-foreground px-1.5 py-0.5 rounded-sm"
+                >
+                  {PLATFORM_LABEL[e.platform as Platform] ?? e.platform}
+                </span>,
+                <div key="b" className="leading-tight">
+                  <div className="text-[13px] font-medium">{e.displayName ?? e.name}</div>
+                  {e.botId ? (
+                    <div className="text-[10px] text-muted-foreground font-mono">
+                      {e.botId.slice(0, 8)}
+                    </div>
+                  ) : null}
                 </div>,
-                <span key="b" className="text-[13px] font-medium">{e.botName}</span>,
                 <MonoCell
                   key="u"
                   className="text-muted-foreground max-w-[20rem] truncate inline-block"
-                  title={e.webhookUrl}
+                  title={getWebhookUrl(e)}
                 >
-                  {e.webhookUrl}
+                  {getWebhookUrl(e)}
+                </MonoCell>,
+                <MonoCell key="r" className="text-muted-foreground">
+                  {e.remark || "—"}
                 </MonoCell>,
                 <StatusPill
                   key="s"
-                  tone={toneForEndpoint(e.status)}
-                  label={e.status}
+                  tone={e.isActive ? toneForEndpoint("active") : toneForEndpoint("paused")}
+                  label={e.isActive ? "启用" : "停用"}
                 />,
                 <div key="a" className="flex items-center gap-1 justify-end">
-                  <Button size="icon-xs" variant="ghost" aria-label="编辑">
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    onClick={() => toggleActive(e, "outbound")}
+                    disabled={busy}
+                    aria-label={e.isActive ? "停用" : "启用"}
+                    title={e.isActive ? "停用" : "启用"}
+                  >
+                    {e.isActive ? (
+                      <PowerOff className="size-3.5" />
+                    ) : (
+                      <Power className="size-3.5" />
+                    )}
+                  </Button>
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    aria-label="编辑"
+                    onClick={() => setEditing(e)}
+                  >
                     <Pencil className="size-3.5" />
                   </Button>
-                  <Button size="icon-xs" variant="ghost" aria-label="删除" className="hover:text-rose-600">
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    aria-label="删除"
+                    className="hover:text-rose-600"
+                    onClick={() => remove(e, "outbound")}
+                  >
                     <Trash2 className="size-3.5" />
                   </Button>
                 </div>,
@@ -274,15 +338,15 @@ export default function EndpointsPage() {
             }))}
             empty={
               outbound.length === 0
-                ? "暂无 outbound 配置 · 后端 endpoints view 未返回数据。"
-                : "没有匹配的 endpoint."
+                ? "暂无出站接入点 · 点击「新增接入点」开始添加飞书/微信/WhatsApp bot"
+                : "没有匹配的接入点"
             }
           />
         </TabsContent>
 
         <TabsContent value="inbound" className="mt-4">
           <DenseTable
-            head={["Name", "Callback URL", "Methods", "Version", "Rate Limit", "Status", ""]}
+            head={["名称", "回调 URL", "方法", "状态", ""]}
             rows={inbound.map((e) => ({
               cells: [
                 <div key="n" className="flex items-center gap-2">
@@ -292,72 +356,268 @@ export default function EndpointsPage() {
                 <MonoCell
                   key="u"
                   className="text-muted-foreground max-w-[24rem] truncate inline-block"
-                  title={e.callbackUrl}
+                  title={getWebhookUrl(e)}
                 >
-                  {e.callbackUrl}
+                  {getWebhookUrl(e)}
                 </MonoCell>,
                 <MonoCell key="m" className="text-muted-foreground">
-                  {e.allowedMethods.join(", ")}
+                  {(e.config?.methods ?? e.config?.allowedMethods ?? ["POST"]).join(", ")}
                 </MonoCell>,
-                <MonoCell key="v" className="text-muted-foreground">v{e.apiVersion}</MonoCell>,
-                <MonoCell key="r" className="text-muted-foreground">{e.rateLimit}</MonoCell>,
                 <StatusPill
                   key="s"
-                  tone={toneForEndpoint(e.status)}
-                  label={e.status}
+                  tone={e.isActive ? toneForEndpoint("active") : toneForEndpoint("paused")}
+                  label={e.isActive ? "启用" : "停用"}
                 />,
                 <div key="a" className="flex items-center gap-1 justify-end">
-                  <Button size="icon-xs" variant="ghost" aria-label="查看">
-                    <ExternalLink className="size-3.5" />
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    onClick={() => toggleActive(e, "inbound")}
+                    disabled={busy}
+                    aria-label={e.isActive ? "停用" : "启用"}
+                  >
+                    {e.isActive ? (
+                      <PowerOff className="size-3.5" />
+                    ) : (
+                      <Power className="size-3.5" />
+                    )}
                   </Button>
-                  <Button size="icon-xs" variant="ghost" aria-label="编辑">
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    aria-label="编辑"
+                    onClick={() => setEditing(e)}
+                  >
                     <Pencil className="size-3.5" />
                   </Button>
-                  <Button size="icon-xs" variant="ghost" aria-label="删除" className="hover:text-rose-600">
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    aria-label="删除"
+                    className="hover:text-rose-600"
+                    onClick={() => remove(e, "inbound")}
+                  >
                     <Trash2 className="size-3.5" />
                   </Button>
                 </div>,
               ],
             }))}
-            empty={
-              inbound.length === 0
-                ? "暂无 inbound 配置 · 后端 endpoints view 未返回数据。"
-                : "没有匹配的 endpoint."
-            }
+            empty={inbound.length === 0 ? "暂无入站接入点 · 点击「新增接入点」添加 Webhook" : "没有匹配的接入点"}
           />
         </TabsContent>
       </Tabs>
 
       <div className="mt-3 flex items-center gap-3 text-[10.5px] text-muted-foreground font-mono">
-        <KeyCell>NOTE</KeyCell>
-        <span>所有 webhook URL 脱敏展示 · 真实值加密存于 bot_configs</span>
+        <KeyCell>说明</KeyCell>
+        <span>所有 webhook URL 脱敏展示 · 真实值加密存于 bot_configs.config_json</span>
       </div>
+
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 rounded-lg bg-foreground text-background px-3.5 py-2 text-xs shadow-lg">
+          {toast}
+        </div>
+      )}
+
+      <EndpointDialog
+        open={creating || !!editing}
+        editing={editing}
+        defaultPurpose={tab}
+        onClose={() => {
+          setCreating(false);
+          setEditing(null);
+        }}
+        onSaved={() => {
+          setCreating(false);
+          setEditing(null);
+          refreshOb();
+          refreshIb();
+        }}
+      />
     </ChannelsPageShell>
   );
 }
 
-function EmptyShell({ kind }: { kind: string }) {
+function EndpointDialog({
+  open,
+  editing,
+  defaultPurpose,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  editing: Endpoint | null;
+  defaultPurpose: "outbound" | "inbound";
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const isEdit = !!editing;
+  const [purpose, setPurpose] = React.useState<"outbound" | "inbound">(defaultPurpose);
+  const [platform, setPlatform] = React.useState<Platform>("feishu");
+  const [name, setName] = React.useState("");
+  const [remark, setRemark] = React.useState("");
+  const [config, setConfig] = React.useState<Record<string, string>>({});
+  const [saving, setSaving] = React.useState(false);
+  const [err, setErr] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    if (editing) {
+      setPurpose(editing.purpose === "inbound" ? "inbound" : "outbound");
+      setPlatform((editing.platform as Platform) ?? "feishu");
+      setName(editing.name);
+      setRemark(editing.remark ?? "");
+      const cfg: Record<string, string> = {};
+      Object.entries(editing.config ?? {}).forEach(([k, v]) => {
+        if (typeof v === "string" || typeof v === "number") cfg[k] = String(v);
+      });
+      setConfig(cfg);
+    } else {
+      setPurpose(defaultPurpose);
+      setPlatform("feishu");
+      setName("");
+      setRemark("");
+      setConfig({});
+    }
+    setErr(null);
+  }, [open, editing, defaultPurpose]);
+
+  if (!open) return null;
+
+  function updateConfig(key: string, val: string) {
+    setConfig((c) => ({ ...c, [key]: val }));
+  }
+
+  async function save() {
+    if (!name.trim()) {
+      setErr("名称必填");
+      return;
+    }
+    setSaving(true);
+    setErr(null);
+    const body: Record<string, any> = {
+      name: name.trim(),
+      platform,
+      purpose,
+      isActive: true,
+      remark: remark.trim(),
+      config,
+    };
+    const r = isEdit
+      ? await mutate("PATCH", `/api/v2/channels/endpoints/${editing!.id}`, { body })
+      : await mutate("POST", "/api/v2/channels/endpoints", { body });
+    setSaving(false);
+    if (r.ok) onSaved();
+    else setErr(r.error || "保存失败");
+  }
+
+  const fields = purpose === "inbound"
+    ? [
+        { key: "callback_url", label: "回调 URL", placeholder: "https://api.panmira.io/v1/hooks/feishu" },
+        { key: "secret", label: "签名 Secret", placeholder: "用于校验请求来源" },
+      ]
+    : PLATFORM_FIELDS[platform];
+
   return (
-    <ChannelsPageShell
-      meta={
-        <PageMeta
-          items={[{ label: "backend", value: "not_implemented" }]}
-          footnote={`后端未实装 ${kind} 端点 · 已废弃 mock.ts 引用,改为显示空状态。`}
-        />
-      }
-      toolbar={<></>}
-    >
-      <div className="flex flex-col items-center gap-3 rounded-3xl border border-dashed border-border py-24 text-center">
-        <Inbox className="size-6 text-foreground/35" />
-        <span className="font-mono text-[10.5px] uppercase tracking-[0.22em] text-foreground/40">
-          empty state
-        </span>
-        <p className="max-w-[44ch] text-sm text-foreground/60">
-          {kind} 数据接口后端未实装。
-          <br />
-          一旦后端上线,刷新页面即可看到真实数据。
-        </p>
-      </div>
-    </ChannelsPageShell>
+    <Dialog open={open} onOpenChange={(n) => !n && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="text-base flex items-center gap-2">
+            <Cable className="size-4 text-muted-foreground" />
+            {isEdit ? `编辑接入点 · ${editing!.name}` : "新增接入点"}
+          </DialogTitle>
+          <DialogDescription className="text-xs">
+            {purpose === "outbound"
+              ? "出站 = 我们接别人(机器人对外发消息)"
+              : "入站 = 别人接我们(Webhook URL 接收外部事件)"}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 text-xs">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <Label>方向</Label>
+              <Select
+                value={purpose}
+                onValueChange={(v) => setPurpose(v as "outbound" | "inbound")}
+                disabled={isEdit}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="outbound">出站(我们接别人)</SelectItem>
+                  <SelectItem value="inbound">入站(别人接我们)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {purpose === "outbound" ? (
+              <div className="space-y-1">
+                <Label>频道类型</Label>
+                <Select
+                  value={platform}
+                  onValueChange={(v) => setPlatform(v as Platform)}
+                  disabled={isEdit}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="feishu">飞书</SelectItem>
+                    <SelectItem value="wechat">微信</SelectItem>
+                    <SelectItem value="wechatwork">企微</SelectItem>
+                    <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                    <SelectItem value="webhook">Webhook</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="ep-name">Bot 名称</Label>
+            <Input
+              id="ep-name"
+              placeholder="玄鉴"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            {fields.map((f) => (
+              <div key={f.key} className="space-y-1">
+                <Label htmlFor={`ep-${f.key}`}>{f.label}</Label>
+                <Input
+                  id={`ep-${f.key}`}
+                  placeholder={f.placeholder}
+                  value={config[f.key] ?? ""}
+                  onChange={(e) => updateConfig(f.key, e.target.value)}
+                  className="font-mono text-[11.5px]"
+                />
+              </div>
+            ))}
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="ep-remark">备注</Label>
+            <Input
+              id="ep-remark"
+              placeholder="可选,用于区分用途"
+              value={remark}
+              onChange={(e) => setRemark(e.target.value)}
+            />
+          </div>
+          {err ? (
+            <div className="rounded-md bg-rose-500/10 ring-1 ring-rose-500/30 px-2 py-1.5 text-[11px] text-rose-700 dark:text-rose-300">
+              {err}
+            </div>
+          ) : null}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={onClose}>
+            取消
+          </Button>
+          <Button size="sm" onClick={save} disabled={saving}>
+            {saving ? "保存中…" : "保存"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

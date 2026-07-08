@@ -25,7 +25,10 @@ import {
   CheckCircle2,
   Eye,
   User,
+  Users,
   Bot,
+  Clock,
+  AlertCircle,
   Loader2,
 } from "lucide-react";
 
@@ -446,7 +449,9 @@ interface SessionRow {
   id: string;
   title: string | null;
   botName: string | null;
+  botId?: string | null;
   platform: string | null;
+  chatId?: string | null;
   messageCount: number;
   createdAt: string | null;
   updatedAt: string | null;
@@ -457,6 +462,96 @@ interface SessionMsg {
   content: string | null;
   createdAt: string | null;
   tokens?: number | null;
+}
+
+// ── 对话对象分类(R16-5) ────────────────────────────────────────
+type CounterpartyKind = "human" | "group" | "tester" | "external" | "unknown";
+
+interface Counterparty {
+  kind: CounterpartyKind;
+  label: string;
+  shortLabel: string;
+}
+
+function classifyCounterparty(
+  chatId: string | null | undefined,
+  platform: string | null | undefined,
+): Counterparty {
+  if (!chatId) {
+    return { kind: "unknown", label: "未知对象", shortLabel: "未知" };
+  }
+  if (chatId.startsWith("ou_")) {
+    return {
+      kind: "external",
+      label: `外部用户(${chatId.slice(0, 14)}…)`,
+      shortLabel: "外部用户",
+    };
+  }
+  if (chatId.startsWith("oc_")) {
+    return { kind: "group", label: "飞书群组", shortLabel: "群组" };
+  }
+  if (/^(e2e-|ticket|test|tmp-|-)/i.test(chatId) || chatId.length < 12) {
+    return {
+      kind: "tester",
+      label: `测试用户(${chatId.slice(0, 18)})`,
+      shortLabel: "测试",
+    };
+  }
+  return {
+    kind: "human",
+    label: `用户(${chatId.slice(0, 12)}…)`,
+    shortLabel: "用户",
+  };
+}
+
+function cpIconFor(k: CounterpartyKind) {
+  if (k === "group") return Users;
+  if (k === "tester") return AlertCircle;
+  return User;
+}
+
+function cpColorFor(k: CounterpartyKind): string {
+  switch (k) {
+    case "human":    return "text-sky-700 dark:text-sky-300 bg-sky-500/10";
+    case "group":    return "text-violet-700 dark:text-violet-300 bg-violet-500/10";
+    case "external": return "text-amber-700 dark:text-amber-300 bg-amber-500/10";
+    case "tester":   return "text-stone-700 dark:text-stone-300 bg-stone-500/10";
+    default:         return "text-muted-foreground bg-muted/50";
+  }
+}
+
+// 本地 StatTile(SessionsEnhanced 内部使用)
+function SessionStatTile({
+  icon,
+  label,
+  value,
+  hint,
+  tone,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number | string;
+  hint?: string;
+  tone: "emerald" | "violet" | "sky" | "amber";
+}) {
+  const toneCls = {
+    emerald: "bg-emerald-500/5 text-emerald-700 dark:text-emerald-300 border-emerald-500/20",
+    violet:  "bg-violet-500/5 text-violet-700 dark:text-violet-300 border-violet-500/20",
+    sky:     "bg-sky-500/5 text-sky-700 dark:text-sky-300 border-sky-500/20",
+    amber:   "bg-amber-500/5 text-amber-700 dark:text-amber-300 border-amber-500/20",
+  }[tone];
+  return (
+    <div className={cn("rounded-lg border px-3 py-2.5", toneCls)}>
+      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider opacity-80">
+        {icon}
+        <span>{label}</span>
+      </div>
+      <div className="mt-1 text-xl font-semibold tabular-nums leading-none">{value}</div>
+      {hint && (
+        <div className="mt-1 text-[10px] opacity-70 truncate font-mono" title={hint}>{hint}</div>
+      )}
+    </div>
+  );
 }
 
 function SessionsEnhanced() {
@@ -474,7 +569,7 @@ function SessionsEnhanced() {
   const load = React.useCallback(async () => {
     setLoading(true); setErr(null);
     try {
-      const r = await api<{ sessions: SessionRow[] }>("/api/v2/admin/sessions");
+      const r = await api<{ sessions: SessionRow[] }>("/api/v2/admin/sessions?limit=100");
       setRows(r.sessions ?? []);
     } catch (e: any) { setErr(String(e?.message ?? e)); }
     finally { setLoading(false); }
@@ -499,6 +594,30 @@ function SessionsEnhanced() {
     return l;
   }, [rows, platformFilter, timeFilter]);
 
+  // R16-5: 顶部统计(从 sessions 直接算)
+  const stats = React.useMemo(() => {
+    const activeBots = new Set<string>();
+    const counterparties = new Set<string>();
+    let todayNew = 0;
+    const dayMs = 86400000;
+    const now = Date.now();
+    rows.forEach((r) => {
+      if (r.botName) activeBots.add(r.botName);
+      if (r.chatId) counterparties.add(r.chatId);
+      if (r.createdAt) {
+        const ts = new Date(r.createdAt).getTime();
+        if (Number.isFinite(ts) && (now - ts) < dayMs) todayNew += 1;
+      }
+    });
+    return {
+      activeBots: activeBots.size,
+      counterparties: counterparties.size,
+      todayNew,
+      total: rows.length,
+      botNames: Array.from(activeBots).slice(0, 6),
+    };
+  }, [rows]);
+
   async function openSession(s: SessionRow) {
     setActiveSession(s);
     setDetailOpen(true);
@@ -506,7 +625,7 @@ function SessionsEnhanced() {
     setMsgLoading(true);
     setMessages([]);
     try {
-      const r = await api<{ messages: SessionMsg[] }>(`/api/v2/admin/sessions/${encodeURIComponent(s.id)}/messages`);
+      const r = await api<{ messages: SessionMsg[] }>(`/api/v2/admin/sessions/${encodeURIComponent(s.id)}/messages?limit=200`);
       setMessages(r.messages ?? []);
     } catch (e: any) {
       setErr(String(e?.message ?? e));
@@ -545,11 +664,43 @@ function SessionsEnhanced() {
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <MessageSquareWarning className="size-4 text-sky-500" />
-          <h3 className="text-sm font-medium">会话浏览器 (sessions + messages + ★评分 + md 导出)</h3>
+          <h3 className="text-sm font-medium">会话浏览器 · 标定对话对象(数字员工 ↔ 真人/群组)</h3>
         </div>
         <span className="text-[10px] font-mono text-muted-foreground/70">
           {loading ? "loading…" : `${filtered.length} / ${rows.length} shown`}
         </span>
+      </div>
+
+      {/* R16-5: 顶部统计 — 让管理员一眼看到价值 */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+        <SessionStatTile
+          icon={<Bot className="size-3.5" />}
+          label="活跃数字员工"
+          value={stats.activeBots}
+          tone="emerald"
+          hint={stats.botNames.join(" · ") || "—"}
+        />
+        <SessionStatTile
+          icon={<Users className="size-3.5" />}
+          label="涉及对象"
+          value={stats.counterparties}
+          tone="violet"
+          hint="群组 / 真人 / 外部"
+        />
+        <SessionStatTile
+          icon={<Clock className="size-3.5" />}
+          label="今日新会话"
+          value={stats.todayNew}
+          tone="sky"
+          hint="近 24h 新开"
+        />
+        <SessionStatTile
+          icon={<MessageSquareWarning className="size-3.5" />}
+          label="会话总数"
+          value={stats.total}
+          tone="amber"
+          hint="全量"
+        />
       </div>
 
       <div className="flex items-center gap-2 mb-3 flex-wrap">
@@ -582,53 +733,78 @@ function SessionsEnhanced() {
 
       {err && <div className="text-[11px] text-rose-600 mb-2">{err}</div>}
 
-      <div className="max-h-[420px] overflow-auto rounded-md border border-border">
-        <table className="w-full">
-          <thead className="sticky top-0 bg-background">
-            <tr>
-              <th className="text-left text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono px-3 py-1.5 border-b border-border">title / bot</th>
-              <th className="text-left text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono px-3 py-1.5 border-b border-border">platform</th>
-              <th className="text-left text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono px-3 py-1.5 border-b border-border">msgs</th>
-              <th className="text-left text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono px-3 py-1.5 border-b border-border">updated</th>
-              <th className="text-left text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono px-3 py-1.5 border-b border-border"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 ? (
-              <tr><td colSpan={5} className="text-center text-[11px] text-muted-foreground py-6">no sessions</td></tr>
-            ) : filtered.slice(0, 100).map((s) => (
-              <tr
-                key={s.id}
-                className="hover:bg-muted/40 transition-colors cursor-pointer border-b border-border/40"
-                onClick={() => openSession(s)}
-              >
-                <td className="px-3 py-1.5">
-                  <div className="font-mono text-[11px] truncate max-w-[260px]">{s.title ?? "(no title)"}</div>
-                  <div className="text-[10px] text-muted-foreground">{s.botName ?? "—"}</div>
-                </td>
-                <td className="px-3 py-1.5 font-mono text-[11px]">{s.platform ?? "—"}</td>
-                <td className="px-3 py-1.5 font-mono text-[11px]">{s.messageCount}</td>
-                <td className="px-3 py-1.5 font-mono text-[10px] text-muted-foreground">{s.updatedAt ? new Date(s.updatedAt).toLocaleString() : "—"}</td>
-                <td className="px-3 py-1.5 text-right"><Eye className="size-3 text-muted-foreground inline" /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {/* R16-5: 卡片列表(数字员工 ↔ 真人 badge) */}
+      <div className="max-h-[520px] overflow-auto rounded-md space-y-2 pr-1">
+        {filtered.length === 0 ? (
+          <div className="text-center text-[12px] text-muted-foreground py-8">暂无会话</div>
+        ) : filtered.slice(0, 80).map((s) => {
+          const cp = classifyCounterparty(s.chatId, s.platform);
+          const CpIcon = cpIconFor(cp.kind);
+          return (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => openSession(s)}
+              className="w-full text-left rounded-lg border border-border bg-background/50 hover:bg-accent/40 hover:border-foreground/20 transition-colors px-3.5 py-3"
+            >
+              <div className="flex items-start gap-2 mb-2">
+                <span className="text-[12.5px] font-medium text-foreground truncate flex-1">
+                  {s.title ?? "(无标题)"}
+                </span>
+                <Eye className="size-3 text-muted-foreground shrink-0 mt-1" />
+              </div>
+              <div className="flex items-center gap-2 flex-wrap mb-2">
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 text-[10.5px] font-medium">
+                  <Bot className="size-3" />🤖 {s.botName ?? "(未绑定)"}
+                </span>
+                <span className="text-muted-foreground text-[11px]">↔</span>
+                <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-medium", cpColorFor(cp.kind))}>
+                  <CpIcon className="size-3" />
+                  {cp.kind === "group" ? "👥 " : cp.kind === "external" ? "🚪 " : cp.kind === "tester" ? "🧪 " : "👤 "}
+                  {cp.shortLabel}
+                </span>
+              </div>
+              <div className="flex items-center gap-3 text-[10.5px] text-muted-foreground font-mono">
+                <span>{s.platform ?? "—"}</span>
+                <span>·</span>
+                <span>{s.messageCount} 条消息</span>
+                <span>·</span>
+                <span>{s.updatedAt ? new Date(s.updatedAt).toLocaleString() : "—"}</span>
+              </div>
+            </button>
+          );
+        })}
       </div>
 
       {/* Detail sheet */}
       <Sheet open={detailOpen} onOpenChange={setDetailOpen}>
-        <SheetContent side="right" className="w-[480px] sm:w-[520px] p-0">
+        <SheetContent side="right" className="w-[520px] sm:w-[600px] p-0">
           <SheetHeader className="px-5 py-4 border-b border-border">
-            <SheetTitle className="text-sm">{activeSession?.title ?? "(no title)"}</SheetTitle>
-            <SheetDescription className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground/70">
-              {activeSession?.botName ?? "—"} · {activeSession?.platform ?? "—"} · {messages.length} msgs
+            <SheetTitle className="text-sm">{activeSession?.title ?? "(无标题)"}</SheetTitle>
+            <SheetDescription className="text-[11px] flex items-center gap-2 flex-wrap">
+              {activeSession && (() => {
+                const cp = classifyCounterparty(activeSession.chatId, activeSession.platform);
+                const CpIcon = cpIconFor(cp.kind);
+                return (
+                  <>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 text-[10.5px] font-medium">
+                      <Bot className="size-3" />🤖 {activeSession.botName ?? "—"}
+                    </span>
+                    <span className="text-muted-foreground">↔</span>
+                    <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-medium", cpColorFor(cp.kind))}>
+                      <CpIcon className="size-3" />
+                      {activeSession.chatId ? cp.label : "未识别对象"}
+                    </span>
+                    <span className="text-muted-foreground/70 font-mono">· {activeSession.platform ?? "—"} · {messages.length} 条</span>
+                  </>
+                );
+              })()}
             </SheetDescription>
           </SheetHeader>
           <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3 text-xs">
             {/* rating */}
             <div className="flex items-center gap-2 pb-3 border-b border-border">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">rating</span>
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">评分</span>
               <div className="flex items-center gap-0.5">
                 {[1, 2, 3, 4, 5].map((star) => (
                   <button
@@ -652,23 +828,41 @@ function SessionsEnhanced() {
             {msgLoading ? (
               <div className="grid place-items-center py-10"><Loader2 className="size-4 animate-spin text-muted-foreground" /></div>
             ) : messages.length === 0 ? (
-              <p className="text-center text-[11px] text-muted-foreground py-10">该 session 无消息记录</p>
+              <p className="text-center text-[12px] text-muted-foreground py-10">该会话暂无消息记录</p>
             ) : (
               messages.slice(0, 200).map((m, i) => {
                 const isUser = m.role === "user" || m.role === "human";
+                const cp = activeSession ? classifyCounterparty(activeSession.chatId, activeSession.platform) : null;
+                const actorName = isUser
+                  ? (cp?.shortLabel ?? "真人")
+                  : (activeSession?.botName ?? "数字员工");
+                const ActorIcon = isUser ? User : Bot;
                 return (
-                  <div key={m.id ?? i} className={cn("flex gap-2", isUser && "flex-row-reverse")}>
+                  <div key={m.id ?? i} className={cn("flex gap-2.5", isUser && "flex-row-reverse")}>
                     <div className={cn(
-                      "shrink-0 size-6 rounded-full grid place-items-center",
-                      isUser ? "bg-sky-500/15 text-sky-600" : "bg-emerald-500/15 text-emerald-600",
+                      "shrink-0 size-7 rounded-full grid place-items-center mt-0.5",
+                      isUser ? "bg-sky-500/15 text-sky-600 dark:text-sky-300" : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300",
                     )}>
-                      {isUser ? <User className="size-3" /> : <Bot className="size-3" />}
+                      <ActorIcon className="size-3.5" />
                     </div>
-                    <div className={cn("flex-1 max-w-[80%] rounded-md px-3 py-2", isUser ? "bg-sky-500/10" : "bg-emerald-500/10")}>
-                      <div className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground/70 mb-1">
-                        {m.role ?? "msg"} · {m.createdAt ? new Date(m.createdAt).toLocaleTimeString() : "—"}
+                    <div className="flex-1 max-w-[80%]">
+                      <div className={cn("flex items-center gap-1.5 mb-1 text-[10px]", isUser && "flex-row-reverse")}>
+                        <span className={cn(
+                          "font-medium px-1.5 py-0.5 rounded",
+                          isUser ? "bg-sky-500/10 text-sky-700 dark:text-sky-300" : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+                        )}>
+                          {isUser ? "👤" : "🤖"} {actorName}
+                        </span>
+                        <span className="font-mono text-muted-foreground/70">
+                          {m.createdAt ? new Date(m.createdAt).toLocaleTimeString() : "—"}
+                        </span>
                       </div>
-                      <div className="text-[11px] leading-relaxed whitespace-pre-wrap">{m.content ?? "(empty)"}</div>
+                      <div className={cn(
+                        "rounded-xl px-3.5 py-2.5 text-[12px] leading-relaxed whitespace-pre-wrap text-foreground",
+                        isUser ? "bg-sky-500/10 rounded-tr-sm" : "bg-emerald-500/10 rounded-tl-sm",
+                      )}>
+                        {m.content ?? "(empty)"}
+                      </div>
                     </div>
                   </div>
                 );

@@ -8,6 +8,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -18,110 +19,145 @@ import {
   ArrowUp,
   Beaker,
   GitBranch,
+  Loader2,
   Plus,
+  RefreshCw,
   Trash2,
   Zap,
 } from "lucide-react";
 import { useFetch } from "@/lib/channels/use-fetch";
-import { Inbox } from "lucide-react";
-import type { RoutingRule } from "@/lib/channels/types";
+import { mutate } from "@/lib/channels/api-mutations";
 import { cn } from "@/lib/utils";
 
 /**
- * /channels/routing — Routing policy.
+ * /channels/routing — 路由策略
  *
- * Each row is a rule: bot priority + condition expression + destination.
- * Up/Down buttons swap with neighbor (priority). The list is rendered in
- * priority order (1 first). "测试" simulates evaluating a probe payload
- * and shows which rule would match.
+ * 每行是一条规则:bot 优先级 + 条件表达式 + 目标。
+ * 规则按 priority ASC 求值,首条 enabled 且 condition 命中即生效。
+ *
+ * 数据源: routing_bindings 表
+ * 字段: group_id, pattern (条件), target_bots[], priority, enabled
+ *
+ * 后端:
+ *  - GET    /api/v2/admin/channels  (列表)
+ *  - POST   /api/v2/admin/channels  (新建)
+ *  - DELETE /api/v2/admin/channels/:id
+ *  - PATCH  /api/v2/admin/channels/:id (扩展支持 priority/enabled)
  */
 
+interface BackendRoute {
+  id: string;
+  group_id?: string;
+  groupId?: string;
+  pattern?: string;
+  target_bots?: string[];
+  targetBots?: string[];
+  priority?: number;
+  enabled?: boolean;
+}
+
+interface Rule {
+  id: string;
+  groupId: string;
+  condition: string;
+  destination: string;
+  priority: number;
+  enabled: boolean;
+}
+
 export default function RoutingPage() {
-  // Real data: pulled from /api/v2/admin/channels (routing_bindings).
-  const { data: channelsData, loading: chLoading, error: chError } = useFetch<{ channels: any[] }>("/api/v2/admin/channels");
-  const fetchedRules: RoutingRule[] = React.useMemo(() => {
-    const rows = (channelsData as any)?.channels ?? [];
-    return rows.map((r: any, i: number) => ({
+  const { data, loading, error, refresh } = useFetch<{ channels: BackendRoute[] }>(
+    "/api/v2/admin/channels",
+  );
+
+  const [rules, setRules] = React.useState<Rule[]>([]);
+  const [adding, setAdding] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [toast, setToast] = React.useState<string | null>(null);
+
+  function notify(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3500);
+  }
+
+  React.useEffect(() => {
+    const rows = (data?.channels ?? []).map((r, i) => ({
       id: r.id ?? `r_${i}`,
-      botId: (r.targetBots?.[0] ?? r.botId ?? "").toString(),
-      botName: r.targetBots?.[0] ?? r.botId ?? `bot-${i + 1}`,
-      priority: typeof r.priority === "number" ? r.priority : i + 1,
-      condition: r.pattern ?? r.condition ?? "*",
-      destination: (r.targetBots?.[0] ?? r.destination ?? "").toString(),
+      groupId: r.group_id ?? r.groupId ?? "default",
+      condition: r.pattern ?? "*",
+      destination: (r.target_bots ?? r.targetBots ?? []).join(", ") || "—",
+      priority: typeof r.priority === "number" ? r.priority : 50,
       enabled: r.enabled !== false,
     }));
-  }, [channelsData]);
-  const [rules, setRules] = React.useState<RoutingRule[]>([]);
-  React.useEffect(() => { setRules(fetchedRules); }, [fetchedRules]);
-  const [adding, setAdding] = React.useState(false);
-
-  const [fBot, setFBot] = React.useState("");
-  const [fCond, setFCond] = React.useState("");
-  const [fDest, setFDest] = React.useState("");
-  const [fPriority, setFPriority] = React.useState("10");
+    setRules(rows);
+  }, [data]);
 
   const [probe, setProbe] = React.useState(
-    JSON.stringify(
-      { channel: "feishu", intent: "risk", tag: "code-review" },
-      null,
-      2,
-    ),
+    JSON.stringify({ channel: "feishu", intent: "risk", tag: "code-review" }, null, 2),
   );
-  const [probeResult, setProbeResult] = React.useState<RoutingRule | null>(null);
+  const [probeResult, setProbeResult] = React.useState<Rule | null>(null);
 
-  if (chLoading) {
+  if (loading) {
     return (
-      <ChannelsPageShell
-        meta={<PageMeta items={[{ label: "loading", value: "…" }]} />}
-        toolbar={<></>}
-      >
+      <ChannelsPageShell meta={<PageMeta items={[{ label: "加载", value: "…" }]} />} toolbar={<></>}>
         <div className="h-64 rounded-2xl bg-muted/30 animate-pulse" />
       </ChannelsPageShell>
     );
   }
-  if (chError?.code === "not_implemented" && rules.length === 0) {
-    return <EmptyShell kind="Routing" />;
-  }
-  if (chError && rules.length === 0) {
+
+  if (error && rules.length === 0) {
     return (
       <ChannelsPageShell
-        meta={<PageMeta items={[{ label: "error", value: chError.message.slice(0, 24) }]} />}
+        meta={<PageMeta items={[{ label: "错误", value: error.message.slice(0, 24) }]} />}
         toolbar={<></>}
       >
         <div className="rounded-2xl border border-rose-500/30 bg-rose-500/5 p-6 text-sm text-rose-700 dark:text-rose-300">
-          加载失败 · {chError.message}
+          加载失败 · {error.message}
         </div>
       </ChannelsPageShell>
     );
   }
 
-  function move(id: string, dir: -1 | 1) {
-    setRules((rs) => {
-      const idx = rs.findIndex((r) => r.id === id);
-      const target = idx + dir;
-      if (idx < 0 || target < 0 || target >= rs.length) return rs;
-      const next = rs.slice();
-      const a = next[idx];
-      const b = next[target];
-      next[idx] = { ...b, priority: a.priority };
-      next[target] = { ...a, priority: b.priority };
-      next.sort((x, y) => x.priority - y.priority);
-      return next;
+  async function move(rule: Rule, dir: -1 | 1) {
+    const sorted = [...rules].sort((a, b) => a.priority - b.priority);
+    const idx = sorted.findIndex((r) => r.id === rule.id);
+    const target = idx + dir;
+    if (idx < 0 || target < 0 || target >= sorted.length) return;
+    const a = sorted[idx];
+    const b = sorted[target];
+    const newA = Math.min(Math.max(b.priority + (dir > 0 ? 5 : -5), 0), 999);
+    setBusy(true);
+    const r = await mutate("PATCH", `/api/v2/admin/channels/${a.id}`, {
+      body: { priority: newA },
+      refresh,
     });
+    setBusy(false);
+    notify(r.ok ? `✓ 已上移` : `✗ ${r.error}`);
   }
 
-  function toggle(id: string) {
-    setRules((rs) => rs.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r)));
+  async function toggle(rule: Rule) {
+    setBusy(true);
+    const r = await mutate("PATCH", `/api/v2/admin/channels/${rule.id}`, {
+      body: { enabled: !rule.enabled },
+      refresh,
+    });
+    setBusy(false);
+    notify(r.ok ? `✓ 已${!rule.enabled ? "启用" : "停用"}` : `✗ ${r.error}`);
   }
 
-  function remove(id: string) {
-    setRules((rs) => rs.filter((r) => r.id !== id));
+  async function remove(rule: Rule) {
+    if (!confirm(`删除规则 #${rule.priority}?`)) return;
+    setBusy(true);
+    const r = await mutate("DELETE", `/api/v2/admin/channels/${rule.id}`, { refresh });
+    setBusy(false);
+    notify(r.ok ? `✓ 已删除` : `✗ ${r.error}`);
   }
 
   function runProbe() {
     try {
       const payload = JSON.parse(probe);
-      const rule = rules.find((r) => {
+      const sorted = [...rules].sort((a, b) => a.priority - b.priority);
+      const rule = sorted.find((r) => {
         if (!r.enabled) return false;
         const c = r.condition.trim();
         if (c === "*" || c === "true" || c === "default") return true;
@@ -138,47 +174,25 @@ export default function RoutingPage() {
     }
   }
 
-  function addRule() {
-    if (!fBot.trim() || !fCond.trim() || !fDest.trim()) return;
-    const priority = Number.parseInt(fPriority, 10) || 10;
-    setRules((rs) => [
-      ...rs,
-      {
-        id: `r_${Math.random().toString(36).slice(2, 8)}`,
-        botId: fBot.toLowerCase().replace(/\s+/g, "_"),
-        botName: fBot.trim(),
-        priority,
-        condition: fCond.trim(),
-        destination: fDest.trim(),
-        enabled: true,
-      },
-    ].sort((a, b) => a.priority - b.priority));
-    setAdding(false);
-    setFBot("");
-    setFCond("");
-    setFDest("");
-    setFPriority("10");
-  }
+  const enabledCount = rules.filter((r) => r.enabled).length;
+  const sorted = [...rules].sort((a, b) => a.priority - b.priority);
+  const hasFallback = sorted.some((r) => r.condition === "*" && r.enabled);
 
   return (
     <ChannelsPageShell
       meta={
         <PageMeta
           items={[
-            { label: "rules", value: rules.length },
-            { label: "enabled", value: rules.filter((r) => r.enabled).length },
-            {
-              label: "bots",
-              value: Array.from(new Set(rules.map((r) => r.botName))).length,
-            },
-            { label: "fallback", value: rules.find((r) => r.condition === "*") ? "yes" : "no" },
+            { label: "规则数", value: rules.length },
+            { label: "启用", value: enabledCount },
+            { label: "回退", value: hasFallback ? "有" : "无" },
           ]}
           footnote={
             <>
               规则按 <code className="font-mono">priority ASC</code> 求值,首条
-              <code className="font-mono">enabled</code> 且
-              <code className="font-mono">condition</code> 命中即生效。
-              <code className="font-mono">condition=&quot;*&quot;</code> 为全局回退。
+              <code className="font-mono"> enabled</code> 且
+              <code className="font-mono"> condition</code> 命中即生效。
+              <code className="font-mono">condition="*"</code> 为全局回退,放最后。
             </>
           }
         />
@@ -187,12 +201,16 @@ export default function RoutingPage() {
         <>
           <div className="flex items-center gap-2">
             <GitBranch className="size-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold tracking-tight">Routing</h2>
+            <h2 className="text-sm font-semibold tracking-tight">路由策略</h2>
             <span className="text-[11px] text-muted-foreground font-mono">
-              {rules.length} rules · 按 priority 排序
+              {rules.length} 条 · 按 priority 排序
             </span>
           </div>
           <div className="flex items-center gap-2">
+            <Button size="sm" variant="ghost" className="gap-1.5" onClick={refresh}>
+              <RefreshCw className="size-3.5" />
+              刷新
+            </Button>
             <Button size="sm" className="gap-1.5" onClick={() => setAdding(true)}>
               <Plus className="size-3.5" />
               添加路由规则
@@ -204,8 +222,8 @@ export default function RoutingPage() {
       <div className="grid grid-cols-12 gap-4">
         <div className="col-span-12 xl:col-span-8">
           <DenseTable
-            head={["#", "Bot", "Condition", "Destination", "Enabled", ""]}
-            rows={rules.map((r, i) => ({
+            head={["#", "Group", "条件", "目标", "启用", ""]}
+            rows={sorted.map((r, i) => ({
               cells: [
                 <div key="p" className="flex items-center gap-1.5">
                   <span className="font-mono text-[11.5px] text-foreground/85">
@@ -214,8 +232,8 @@ export default function RoutingPage() {
                   <div className="flex flex-col">
                     <button
                       type="button"
-                      onClick={() => move(r.id, -1)}
-                      disabled={i === 0}
+                      onClick={() => move(r, -1)}
+                      disabled={i === 0 || busy}
                       className="text-muted-foreground hover:text-foreground disabled:opacity-30"
                       aria-label="上移"
                     >
@@ -223,8 +241,8 @@ export default function RoutingPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => move(r.id, 1)}
-                      disabled={i === rules.length - 1}
+                      onClick={() => move(r, 1)}
+                      disabled={i === sorted.length - 1 || busy}
                       className="text-muted-foreground hover:text-foreground disabled:opacity-30"
                       aria-label="下移"
                     >
@@ -232,8 +250,8 @@ export default function RoutingPage() {
                     </button>
                   </div>
                 </div>,
-                <MonoCell key="b" className="text-foreground/85">
-                  {r.botName}
+                <MonoCell key="g" className="text-muted-foreground">
+                  {r.groupId}
                 </MonoCell>,
                 <MonoCell
                   key="c"
@@ -247,10 +265,7 @@ export default function RoutingPage() {
                 >
                   {r.condition}
                 </MonoCell>,
-                <MonoCell
-                  key="d"
-                  className="text-foreground/85"
-                >
+                <MonoCell key="d" className="text-foreground/85">
                   {r.destination}
                 </MonoCell>,
                 <button
@@ -258,9 +273,10 @@ export default function RoutingPage() {
                   type="button"
                   role="switch"
                   aria-checked={r.enabled}
-                  onClick={() => toggle(r.id)}
+                  onClick={() => toggle(r)}
+                  disabled={busy}
                   className={cn(
-                    "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+                    "relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50",
                     r.enabled ? "bg-emerald-500" : "bg-muted-foreground/30",
                   )}
                 >
@@ -275,16 +291,17 @@ export default function RoutingPage() {
                   <Button
                     size="icon-xs"
                     variant="ghost"
-                    onClick={() => remove(r.id)}
+                    onClick={() => remove(r)}
                     aria-label="删除"
                     className="hover:text-rose-600"
+                    disabled={busy}
                   >
                     <Trash2 className="size-3.5" />
                   </Button>
                 </div>,
               ],
             }))}
-            empty="还没有路由规则 — 点上方添加。"
+            empty="还没有路由规则 — 点右上角「添加路由规则」开始"
           />
         </div>
 
@@ -294,7 +311,7 @@ export default function RoutingPage() {
               <div className="flex items-center gap-1.5">
                 <Beaker className="size-3.5 text-muted-foreground" />
                 <span className="text-[11px] font-mono uppercase tracking-wide text-muted-foreground">
-                  test probe
+                  调试探针
                 </span>
               </div>
               <Button size="xs" className="gap-1" onClick={runProbe}>
@@ -314,23 +331,22 @@ export default function RoutingPage() {
                 spellCheck={false}
                 className="flex w-full rounded-sm border border-input bg-foreground/95 text-background px-2 py-1.5 text-[11.5px] font-mono outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               />
-              {probeResult && (
+              {probeResult ? (
                 <div className="rounded-sm ring-1 ring-emerald-500/30 bg-emerald-500/[0.06] p-2 text-[11.5px]">
                   <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300 mb-1">
                     <Zap className="size-3" />
-                    <span className="font-mono">match → #{probeResult.priority}</span>
+                    <span className="font-mono">命中 → #{probeResult.priority}</span>
                   </div>
                   <div className="grid grid-cols-2 gap-1 font-mono">
-                    <span className="text-muted-foreground">bot</span>
-                    <span>{probeResult.botName}</span>
+                    <span className="text-muted-foreground">group</span>
+                    <span>{probeResult.groupId}</span>
                     <span className="text-muted-foreground">dest</span>
                     <span className="break-all">{probeResult.destination}</span>
                   </div>
                 </div>
-              )}
-              {probeResult === null && (
+              ) : (
                 <div className="rounded-sm ring-1 ring-border bg-muted/30 p-2 text-[11.5px] text-muted-foreground">
-                  无匹配 — 测试当前规则集。
+                  无匹配 — 调整 payload 后重新测试
                 </div>
               )}
             </div>
@@ -339,106 +355,139 @@ export default function RoutingPage() {
       </div>
 
       <div className="mt-3 flex items-center gap-3 text-[10.5px] text-muted-foreground font-mono">
-        <KeyCell>HINT</KeyCell>
+        <KeyCell>提示</KeyCell>
         <span>condition 支持 == / &amp;&amp; / || / 通配 *;回退规则放最后</span>
       </div>
 
-      <Dialog
-        open={adding}
-        onOpenChange={(next) => {
-          if (!next) setAdding(false);
-        }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-base flex items-center gap-2">
-              <Plus className="size-4 text-muted-foreground" />
-              添加路由规则
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              priority 数字越小优先级越高。condition 用 <code className="font-mono">==</code> 比较字段,
-              支持 <code className="font-mono">&amp;&amp;</code> / <code className="font-mono">||</code>。
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 text-xs">
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <Label htmlFor="r-prio">Priority</Label>
-                <Input
-                  id="r-prio"
-                  value={fPriority}
-                  onChange={(e) => setFPriority(e.target.value)}
-                  placeholder="10"
-                  inputMode="numeric"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="r-bot">Bot</Label>
-                <Input
-                  id="r-bot"
-                  value={fBot}
-                  onChange={(e) => setFBot(e.target.value)}
-                  placeholder="玄鉴"
-                />
-              </div>
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="r-cond">Condition</Label>
-              <Input
-                id="r-cond"
-                value={fCond}
-                onChange={(e) => setFCond(e.target.value)}
-                placeholder="channel == 'feishu' && intent == 'risk'"
-                className="font-mono"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="r-dest">Destination</Label>
-              <Input
-                id="r-dest"
-                value={fDest}
-                onChange={(e) => setFDest(e.target.value)}
-                placeholder="agent.xuanjian"
-                className="font-mono"
-              />
-            </div>
-          </div>
-          <div className="flex items-center justify-end gap-2 pt-2">
-            <Button variant="outline" size="sm" onClick={() => setAdding(false)}>
-              取消
-            </Button>
-            <Button size="sm" onClick={addRule}>
-              添加
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 rounded-lg bg-foreground text-background px-3.5 py-2 text-xs shadow-lg">
+          {toast}
+        </div>
+      )}
+
+      <AddRuleDialog open={adding} onClose={() => setAdding(false)} onAdded={() => { setAdding(false); refresh(); }} />
     </ChannelsPageShell>
   );
 }
 
-function EmptyShell({ kind }: { kind: string }) {
+function AddRuleDialog({
+  open,
+  onClose,
+  onAdded,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onAdded: () => void;
+}) {
+  const [groupId, setGroupId] = React.useState("default");
+  const [priority, setPriority] = React.useState("50");
+  const [condition, setCondition] = React.useState("*");
+  const [destination, setDestination] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const [err, setErr] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    setGroupId("default");
+    setPriority("50");
+    setCondition("*");
+    setDestination("");
+    setErr(null);
+  }, [open]);
+
+  if (!open) return null;
+
+  async function add() {
+    if (!destination.trim()) {
+      setErr("目标 Bot 必填");
+      return;
+    }
+    setSaving(true);
+    setErr(null);
+    const r = await mutate("POST", "/api/v2/admin/channels", {
+      body: {
+        groupId: groupId.trim() || "default",
+        priority: parseInt(priority, 10) || 50,
+        pattern: condition.trim() || "*",
+        targetBots: destination.split(",").map((s) => s.trim()).filter(Boolean),
+        enabled: true,
+      },
+    });
+    setSaving(false);
+    if (r.ok) onAdded();
+    else setErr(r.error || "添加失败");
+  }
+
   return (
-    <ChannelsPageShell
-      meta={
-        <PageMeta
-          items={[{ label: "backend", value: "not_implemented" }]}
-          footnote={`后端未实装 ${kind} 端点 · 已废弃 mock.ts 引用,改为显示空状态。`}
-        />
-      }
-      toolbar={<></>}
-    >
-      <div className="flex flex-col items-center gap-3 rounded-3xl border border-dashed border-border py-24 text-center">
-        <Inbox className="size-6 text-foreground/35" />
-        <span className="font-mono text-[10.5px] uppercase tracking-[0.22em] text-foreground/40">
-          empty state
-        </span>
-        <p className="max-w-[44ch] text-sm text-foreground/60">
-          {kind} 数据接口后端未实装。
-          <br />
-          一旦后端上线,刷新页面即可看到真实数据。
-        </p>
-      </div>
-    </ChannelsPageShell>
+    <Dialog open={open} onOpenChange={(n) => !n && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-base flex items-center gap-2">
+            <Plus className="size-4 text-muted-foreground" />
+            添加路由规则
+          </DialogTitle>
+          <DialogDescription className="text-xs">
+            priority 数字越小优先级越高。condition 用 <code className="font-mono">==</code> 比较字段,
+            支持 <code className="font-mono">&amp;&amp;</code> / <code className="font-mono">||</code>。
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 text-xs">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <Label htmlFor="r-prio">Priority</Label>
+              <Input
+                id="r-prio"
+                value={priority}
+                onChange={(e) => setPriority(e.target.value)}
+                placeholder="50"
+                inputMode="numeric"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="r-group">Group</Label>
+              <Input
+                id="r-group"
+                value={groupId}
+                onChange={(e) => setGroupId(e.target.value)}
+                placeholder="default"
+              />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="r-cond">条件</Label>
+            <Input
+              id="r-cond"
+              value={condition}
+              onChange={(e) => setCondition(e.target.value)}
+              placeholder="channel == 'feishu' && intent == 'risk'"
+              className="font-mono"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="r-dest">目标 Bot(多个用逗号分隔)</Label>
+            <Input
+              id="r-dest"
+              value={destination}
+              onChange={(e) => setDestination(e.target.value)}
+              placeholder="玄鉴,守静"
+              className="font-mono"
+            />
+          </div>
+          {err ? (
+            <div className="rounded-md bg-rose-500/10 ring-1 ring-rose-500/30 px-2 py-1.5 text-[11px] text-rose-700 dark:text-rose-300">
+              {err}
+            </div>
+          ) : null}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={onClose}>
+            取消
+          </Button>
+          <Button size="sm" onClick={add} disabled={saving}>
+            {saving ? "添加中…" : "添加"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
