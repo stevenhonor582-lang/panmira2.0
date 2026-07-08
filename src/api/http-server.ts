@@ -533,7 +533,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
       // R9 mock endpoints (2026-07-08) - production 10/10
       if (url.startsWith('/api/mcp/servers')
           || url.startsWith('/api/v2/channels/oauth')
-          || url.startsWith('/api/agents/')
+          || url.match(/^\/api\/agents\/[^/]+\/log-series/)
           || url.startsWith('/api/knowledge/folders')
           || url.startsWith('/api/v2/admin/diagnosis')
           || url.startsWith('/api/v2/admin/optimization')
@@ -608,6 +608,20 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
             ironLaws: body.ironLaws,
             boundary: body.boundary,
             orchestration: body.orchestration,
+            // R15-B wizard fields (forwarded if present)
+            isTemplate: body.isTemplate,
+            workingDir: body.workingDir,
+            channelIds: body.channelIds,
+            visibility: body.visibility,
+            temperature: body.temperature,
+            ownerId: body.ownerId,
+            persona: body.persona,
+            defaultEngine: body.defaultEngine,
+            defaultModel: body.defaultModel,
+            defaultContextWindow: body.defaultContextWindow,
+            avatarGlyph: body.avatarGlyph,
+            avatarHue: body.avatarHue,
+            modelId: body.modelId,
           });
           jsonResponse(res, 201, { agent });
           return;
