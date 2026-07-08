@@ -133,5 +133,230 @@ export async function handlePeopleRoutes(
     }
   }
 
+  // ====== R14-BC: /api/v2/people/:id/stats ======
+  // 返回该真人今日完成/异常/状态 + 本周 token 消耗
+  const statsMatch = u.pathname.match(/^\/api\/v2\/people\/([0-9a-f-]{36})\/stats$/);
+  if (method === 'GET' && statsMatch) {
+    if (!requireAnyScope(ctx, ['people:read', 'people:admin', '*'])) {
+      jsonResponse(res, 403, fail('forbidden', '需要 people:read 或 people:admin'));
+      return true;
+    }
+    const userId = statsMatch[1];
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayTs = today.getTime(); // ms
+      const weekAgoTs = todayTs - 7 * 24 * 60 * 60 * 1000;
+
+      // 今日完成 pipeline_runs(success 且 started_at > today)
+      const doneRes = await pool.query(
+        `SELECT count(*)::int AS n
+           FROM pipeline_runs pr
+          WHERE pr.pipeline_id IN (
+                  SELECT id FROM agent_pipelines WHERE owner_id = $1
+                )
+            AND pr.started_at >= to_timestamp($2 / 1000.0)
+            AND pr.status = 'success'`,
+        [userId, todayTs],
+      );
+
+      // 今日异常 activity_events(type='error')
+      const errRes = await pool.query(
+        `SELECT count(*)::int AS n
+           FROM activity_events ae
+          WHERE ae.user_id = $1
+            AND ae.type = 'error'
+            AND ae.timestamp > $2`,
+        [userId, todayTs],
+      );
+
+      // 24h 活动数 → 状态判定
+      const activityRes = await pool.query(
+        `SELECT count(*)::int AS n
+           FROM activity_events
+          WHERE user_id = $1 AND timestamp > $2`,
+        [userId, Date.now() - 24 * 60 * 60 * 1000],
+      );
+
+      // 本周 token 总量(input+output)
+      const tokenRes = await pool.query(
+        `SELECT COALESCE(sum(COALESCE(input_tokens,0) + COALESCE(output_tokens,0)),0)::bigint AS total
+           FROM activity_events
+          WHERE user_id = $1 AND timestamp > $2`,
+        [userId, weekAgoTs],
+      );
+
+      // 本周 token 上限(估算,简单按 100k cap)
+      const weekTokens = Number(tokenRes.rows[0]?.total ?? 0);
+      const weekCap = 100_000;
+      const weekPct = Math.min(100, Math.round((weekTokens / weekCap) * 100));
+
+      const activityN = activityRes.rows[0]?.n ?? 0;
+      const status: 'busy' | 'idle' | 'offline' =
+        activityN >= 5 ? 'busy' : activityN > 0 ? 'idle' : 'offline';
+
+      jsonResponse(res, 200, ok({
+        todayDone: doneRes.rows[0]?.n ?? 0,
+        todayErrors: errRes.rows[0]?.n ?? 0,
+        status,
+        activity24h: activityN,
+        weekTokens,
+        weekCap,
+        weekPct,
+      }));
+      return true;
+    } catch (e) {
+      jsonResponse(res, 500, fail('internal_error', String(e)));
+      return true;
+    }
+  }
+
+  // ====== R14-BC: /api/v2/people/:id/usage?days=30 ======
+  // 30 天 token 趋势 + 按 agent / 任务分解
+  const usageMatch = u.pathname.match(/^\/api\/v2\/people\/([0-9a-f-]{36})\/usage$/);
+  if (method === 'GET' && usageMatch) {
+    if (!requireAnyScope(ctx, ['people:read', 'people:admin', '*'])) {
+      jsonResponse(res, 403, fail('forbidden', '需要 people:read 或 people:admin'));
+      return true;
+    }
+    const userId = usageMatch[1];
+    const days = Math.min(Math.max(parseInt(u.searchParams.get('days') || '30', 10), 1), 90);
+    try {
+      const sinceMs = Date.now() - days * 24 * 60 * 60 * 1000;
+
+      // 按天聚合 token
+      const dailyRes = await pool.query(
+        `SELECT to_char(to_timestamp(timestamp / 1000.0) AT TIME ZONE 'Asia/Shanghai', 'YYYY-MM-DD') AS day,
+                COALESCE(sum(COALESCE(input_tokens,0) + COALESCE(output_tokens,0)),0)::bigint AS tokens,
+                count(*)::int AS calls
+           FROM activity_events
+          WHERE user_id = $1 AND timestamp > $2
+          GROUP BY day
+          ORDER BY day`,
+        [userId, sinceMs],
+      );
+
+      // 按 agent(bot)分解
+      const byAgentRes = await pool.query(
+        `SELECT COALESCE(bot_name, '未知') AS agent,
+                COALESCE(sum(COALESCE(input_tokens,0) + COALESCE(output_tokens,0)),0)::bigint AS tokens
+           FROM activity_events
+          WHERE user_id = $1 AND timestamp > $2
+          GROUP BY agent
+          ORDER BY tokens DESC
+          LIMIT 10`,
+        [userId, sinceMs],
+      );
+
+      // 按任务(pipeline)分解 — 通过 bot_id JOIN agent_pipelines
+      const byTaskRes = await pool.query(
+        `SELECT COALESCE(ap.name, '未绑定流水线') AS task,
+                COALESCE(sum(COALESCE(ae.input_tokens,0) + COALESCE(ae.output_tokens,0)),0)::bigint AS tokens
+           FROM activity_events ae
+           LEFT JOIN agents a ON a.id = ae.bot_id
+           LEFT JOIN agent_pipelines ap ON ap.id::text = COALESCE(NULLIF(ae.response_preview, ''), NULL)
+          WHERE ae.user_id = $1 AND ae.timestamp > $2
+          GROUP BY task
+          ORDER BY tokens DESC
+          LIMIT 5`,
+        [userId, sinceMs],
+      );
+
+      const totalTokens = dailyRes.rows.reduce((s: number, r: { tokens: string | number }) => s + Number(r.tokens), 0);
+      const totalCalls = dailyRes.rows.reduce((s: number, r: { calls: string | number }) => s + Number(r.calls), 0);
+      const dailyAvg = dailyRes.rows.length > 0
+        ? Math.round(totalTokens / dailyRes.rows.length)
+        : 0;
+
+      jsonResponse(res, 200, ok({
+        days,
+        totalTokens,
+        totalCalls,
+        dailyAvg,
+        daily: dailyRes.rows,
+        byAgent: byAgentRes.rows,
+        byTask: byTaskRes.rows,
+      }));
+      return true;
+    } catch (e) {
+      jsonResponse(res, 500, fail('internal_error', String(e)));
+      return true;
+    }
+  }
+
+  // ====== R14-BC: /api/v2/people/:id/agents ======
+  // GET 列出该 user 关联的 agent;PATCH 绑定/解绑
+  const agentsMatch = u.pathname.match(/^\/api\/v2\/people\/([0-9a-f-]{36})\/agents$/);
+  if (agentsMatch) {
+    const userId = agentsMatch[1];
+
+    if (method === 'GET') {
+      if (!requireAnyScope(ctx, ['people:read', 'people:admin', '*'])) {
+        jsonResponse(res, 403, fail('forbidden', '需要 people:read 或 people:admin'));
+        return true;
+      }
+      const result = await pool.query(
+        `SELECT id, name, display_name, role_template, description, is_active,
+                deployment_type, created_at, updated_at
+           FROM agents
+          WHERE owner_user_id = $1
+          ORDER BY created_at DESC`,
+        [userId],
+      );
+      jsonResponse(res, 200, ok(result.rows));
+      return true;
+    }
+
+    if (method === 'PATCH') {
+      if (!requireAnyScope(ctx, ['people:admin', '*'])) {
+        jsonResponse(res, 403, fail('forbidden', '需要 people:admin'));
+        return true;
+      }
+      try {
+        const body = await parseJsonBody(req);
+        const agentIds: string[] = Array.isArray(body.agentIds)
+          ? body.agentIds.filter((x: unknown) => typeof x === 'string')
+          : [];
+        const action: string = body.action === 'remove' ? 'remove' : body.action === 'set' ? 'set' : 'add';
+
+        if (agentIds.length === 0 && action !== 'set') {
+          jsonResponse(res, 400, fail('bad_request', 'agentIds 不能为空'));
+          return true;
+        }
+
+        if (action === 'add') {
+          await pool.query(
+            'UPDATE agents SET owner_user_id = $1 WHERE id = ANY($2::uuid[])',
+            [userId, agentIds],
+          );
+        } else if (action === 'remove') {
+          await pool.query(
+            'UPDATE agents SET owner_user_id = NULL WHERE owner_user_id = $1 AND id = ANY($2::uuid[])',
+            [userId, agentIds],
+          );
+        } else {
+          // set: 先解绑所有,再绑定传入的
+          await pool.query('UPDATE agents SET owner_user_id = NULL WHERE owner_user_id = $1', [userId]);
+          if (agentIds.length > 0) {
+            await pool.query(
+              'UPDATE agents SET owner_user_id = $1 WHERE id = ANY($2::uuid[])',
+              [userId, agentIds],
+            );
+          }
+        }
+
+        const result = await pool.query(
+          `SELECT id FROM agents WHERE owner_user_id = $1`,
+          [userId],
+        );
+        jsonResponse(res, 200, ok({ bound: result.rows.map((r: { id: string }) => r.id) }));
+        return true;
+      } catch (e) {
+        jsonResponse(res, 500, fail('internal_error', String(e)));
+        return true;
+      }
+    }
+  }
+
   return false;
 }
