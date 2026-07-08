@@ -466,16 +466,32 @@ interface TldrawLazyProps {
   hideUi?: boolean;
 }
 
+type TldrawCmp = React.ComponentType<Record<string, unknown>>;
+
+/**
+ * Lazy wrapper around `tldraw`'s default `<Tldraw />`.
+ *
+ * NOTE: must hold the loaded component in **useState**, not useRef.
+ * Setting `ref.current` does not trigger a re-render, so the loader would spin
+ * forever even after a successful dynamic import. (R17-4 fix.)
+ */
 const TldrawLazy: React.FC<TldrawLazyProps> = (props) => {
-  const TldrawMod = React.useRef<React.ComponentType<Record<string, unknown>> | null>(null);
+  const [Comp, setComp] = React.useState<TldrawCmp | null>(null);
   const [err, setErr] = React.useState<string | null>(null);
   React.useEffect(() => {
+    let mounted = true;
     import("tldraw")
       .then((m) => {
-        TldrawMod.current = m.Tldraw as React.ComponentType<Record<string, unknown>>;
-        setErr(null);
+        if (!mounted) return;
+        setComp(() => m.Tldraw as TldrawCmp);
       })
-      .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+      .catch((e) => {
+        if (!mounted) return;
+        setErr(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      mounted = false;
+    };
   }, []);
   if (err) {
     return (
@@ -484,12 +500,13 @@ const TldrawLazy: React.FC<TldrawLazyProps> = (props) => {
       </div>
     );
   }
-  const Comp = TldrawMod.current;
   if (!Comp) {
     return (
-      <div className="absolute inset-0 grid place-items-center text-xs text-muted-foreground">
-        <Loader2 className="size-3 animate-spin mr-2 inline-block" />
-        加载画布…
+      <div className="absolute inset-0 grid place-items-center">
+        <div className="flex flex-col items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="size-5 animate-spin" />
+          <span>画布加载中…</span>
+        </div>
       </div>
     );
   }
