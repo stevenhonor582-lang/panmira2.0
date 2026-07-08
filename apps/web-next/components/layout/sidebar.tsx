@@ -15,14 +15,12 @@ import {
   Bot,
   Library,
   Workflow,
-  LayoutTemplate,
   Database,
   Brain,
   BookOpen,
   FileSearch,
   MessageSquareWarning,
   ListChecks,
-  Plus,
   ClipboardList,
   CalendarClock,
   Cpu,
@@ -70,10 +68,9 @@ const NAV_GROUPS: NavGroup[] = [
     defaultHref: "/employees",
     icon: Bot,
     items: [
+      // 只保留员工库入口;新建向导 / 模板在员工库页面内部已有按钮。
+      // 员工详情 [id] 是模板占位,不显示在导航里。
       { label: "员工库", href: "/employees", icon: Library },
-      { label: "员工详情", href: "/employees/[id]", icon: Users },
-      { label: "新建向导", href: "/employees/new", icon: Plus },
-      { label: "模板", href: "/employees/templates", icon: LayoutTemplate },
     ],
   },
   {
@@ -82,9 +79,8 @@ const NAV_GROUPS: NavGroup[] = [
     defaultHref: "/foundation/memory/l1",
     icon: Database,
     items: [
-      { label: "短期记忆 · L1", href: "/foundation/memory/l1", icon: Brain },
-      { label: "长期记忆 · L2", href: "/foundation/memory/l2", icon: Brain },
-      { label: "永久记忆 · L3", href: "/foundation/memory/l3", icon: Brain },
+      // L1/L2/L3 由记忆页面内部 tab 切换,左侧只保留一个"记忆"入口(默认 L1)。
+      { label: "记忆", href: "/foundation/memory/l1", icon: Brain },
       { label: "知识库", href: "/foundation/knowledge", icon: BookOpen },
       { label: "抽取", href: "/foundation/extraction", icon: FileSearch },
       { label: "反馈", href: "/foundation/feedback", icon: MessageSquareWarning },
@@ -96,9 +92,8 @@ const NAV_GROUPS: NavGroup[] = [
     defaultHref: "/tasks",
     icon: ClipboardList,
     items: [
+      // 新建任务在任务列表页面内部已有按钮;任务详情 [id] 是模板占位。
       { label: "任务列表", href: "/tasks", icon: ListChecks },
-      { label: "新建任务", href: "/tasks/new", icon: Plus },
-      { label: "任务详情", href: "/tasks/[id]", icon: Workflow },
       { label: "定时任务", href: "/tasks/scheduled", icon: CalendarClock },
     ],
   },
@@ -127,15 +122,6 @@ export const NAV_MODULE_MAP: Record<string, string> = Object.fromEntries(
   NAV_GROUPS.flatMap((g) => g.items.map((i) => [i.href, g.title])),
 );
 
-/**
- * Replace Next.js dynamic segments ([id], [l1|l2|l3]) in NAV items with
- * the corresponding concrete path so `usePathname().startsWith()` matches.
- */
-function resolveDynamicPath(pathname: string, href: string): string {
-  if (pathname.startsWith(href.replace(/\[[^\]]+\]/, ""))) return pathname;
-  return href;
-}
-
 export function Sidebar() {
   const pathname = usePathname() ?? "/";
 
@@ -149,7 +135,7 @@ export function Sidebar() {
           <div className="leading-tight">
             <div className="text-sm font-semibold tracking-tight">Panmira</div>
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              IA v6 · Admin Console
+              2.0
             </div>
           </div>
         </Link>
@@ -178,16 +164,10 @@ export function Sidebar() {
               </Link>
               <ul className="mt-1 flex flex-col gap-0.5 px-2">
                 {group.items.map((item) => {
-                  const resolvedHref = resolveDynamicPath(pathname, item.href);
                   const active =
-                    pathname === resolvedHref ||
+                    pathname === item.href ||
                     (item.href !== group.defaultHref &&
-                      pathname.startsWith(resolvedHref.replace(/\[[^\]]+\]/, "")));
-                  // Disable the [id] / [l1|l2|l3] pseudo-links from being clickable
-                  // unless the user is already inside that module.
-                  const isTemplate =
-                    item.href.includes("[") && item.href.includes("]");
-                  if (isTemplate) return null;
+                      pathname.startsWith(item.href));
                   const Icon = item.icon;
                   return (
                     <li key={item.href}>
@@ -213,7 +193,7 @@ export function Sidebar() {
       </nav>
 
       <div className="p-3 border-t border-sidebar-border text-[10px] text-muted-foreground">
-        <div>v0.4 · IA v6 骨架</div>
+        <div>Panmira 2.0</div>
       </div>
     </aside>
   );

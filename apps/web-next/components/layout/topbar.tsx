@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Bell, ChevronRight, LogOut, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -22,6 +22,7 @@ import { getUser, logout, type AuthUser } from "@/lib/auth";
 
 export function Topbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [user, setUser] = React.useState<AuthUser | null>(null);
 
   React.useEffect(() => {
@@ -39,6 +40,13 @@ export function Topbar() {
         .join("")
         .toUpperCase()
     : "?";
+
+  // 个人资料跳当前登录用户的员工详情页;无 id 时退回到员工列表。
+  const profileHref = user?.id
+    ? `/overview/people/${user.id}`
+    : "/overview/people";
+
+  const goProfile = () => router.push(profileHref);
 
   return (
     <header className="h-12 shrink-0 border-b border-border bg-background/95 backdrop-blur flex items-center justify-between px-4 sticky top-0 z-30">
@@ -84,7 +92,7 @@ export function Topbar() {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem disabled>
+            <DropdownMenuItem onClick={goProfile}>
               <User className="size-3.5" />
               <span>个人资料</span>
             </DropdownMenuItem>
