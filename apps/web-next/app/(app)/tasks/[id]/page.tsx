@@ -1,17 +1,14 @@
 "use client";
 
 /**
- * /tasks/[id] — task detail page.
+ * /tasks/[id] — task detail page (R13-D deepening).
  *
- * Layout (two-column, 70/30):
- *   ┌──────────────────────── 70% ─────────────────────┬── 30% ──┐
- *   │ Title · status · meta row                          │         │
- *   │ Read-only DAG viewer (tldraw)                      │  Log    │
- *   │                                                    │  panel  │
- *   └────────────────────────────────────────────────────┴─────────┘
- *
- * - Fetches /api/v2/admin/pipelines/{id} for metadata + snapshot.
- * - Falls back to a "未找到" empty state on 404.
+ * Layout:
+ *   ┌────────────────────── 70% ──────────────────┬──── 30% ────┐
+ *   │ Title · status · meta                          │ Bindings   │
+ *   │ Real tldraw DAG editor (viewer + replay)       │ Run history│
+ *   │                                                │ Live log   │
+ *   └────────────────────────────────────────────────┴────────────┘
  */
 
 import * as React from "react";
@@ -19,14 +16,11 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
-  ArrowLeft,
-  Bot,
-  Calendar,
   ChevronLeft,
   CircleAlert,
   Edit3,
   Loader2,
-  UserRound,
+  Save,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -35,12 +29,13 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 import { ExecutionLogPanel } from "@/components/tasks/execution-log-panel";
+import { TaskBindingPanel } from "@/components/tasks/task-binding-panel";
+import { RunHistoryPanel } from "@/components/tasks/run-history-panel";
 import {
   TASK_STATUS_LABEL,
   TASK_STATUS_TONE,
   type TaskStatus,
 } from "@/components/tasks/types";
-import { triggerPipelineAsync } from "@/lib/pipeline-trigger";
 
 const TaskDagEditor = dynamic(
   () => import("@/components/tasks/task-dag-editor").then((m) => m.TaskDagEditor),
@@ -72,6 +67,7 @@ interface RawPipeline {
     nodes?: Array<{ shapeId: string; meta?: { label?: string } }>;
     edges?: unknown[];
   } | null;
+  triggerConfig?: { snapshot?: unknown; botId?: string } | null;
 }
 
 export default function TaskDetailPage() {
@@ -82,6 +78,8 @@ export default function TaskDetailPage() {
   const [pipeline, setPipeline] = React.useState<RawPipeline | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [saving, setSaving] = React.useState(false);
+  const [draftDoc, setDraftDoc] = React.useState<unknown>(null);
 
   React.useEffect(() => {
     if (!id) return;
@@ -104,23 +102,34 @@ export default function TaskDetailPage() {
     };
   }, [id]);
 
-  const handleTrigger = React.useCallback(async () => {
-    if (!id) return;
+  const handleSave = React.useCallback(async () => {
+    if (!id || !draftDoc) return;
+    setSaving(true);
     try {
-      const r = await triggerPipelineAsync(
-        { pipelineId: id, triggeredBy: "user" },
-        fetch,
-      );
-      // Best-effort toast via window.alert (no toast lib yet).
-      if (r.kind === "accepted") {
-        // WS will pick up the progress.
-      } else if (r.kind === "failed") {
-        window.alert(`运行失败: ${r.error}`);
-      }
+      const doc = draftDoc as {
+        snapshot?: unknown;
+        nodes?: unknown[];
+        edges?: unknown[];
+        botId?: string;
+      };
+      await api(`/api/v2/admin/pipelines/${id}`, {
+        method: "PATCH",
+        body: {
+          nodes: doc.nodes ?? [],
+          edges: doc.edges ?? [],
+          triggerConfig: {
+            snapshot: doc.snapshot,
+            botId: doc.botId,
+            schema: "r13d-dag-v1",
+          },
+        },
+      });
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "触发失败");
+      window.alert(e instanceof Error ? e.message : "保存失败");
+    } finally {
+      setSaving(false);
     }
-  }, [id]);
+  }, [id, draftDoc]);
 
   if (loading) {
     return (
@@ -153,6 +162,7 @@ export default function TaskDetailPage() {
   const cfg = pipeline.config ?? null;
   const nodeCount = (cfg?.nodes ?? pipeline.nodes ?? []) as unknown[];
   const edgeCount = (cfg?.edges ?? pipeline.edges ?? []) as unknown[];
+  const snapshot = cfg?.snapshot ?? pipeline.triggerConfig?.snapshot ?? null;
 
   return (
     <div className="-m-6 h-[calc(100dvh-49px)] flex flex-col">
@@ -174,30 +184,26 @@ export default function TaskDetailPage() {
               {TASK_STATUS_LABEL[status]}
             </Badge>
           </h1>
-          <div className="flex items-center gap-3 mt-2 text-[11px] text-muted-foreground">
-            {cfg?.botId && (
-              <span className="flex items-center gap-1">
-                <Bot className="size-3" />
-                {cfg.botId}
-              </span>
-            )}
-            {pipeline.ownerName && (
-              <span className="flex items-center gap-1">
-                <UserRound className="size-3" />
-                {pipeline.ownerName}
-              </span>
-            )}
-            <span className="flex items-center gap-1">
-              <Calendar className="size-3" />
-              {formatDate(pipeline.updatedAt ?? pipeline.createdAt)}
-            </span>
-            <span className="font-mono">
-              {Array.isArray(nodeCount) ? nodeCount.length : 0} 节点 ·{" "}
-              {Array.isArray(edgeCount) ? edgeCount.length : 0} 边
-            </span>
+          <div className="text-[11px] text-muted-foreground mt-1 font-mono">
+            {Array.isArray(nodeCount) ? nodeCount.length : 0} 节点 ·{" "}
+            {Array.isArray(edgeCount) ? edgeCount.length : 0} 边 ·{" "}
+            {formatDate(pipeline.updatedAt ?? pipeline.createdAt)}
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleSave}
+            disabled={saving}
+          >
+            {saving ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Save className="size-3.5" />
+            )}
+            保存
+          </Button>
           <Button
             size="sm"
             variant="outline"
@@ -212,15 +218,22 @@ export default function TaskDetailPage() {
       <div className="flex flex-1 min-h-0">
         <div className="flex-1 min-w-0 p-4">
           <TaskDagEditor
-            variant="viewer"
+            variant="editor"
+            pipelineId={id}
+            initialSnapshot={snapshot}
             initialName={pipeline.name}
-            initialSnapshot={cfg?.snapshot ?? null}
-            initialBotId={cfg?.botId}
-            hideToolbar
+            onChange={(doc) => setDraftDoc(doc)}
           />
         </div>
-        <div className="w-[340px] shrink-0">
-          {id && <ExecutionLogPanel pipelineId={id} onTrigger={handleTrigger} />}
+
+        <div className="w-[360px] shrink-0 overflow-y-auto border-l bg-muted/10 p-3 space-y-3">
+          <TaskBindingPanel pipelineId={id} embedded />
+          <RunHistoryPanel pipelineId={id} />
+          <div className="rounded-lg ring-1 ring-foreground/10 bg-card overflow-hidden">
+            <div className="h-[280px]">
+              <ExecutionLogPanel pipelineId={id} />
+            </div>
+          </div>
         </div>
       </div>
     </div>
