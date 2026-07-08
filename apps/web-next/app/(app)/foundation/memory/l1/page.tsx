@@ -7,68 +7,129 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Bot, MessageSquare, Search, RefreshCcw, Pin, Filter, Clock, Zap } from "lucide-react";
+import {
+  Bot, MessageSquare, Search, RefreshCcw, Pin, Filter, Clock, Zap, Loader2, AlertCircle,
+} from "lucide-react";
+import { api } from "@/lib/api";
 
-interface L1Item {
+interface MemoryItem {
   id: string;
-  bot: string;
-  preview: string;
-  turns: number;
-  ttl: string;
-  pinned: boolean;
-  source: "channel" | "task" | "dm";
+  layer: number;
+  subject: string | null;
+  content: string | null;
+  preview: string | null;
+  importance: number | null;
+  botId: string | null;
+  tenantId: string | null;
+  hitCount: number;
+  type: string | null;
+  polarity: string | null;
+  tags: string[];
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
-const SEED: L1Item[] = [
-  { id: "m1", bot: "销售助手", preview: "跟进 ACME 的 RFQ 进度,客户要求周三前回方案", turns: 14, ttl: "12h 41m", pinned: true, source: "task" },
-  { id: "m2", bot: "采购助手", preview: "M5 螺栓询价 3 家供应商对比,等待回盘", turns: 7, ttl: "08h 12m", pinned: false, source: "channel" },
-  { id: "m3", bot: "调度员", preview: "今日 14:00 排程冲突:物流组与生产组同时段占用", turns: 3, ttl: "21h 02m", pinned: false, source: "dm" },
-  { id: "m4", bot: "客服台", preview: "客户 ID 4421 反馈型号 X 缺货替代方案咨询", turns: 9, ttl: "02h 17m", pinned: false, source: "channel" },
-  { id: "m5", bot: "财务", preview: "6 月发票清单核对,等待最终一批回单", turns: 22, ttl: "06h 48m", pinned: false, source: "task" },
-  { id: "m6", bot: "法务", preview: "供应商 NDA 模板 v3 修订讨论, 5 处条款待确认", turns: 11, ttl: "18h 23m", pinned: true, source: "dm" },
-];
+function SourceLabel({ tenantId, type }: { tenantId: string | null; type: string | null }) {
+  // memories.tenant_id 用 legacy 格式 — 推断来源
+  let source: "channel" | "task" | "dm" | "backfill" = "dm";
+  if (tenantId?.startsWith("group:")) source = "channel";
+  else if (tenantId?.startsWith("batch:")) source = "backfill";
+  else if (tenantId?.startsWith("tenant:")) source = "task";
+  const label = source === "channel" ? "频道"
+    : source === "backfill" ? "回填"
+    : source === "task" ? "租户" : "用户";
+  return (
+    <Badge variant="outline" className="ml-auto text-[10px] font-mono uppercase tracking-wider">
+      {label}{type ? ` · ${type}` : ""}
+    </Badge>
+  );
+}
 
-const SOURCE_LABEL = { channel: "频道", task: "任务", dm: "私聊" } as const;
+function fmtRel(iso: string | null): string {
+  if (!iso) return "—";
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return "—";
+  const diff = Date.now() - then;
+  const min = Math.floor(diff / 60000);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const d = Math.floor(hr / 24);
+  return `${d}d ago`;
+}
 
 export default function L1Page() {
-  const [selected, setSelected] = React.useState<string>(SEED[0].id);
+  const [items, setItems] = React.useState<MemoryItem[]>([]);
+  const [total, setTotal] = React.useState(0);
+  const [selected, setSelected] = React.useState<string>("");
   const [query, setQuery] = React.useState("");
-  const active = SEED.find((i) => i.id === selected) ?? SEED[0];
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const load = React.useCallback(() => {
+    setLoading(true);
+    setError(null);
+    const qs = query.trim() ? `?q=${encodeURIComponent(query.trim())}&limit=100` : "?limit=100";
+    api<{ memories: MemoryItem[]; total: number; hasMore: boolean }>(`/api/v2/foundation/memory/l1${qs}`)
+      .then((d) => {
+        setItems(d.memories ?? []);
+        setTotal(d.total ?? 0);
+        if ((d.memories?.[0]?.id) && !selected) setSelected(d.memories[0].id);
+      })
+      .catch((e: any) => setError(String(e?.message ?? e)))
+      .finally(() => setLoading(false));
+  }, [query]);
+
+  React.useEffect(() => {
+    const t = setTimeout(load, query.trim() ? 300 : 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
+  const active = items.find((i) => i.id === selected) ?? items[0];
 
   return (
     <div className="flex h-full flex-col">
-      {/* Page-level filter bar */}
       <div className="px-6 py-3 border-b border-border bg-muted/30 flex items-center gap-2">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-2.5 top-2 size-3.5 text-muted-foreground" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索 L1 短期上下文..."
+            placeholder="搜索 L1 短期上下文 content / subject…"
             className="pl-7 h-7 text-xs"
           />
         </div>
+        <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={load}>
+          <RefreshCcw className="size-3" />
+          刷新
+        </Button>
         <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
           <Filter className="size-3" />
           来源
         </Button>
-        <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
-          <RefreshCcw className="size-3" />
-          60s
-        </Button>
         <div className="ml-auto flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">
           <Zap className="size-3" />
-          {SEED.length} active · auto decay
+          {loading ? "loading…" : `${total} total · showing ${items.length}`}
         </div>
       </div>
 
-      {/* List + detail (mini finder) */}
       <div className="flex-1 grid grid-cols-[1fr_1.4fr] min-h-0 divide-x divide-border">
-        {/* List */}
         <ScrollArea className="h-full">
+          {error && (
+            <div className="m-4 rounded-md border border-rose-500/30 bg-rose-500/5 p-3 text-xs text-rose-700 dark:text-rose-300 flex items-start gap-2">
+              <AlertCircle className="size-3.5 mt-0.5 shrink-0" />
+              <div>{error}</div>
+            </div>
+          )}
+          {!error && items.length === 0 && !loading && (
+            <div className="m-4 rounded-md border border-dashed border-border p-6 text-xs text-muted-foreground text-center">
+              L1 短期记忆为空。memory pipeline 未活跃时正常 (最新一条可能超过 24h)。
+            </div>
+          )}
           <ul className="divide-y divide-border/60">
-            {SEED.map((item) => {
-              const isActive = item.id === selected;
+            {items.map((item) => {
+              const isActive = item.id === active?.id;
               return (
                 <li key={item.id}>
                   <button
@@ -80,33 +141,31 @@ export default function L1Page() {
                     )}
                   >
                     <div className="flex items-center gap-2">
-                      <Bot className="size-3 text-muted-foreground" />
-                      <span className="text-xs font-medium">{item.bot}</span>
-                      <Badge
-                        variant="outline"
-                        className="ml-auto text-[10px] font-mono uppercase tracking-wider"
-                      >
-                        {SOURCE_LABEL[item.source]}
-                      </Badge>
+                      <Bot className="size-3 text-muted-foreground shrink-0" />
+                      <span className="text-xs font-medium truncate max-w-[16ch]">
+                        {item.subject || item.botId?.slice(0, 8) || "—"}
+                      </span>
+                      <SourceLabel tenantId={item.tenantId} type={item.type} />
                     </div>
-                    <p
-                      className={cn(
-                        "mt-1.5 text-xs leading-relaxed line-clamp-2",
-                        isActive ? "text-foreground" : "text-muted-foreground",
-                      )}
-                    >
-                      {item.preview}
+                    <p className={cn(
+                      "mt-1.5 text-xs leading-relaxed line-clamp-2",
+                      isActive ? "text-foreground" : "text-muted-foreground",
+                    )}>
+                      {item.preview || "(empty)"}
                     </p>
                     <div className="mt-2 flex items-center gap-3 text-[10px] text-muted-foreground/80 font-mono">
                       <span className="flex items-center gap-1">
                         <MessageSquare className="size-2.5" />
-                        {item.turns} turns
+                        hits {item.hitCount}
                       </span>
+                      {item.importance !== null && (
+                        <span>imp {item.importance.toFixed(2)}</span>
+                      )}
                       <span className="flex items-center gap-1">
                         <Clock className="size-2.5" />
-                        TTL {item.ttl}
+                        {fmtRel(item.createdAt)}
                       </span>
-                      {item.pinned && (
+                      {item.polarity === "negate" && (
                         <Pin className="size-2.5 ml-auto text-amber-500 fill-amber-500/30" />
                       )}
                     </div>
@@ -117,87 +176,81 @@ export default function L1Page() {
           </ul>
         </ScrollArea>
 
-        {/* Detail */}
         <ScrollArea className="h-full">
-          <div className="p-6 space-y-5">
-            <div>
-              <div className="flex items-center gap-2">
-                <Bot className="size-4" />
-                <h2 className="text-sm font-semibold">{active.bot}</h2>
-                <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-mono">
-                  {SOURCE_LABEL[active.source]}
-                </Badge>
-                <Badge variant="secondary" className="text-[10px] font-mono">
-                  {active.turns} turns
-                </Badge>
-                <span className="ml-auto text-[10px] text-muted-foreground font-mono">
-                  TTL {active.ttl}
-                </span>
+          {active ? (
+            <div className="p-6 space-y-5">
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Bot className="size-4" />
+                  <h2 className="text-sm font-semibold">
+                    {active.subject || "(no subject)"}
+                  </h2>
+                  <SourceLabel tenantId={active.tenantId} type={active.type} />
+                  {active.importance !== null && (
+                    <Badge variant="secondary" className="text-[10px] font-mono">
+                      imp {active.importance.toFixed(2)}
+                    </Badge>
+                  )}
+                  <span className="ml-auto text-[10px] text-muted-foreground font-mono">
+                    {fmtRel(active.createdAt)}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">
+                  {active.content || "(empty content)"}
+                </p>
               </div>
-              <p className="mt-2 text-xs text-muted-foreground leading-relaxed">{active.preview}</p>
+
+              {active.tags.length > 0 && (
+                <>
+                  <Separator />
+                  <section>
+                    <h3 className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">
+                      tags
+                    </h3>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {active.tags.map((t) => (
+                        <span key={t} className="text-[10px] font-mono uppercase tracking-wide bg-muted text-muted-foreground px-1.5 py-0.5 rounded-sm">
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  </section>
+                </>
+              )}
+
+              <Separator />
+
+              <section>
+                <h3 className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">
+                  memory meta
+                </h3>
+                <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-[11px]">
+                  <dt className="text-muted-foreground">memory id</dt>
+                  <dd className="font-mono truncate">{active.id}</dd>
+                  <dt className="text-muted-foreground">layer</dt>
+                  <dd className="font-mono uppercase">l1</dd>
+                  <dt className="text-muted-foreground">type</dt>
+                  <dd className="font-mono">{active.type ?? "—"}</dd>
+                  <dt className="text-muted-foreground">polarity</dt>
+                  <dd className="font-mono">{active.polarity ?? "—"}</dd>
+                  <dt className="text-muted-foreground">hit count</dt>
+                  <dd className="font-mono">{active.hitCount}</dd>
+                  <dt className="text-muted-foreground">bot id</dt>
+                  <dd className="font-mono truncate">{active.botId ?? "—"}</dd>
+                  <dt className="text-muted-foreground">tenant</dt>
+                  <dd className="font-mono truncate">{active.tenantId ?? "—"}</dd>
+                  <dt className="text-muted-foreground">created</dt>
+                  <dd className="font-mono">{fmtRel(active.createdAt)}</dd>
+                  <dt className="text-muted-foreground">updated</dt>
+                  <dd className="font-mono">{fmtRel(active.updatedAt)}</dd>
+                </dl>
+              </section>
             </div>
-
-            <Separator />
-
-            <section>
-              <h3 className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">
-                conversation excerpt
-              </h3>
-              <div className="mt-2 rounded-md border border-border bg-muted/20 divide-y divide-border/60">
-                {[
-                  { role: "user", text: "ACME 的 RFQ 进度如何,客户要周三回方案。" },
-                  { role: "assistant", text: "已发送询价邮件给 3 家供应商,目前 1 家回盘,价格偏高 8%。" },
-                  { role: "user", text: "另外两家什么时候能回?" },
-                  { role: "assistant", text: "供应商 B 预计周二上午,供应商 C 周三下午。需要我催 B 吗?" },
-                ].map((m, i) => (
-                  <div key={i} className="px-3 py-2 flex gap-2 text-[11px] leading-relaxed">
-                    <span
-                      className={cn(
-                        "shrink-0 font-mono text-[9px] uppercase mt-0.5 tracking-wider",
-                        m.role === "user" ? "text-sky-600" : "text-emerald-600",
-                      )}
-                    >
-                      {m.role}
-                    </span>
-                    <span className="text-foreground/90">{m.text}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <Separator />
-
-            <section>
-              <h3 className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">
-                memory meta
-              </h3>
-              <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-[11px]">
-                <dt className="text-muted-foreground">memory id</dt>
-                <dd className="font-mono">{active.id}</dd>
-                <dt className="text-muted-foreground">layer</dt>
-                <dd className="font-mono uppercase">l1</dd>
-                <dt className="text-muted-foreground">created</dt>
-                <dd className="font-mono">just now</dd>
-                <dt className="text-muted-foreground">tokens</dt>
-                <dd className="font-mono">~{active.turns * 120}</dd>
-                <dt className="text-muted-foreground">policy</dt>
-                <dd className="font-mono">rolling-window-24h</dd>
-              </dl>
-            </section>
-
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" className="h-7 text-xs gap-1">
-                <Pin className="size-3" />
-                pin
-              </Button>
-              <Button size="sm" variant="outline" className="h-7 text-xs gap-1">
-                promote to L2
-              </Button>
-              <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 ml-auto text-destructive">
-                discard
-              </Button>
+          ) : (
+            <div className="p-6 grid place-items-center h-full text-xs text-muted-foreground">
+              {loading ? <Loader2 className="size-4 animate-spin" /> : "select a memory"}
             </div>
-          </div>
+          )}
         </ScrollArea>
       </div>
     </div>

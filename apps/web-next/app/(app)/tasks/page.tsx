@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/select";
 
 import { TaskCard, type TaskListItem, type ViewMode } from "@/components/tasks/task-card";
+import { PipelineRunsSection } from "@/components/r10/sections";
 import type { TaskStatus } from "@/components/tasks/types";
 
 interface RawPipeline {
@@ -280,6 +281,8 @@ export default function TasksListPage() {
           ))}
         </div>
       )}
+
+      <PipelineRunsSection />
     </div>
   );
 }

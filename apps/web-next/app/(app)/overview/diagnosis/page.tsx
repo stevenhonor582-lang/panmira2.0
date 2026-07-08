@@ -233,6 +233,8 @@ export default async function DiagnosisPage() {
           )}
         </div>
       </section>
+
+      <RagStatsSection />
     </div>
   );
 }

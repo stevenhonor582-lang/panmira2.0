@@ -60,6 +60,8 @@ async function loadLogs(): Promise<{ rows: LogRow[]; fetched: boolean }> {
   return { rows, fetched: true };
 }
 
+import { BotHistorySection } from "@/components/r10/sections";
+
 export default async function LogsPage({
   searchParams,
 }: {
@@ -168,6 +170,8 @@ export default async function LogsPage({
           </table>
         </div>
       </section>
+
+      <BotHistorySection />
     </div>
   );
 }

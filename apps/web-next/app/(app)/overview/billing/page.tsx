@@ -142,6 +142,10 @@ export default function BillingPage() {
           )}
         </div>
       </section>
+
+      <section className="mt-6">
+        <UsageReportsPanel />
+      </section>
     </div>
   );
 }
