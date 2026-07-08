@@ -3,6 +3,7 @@
 /**
  * R14-BC 真人详情编辑模式 — 参考 /employees/[id]/_components/edit-mode.tsx
  * 但 save 调用 patchPerson(PATCH /api/auth/users/:id),不是 updateAgent。
+ * R17-2: 支持 controlled editing (外部 toolbar 触发编辑)
  */
 
 import * as React from "react";
@@ -38,25 +39,46 @@ export function PersonEditPane({
   label,
   onSaved,
   readOnly,
+  // R17-2: 受控编辑模式 (外部按钮触发)
+  controlledEditing,
+  onEditingChange,
   children,
 }: {
   id: string;
   label: string;
   onSaved?: () => void;
   readOnly?: boolean;
+  controlledEditing?: boolean;
+  onEditingChange?: (editing: boolean) => void;
   children: (ctx: EditCtx) => React.ReactNode;
 }) {
-  const [editing, setEditing] = React.useState(false);
+  const [internalEditing, setInternalEditing] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  // 是否受控
+  const isControlled = controlledEditing !== undefined;
+  const editing = isControlled ? !!controlledEditing : internalEditing;
+
+  const setEditing = React.useCallback(
+    (v: boolean) => {
+      if (!v) setError(null);
+      if (isControlled) {
+        onEditingChange?.(v);
+      } else {
+        setInternalEditing(v);
+      }
+    },
+    [isControlled, onEditingChange],
+  );
 
   const ctx = React.useMemo<EditCtx>(
     () => ({
       editing,
       saving,
       error,
-      startEdit: () => { setError(null); setEditing(true); },
-      cancelEdit: () => { setError(null); setEditing(false); },
+      startEdit: () => setEditing(true),
+      cancelEdit: () => setEditing(false),
       save: async (patch) => {
         setSaving(true);
         setError(null);
@@ -73,29 +95,12 @@ export function PersonEditPane({
         }
       },
     }),
-    [editing, saving, error, id, onSaved],
+    [editing, saving, error, id, onSaved, setEditing],
   );
 
   return (
     <div className="relative">
-      {!readOnly && (
-        <div className="absolute right-0 top-0 z-10 flex items-center gap-1">
-          {!editing && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={ctx.startEdit}
-              className="gap-1 text-[12px] text-foreground/55 hover:text-foreground"
-              data-testid={`edit-${label}`}
-              aria-label={`编辑 ${label}`}
-            >
-              <Pencil className="size-3.5" />
-              <span>编辑</span>
-            </Button>
-          )}
-        </div>
-      )}
+      {/* R17-2: 编辑按钮移到 tab 行右侧,组件内不再渲染。保留 readOnly 钩子以备其它调用 */}
       <Ctx.Provider value={ctx}>{children(ctx)}</Ctx.Provider>
       {error && (
         <div className="mt-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
