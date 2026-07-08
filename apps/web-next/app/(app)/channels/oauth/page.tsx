@@ -30,7 +30,8 @@ import {
   ArrowUpFromLine,
   PowerOff,
 } from "lucide-react";
-import { MOCK_OAUTH_AUTHORIZED, MOCK_OAUTH_CLIENTS } from "@/lib/channels/mock";
+import { useFetch } from "@/lib/channels/use-fetch";
+import { Inbox } from "lucide-react";
 import type {
   OAuthAuthorizedThirdParty,
   OAuthClient,
@@ -72,11 +73,14 @@ function generateClientId(): string {
 export default function OAuthPage() {
   const [tab, setTab] = React.useState<Direction>("consumer");
 
-  const [authorized, setAuthorized] = React.useState<OAuthAuthorizedThirdParty[]>(
-    MOCK_OAUTH_AUTHORIZED,
-  );
+  // Real data: backend currently has no /api/oauth/... endpoints — graceful empty state.
+  const { data: authData, loading: authLoading, error: authError } = useFetch<{ authorized: OAuthAuthorizedThirdParty[] }>("/api/v2/channels/oauth/authorized");
+  const { data: clientData, loading: clientLoading, error: clientError } = useFetch<{ clients: OAuthClient[] }>("/api/v2/channels/oauth/clients");
 
-  const [clients, setClients] = React.useState<OAuthClient[]>(MOCK_OAUTH_CLIENTS);
+  const [authorized, setAuthorized] = React.useState<OAuthAuthorizedThirdParty[]>([]);
+  const [clients, setClients] = React.useState<OAuthClient[]>([]);
+  React.useEffect(() => { if (authData?.authorized) setAuthorized(authData.authorized); }, [authData]);
+  React.useEffect(() => { if (clientData?.clients) setClients(clientData.clients); }, [clientData]);
 
   const [creating, setCreating] = React.useState(false);
   const [createName, setCreateName] = React.useState("");
@@ -84,6 +88,35 @@ export default function OAuthPage() {
 
   // One-time secret reveal — held ONLY here, wiped on close.
   const [reveal, setReveal] = React.useState<OAuthClientWithSecret | null>(null);
+
+  const loading = authLoading || clientLoading;
+  const firstError = authError || clientError;
+  if (loading) {
+    return (
+      <ChannelsPageShell
+        meta={<PageMeta items={[{ label: "loading", value: "…" }]} />}
+        toolbar={<></>}
+      >
+        <div className="h-64 rounded-2xl bg-muted/30 animate-pulse" />
+      </ChannelsPageShell>
+    );
+  }
+  if (firstError?.code === "not_implemented" && authorized.length === 0 && clients.length === 0) {
+    return <EmptyShell kind="OAuth (authorized + clients)" />;
+  }
+  if (firstError && authorized.length === 0 && clients.length === 0) {
+    return (
+      <ChannelsPageShell
+        meta={<PageMeta items={[{ label: "error", value: firstError.message.slice(0, 24) }]} />}
+        toolbar={<></>}
+      >
+        <div className="rounded-2xl border border-rose-500/30 bg-rose-500/5 p-6 text-sm text-rose-700 dark:text-rose-300">
+          加载失败 · {firstError.message}
+        </div>
+      </ChannelsPageShell>
+    );
+  }
+
 
   function revokeAuth(id: string) {
     setAuthorized((rows) =>
@@ -409,6 +442,32 @@ export default function OAuthPage() {
           setReveal(null);
         }}
       />
+    </ChannelsPageShell>
+  );
+}
+
+function EmptyShell({ kind }: { kind: string }) {
+  return (
+    <ChannelsPageShell
+      meta={
+        <PageMeta
+          items={[{ label: "backend", value: "not_implemented" }]}
+          footnote={`后端未实装 ${kind} 端点 · 已废弃 mock.ts 引用,改为显示空状态。`}
+        />
+      }
+      toolbar={<></>}
+    >
+      <div className="flex flex-col items-center gap-3 rounded-3xl border border-dashed border-border py-24 text-center">
+        <Inbox className="size-6 text-foreground/35" />
+        <span className="font-mono text-[10.5px] uppercase tracking-[0.22em] text-foreground/40">
+          empty state
+        </span>
+        <p className="max-w-[44ch] text-sm text-foreground/60">
+          {kind} 数据接口后端未实装。
+          <br />
+          一旦后端上线,刷新页面即可看到真实数据。
+        </p>
+      </div>
     </ChannelsPageShell>
   );
 }

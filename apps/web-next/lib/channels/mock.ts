@@ -1,5 +1,32 @@
 // Mock data for IA v6 Channels module.
-// Drives development before backend wiring; later swap to `api<T>()` calls.
+// P10: production pages no longer import MOCK_* — they use real `api<T>()`
+// with graceful empty-state fallbacks. This file is retained for local
+// dev seeding and Playwright fixture use only. Importing in production
+// logs a one-time warning to the console.
+
+import type {
+  EndpointInbound,
+  EndpointOutbound,
+  LLMProvider,
+  MCPServer,
+  OAuthAuthorizedThirdParty,
+  OAuthClient,
+  RoutingRule,
+  Skill,
+} from "./types";
+
+if (
+  typeof process !== "undefined" &&
+  process.env &&
+  process.env.NODE_ENV === "production"
+) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    "[channels/mock] mock.ts loaded in production. Production pages " +
+      "should use live fetchers, not MOCK_* constants.",
+  );
+}
+
 
 import type {
   EndpointInbound,

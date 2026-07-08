@@ -14,9 +14,11 @@ import {
   Plus,
   Search,
   Wrench,
+  GitBranch,
+  Inbox,
 } from "lucide-react";
-import { MOCK_SKILLS } from "@/lib/channels/mock";
 import type { Skill } from "@/lib/channels/types";
+import { useFetch } from "@/lib/channels/use-fetch";
 import { cn } from "@/lib/utils";
 
 type SourceFilter = "all" | Skill["source"];
@@ -36,9 +38,28 @@ const SOURCE_ICON: Record<Skill["source"], React.ComponentType<{ className?: str
 };
 
 export default function SkillsPage() {
-  const [skills, setSkills] = React.useState<Skill[]>(MOCK_SKILLS);
+  const { data, loading, error } = useFetch<{ skills: Skill[] }>("/api/skills");
   const [q, setQ] = React.useState("");
   const [source, setSource] = React.useState<SourceFilter>("all");
+
+  const skills: Skill[] = data?.skills ?? [];
+  const sources: SourceFilter[] = ["all", "built-in", "github", "local", "custom"];
+
+  if (loading) {
+    return <ChannelsPageShell meta={<PageMeta items={[{ label: "loading", value: "…" }]} />} toolbar={<></>}>
+      <div className="h-64 rounded-2xl bg-muted/30 animate-pulse" />
+    </ChannelsPageShell>;
+  }
+  if (error?.code === "not_implemented") {
+    return <EmptyShell kind="Skills" />;
+  }
+  if (error) {
+    return <ChannelsPageShell meta={<PageMeta items={[{ label: "error", value: error.message.slice(0, 24) }]} />} toolbar={<></>}>
+      <div className="rounded-2xl border border-rose-500/30 bg-rose-500/5 p-6 text-sm text-rose-700 dark:text-rose-300">
+        加载失败 · {error.message}
+      </div>
+    </ChannelsPageShell>;
+  }
 
   const enabledCount = skills.filter((s) => s.enabled).length;
   const disabledCount = skills.length - enabledCount;
@@ -53,14 +74,6 @@ export default function SkillsPage() {
       s.tags.some((tag) => tag.toLowerCase().includes(t))
     );
   });
-
-  function toggle(id: string) {
-    setSkills((ss) =>
-      ss.map((s) => (s.id === id ? { ...s, enabled: !s.enabled } : s)),
-    );
-  }
-
-  const sources: SourceFilter[] = ["all", "built-in", "github", "local", "custom"];
 
   return (
     <ChannelsPageShell
@@ -134,7 +147,7 @@ export default function SkillsPage() {
       <DenseTable
         head={["Skill", "Source", "Tags", "Installed", "Enabled", ""]}
         rows={filtered.map((s) => {
-          const Icon = SOURCE_ICON[s.source];
+          const Icon = SOURCE_ICON[s.source] ?? Inbox;
           return {
             cells: [
               <div key="n" className="flex items-center gap-2.5">
@@ -170,16 +183,14 @@ export default function SkillsPage() {
               <MonoCell key="at" className="text-muted-foreground">
                 {s.installedAt ?? "—"}
               </MonoCell>,
-              <button
+              <span
                 key="en"
-                type="button"
-                role="switch"
-                aria-checked={s.enabled}
-                onClick={() => toggle(s.id)}
                 className={cn(
-                  "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+                  "inline-flex h-5 w-9 items-center rounded-full transition-colors",
                   s.enabled ? "bg-emerald-500" : "bg-muted-foreground/30",
                 )}
+                aria-checked={s.enabled}
+                role="switch"
               >
                 <span
                   className={cn(
@@ -187,7 +198,7 @@ export default function SkillsPage() {
                     s.enabled ? "translate-x-4.5" : "translate-x-0.5",
                   )}
                 />
-              </button>,
+              </span>,
               <div key="a" className="flex items-center justify-end gap-1">
                 <Button size="icon-xs" variant="ghost" aria-label="详情">
                   <Download className="size-3.5" />
@@ -199,6 +210,8 @@ export default function SkillsPage() {
         empty={
           q.trim() || source !== "all"
             ? "没有匹配的 skills,清空筛选试试。"
+            : skills.length === 0
+            ? "后端未返回任何 skill (空状态)。"
             : "尚未安装任何 skill."
         }
       />
@@ -206,6 +219,32 @@ export default function SkillsPage() {
       <div className="mt-3 flex items-center gap-3 text-[10.5px] text-muted-foreground font-mono">
         <KeyCell>NOTE</KeyCell>
         <span>toggle 立即生效 · 全部调用方共享同一开关位</span>
+      </div>
+    </ChannelsPageShell>
+  );
+}
+
+function EmptyShell({ kind }: { kind: string }) {
+  return (
+    <ChannelsPageShell
+      meta={
+        <PageMeta
+          items={[{ label: "backend", value: "not_implemented" }]}
+          footnote={`后端未实装 ${kind} 端点 · 已废弃 mock.ts 引用,改为显示空状态。`}
+        />
+      }
+      toolbar={<></>}
+    >
+      <div className="flex flex-col items-center gap-3 rounded-3xl border border-dashed border-border py-24 text-center">
+        <Inbox className="size-6 text-foreground/35" />
+        <span className="font-mono text-[10.5px] uppercase tracking-[0.22em] text-foreground/40">
+          empty state
+        </span>
+        <p className="max-w-[44ch] text-sm text-foreground/60">
+          {kind} 数据接口后端未实装。
+          <br />
+          一旦后端上线,刷新页面即可看到真实数据。
+        </p>
       </div>
     </ChannelsPageShell>
   );

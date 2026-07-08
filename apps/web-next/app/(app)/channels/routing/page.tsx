@@ -22,7 +22,8 @@ import {
   Trash2,
   Zap,
 } from "lucide-react";
-import { MOCK_ROUTING } from "@/lib/channels/mock";
+import { useFetch } from "@/lib/channels/use-fetch";
+import { Inbox } from "lucide-react";
 import type { RoutingRule } from "@/lib/channels/types";
 import { cn } from "@/lib/utils";
 
@@ -36,7 +37,22 @@ import { cn } from "@/lib/utils";
  */
 
 export default function RoutingPage() {
-  const [rules, setRules] = React.useState<RoutingRule[]>(MOCK_ROUTING);
+  // Real data: pulled from /api/v2/admin/channels (routing_bindings).
+  const { data: channelsData, loading: chLoading, error: chError } = useFetch<{ channels: any[] }>("/api/v2/admin/channels");
+  const fetchedRules: RoutingRule[] = React.useMemo(() => {
+    const rows = (channelsData as any)?.channels ?? [];
+    return rows.map((r: any, i: number) => ({
+      id: r.id ?? `r_${i}`,
+      botId: (r.targetBots?.[0] ?? r.botId ?? "").toString(),
+      botName: r.targetBots?.[0] ?? r.botId ?? `bot-${i + 1}`,
+      priority: typeof r.priority === "number" ? r.priority : i + 1,
+      condition: r.pattern ?? r.condition ?? "*",
+      destination: (r.targetBots?.[0] ?? r.destination ?? "").toString(),
+      enabled: r.enabled !== false,
+    }));
+  }, [channelsData]);
+  const [rules, setRules] = React.useState<RoutingRule[]>([]);
+  React.useEffect(() => { setRules(fetchedRules); }, [fetchedRules]);
   const [adding, setAdding] = React.useState(false);
 
   const [fBot, setFBot] = React.useState("");
@@ -52,6 +68,32 @@ export default function RoutingPage() {
     ),
   );
   const [probeResult, setProbeResult] = React.useState<RoutingRule | null>(null);
+
+  if (chLoading) {
+    return (
+      <ChannelsPageShell
+        meta={<PageMeta items={[{ label: "loading", value: "…" }]} />}
+        toolbar={<></>}
+      >
+        <div className="h-64 rounded-2xl bg-muted/30 animate-pulse" />
+      </ChannelsPageShell>
+    );
+  }
+  if (chError?.code === "not_implemented" && rules.length === 0) {
+    return <EmptyShell kind="Routing" />;
+  }
+  if (chError && rules.length === 0) {
+    return (
+      <ChannelsPageShell
+        meta={<PageMeta items={[{ label: "error", value: chError.message.slice(0, 24) }]} />}
+        toolbar={<></>}
+      >
+        <div className="rounded-2xl border border-rose-500/30 bg-rose-500/5 p-6 text-sm text-rose-700 dark:text-rose-300">
+          加载失败 · {chError.message}
+        </div>
+      </ChannelsPageShell>
+    );
+  }
 
   function move(id: string, dir: -1 | 1) {
     setRules((rs) => {
@@ -371,6 +413,32 @@ export default function RoutingPage() {
           </div>
         </DialogContent>
       </Dialog>
+    </ChannelsPageShell>
+  );
+}
+
+function EmptyShell({ kind }: { kind: string }) {
+  return (
+    <ChannelsPageShell
+      meta={
+        <PageMeta
+          items={[{ label: "backend", value: "not_implemented" }]}
+          footnote={`后端未实装 ${kind} 端点 · 已废弃 mock.ts 引用,改为显示空状态。`}
+        />
+      }
+      toolbar={<></>}
+    >
+      <div className="flex flex-col items-center gap-3 rounded-3xl border border-dashed border-border py-24 text-center">
+        <Inbox className="size-6 text-foreground/35" />
+        <span className="font-mono text-[10.5px] uppercase tracking-[0.22em] text-foreground/40">
+          empty state
+        </span>
+        <p className="max-w-[44ch] text-sm text-foreground/60">
+          {kind} 数据接口后端未实装。
+          <br />
+          一旦后端上线,刷新页面即可看到真实数据。
+        </p>
+      </div>
     </ChannelsPageShell>
   );
 }

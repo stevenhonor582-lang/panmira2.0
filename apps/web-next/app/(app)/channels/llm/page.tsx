@@ -22,10 +22,45 @@ import {
   Plus,
   RotateCcw,
   Trash2,
+  Database,
 } from "lucide-react";
-import { MOCK_LLM } from "@/lib/channels/mock";
 import type { LLMProvider } from "@/lib/channels/types";
+import { useFetch } from "@/lib/channels/use-fetch";
 import { cn } from "@/lib/utils";
+
+interface BackendProvider {
+  id: string;
+  name: string;
+  type: string;
+  baseUrl: string;
+  model: string;
+  isDefault: boolean;
+  apiKeyEncrypted?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+function mapProvider(row: BackendProvider): LLMProvider {
+  // Map backend type to LLMProviderType (openai/anthropic/google/local/deepseek).
+  const t = (row.type || "").toLowerCase();
+  const hasKey = !!row.apiKeyEncrypted;
+  let status: LLMProvider["status"] = "needs-api-key";
+  if (hasKey) {
+    status = row.isDefault ? "connected" : "connected";
+  }
+  return {
+    id: row.id,
+    name: row.name,
+    type: t,
+    baseUrl: row.baseUrl ?? "",
+    model: row.model ?? "",
+    isDefault: !!row.isDefault,
+    status,
+    lastTestedAt: row.updatedAt ?? null,
+    hasApiKey: hasKey,
+    latencyMs: null,
+  };
+}
 
 function timeAgo(iso: string | null): string {
   if (!iso) return "—";
@@ -42,12 +77,23 @@ const PROVIDER_TONE: Record<string, string> = {
   google: "text-sky-700 dark:text-sky-300",
   local: "text-violet-700 dark:text-violet-300",
   deepseek: "text-rose-700 dark:text-rose-300",
+  embedding: "text-stone-700 dark:text-stone-300",
+  llm: "text-foreground/80",
 };
 
 export default function LLMProvidersPage() {
-  const [providers, setProviders] = React.useState<LLMProvider[]>(MOCK_LLM);
+  const { data, loading, error } = useFetch<{ providers: BackendProvider[] }>("/api/providers");
   const [testing, setTesting] = React.useState<Set<string>>(new Set());
   const [editing, setEditing] = React.useState<LLMProvider | null>(null);
+
+  const providers: LLMProvider[] = React.useMemo(() => {
+    const list = data?.providers ?? [];
+    return list.map(mapProvider);
+  }, [data]);
+
+  if (loading) return <LoadingShell />;
+  if (error?.code === "not_implemented") return <NotImplShell kind="LLM providers" />;
+  if (error) return <ErrorShell msg={error.message} />;
 
   const totalActive = providers.filter((p) => p.status === "connected").length;
   const totalExpired = providers.filter((p) => p.status === "expired").length;
@@ -57,17 +103,6 @@ export default function LLMProvidersPage() {
   async function testOne(id: string) {
     setTesting((s) => new Set(s).add(id));
     await new Promise((r) => setTimeout(r, 700));
-    setProviders((ps) =>
-      ps.map((p) =>
-        p.id === id
-          ? {
-              ...p,
-              lastTestedAt: new Date().toISOString(),
-              latencyMs: 300 + Math.floor(Math.random() * 800),
-            }
-          : p,
-      ),
-    );
     setTesting((s) => {
       const next = new Set(s);
       next.delete(id);
@@ -76,8 +111,9 @@ export default function LLMProvidersPage() {
   }
 
   function saveEdit(updated: LLMProvider) {
-    setProviders((ps) => ps.map((p) => (p.id === updated.id ? updated : p)));
     setEditing(null);
+    // Mutation would call POST/PUT here; for now we treat edits as local-only.
+    void updated;
   }
 
   return (
@@ -348,5 +384,55 @@ function EditProviderDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function LoadingShell() {
+  return (
+    <ChannelsPageShell
+      meta={<PageMeta items={[{ label: "loading", value: "…" }]} footnote="正在拉取 provider 列表…" />}
+      toolbar={<div className="h-6 w-32 rounded bg-muted/40 animate-pulse" />}
+    >
+      <div className="h-64 rounded-2xl bg-muted/30 animate-pulse" />
+    </ChannelsPageShell>
+  );
+}
+
+function NotImplShell({ kind }: { kind: string }) {
+  return (
+    <ChannelsPageShell
+      meta={
+        <PageMeta
+          items={[{ label: "backend", value: "not_implemented" }]}
+          footnote={`后端未实装 ${kind} 端点。已配置 mock 数据不再使用,直接显示空状态。`}
+        />
+      }
+      toolbar={<></>}
+    >
+      <div className="flex flex-col items-center gap-3 rounded-3xl border border-dashed border-border py-24 text-center">
+        <Database className="size-6 text-foreground/35" />
+        <span className="font-mono text-[10.5px] uppercase tracking-[0.22em] text-foreground/40">
+          empty state
+        </span>
+        <p className="max-w-[44ch] text-sm text-foreground/60">
+          {kind} 数据接口后端未实装。
+          <br />
+          一旦后端上线,刷新页面即可看到真实数据。
+        </p>
+      </div>
+    </ChannelsPageShell>
+  );
+}
+
+function ErrorShell({ msg }: { msg: string }) {
+  return (
+    <ChannelsPageShell
+      meta={<PageMeta items={[{ label: "error", value: msg.slice(0, 24) }]} footnote={msg} />}
+      toolbar={<></>}
+    >
+      <div className="rounded-2xl border border-rose-500/30 bg-rose-500/5 p-6 text-sm text-rose-700 dark:text-rose-300">
+        加载失败 · {msg}
+      </div>
+    </ChannelsPageShell>
   );
 }
