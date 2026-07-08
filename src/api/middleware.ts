@@ -24,7 +24,7 @@ if (JWT_SECRET_RAW.length < 32) {
 }
 const JWT_SECRET = new TextEncoder().encode(JWT_SECRET_RAW);
 
-const ACCESS_TTL = '1h';
+const ACCESS_TTL = '24h';
 const REFRESH_TTL = '30d';
 
 export interface TokenPair {
@@ -62,13 +62,13 @@ export async function generateTokenPair(user: User): Promise<TokenPair> {
     .setExpirationTime(ACCESS_TTL)
     .sign(JWT_SECRET);
 
-  const refreshToken = await new SignJWT({ type: 'refresh' } as any)
+  const refreshToken = await new SignJWT({ sub: user.id, type: 'refresh' } as any)
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(REFRESH_TTL)
     .sign(JWT_SECRET);
 
-  return { accessToken, refreshToken, expiresIn: 3600 };
+  return { accessToken, refreshToken, expiresIn: 86400 };
 }
 
 export async function verifyAccessToken(token: string): Promise<JwtPayload | null> {
