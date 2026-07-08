@@ -312,6 +312,28 @@ export class UserStore {
     );
   }
 
+  async updateName(userId: string, name: string): Promise<void> {
+    await pool.query(
+      'UPDATE users SET name = $1, updated_at = now() WHERE id = $2',
+      [name, userId],
+    );
+  }
+
+  async updateEmail(userId: string, email: string | null): Promise<void> {
+    // 唯一约束冲突时抛错给上层处理
+    await pool.query(
+      'UPDATE users SET email = $1, updated_at = now() WHERE id = $2',
+      [email, userId],
+    );
+  }
+
+  async updateAvatarUrl(userId: string, avatarUrl: string | null): Promise<void> {
+    await pool.query(
+      'UPDATE users SET avatar_url = $1, updated_at = now() WHERE id = $2',
+      [avatarUrl, userId],
+    );
+  }
+
   async assignAgents(userId: string, agentIds: string[]): Promise<void> {
     if (agentIds.length === 0) return;
     await pool.query(

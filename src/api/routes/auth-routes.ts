@@ -556,6 +556,35 @@ async function handleUpdateUser(
       await userStore.updatePosition(userId, (body as any).position || null);
       updated = (await userStore.findById(userId))!;
     }
+    // R14-BC: 姓名 / 邮箱 / 头像
+    if ((body as any).name !== undefined) {
+      const newName = String((body as any).name || '').trim();
+      if (!newName) {
+        jsonResponse(res, 400, { error: 'name 不能为空' });
+        return true;
+      }
+      await userStore.updateName(userId, newName);
+      updated = (await userStore.findById(userId))!;
+    }
+    if ((body as any).email !== undefined) {
+      const newEmail = String((body as any).email || '').trim() || null;
+      // 简单格式校验(允许 null = 清空)
+      if (newEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(newEmail)) {
+        jsonResponse(res, 400, { error: 'email 格式错误' });
+        return true;
+      }
+      try {
+        await userStore.updateEmail(userId, newEmail);
+      } catch (e: any) {
+        jsonResponse(res, 409, { error: 'email_conflict', message: '邮箱已被占用' });
+        return true;
+      }
+      updated = (await userStore.findById(userId))!;
+    }
+    if ((body as any).avatarUrl !== undefined) {
+      await userStore.updateAvatarUrl(userId, (body as any).avatarUrl || null);
+      updated = (await userStore.findById(userId))!;
+    }
     if ((body as any).unlock === true) {
       await userStore.unlock(userId);
       updated = (await userStore.findById(userId))!;
