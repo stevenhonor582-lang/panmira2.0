@@ -33,7 +33,7 @@ export function EventStream({ events, className }: Props) {
   if (!events.length) {
     return (
       <div className={cn("rounded-xl border border-dashed border-border bg-card/50 p-10 text-center text-sm text-muted-foreground", className)}>
-        最近没有活动事件 — 数字员工和真人产生交互后会显示在这里
+        最近没有活动事件 — 数字员工和员工产生交互后会显示在这里
       </div>
     );
   }

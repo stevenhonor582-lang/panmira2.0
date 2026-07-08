@@ -11,6 +11,8 @@ function fullPath(p: string): string {
   return API_BASE + p;
 }
 
+export type EmployeeStatus = "active" | "paused" | "departed" | "deleted";
+
 export interface Person {
   id: string;
   email: string;
@@ -22,8 +24,32 @@ export interface Person {
   phone: string | null;
   failedAttempts: number;
   lockedUntil: string | null;
+  // R11 新字段
+  department?: string | null;
+  position?: string | null;
+  employeeStatus?: EmployeeStatus;
   createdAt?: string;
 }
+
+export interface PersonActivity {
+  agents: number;
+  pipelines: number;
+  calls24h: number;
+}
+
+// 状态中文映射
+export const EMPLOYEE_STATUS_LABEL: Record<EmployeeStatus, string> = {
+  active: "在职",
+  paused: "停用",
+  departed: "离职",
+  deleted: "已删除",
+};
+
+export const ROLE_LABEL: Record<Person["role"], string> = {
+  admin: "管理员",
+  operator: "操作员",
+  member: "成员",
+};
 
 export interface DigitalEmployee {
   id: string;
@@ -74,10 +100,86 @@ export interface CostBreakdown {
 
 // --- fetchers -----------------------------------------------------------
 
-export async function fetchPeople(): Promise<Person[]> {
-  const res = await api<{ users?: Person[] } | Person[]>(fullPath("/api/auth/users"));
+export async function fetchPeople(status?: EmployeeStatus): Promise<Person[]> {
+  const url = status ? `/api/auth/users?status=${status}` : "/api/auth/users";
+  const res = await api<{ users?: Person[] } | Person[]>(fullPath(url));
   if (Array.isArray(res)) return res as Person[];
   return res.users ?? [];
+}
+
+export async function fetchPersonActivity(id: string): Promise<PersonActivity> {
+  try {
+    const res = await api<PersonActivity>(fullPath(`/api/auth/users/${id}/activity`));
+    return res ?? { agents: 0, pipelines: 0, calls24h: 0 };
+  } catch {
+    return { agents: 0, pipelines: 0, calls24h: 0 };
+  }
+}
+
+// R11: PATCH 员工字段
+export async function patchPerson(
+  id: string,
+  patch: {
+    isActive?: boolean;
+    employeeStatus?: EmployeeStatus;
+    department?: string | null;
+    position?: string | null;
+    role?: Person["role"];
+    phone?: string | null;
+    unlock?: boolean;
+  },
+): Promise<Person | null> {
+  const res = await api<{ user: Person }>(fullPath(`/api/auth/users/${id}`), {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  return res?.user ?? null;
+}
+
+export async function resetPersonPassword(id: string, newPassword: string): Promise<boolean> {
+  try {
+    await api(fullPath(`/api/auth/users/${id}/reset-password`), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ newPassword }),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function deletePerson(id: string): Promise<boolean> {
+  try {
+    await api(fullPath(`/api/auth/users/${id}`), { method: "DELETE" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function createPerson(payload: {
+  name: string;
+  email: string;
+  phone?: string;
+  department?: string;
+  position?: string;
+  role?: Person["role"];
+  employeeStatus?: EmployeeStatus;
+  password?: string;
+  agentIds?: string[];
+  pipelineIds?: string[];
+}): Promise<{ user: Person; generatedPassword?: string } | null> {
+  const res = await api<{ user: Person; generatedPassword?: string }>(
+    fullPath("/api/auth/users"),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  return res ?? null;
 }
 
 export async function fetchPerson(id: string): Promise<Person | null> {

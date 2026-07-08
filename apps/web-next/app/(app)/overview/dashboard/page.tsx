@@ -108,7 +108,7 @@ export default function DashboardPage() {
   }, [state?.costDaily]);
 
   const peopleTrend = React.useMemo(() => {
-    // 真人数量按周分布只能给一个静态 4 周示意 (数据无 history)
+    // 员工数量按周分布只能给一个静态 4 周示意 (数据无 history)
     return state ? [state.people - 1, state.people, state.people, state.people] : [];
   }, [state]);
 
@@ -126,7 +126,7 @@ export default function DashboardPage() {
             数字员工平台全景
           </h1>
           <p className="mt-1 text-sm text-muted-foreground max-w-2xl">
-            真人 · 数字员工 · 任务 · 资源消耗 · 最近事件 — 一屏看完平台运行态。
+            员工 · 数字员工 · 任务 · 资源消耗 · 最近事件 — 一屏看完平台运行态。
           </p>
         </div>
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -160,7 +160,7 @@ export default function DashboardPage() {
       >
         <div className="lg:col-span-3">
           <KpiTile
-            label="真人"
+            label="员工"
             value={state?.people ?? "-"}
             hint={state ? `其中 ${state.people === 1 ? "唯一" : ""}admin` : "加载中"}
             icon={Users}

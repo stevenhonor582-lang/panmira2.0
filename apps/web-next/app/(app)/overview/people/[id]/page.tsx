@@ -1,4 +1,4 @@
-// /overview/people/[id] - 真人详情 7 Tab
+// /overview/people/[id] - 员工详情 7 Tab
 "use client";
 
 import * as React from "react";
@@ -25,6 +25,7 @@ import {
   fetchAgents,
   fetchPerson,
   fetchPipelines,
+  EMPLOYEE_STATUS_LABEL,
   type DigitalEmployee,
   type Person,
   type Pipeline,
@@ -98,7 +99,7 @@ export default function PersonDetailPage() {
   if (loading) {
     return (
       <div className="grid place-items-center min-h-[40vh] text-sm text-muted-foreground">
-        加载真人信息…
+        加载员工信息…
       </div>
     );
   }
@@ -113,7 +114,7 @@ export default function PersonDetailPage() {
           <ArrowLeft className="size-3" /> 返回列表
         </Link>
         <div className="rounded-xl border border-rose-500/40 bg-rose-500/5 p-6 text-sm text-rose-700 dark:text-rose-400">
-          {error ? `加载失败: ${error}` : "未找到该真人"}
+          {error ? `加载失败: ${error}` : "未找到该员工"}
         </div>
       </div>
     );
@@ -121,7 +122,7 @@ export default function PersonDetailPage() {
 
   const isFounder = person.email === FOUNDER_EMAIL;
   const status = classifyPerson(person);
-  const myAgents = agents; // 暂未关联真人-bot 映射,先展示全部 agents
+  const myAgents = agents; // R11: 暂未关联员工-bot 映射,先展示全部 agents
   const myPipelines = pipelines.filter((p) => p.createdBy === person.id);
 
   return (
@@ -130,7 +131,7 @@ export default function PersonDetailPage() {
         href="/overview/people"
         className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
       >
-        <ArrowLeft className="size-3" /> 返回真人列表
+        <ArrowLeft className="size-3" /> 返回员工列表
       </Link>
 
       {/* 固定头部: 大头像 + 姓名 + sid + 角色 + 联系方式 */}
@@ -271,7 +272,10 @@ function BasicTab({ person }: { person: Person }) {
           <InfoRow label="电话">{person.phone ?? "—"}</InfoRow>
           <InfoRow label="sid">{person.sid ?? "—"}</InfoRow>
           <InfoRow label="角色">{ROLE_LABEL[person.role]}</InfoRow>
-          <InfoRow label="状态">{person.isActive ? "启用" : "停用"}</InfoRow>
+          <InfoRow label="部门">{person.department ?? "未分配"}</InfoRow>
+          <InfoRow label="职位">{person.position ?? "—"}</InfoRow>
+          <InfoRow label="雇佣状态">{EMPLOYEE_STATUS_LABEL[person.employeeStatus ?? "active"]}</InfoRow>
+          <InfoRow label="登录启用">{person.isActive ? "启用" : "禁用"}</InfoRow>
         </dl>
       </div>
 
@@ -305,7 +309,7 @@ function EmployeesTab({ agents }: { agents: DigitalEmployee[] }) {
     return (
       <EmptyState
         title="暂无关联数字员工"
-        hint="真人账号尚未被任何数字员工关联调度。"
+        hint="员工账号尚未被任何数字员工关联调度。"
       />
     );
   }
@@ -347,7 +351,7 @@ function TasksTab({ pipelines }: { pipelines: Pipeline[] }) {
   if (!pipelines.length) {
     return (
       <EmptyState
-        title="该真人尚未创建任何流水线任务"
+        title="该员工尚未创建任何流水线任务"
         hint="新创建的 pipeline 任务会自动归集到这里。"
       />
     );
@@ -403,14 +407,14 @@ function DecisionsTab() {
   return (
     <EmptyState
       title="决策记录待接入"
-      hint="等 run-log 与 approve 工作流接入后,数字员工的审批/决策日志会自动按真人聚合到此处。"
+      hint="等 run-log 与 approve 工作流接入后,数字员工的审批/决策日志会自动按员工聚合到此处。"
     />
   );
 }
 
 function CollaboratorsTab({ agents }: { agents: DigitalEmployee[] }) {
   if (!agents.length) {
-    return <EmptyState title="暂无协作关系" hint="真人与数字员工的协作关系网络待绘制。" />;
+    return <EmptyState title="暂无协作关系" hint="员工与数字员工的协作关系网络待绘制。" />;
   }
   return (
     <div className="grid gap-2 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
@@ -431,7 +435,7 @@ function ResourcesTab() {
   return (
     <EmptyState
       title="资源消耗待接入"
-      hint="按真人聚合的 LLM token / 存储 / 计算 趋势图将在计费模块接通后自动呈现。"
+      hint="按员工聚合的 LLM token / 存储 / 计算 趋势图将在计费模块接通后自动呈现。"
     />
   );
 }

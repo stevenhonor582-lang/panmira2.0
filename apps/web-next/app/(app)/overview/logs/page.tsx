@@ -196,7 +196,7 @@ function Header({
           系统日志时间线
         </h1>
         <p className="max-w-[55ch] text-[15px] leading-relaxed text-foreground/65">
-          按真人 / 员工 / 任务 / 时间维度结构化展示。
+          按员工 / 数字员工 / 任务 / 时间维度结构化展示。
           {fetched ? (
             <>当前共 {total} 条 · 展示 {shown} 条。</>
           ) : (
