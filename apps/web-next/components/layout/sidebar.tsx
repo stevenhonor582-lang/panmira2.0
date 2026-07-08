@@ -61,7 +61,6 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "组织部", href: "/overview/people", icon: Users },
       { label: "财务", href: "/overview/billing", icon: Wallet },
       { label: "诊断", href: "/overview/diagnosis", icon: Stethoscope },
-      { label: "优化", href: "/overview/optimization", icon: Sparkles },
       { label: "日志", href: "/overview/logs", icon: ScrollText },
     ],
   },

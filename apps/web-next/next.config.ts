@@ -26,7 +26,7 @@ const nextConfig: NextConfig = {
       // ---- 阶段 1 老路由(保留向后兼容,避免 404) ----
       { source: "/alerts", destination: "/overview/diagnosis", permanent: true },
       { source: "/diagnose", destination: "/overview/diagnosis", permanent: true },
-      { source: "/cost", destination: "/overview/optimization", permanent: true },
+      { source: "/cost", destination: "/overview/diagnosis", permanent: true },
       { source: "/reports", destination: "/overview/dashboard", permanent: true },
       { source: "/audit", destination: "/overview/logs", permanent: true },
       { source: "/skills/dags", destination: "/channels/skills", permanent: true },
@@ -60,6 +60,8 @@ const nextConfig: NextConfig = {
       { source: "/logs", destination: "/overview/logs", permanent: true },
       { source: "/knowledge", destination: "/foundation/knowledge", permanent: true },
       { source: "/status", destination: "/overview/dashboard", permanent: true },
+      // ---- R14-E: /optimization 并入 /diagnosis ----
+      { source: "/overview/optimization", destination: "/overview/diagnosis", permanent: false },
 
     ];
   },
