@@ -39,6 +39,7 @@ import { handlePipelineRoutes } from "./routes/pipeline-routes.js";
 import { handleAdminCacheRoutes } from "./routes/admin-cache-routes.js";
 import { handleR9MockEndpoints } from './routes/r9-mock-endpoints-routes.js';
 import { handleR10DataRoutes } from './routes/r10-data-routes.js';
+import { handleDashboardAggregateRoutes } from './routes/dashboard-aggregate-routes.js';
 import { handleAdminRateLimitRoutes } from "./routes/admin-ratelimit-routes.js";
 import { handleKnowledgeBaseRoutes } from './routes/knowledge-base-routes.js';
 import { handleAgentKnowledgeRoutes } from './routes/agent-knowledge-routes.js';
@@ -228,6 +229,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     handleAdminMemoryRoutes,
     handleR9MockEndpoints,
     handleR10DataRoutes,
+    handleDashboardAggregateRoutes,
 
     handleGenerateRoutes,
     handleWorkspaceRoutes,
@@ -507,6 +509,13 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
       // R9 dispatch 已经在 825 行介入,这里需要 forward 回去
       if (url.match(/^\/api\/agents\/[^/]+\/log-series$/)) {
         // 让 R9 dispatch 处理
+      }
+
+      // R12 dashboard aggregate (2026-07-08) — single-fetch dashboard payload
+      if (url.startsWith('/api/v2/admin/dashboard-aggregate')) {
+        if (await handleDashboardAggregateRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'R12 route not found' });
+        return;
       }
 
       // R9 mock endpoints (2026-07-08) - production 10/10
