@@ -12,12 +12,15 @@
 import * as React from "react";
 import Link from "next/link";
 import {
+  ArrowDownUp,
   LayoutGrid,
   List as ListIcon,
   Loader2,
   Plus,
   Search,
   SlidersHorizontal,
+  Sparkles,
+  Trash2,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -102,6 +105,9 @@ export default function TasksListPage() {
   const [statusFilter, setStatusFilter] = React.useState<"all" | TaskStatus>("all");
   const [botFilter, setBotFilter] = React.useState<"all" | string>("all");
   const [search, setSearch] = React.useState("");
+  const [sortKey, setSortKey] = React.useState<"updated" | "name" | "status">("updated");
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [batchRunning, setBatchRunning] = React.useState(false);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -134,13 +140,19 @@ export default function TasksListPage() {
 
   const filtered = React.useMemo(() => {
     const q = search.trim().toLowerCase();
-    return tasks.filter((t) => {
+    const list = tasks.filter((t) => {
       if (statusFilter !== "all" && t.status !== statusFilter) return false;
       if (botFilter !== "all" && t.botId !== botFilter) return false;
       if (q && !t.name.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [tasks, statusFilter, botFilter, search]);
+    list.sort((a, b) => {
+      if (sortKey === "name") return (a.name || "").localeCompare(b.name || "");
+      if (sortKey === "status") return (a.status || "").localeCompare(b.status || "");
+      return (+new Date(b.updatedAt ?? 0)) - (+new Date(a.updatedAt ?? 0));
+    });
+    return list;
+  }, [tasks, statusFilter, botFilter, search, sortKey]);
 
   const summary = React.useMemo(() => {
     const acc: Record<TaskStatus, number> = {
@@ -164,6 +176,13 @@ export default function TasksListPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Link
+            href="/tasks/templates"
+            className="inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-lg text-sm font-medium ring-1 ring-foreground/15 hover:bg-muted transition-all"
+          >
+            <Sparkles className="size-4 text-primary" />
+            模板
+          </Link>
           <Link
             href="/tasks/new"
             className="inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/80 transition-all active:translate-y-px"
@@ -212,6 +231,17 @@ export default function TasksListPage() {
             </SelectContent>
           </Select>
         )}
+        <Select value={sortKey} onValueChange={(v) => setSortKey(v as "updated" | "name" | "status")}>
+          <SelectTrigger className="h-8 w-[120px] text-sm">
+            <ArrowDownUp className="size-3.5 mr-1 text-muted-foreground" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="updated">最近更新</SelectItem>
+            <SelectItem value="name">名称</SelectItem>
+            <SelectItem value="status">状态</SelectItem>
+          </SelectContent>
+        </Select>
         <div className="ml-auto flex items-center gap-1 ring-1 ring-foreground/10 rounded-md p-0.5 bg-card">
           <button
             type="button"
@@ -240,6 +270,32 @@ export default function TasksListPage() {
         </div>
       </div>
 
+      {selected.size > 0 && (
+        <BatchOpsBar
+          selectedCount={selected.size}
+          onClear={() => setSelected(new Set())}
+          running={batchRunning}
+          onAction={async (action) => {
+            setBatchRunning(true);
+            try {
+              await Promise.all(
+                Array.from(selected).map((id) =>
+                  api(`/api/v2/admin/pipelines/${id}`, {
+                    method: action === "delete" ? "DELETE" : "PATCH",
+                    body: action === "delete" ? undefined : { enabled: action === "enable" },
+                  }),
+                ),
+              );
+              setSelected(new Set());
+              window.location.reload();
+            } catch (e) {
+              window.alert(e instanceof Error ? e.message : "批量操作失败");
+            } finally {
+              setBatchRunning(false);
+            }
+          }}
+        />
+      )}
       <div className="flex flex-wrap items-center gap-4 text-[11px] text-muted-foreground">
         <span>共 <strong className="text-foreground font-mono">{tasks.length}</strong> 个任务</span>
         {summary.ready > 0 && (
@@ -318,6 +374,55 @@ function ListHeader() {
       <div className="col-span-2">Bot</div>
       <div className="col-span-2">负责人</div>
       <div className="col-span-1 text-right">状态</div>
+    </div>
+  );
+}
+
+interface BatchOpsBarProps {
+  selectedCount: number;
+  onClear: () => void;
+  running: boolean;
+  onAction: (action: "enable" | "disable" | "delete") => void;
+}
+
+function BatchOpsBar({ selectedCount, onClear, running, onAction }: BatchOpsBarProps) {
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 rounded-md ring-1 ring-primary/30 bg-primary/5 text-xs">
+      <span className="font-medium">
+        已选 <span className="font-mono text-primary">{selectedCount}</span> 个任务
+      </span>
+      <button
+        type="button"
+        disabled={running}
+        onClick={() => onAction("enable")}
+        className="h-7 px-2.5 rounded-md bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100 disabled:opacity-50"
+      >启用</button>
+      <button
+        type="button"
+        disabled={running}
+        onClick={() => onAction("disable")}
+        className="h-7 px-2.5 rounded-md bg-amber-50 text-amber-700 ring-1 ring-amber-200 hover:bg-amber-100 disabled:opacity-50"
+      >停用</button>
+      <button
+        type="button"
+        disabled={running}
+        onClick={() => {
+          const ok = window.confirm(
+            "确认删除 " + selectedCount + " 个任务? 此操作不可撤销。",
+          );
+          if (ok) onAction("delete");
+        }}
+        className="h-7 px-2.5 rounded-md bg-rose-50 text-rose-700 ring-1 ring-rose-200 hover:bg-rose-100 inline-flex items-center gap-1 disabled:opacity-50"
+      >
+        <Trash2 className="size-3" />
+        删除
+      </button>
+      {running && <Loader2 className="size-3 animate-spin" />}
+      <button
+        type="button"
+        onClick={onClear}
+        className="ml-auto text-[10px] text-muted-foreground hover:text-foreground"
+      >取消选择</button>
     </div>
   );
 }
