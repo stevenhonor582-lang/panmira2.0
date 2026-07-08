@@ -2,8 +2,8 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, ArrowRight, SkipForward, CheckCircle2 } from "lucide-react";
-import { EMPTY_FORM, type WizardForm } from "./form";
+import { ArrowLeft, ArrowRight, SkipForward, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { EMPTY_FORM, PERSONA_PRESETS, formToAgentPayload, type WizardForm, type ProviderInfo, type SkillInfo, type McpServerInfo, type KbFolderInfo, type KbInfo, type ChannelBotInfo } from "./form";
 import { StepRail, STEPS } from "./stepper";
 import { Step1 } from "./step-1";
 import { Step2 } from "./step-2";
@@ -12,50 +12,136 @@ import { Step4 } from "./step-4";
 import { Step5 } from "./step-5";
 import { Step6 } from "./step-6";
 import { Step7 } from "./step-7";
-import { TEMPLATE_PRESETS } from "../../_lib/data";
+import { api } from "@/lib/api";
 import { AvatarMark } from "../../_components/avatar-mark";
+
+// Wizard-scoped data hook — one parallel fetch for everything step 2-6 needs.
+interface WizardData {
+  providers: ProviderInfo[];
+  skills: SkillInfo[];
+  mcpServers: McpServerInfo[];
+  folders: KbFolderInfo[];
+  knowledgeBases: KbInfo[];
+  channels: ChannelBotInfo[];
+}
+
+function useWizardData(): { data: WizardData | null; loading: boolean; error: string | null } {
+  const [data, setData] = React.useState<WizardData | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const [provRes, skillRes, mcpRes, folderRes, kbRes, botRes] = await Promise.all([
+          api<{ providers: ProviderInfo[] } | ProviderInfo[]>("/api/providers").catch(() => null),
+          api<{ skills: SkillInfo[] } | SkillInfo[]>("/api/skills").catch(() => null),
+          api<{ servers: McpServerInfo[] } | McpServerInfo[]>("/api/mcp/servers").catch(() => null),
+          api<{ folders: KbFolderInfo[] } | KbFolderInfo[]>("/api/knowledge/folders").catch(() => null),
+          api<{ data: { knowledgeBases?: KbInfo[] }[] } | { knowledgeBases?: KbInfo[] } | KbInfo[]>("/api/v2/admin/knowledge-bases").catch(() => null),
+          api<{ bots: ChannelBotInfo[] } | ChannelBotInfo[]>("/api/bots").catch(() => null),
+        ]);
+        if (!alive) return;
+        const providers = (provRes as any)?.providers ?? (provRes as any) ?? [];
+        // Filter out embedding providers — Step 2 only shows LLM choices.
+        const llmProviders = (providers as ProviderInfo[]).filter(
+          (p) => (p.type || "").toLowerCase() !== "embedding",
+        );
+        const skills = (skillRes as any)?.skills ?? (skillRes as any) ?? [];
+        const mcpServers = (mcpRes as any)?.servers ?? (mcpRes as any) ?? [];
+        const folders = (folderRes as any)?.folders ?? (folderRes as any) ?? [];
+        const kbResAny = kbRes as any;
+        const knowledgeBases: KbInfo[] =
+          kbResAny?.knowledgeBases ??
+          kbResAny?.data?.knowledgeBases ??
+          kbResAny?.data ??
+          (Array.isArray(kbResAny) ? kbResAny : []);
+        const bots = (botRes as any)?.bots ?? (botRes as any) ?? [];
+        setData({
+          providers: llmProviders,
+          skills: skills as SkillInfo[],
+          mcpServers: mcpServers as McpServerInfo[],
+          folders: folders as KbFolderInfo[],
+          knowledgeBases: knowledgeBases as KbInfo[],
+          channels: bots as ChannelBotInfo[],
+        });
+        setLoading(false);
+      } catch (e: any) {
+        if (!alive) return;
+        setError(String(e?.message ?? e));
+        setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  return { data, loading, error };
+}
 
 export function NewBotWizard() {
   const router = useRouter();
   const params = useSearchParams();
   const templateIdParam = params.get("template");
 
+  const { data: wizardData, loading: dataLoading, error: dataError } = useWizardData();
+
   const [form, setForm] = React.useState<WizardForm>(() => {
     if (!templateIdParam) return EMPTY_FORM;
-    const t = TEMPLATE_PRESETS.find((x) => x.id === templateIdParam);
-    if (!t) return EMPTY_FORM;
-    return {
-      ...EMPTY_FORM,
-      templateId: t.id,
-      glyph: t.glyph,
-      hue: t.hue,
-      name: t.title,
-      systemPrompt: t.persona,
-    };
+    // Local template lookup (kept light — heavy data now lives in steps 2-6)
+    return { ...EMPTY_FORM, templateId: templateIdParam };
   });
   const [current, setCurrent] = React.useState(1);
-  const [done, setDone] = React.useState(false);
 
-  const skipAllowed = current <= 3;
+  // Auto-pick the default provider once wizard data arrives.
+  React.useEffect(() => {
+    if (!wizardData) return;
+    if (form.providerId) return;
+    const def = wizardData.providers.find((p) => p.isDefault) ?? wizardData.providers[0];
+    if (def) {
+      setForm((f) => ({
+        ...f,
+        providerId: def.id,
+        providerName: def.name,
+        providerModel: def.model,
+      }));
+    }
+  }, [wizardData, form.providerId]);
+
+  // Skip is allowed on lightweight steps (1, 6 partial).
+  const skipAllowed = current === 1;
   const isLast = current === STEPS.length;
 
-  const next = () => {
-    if (isLast) return;
-    setCurrent((c) => Math.min(STEPS.length, c + 1));
-  };
+  const next = () => setCurrent((c) => Math.min(STEPS.length, c + 1));
   const prev = () => setCurrent((c) => Math.max(1, c - 1));
-  const jump = (s: number) => {
-    if (s < current) {
-      setCurrent(s);
-      return;
+  const jump = (s: number) => setCurrent(s);
+
+  const submit = async (): Promise<{ ok: boolean; error?: string; id?: string }> => {
+    const payload = formToAgentPayload(form);
+    try {
+      const res = await api<{ agent: { id: string } }>("/api/agents/", {
+        method: "POST",
+        body: payload,
+        headers: { "content-type": "application/json" },
+      });
+      return { ok: true, id: res.agent?.id };
+    } catch (e: any) {
+      const msg =
+        e?.body?.error ||
+        e?.body?.message ||
+        e?.message ||
+        (typeof e === "string" ? e : "未知错误");
+      return { ok: false, error: String(msg) };
     }
-    if (s <= 3 || s <= current + 1) setCurrent(s);
   };
 
-  const submit = () => setDone(true);
-
-  if (done) {
-    return <DoneScreen form={form} onReset={() => { setForm(EMPTY_FORM); setCurrent(1); setDone(false); }} />;
+  if (dataLoading) {
+    return (
+      <div className="grid place-items-center py-32 text-sm text-foreground/50">
+        <Loader2 className="size-4 animate-spin" />
+        <span className="ml-2 font-mono">载入向导数据(providers / skills / mcp / folders / channels)…</span>
+      </div>
+    );
   }
 
   return (
@@ -100,14 +186,47 @@ export function NewBotWizard() {
           )}
         </div>
 
+        {dataError && (
+          <div className="mt-4 flex items-start gap-2 rounded-2xl bg-rose-500/10 p-3 text-[12px] text-rose-700 dark:text-rose-300 ring-1 ring-rose-500/30">
+            <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+            <span className="font-mono">部分向导数据加载失败:{dataError}。已选字段会保留,刷新可重试。</span>
+          </div>
+        )}
+
         <div className="pt-6 transition-opacity duration-300" key={`step-${current}`}>
           {current === 1 && <Step1 form={form} setForm={setForm} />}
-          {current === 2 && <Step2 form={form} setForm={setForm} />}
-          {current === 3 && <Step3 form={form} setForm={setForm} />}
-          {current === 4 && <Step4 form={form} setForm={setForm} />}
-          {current === 5 && <Step5 form={form} setForm={setForm} />}
-          {current === 6 && <Step6 form={form} setForm={setForm} />}
-          {current === 7 && <Step7 form={form} setForm={setForm} onSubmit={submit} />}
+          {current === 2 && wizardData && (
+            <Step2 form={form} setForm={setForm} providers={wizardData.providers} />
+          )}
+          {current === 3 && (
+            <Step3 form={form} setForm={setForm} presets={PERSONA_PRESETS} />
+          )}
+          {current === 4 && wizardData && (
+            <Step4
+              form={form}
+              setForm={setForm}
+              skills={wizardData.skills}
+              mcpServers={wizardData.mcpServers}
+            />
+          )}
+          {current === 5 && wizardData && (
+            <Step5
+              form={form}
+              setForm={setForm}
+              folders={wizardData.folders}
+              knowledgeBases={wizardData.knowledgeBases}
+            />
+          )}
+          {current === 6 && wizardData && (
+            <Step6
+              form={form}
+              setForm={setForm}
+              channels={wizardData.channels}
+            />
+          )}
+          {current === 7 && (
+            <Step7 form={form} onSubmit={submit} onPublished={(id) => router.push(`/employees/${id}`)} />
+          )}
         </div>
 
         {!isLast && (
@@ -134,64 +253,37 @@ export function NewBotWizard() {
   );
 }
 
+// Real preview — every value comes from form state (no fake "全栈工程师 / Cloud Sonic 4.6").
 function PreviewCard({ form }: { form: WizardForm }) {
+  const personaLabel =
+    PERSONA_PRESETS.find((p) => p.id === form.personaPreset)?.label ||
+    (form.persona ? "自定义" : "未设定");
   return (
     <div className="overflow-hidden rounded-2xl bg-muted/40 p-5 ring-1 ring-border">
       <span className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/45">
-        实时预览
+        实时预览 · 真实数据
       </span>
       <div className="mt-3 flex items-center gap-3">
         <AvatarMark glyph={form.glyph} hue={form.hue} size="md" />
         <div className="min-w-0">
           <div className="truncate text-[15px] font-semibold tracking-tight">
-            {form.name || "未命名 bot"}
+            {form.name || "未命名员工"}
           </div>
           <div className="truncate font-mono text-[11px] text-foreground/55">
-            {form.model} · {(form.contextWindow / 1000).toFixed(0)}k ctx · t={form.temperature.toFixed(2)}
+            {form.providerName ? `${form.providerName} · ${form.providerModel}` : "未选模型"}
+            {" · "}
+            {(form.contextWindow / 1000).toFixed(0)}k ctx
+            {" · t="}{form.temperature.toFixed(2)}
           </div>
         </div>
       </div>
       <ul className="mt-4 space-y-1.5 text-[11.5px] font-mono text-foreground/55">
-        <li>{form.skills.length} skills</li>
-        <li>{form.mcpServers.length} mcp servers</li>
-        <li>{form.tools.length} tools</li>
-        <li>{form.kbFolders.length} KB folders</li>
-        <li>可见性 · {form.visibility}</li>
+        <li>人格 · {personaLabel}</li>
+        <li>{form.skills.length} skills · {form.mcpServerIds.length} mcp · {form.tools.length} tools</li>
+        <li>{form.kbFolderIds.length} folders · {form.knowledgeBaseIds.length} KB</li>
+        <li>可见 · {form.visibility} · {form.channelIds.length} 频道</li>
+        {form.workingDir && <li className="truncate">目录 · {form.workingDir}</li>}
       </ul>
-    </div>
-  );
-}
-
-function DoneScreen({ form, onReset }: { form: WizardForm; onReset: () => void }) {
-  const router = useRouter();
-  return (
-    <div className="grid place-items-center py-20">
-      <div className="flex max-w-md flex-col items-center gap-5 rounded-3xl bg-card p-10 text-center ring-1 ring-border">
-        <div className="inline-flex size-14 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/30">
-          <CheckCircle2 className="size-7" />
-        </div>
-        <h2 className="text-2xl font-semibold tracking-tighter">
-          {form.name || "新的 bot"} 上线了
-        </h2>
-        <p className="text-[13.5px] leading-relaxed text-foreground/65">
-          我们已经把这位 bot 加进员工库,主理人:史德飞。
-          她现在可以被同组可见的所有人调用。
-        </p>
-        <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
-          <button
-            onClick={onReset}
-            className="rounded-full bg-muted px-4 py-2 text-[13px] font-medium text-foreground hover:bg-muted/70"
-          >
-            再创建一个
-          </button>
-          <button
-            onClick={() => router.push("/employees")}
-            className="rounded-full bg-foreground px-5 py-2 text-[13px] font-medium text-background hover:opacity-90"
-          >
-            回员工库
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

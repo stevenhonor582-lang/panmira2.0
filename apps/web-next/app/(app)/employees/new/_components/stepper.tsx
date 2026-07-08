@@ -9,13 +9,13 @@ export interface WizardStep {
 }
 
 export const STEPS: WizardStep[] = [
-  { id: 1, label: "基本信息", hint: "name · avatar · template" },
-  { id: 2, label: "大脑模型", hint: "LLM · context · temperature" },
-  { id: 3, label: "人格定义", hint: "prompt · 预设人格" },
-  { id: 4, label: "能力装载", hint: "skills · MCP · tools" },
-  { id: 5, label: "知识注入", hint: "KB · folders" },
-  { id: 6, label: "协作配置", hint: "权限 · workspace" },
-  { id: 7, label: "测试 & 上线", hint: "sandbox · 上线" },
+  { id: 1, label: "基本信息",   hint: "name · avatar · template" },
+  { id: 2, label: "大脑模型",   hint: "provider · ctx · temp" },
+  { id: 3, label: "人格定义",   hint: "persona · prompt · iron" },
+  { id: 4, label: "能力装载",   hint: "skills · mcp · tools" },
+  { id: 5, label: "知识注入",   hint: "KB · folders · iron" },
+  { id: 6, label: "协作配置",   hint: "可见 · 频道 · 工作目录" },
+  { id: 7, label: "发布",       hint: "submit · 失败原因" },
 ];
 
 export function StepRail({
