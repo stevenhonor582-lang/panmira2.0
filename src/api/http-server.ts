@@ -57,7 +57,10 @@ import { handlePeopleRoutes } from './routes/people-routes.js';
 import { handleEmployeesRoutes } from './routes/employees-routes.js';
 import { handleTasksRoutes } from './routes/tasks-routes.js';
 import { handleFoundationRoutes } from './routes/foundation-routes.js';
+import { handleFoundationMemoryRoutes } from './routes/foundation-memory-routes.js';
+import { handleFoundationKbRoutes } from './routes/foundation-kb-routes.js';
 import { handleChannelsRoutesV6 } from './routes/channels-routes.js';
+import { handleRoutingRulesRoutes } from './routes/routing-rules-routes.js';
 import { handleModelsV6Routes } from './routes/models-routes.js';
 import { addDeprecationHeader } from './routes/helpers.js';
 import { handleOpsRoutes } from './routes/ops-routes.js';
@@ -531,6 +534,15 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
         return;
       }
 
+      // R13-C foundation dispatch (2026-07-08) — memory CRUD + KB CRUD
+      // GET /api/v2/foundation/memory/:layer 仍由下面的 r10 处理 (handler return false)
+      if (url.startsWith('/api/v2/foundation/memory')
+          || url.startsWith('/api/v2/foundation/folders')
+          || url.startsWith('/api/v2/foundation/documents')) {
+        if (await handleFoundationMemoryRoutes(req, res, method, url)) return;
+        if (await handleFoundationKbRoutes(req, res, method, url)) return;
+      }
+
       // R10 data access routes (2026-07-08) — memory list + sessions + 6 admin endpoints
       if (url.startsWith('/api/v2/foundation/memory/')
           || url.startsWith('/api/v2/admin/sessions')
@@ -905,7 +917,14 @@ ${content}
         jsonResponse(res, 404, { error: 'Models v6 route not found' });
         return;
       }
-            // Plan D: Channel usage (IM handlers 调用)
+            // R13E: Routing rules CRUD (priority reorder + probe)
+      if (url.startsWith('/api/v2/admin/routing-rules')) {
+        if (await handleRoutingRulesRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Routing rules route not found' });
+        return;
+      }
+
+      // Plan D: Channel usage (IM handlers 调用)
       if (url.startsWith('/api/v2/admin/channels/')) {
         if (await handleChannelUsageRoutes(req, res, method, url)) return;
         jsonResponse(res, 404, { error: 'Channel route not found' });
