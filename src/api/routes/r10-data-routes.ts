@@ -617,7 +617,15 @@ export async function handleR10DataRoutes(
   const ctx = await requireBearer(req, res);
   if (!ctx) return true;
 
+  // Normalize URL: strip query string + trailing slash for routing.
+  // Next.js trailingSlash:true sends /api/.../l1/ and the browser may add
+  // ?limit=... — both break regex anchors. The parsed URL still has the
+  // original query for handler use.
   const parsed = new URL(url, 'http://localhost');
+  url = parsed.pathname;          // pathname only, no ?query
+  if (url.length > 1 && url.endsWith('/')) {
+    url = url.slice(0, -1);
+  }
 
   // 1. /api/v2/foundation/memory/:layer
   const memMatch = url.match(/^\/api\/v2\/foundation\/memory\/(l?[123])$/);
