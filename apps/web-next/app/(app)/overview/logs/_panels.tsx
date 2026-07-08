@@ -16,8 +16,6 @@ import {
   TrendingDown,
   TrendingUp,
   Flame,
-  ArrowRight,
-  Lightbulb,
   Activity,
   Bot,
   Server,
@@ -33,6 +31,9 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { cn } from "@/lib/utils";
+import {
+  AISuggestionList,
+} from "@/components/ai-suggestion/ai-suggestion";
 
 // ─────────────────────────────────────────────────────────────
 // 共享 types (与后端 HumanizedLog / LogAnalysis 对齐)
@@ -330,18 +331,19 @@ export function AIAnalysisPanel({ analysis, loading }: { analysis: LogAnalysis |
         </div>
       )}
 
-      {/* 建议行动 */}
+      {/* 建议行动 — R16-5 改用统一 AISuggestionList */}
       {analysis.actions.length > 0 && (
         <div className="mt-6">
-          <div className="text-[10.5px] font-mono uppercase tracking-[0.22em] text-foreground/55 mb-3 flex items-center gap-1.5">
-            <Lightbulb className="size-3" />
-            建议行动 · 按优先级排序
-          </div>
-          <div className="space-y-2">
-            {analysis.actions.slice(0, 4).map((act, i) => (
-              <ActionRow key={`${act.action}-${i}`} action={act} />
-            ))}
-          </div>
+          <AISuggestionList
+            title="建议行动 · 按优先级排序"
+            suggestions={analysis.actions.slice(0, 4).map((act) => ({
+              impact: act.priority,
+              title: act.action,
+              suggestion: act.reason,
+              action: act.link ? { label: "查看", href: act.link } : undefined,
+            }))}
+            showCount={false}
+          />
         </div>
       )}
     </section>
@@ -363,29 +365,6 @@ function StatTile({ label, value, tone }: { label: string; value: number; tone: 
   );
 }
 
-function ActionRow({ action }: { action: AnalysisAction }) {
-  const priorityTone = action.priority === "high"
-    ? "bg-rose-500/15 text-rose-700 dark:text-rose-300"
-    : action.priority === "medium"
-    ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
-    : "bg-stone-500/15 text-stone-700 dark:text-stone-300";
-  const priorityLabel = action.priority === "high" ? "高" : action.priority === "medium" ? "中" : "低";
-  return (
-    <a
-      href={action.link}
-      className="group flex items-center gap-3 rounded-2xl border border-border bg-card/60 px-4 py-3 transition hover:bg-accent hover:border-foreground/20"
-    >
-      <span className={cn("inline-flex shrink-0 items-center justify-center rounded-full px-2 py-0.5 font-mono text-[10px] font-medium", priorityTone)}>
-        {priorityLabel}
-      </span>
-      <div className="flex-1 min-w-0">
-        <div className="text-[13px] font-medium text-foreground/90 truncate">{action.action}</div>
-        <div className="text-[11px] text-foreground/55 truncate">{action.reason}</div>
-      </div>
-      <ArrowRight className="size-4 shrink-0 text-foreground/40 transition group-hover:translate-x-0.5 group-hover:text-foreground/70" />
-    </a>
-  );
-}
 
 // ─────────────────────────────────────────────────────────────
 // 2. 7 天错误趋势

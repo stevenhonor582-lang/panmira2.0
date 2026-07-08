@@ -24,8 +24,6 @@ import {
   Zap,
   RotateCw,
   RefreshCw,
-  Lightbulb,
-  ArrowRight,
   ServerCog,
   Brain,
   Database,
@@ -33,6 +31,10 @@ import {
   Activity,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import {
+  AISuggestionList,
+  fromDiagnosisSuggestion,
+} from "@/components/ai-suggestion/ai-suggestion";
 import { cn } from "@/lib/utils";
 import {
   RadialBarChart,
@@ -263,7 +265,12 @@ export default function DiagnosisPage() {
           </section>
 
           {/* ─────── 优化建议(并入自 /optimization) ─────── */}
-          <OptimizationSection suggestions={data.suggestions} />
+          {/* ─────── 优化建议(并入自 /optimization) ─── R16-5 改用统一 AISuggestion 组件 ─────── */}
+          <AISuggestionList
+            suggestions={data.suggestions.map(fromDiagnosisSuggestion)}
+            title="优化建议"
+            emptyText="所有系统运行正常"
+          />
         </>
       ) : null}
     </div>
@@ -373,82 +380,6 @@ function StatPill({
   );
 }
 
-function OptimizationSection({ suggestions }: { suggestions: Suggestion[] }) {
-  const hasIssue = suggestions.some((s) => s.impact !== "info");
-  return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-[13px] font-semibold tracking-tight text-foreground/80">
-          优化建议 · {suggestions.length} 条 {hasIssue ? "" : "(全健康)"}
-        </h2>
-        {!hasIssue && (
-          <span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[11px] text-emerald-700 dark:text-emerald-300">
-            所有系统运行正常
-          </span>
-        )}
-      </div>
-      <ul className="space-y-2.5">
-        {suggestions.map((s, i) => {
-          const tone =
-            s.impact === "high" ? "rose" :
-            s.impact === "medium" ? "amber" : "emerald";
-          const ring =
-            s.impact === "high" ? "ring-rose-500/20 bg-rose-500/[0.04]" :
-            s.impact === "medium" ? "ring-amber-500/20 bg-amber-500/[0.04]" :
-            "ring-emerald-500/20 bg-emerald-500/[0.04]";
-          const label =
-            s.impact === "high" ? "高影响" :
-            s.impact === "medium" ? "中影响" : "信息";
-          const labelColor =
-            s.impact === "high" ? "bg-rose-500/15 text-rose-700 dark:text-rose-300" :
-            s.impact === "medium" ? "bg-amber-500/15 text-amber-700 dark:text-amber-300" :
-            "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
-          return (
-            <li
-              key={`${s.target}-${i}`}
-              className={cn("rounded-2xl p-4 ring-1", ring)}
-            >
-              <div className="flex items-start gap-3">
-                <Lightbulb
-                  className={cn(
-                    "size-4 mt-0.5 shrink-0",
-                    tone === "rose" && "text-rose-600 dark:text-rose-400",
-                    tone === "amber" && "text-amber-600 dark:text-amber-400",
-                    tone === "emerald" && "text-emerald-600 dark:text-emerald-400",
-                  )}
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[13.5px] font-medium">{s.target}</span>
-                    <span className={cn("rounded-sm px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide", labelColor)}>
-                      {label}
-                    </span>
-                  </div>
-                  {s.problem && (
-                    <div className="mt-1 font-mono text-[11px] text-foreground/55">
-                      问题: {s.problem}
-                    </div>
-                  )}
-                  <div className="mt-1.5 text-[12.5px] text-foreground/80">
-                    {s.suggestion}
-                  </div>
-                  {s.action && (
-                    <a
-                      href={s.action}
-                      className="mt-2 inline-flex items-center gap-1 text-[11.5px] font-medium text-foreground/70 hover:text-foreground hover:underline"
-                    >
-                      去修复 <ArrowRight className="size-3" />
-                    </a>
-                  )}
-                </div>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-    </section>
-  );
-}
 
 function SkeletonDiagnosis() {
   return (

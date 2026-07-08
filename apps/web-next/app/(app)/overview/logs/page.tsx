@@ -21,11 +21,11 @@ import {
   Inbox,
   X,
   ChevronRight,
-  Lightbulb,
   Bot,
   ArrowRight,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { AISuggestion, fromLogFixHint } from "@/components/ai-suggestion/ai-suggestion";
 import { cn } from "@/lib/utils";
 import {
   type HumanizedLog,
@@ -432,15 +432,19 @@ function DetailDrawer({ log, onClose }: { log: HumanizedLog | null; onClose: () 
             <p className="text-[13px] leading-relaxed text-foreground/85">{log.description}</p>
           </Section>
 
-          {/* 修复建议 */}
+          {/* 修复建议 — R16-5 改用统一 AISuggestion */}
           {log.fixHint && (
             <Section title="修复建议">
-              <div className="rounded-2xl bg-amber-500/10 ring-1 ring-amber-500/30 px-4 py-3">
-                <div className="flex items-start gap-2">
-                  <Lightbulb className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                  <p className="text-[12.5px] text-amber-800 dark:text-amber-200">{log.fixHint}</p>
-                </div>
-              </div>
+              <AISuggestion
+                {...fromLogFixHint(log.fixHint, {
+                  title: log.actionLabel ?? "修复建议",
+                  href: log.entityId && log.entityType === "agent"
+                    ? (log.entityId.startsWith("bot:")
+                      ? `/employees?name=${encodeURIComponent(log.entityName ?? "")}`
+                      : `/employees/${log.entityId}`)
+                    : undefined,
+                })}
+              />
             </Section>
           )}
 
