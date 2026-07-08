@@ -27,7 +27,7 @@ export interface Agent {
   model: string;
   contextWindow: number;
   temperature: number;
-  ownerId: string;
+  ownerId: string | null;
   ownerName: string;
   templateSource: string | null;
   version: number;
@@ -43,6 +43,20 @@ export interface Agent {
   ironLaws: string[];
   memoryLayers: { short: number; long: number; permanent: number };
   collaborators: { botId?: string; humanId?: string; relation: string }[];
+  // 可编辑扩展字段(R13-B)
+  systemPrompt: string;
+  engine: string;
+  complexityLevel: string;
+  templateType: string;
+  knowledgeFolders: string[];
+  defaultEngine: string;
+  defaultModel: string;
+  defaultContextWindow: number;
+  defaultMaxTurns: number | null;
+  /** 原始 row,供编辑表单取精确字段名(snake_case) */
+  raw: Record<string, unknown> | null;
+  /** 最后一次更新时间(用于触发 draft 重新生成) */
+  updatedAt: string;
 }
 
 export interface KBFolder {
@@ -83,34 +97,51 @@ function pickInitial(name: string): string {
 function mapEmployeeToAgent(row: any): Agent {
   const role = row.role_template ?? row.roleTemplate ?? "general";
   const isActive = row.is_active ?? row.isActive ?? true;
+  const rawStatus = row.status ?? "active";
+  const status: AgentStatus =
+    rawStatus === "paused" ? "paused" :
+    rawStatus === "deprecated" ? "deprecated" :
+    isActive ? "active" : "deprecated";
   const meta = HUE_BY_ROLE[role] ?? { hue: "stone", glyph: pickInitial(row.display_name ?? row.name ?? "") };
   return {
     id: row.id,
     name: row.name ?? "",
     displayName: row.display_name ?? row.displayName ?? row.name ?? "",
-    persona: row.description ?? "",
+    persona: row.persona ?? row.description ?? "",
     description: row.description ?? "",
-    status: isActive ? "active" : "deprecated",
+    status,
     role,
-    model: "claude-sonnet-4.6",
-    contextWindow: 200000,
+    model: row.default_model ?? row.defaultModel ?? "claude-sonnet-4.6",
+    contextWindow: row.default_context_window ?? row.defaultContextWindow ?? 200000,
     temperature: 0.3,
-    ownerId: "system",
+    ownerId: row.owner_user_id ?? row.ownerId ?? null,
     ownerName: "系统模板",
-    templateSource: null,
+    templateSource: row.source_template_id ?? null,
     version: row.version ?? 1,
     createdAt: row.created_at ?? row.createdAt ?? new Date().toISOString(),
-    hue: meta.hue,
-    glyph: meta.glyph,
-    complexity: "L2",
+    hue: row.avatar_hue ?? meta.hue,
+    glyph: row.avatar_glyph ?? meta.glyph,
+    complexity: row.complexity_level ?? row.complexityLevel ?? "L2",
     tasksToday: 0,
     trendPct: 0,
     skills: Array.isArray(row.capabilities) ? row.capabilities : [],
     mcpServers: [],
     tools: Array.isArray(row.tools) ? row.tools : [],
-    ironLaws: [],
+    ironLaws: Array.isArray(row.iron_laws) ? row.iron_laws : (Array.isArray(row.ironLaws) ? row.ironLaws : []),
     memoryLayers: { short: 0, long: 0, permanent: 0 },
     collaborators: [],
+    // 扩展字段
+    systemPrompt: row.system_prompt ?? row.systemPrompt ?? "",
+    engine: row.engine ?? "anthropic-opus-4-7",
+    complexityLevel: row.complexity_level ?? row.complexityLevel ?? "L1",
+    templateType: row.template_type ?? row.templateType ?? "custom",
+    knowledgeFolders: Array.isArray(row.knowledge_folders) ? row.knowledge_folders : [],
+    defaultEngine: row.default_engine ?? row.defaultEngine ?? "claude",
+    defaultModel: row.default_model ?? row.defaultModel ?? "",
+    defaultContextWindow: row.default_context_window ?? row.defaultContextWindow ?? 200000,
+    defaultMaxTurns: row.default_max_turns ?? row.defaultMaxTurns ?? null,
+    raw: row,
+    updatedAt: row.updated_at ?? row.updatedAt ?? row.created_at ?? new Date().toISOString(),
   };
 }
 
@@ -273,42 +304,78 @@ export function facets(list: Agent[]) {
   return { roles, models, owners };
 }
 
+// ── Mutations ────────────────────────────────────────────────
+
+/**
+ * PATCH /api/v2/employees/:id — 白名单字段编辑。
+ * body 用 snake_case 字段名(后端会映射)。
+ */
+export async function updateAgent(
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<Agent | null> {
+  const res = await api<{ success?: boolean; data?: any } | any>(
+    fullPath(`/api/v2/employees/${id}`),
+    { method: "PATCH", body: patch },
+  );
+  const row = (res as any)?.data ?? res;
+  if (!row || !row.id) {
+    const err = (res as any)?.error;
+    throw new Error(err?.message ?? "update_failed");
+  }
+  return mapEmployeeToAgent(row);
+}
+
+/**
+ * DELETE agent(admin only, status=deprecated 才允许,前端用 PATCH 改 deprecated 后再走)。
+ * 当前后端没有 DELETE 端点,这里复用 PATCH 把 status 置 deprecated,作为软删除。
+ */
+export async function archiveAgent(id: string): Promise<Agent | null> {
+  return updateAgent(id, { status: "deprecated", is_active: false });
+}
+
 // ── React hooks for client components ────────────────────────
 
 import { useEffect, useState } from "react";
 
 /**
  * Fetches a single Agent by id. Returns {agent, loading}.
- *
- * Tries the digital_employees list endpoint first (which the gallery
- * already populates), then falls back to the detail endpoint.
+ * 直接走 GET /:id 详情端点(返回完整字段)。
  */
-export function useAgent(id: string): { agent: Agent | null; loading: boolean } {
+export function useAgent(id: string): { agent: Agent | null; loading: boolean; reload: () => void } {
   const [agent, setAgent] = useState<Agent | null>(null);
   const [loading, setLoading] = useState(true);
+  const [nonce, setNonce] = useState(0);
   useEffect(() => {
     let alive = true;
     setLoading(true);
     (async () => {
-      // Try the list endpoint — it returns all employees and we filter client-side.
-      try {
+      // 先走详情端点 — 返回完整 row(含 persona/system_prompt/iron_laws 等)。
+      let row = await fetchAgent(id);
+      // 详情端点对 deprecated 状态会 404(digital_employees view 过滤) — 降级走列表。
+      if (!row) {
         const list = await fetchAgents();
         if (alive) {
           setAgent(findAgent(list, id) ?? null);
           setLoading(false);
         }
-      } catch {
-        if (alive) {
-          setAgent(null);
-          setLoading(false);
-        }
+        return;
       }
-    })();
+      if (alive) {
+        setAgent(row);
+        setLoading(false);
+      }
+    })().catch(() => {
+      if (alive) {
+        setAgent(null);
+        setLoading(false);
+      }
+    });
     return () => {
       alive = false;
     };
-  }, [id]);
-  return { agent, loading };
+  }, [id, nonce]);
+  return { agent, loading, reload: () => setNonce((n) => n + 1) };
 }
 
 /**
