@@ -46,62 +46,64 @@ const CHANNEL_LABEL: Record<string, string> = {
 export default function EndpointsPage() {
   const [tab, setTab] = React.useState<"outbound" | "inbound">("outbound");
 
-  // Backend has IA v6 /api/v2/channels (endpoints view) — but the
-  // outbound/inbound split lives in the legacy bot_configs table.
-  // We gracefully fall back to empty state when neither endpoint is
-  // wired for the expected payload shape.
+  // R13E: query bot_configs via new endpoints API with purpose filter
   const {
-    data: channelData,
-    loading: chLoading,
-    error: chError,
-  } = useFetch<{ data?: { items?: any[] }; items?: any[] }>("/api/v2/channels");
+    data: obData,
+    loading: obLoading,
+    error: obError,
+    refresh: refreshOb,
+  } = useFetch<{ data?: { items?: any[] } }>("/api/v2/channels/endpoints?purpose=outbound");
+  const {
+    data: ibData,
+    loading: ibLoading,
+    error: ibError,
+    refresh: refreshIb,
+  } = useFetch<{ data?: { items?: any[] } }>("/api/v2/channels/endpoints?purpose=inbound");
 
-  const endpoints: any[] =
-    (channelData as any)?.data?.items ??
-    (channelData as any)?.items ??
-    [];
+  const chLoading = obLoading || ibLoading;
+  const chError = obError || ibError;
+  const outboundRaw: any[] = (obData as any)?.data?.items ?? [];
+  const inboundRaw: any[] = (ibData as any)?.data?.items ?? [];
 
-  if (chLoading) {
-    return (
-      <ChannelsPageShell
-        meta={<PageMeta items={[{ label: "loading", value: "…" }]} />}
-        toolbar={<></>}
-      >
-        <div className="h-64 rounded-2xl bg-muted/30 animate-pulse" />
-      </ChannelsPageShell>
-    );
+  // R13E: ALL useState hooks must run BEFORE any early return (Rules of Hooks)
+  const [busy, setBusy] = React.useState(false);
+  const [toast, setToast] = React.useState<string | null>(null);
+  const [creating, setCreating] = React.useState(false);
+  const [createForm, setCreateForm] = React.useState({ name: "", platform: "feishu", purpose: "outbound", webhookUrl: "", remark: "" });
+
+  function asString(v: any, fallback = ""): string {
+    if (v == null) return fallback;
+    if (typeof v === "string") return v;
+    if (typeof v === "number" || typeof v === "boolean") return String(v);
+    return fallback;
   }
 
-  // Outbound/inbound split: backend endpoints view is unified; we treat
-  // endpoint_type === 'inbound' / 'outbound' as the discriminator.
-  const outbound: EndpointOutbound[] = endpoints
-    .filter((e: any) => e.endpoint_type !== "inbound")
-    .map((e: any) => ({
-      id: e.id,
-      channel: e.platform ?? "feishu",
-      botName: e.display_name ?? e.name ?? "",
-      webhookUrl: e.config?.webhook ?? "",
-      status: e.is_active ? "active" : "paused",
-      purpose: "outbound" as const,
-      remark: e.remark ?? undefined,
-    }));
+  const outbound: EndpointOutbound[] = outboundRaw.map((e: any) => ({
+    id: e.id,
+    channel: asString(e.platform, "feishu"),
+    botName: asString(e.displayName ?? e.name),
+    webhookUrl: asString(e.config?.webhook ?? e.config?.webhookUrl ?? e.config?.webhook_url),
+    status: e.isActive ? "active" as const : "paused" as const,
+    purpose: "outbound" as const,
+    remark: asString(e.remark) || undefined,
+  }));
 
-  const inbound: EndpointInbound[] = endpoints
-    .filter((e: any) => e.endpoint_type === "inbound")
-    .map((e: any) => ({
-      id: e.id,
-      name: e.name ?? "",
-      callbackUrl: e.config?.callback_url ?? "",
-      allowedMethods: e.config?.methods ?? ["POST"],
-      apiVersion: e.config?.api_version ?? "v1",
-      rateLimit: e.config?.rate_limit ?? "60/min",
-      status: e.is_active ? "active" as const : "paused" as const,
-    }));
+  const inbound: EndpointInbound[] = inboundRaw.map((e: any) => ({
+    id: e.id,
+    name: asString(e.name),
+    callbackUrl: asString(e.config?.callback_url ?? e.config?.callbackUrl),
+    allowedMethods: Array.isArray(e.config?.methods) ? e.config.methods.map(String)
+      : Array.isArray(e.config?.allowedMethods) ? e.config.allowedMethods.map(String)
+      : ["POST"],
+    apiVersion: asString(e.config?.api_version ?? e.config?.apiVersion, "v1"),
+    rateLimit: asString(e.config?.rate_limit ?? e.config?.rateLimit, "60/min"),
+    status: e.isActive ? "active" as const : "paused" as const,
+  }));
 
-  if (chError?.code === "not_implemented" && endpoints.length === 0) {
+  if (chError?.code === "not_implemented" && outbound.length === 0 && inbound.length === 0) {
     return <EmptyShell kind="Endpoints (双向通道)" />;
   }
-  if (chError && endpoints.length === 0) {
+  if (chError && outbound.length === 0 && inbound.length === 0) {
     return (
       <ChannelsPageShell
         meta={<PageMeta items={[{ label: "error", value: chError.message.slice(0, 24) }]} />}
@@ -114,8 +116,73 @@ export default function EndpointsPage() {
     );
   }
 
+  if (chLoading) {
+    return (
+      <ChannelsPageShell
+        meta={<PageMeta items={[{ label: "loading", value: "…" }]} />}
+        toolbar={<></>}
+      >
+        <div className="h-64 rounded-2xl bg-muted/30 animate-pulse" />
+      </ChannelsPageShell>
+    );
+  }
+
   const outboundActive = outbound.filter((e) => e.status === "active").length;
   const inboundActive = inbound.filter((e) => e.status === "active").length;
+
+  function notify(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3500);
+  }
+
+  async function toggleEndpoint(e: EndpointOutbound | EndpointInbound, purpose: "outbound" | "inbound") {
+    setBusy(true);
+    const r = await mutate("PATCH", `/api/v2/channels/endpoints/${e.id}`, {
+      body: { isActive: e.status !== "active" },
+      refresh: purpose === "outbound" ? refreshOb : refreshIb,
+    });
+    setBusy(false);
+    notify(r.ok ? "✓ 已切换" : `✗ ${r.error}`);
+  }
+
+  async function removeEndpoint(e: EndpointOutbound | EndpointInbound, purpose: "outbound" | "inbound") {
+    if (!confirm(`删除接入点 "${e.id.slice(0, 8)}"?`)) return;
+    setBusy(true);
+    const r = await mutate("DELETE", `/api/v2/channels/endpoints/${e.id}`, {
+      refresh: purpose === "outbound" ? refreshOb : refreshIb,
+    });
+    setBusy(false);
+    notify(r.ok ? "✓ 已删除" : `✗ ${r.error}`);
+  }
+
+  async function createEndpoint() {
+    if (!createForm.name.trim()) return;
+    setBusy(true);
+    const body: Record<string, any> = {
+      name: createForm.name.trim(),
+      platform: createForm.platform,
+      purpose: createForm.purpose,
+      isActive: true,
+      remark: createForm.remark.trim(),
+    };
+    if (createForm.purpose === "outbound") {
+      body.config = { webhook: createForm.webhookUrl.trim() };
+    } else {
+      body.config = { allowedMethods: ["POST"], rateLimit: { windowMs: 60000, max: 100 } };
+    }
+    const r = await mutate("POST", `/api/v2/channels/endpoints`, {
+      body,
+      refresh: createForm.purpose === "outbound" ? refreshOb : refreshIb,
+    });
+    setBusy(false);
+    if (r.ok) {
+      setCreating(false);
+      setCreateForm({ name: "", platform: "feishu", purpose: "outbound", webhookUrl: "", remark: "" });
+      notify("✓ 已创建");
+    } else {
+      notify(`✗ ${r.error}`);
+    }
+  }
 
   return (
     <ChannelsPageShell
