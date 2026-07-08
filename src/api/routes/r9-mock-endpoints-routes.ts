@@ -119,14 +119,14 @@ async function logSeries(req: http.IncomingMessage, res: http.ServerResponse, ct
   const d = Math.max(1, Math.min(90, days));
   try {
     const rows = await db.execute(sql`
-      SELECT date_trunc('day', to_timestamp(timestamp)) AS day,
+      SELECT date_trunc('day', to_timestamp(timestamp / 1000)) AS day,
         count(*)::int AS total,
         count(*) FILTER (WHERE type = 'error')::int AS errors,
         count(*) FILTER (WHERE type = 'success')::int AS successes,
         round(avg(duration_ms))::int AS avg_latency
       FROM activity_events
       WHERE bot_id::text = ${agentId}
-        AND to_timestamp(timestamp) > now() - (${d} || ' days')::interval
+        AND to_timestamp(timestamp / 1000) > now() - (${d} || ' days')::interval
       GROUP BY day
       ORDER BY day DESC
       LIMIT 30
@@ -199,7 +199,7 @@ async function diagnosis(req: http.IncomingMessage, res: http.ServerResponse, _c
         count(*)::int AS total,
         count(*) FILTER (WHERE type = 'success')::int AS ok
       FROM activity_events
-      WHERE to_timestamp(timestamp) > now() - interval '24 hours'
+      WHERE to_timestamp(timestamp / 1000) > now() - interval '24 hours'
     `);
     const aRows = (Array.isArray(agentStats) ? agentStats : (agentStats as { rows?: unknown[] }).rows || []) as Array<Record<string, unknown>>;
     const total = Number(aRows[0]?.total ?? 0);
@@ -277,14 +277,14 @@ async function optimization(req: http.IncomingMessage, res: http.ServerResponse,
   const cost = await db.execute(sql`
     SELECT COALESCE(SUM(cost_usd), 0)::float AS today_cost
     FROM activity_events
-    WHERE to_timestamp(timestamp) > now() - interval '24 hours'
+    WHERE to_timestamp(timestamp / 1000) > now() - interval '24 hours'
   `);
   const errRate = await db.execute(sql`
     SELECT
       count(*)::int AS total,
       count(*) FILTER (WHERE type = 'error')::int AS errors
     FROM activity_events
-    WHERE to_timestamp(timestamp) > now() - interval '7 days'
+    WHERE to_timestamp(timestamp / 1000) > now() - interval '7 days'
   `);
 
   const cRows = (Array.isArray(cost) ? cost : (cost as { rows?: unknown[] }).rows || []) as Array<Record<string, unknown>>;
@@ -320,12 +320,12 @@ async function optimization(req: http.IncomingMessage, res: http.ServerResponse,
 
   // 30 天 token 趋势
   const trend = await db.execute(sql`
-    SELECT date_trunc('day', to_timestamp(timestamp)) AS day,
+    SELECT date_trunc('day', to_timestamp(timestamp / 1000)) AS day,
       sum(input_tokens)::int AS input,
       sum(output_tokens)::int AS output,
       sum(cost_usd)::float AS cost
     FROM activity_events
-    WHERE to_timestamp(timestamp) > now() - interval '30 days'
+    WHERE to_timestamp(timestamp / 1000) > now() - interval '30 days'
     GROUP BY day
     ORDER BY day
   `);

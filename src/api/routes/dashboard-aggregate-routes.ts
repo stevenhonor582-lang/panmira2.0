@@ -185,7 +185,7 @@ export async function handleDashboardAggregateRoutes(
         FROM agents a
         LEFT JOIN activity_events ae
           ON ae.bot_id = a.id
-          AND to_timestamp(ae.timestamp) > now() - interval '24 hours'
+          AND to_timestamp(ae.timestamp / 1000) > now() - interval '24 hours'
         WHERE a.is_active
         GROUP BY a.id, a.name, a.display_name
         ORDER BY calls DESC NULLS LAST, a.name ASC
