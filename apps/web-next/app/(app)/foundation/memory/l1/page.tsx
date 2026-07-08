@@ -5,7 +5,6 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
   Bot, MessageSquare, Search, RefreshCcw, Pin, Filter, Clock, Zap, Loader2, AlertCircle,
@@ -97,7 +96,7 @@ export default function L1Page() {
   const active = items.find((i) => i.id === selected) ?? items[0];
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col overflow-hidden">
       <div className="px-6 py-3 border-b border-border bg-muted/30 flex items-center gap-2">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-2.5 top-2 size-3.5 text-muted-foreground" />
@@ -137,8 +136,8 @@ export default function L1Page() {
         </div>
       </div>
 
-      <div className="flex-1 grid grid-cols-[1fr_1.4fr] min-h-0 divide-x divide-border">
-        <ScrollArea className="h-full">
+      <div className="flex-1 grid grid-cols-[1fr_1.4fr] min-h-0 overflow-hidden divide-x divide-border">
+        <div className="h-full overflow-y-auto min-h-0">
           {error && (
             <div className="m-4 rounded-md border border-rose-500/30 bg-rose-500/5 p-3 text-xs text-rose-700 dark:text-rose-300 flex items-start gap-2">
               <AlertCircle className="size-3.5 mt-0.5 shrink-0" />
@@ -197,9 +196,9 @@ export default function L1Page() {
               );
             })}
           </ul>
-        </ScrollArea>
+        </div>
 
-        <ScrollArea className="h-full">
+        <div className="h-full overflow-y-auto min-h-0">
           {active ? (
             <div className="p-6 space-y-5">
               <div>
@@ -274,7 +273,7 @@ export default function L1Page() {
               {loading ? <Loader2 className="size-4 animate-spin" /> : "select a memory"}
             </div>
           )}
-        </ScrollArea>
+        </div>
       </div>
           <MemoryDetailSheet
         open={detailOpen}

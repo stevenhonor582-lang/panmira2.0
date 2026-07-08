@@ -89,7 +89,7 @@ export default function MemoryLayout({ children }: { children: React.ReactNode }
   const activeLayer = LAYERS.find((l) => pathname.endsWith(`/memory/${l.layer}`))?.layer ?? "l1";
 
   return (
-    <div className="-m-6 flex h-[calc(100vh-3rem)] flex-col">
+    <div className="-m-6 flex h-[calc(100vh-3rem)] flex-col overflow-hidden">
       <header className="px-6 pt-5 pb-4 border-b border-border bg-background">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span>数智底座</span>
@@ -121,7 +121,7 @@ export default function MemoryLayout({ children }: { children: React.ReactNode }
         </div>
       </header>
 
-      <div className="flex-1 grid grid-cols-[260px_1fr_320px] min-h-0 divide-x divide-border">
+      <div className="flex-1 grid grid-cols-[260px_1fr_320px] min-h-0 overflow-hidden divide-x divide-border">
         <aside className="flex flex-col min-h-0 bg-muted/20">
           <div className="px-4 pt-4 pb-2">
             <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">
@@ -163,7 +163,7 @@ export default function MemoryLayout({ children }: { children: React.ReactNode }
           </ScrollArea>
         </aside>
 
-        <section className="min-h-0 overflow-y-auto bg-background">
+        <section className="min-h-0 overflow-hidden bg-background">
           {children}
         </section>
 

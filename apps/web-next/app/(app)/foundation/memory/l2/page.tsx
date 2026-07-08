@@ -5,7 +5,6 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
   Search, Tag, Hash, Sparkle, Edit3, Trash2, Plus,
@@ -79,7 +78,7 @@ export default function L2Page() {
   const active = facts.find((f) => f.id === selected) ?? facts[0];
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col overflow-hidden">
       <div className="px-6 py-3 border-b border-border bg-muted/30 flex items-center gap-2">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-2.5 top-2 size-3.5 text-muted-foreground" />
@@ -119,8 +118,8 @@ export default function L2Page() {
         </div>
       </div>
 
-      <div className="flex-1 grid grid-cols-[1.4fr_1fr] min-h-0 divide-x divide-border">
-        <ScrollArea className="h-full">
+      <div className="flex-1 grid grid-cols-[1.4fr_1fr] min-h-0 overflow-hidden divide-x divide-border">
+        <div className="h-full overflow-y-auto min-h-0">
           {error && (
             <div className="m-4 rounded-md border border-rose-500/30 bg-rose-500/5 p-3 text-xs text-rose-700 dark:text-rose-300 flex items-start gap-2">
               <AlertCircle className="size-3.5 mt-0.5 shrink-0" />
@@ -181,9 +180,9 @@ export default function L2Page() {
               );
             })}
           </ul>
-        </ScrollArea>
+        </div>
 
-        <ScrollArea className="h-full">
+        <div className="h-full overflow-y-auto min-h-0">
           {active ? (
             <div className="p-6 space-y-5">
               <div>
@@ -270,7 +269,7 @@ export default function L2Page() {
               {loading ? <Loader2 className="size-4 animate-spin" /> : "select a fact"}
             </div>
           )}
-        </ScrollArea>
+        </div>
       </div>
           <MemoryDetailSheet
         open={detailOpen}

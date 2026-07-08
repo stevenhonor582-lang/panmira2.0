@@ -5,7 +5,6 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
   ShieldCheck, GitCommit, History, AlertTriangle, Lock,
@@ -77,7 +76,7 @@ export default function L3Page() {
   }, [query]);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col overflow-hidden">
       <div className="px-6 py-3 border-b border-border bg-muted/30 flex items-center gap-2">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-2.5 top-2 size-3.5 text-muted-foreground" />
@@ -113,7 +112,7 @@ export default function L3Page() {
         </div>
       </div>
 
-      <ScrollArea className="flex-1">
+      <div className="flex-1 overflow-y-auto min-h-0">
         {error && (
           <div className="m-4 rounded-md border border-rose-500/30 bg-rose-500/5 p-3 text-xs text-rose-700 dark:text-rose-300 flex items-start gap-2">
             <AlertCircle className="size-3.5 mt-0.5 shrink-0" />
@@ -187,7 +186,7 @@ export default function L3Page() {
             </div>
           ))}
         </div>
-      </ScrollArea>
+      </div>
           <MemoryDetailSheet
         open={detailOpen}
         onOpenChange={setDetailOpen}
