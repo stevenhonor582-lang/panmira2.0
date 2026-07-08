@@ -91,7 +91,7 @@ export default function DashboardPage() {
       });
       setUpdatedAt(new Date());
     } catch (err: any) {
-      setError(err?.message ?? "数据加载失败");
+      setError(err && typeof err.message === "string" ? err.message : (typeof err === "string" ? err : "数据加载失败,稍后重试"));
     } finally {
       setLoading(false);
     }

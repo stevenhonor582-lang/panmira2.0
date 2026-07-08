@@ -85,7 +85,7 @@ export default function PersonDetailPage() {
         setPipelines(pl);
       })
       .catch((err) => {
-        if (!cancelled) setError(err?.message ?? "加载失败");
+        if (!cancelled) setError(err && typeof err.message === "string" ? err.message : "加载失败");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

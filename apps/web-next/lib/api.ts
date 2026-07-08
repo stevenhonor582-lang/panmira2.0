@@ -6,6 +6,17 @@ const baseUrl = (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_B
 const realClient = createClient<paths>({ baseUrl, credentials: 'include' });
 
 let authToken: string | null = null;
+
+async function fetchWith429Retry(url: string, init?: RequestInit): Promise<Response> {
+  let resp = await fetch(url, init);
+  if (resp.status === 429) {
+    const retryAfter = parseInt(resp.headers.get('Retry-After') || '1', 10);
+    const wait = Math.min(Math.max(retryAfter * 1000, 300), 3000);
+    await new Promise((r) => setTimeout(r, wait));
+    resp = await fetch(url, init);  // retry once
+  }
+  return resp;
+}
 export function setAuthToken(token: string | null) { authToken = token; }
 if (typeof window !== 'undefined') authToken = localStorage.getItem('panmira.token');
 
@@ -35,7 +46,7 @@ function compatCall<T = any>(url: string, init?: { method?: string; body?: any; 
       body = JSON.stringify(init.body);
     }
   }
-  return fetch(url, { ...init, headers, body, credentials: 'include' }).then(async (r) => {
+  return fetchWith429Retry(url, { ...init, headers, body, credentials: 'include' }).then(async (r) => {
     if (r.status === 401 && typeof window !== 'undefined') window.location.href = '/login/';
     const ct = r.headers.get('content-type') || '';
     const data = ct.includes('application/json') ? await r.json() : await r.text();

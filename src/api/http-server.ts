@@ -121,7 +121,7 @@ interface ApiServerOptions {
 }
 
 const startTime = Date.now();
-const rateLimiter = new RateLimiter(60000, 100); // 100 req/min per IP
+const rateLimiter = new RateLimiter(60000, 600); // 600 req/min per IP (allow 6 parallel fetches × 100 reloads/min)
 // Expose start time for metrics route
 (globalThis as any).__panmira_start_time = startTime;
 

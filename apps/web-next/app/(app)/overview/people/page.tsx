@@ -30,7 +30,7 @@ export default function PeoplePage() {
         if (!cancelled) setPeople(data);
       })
       .catch((err) => {
-        if (!cancelled) setError(err?.message ?? "加载失败");
+        if (!cancelled) setError(err && typeof err.message === "string" ? err.message : "加载失败");
       });
     return () => {
       cancelled = true;
