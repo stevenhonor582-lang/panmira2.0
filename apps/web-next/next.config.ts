@@ -1,5 +1,18 @@
 import type { NextConfig } from "next";
 
+/**
+ * Next.js config for apps/web-next (Panmira IA v6 admin console).
+ *
+ * Backend base URL is read from `PANMIRA_BACKEND_URL` (see .env.web-next).
+ * The value flows into the rewrites() reverse proxy for /api/* so the
+ * browser can hit a same-origin /api/auth/login instead of cross-origin
+ * http://localhost:9100.
+ *
+ * Default fallback keeps local dev working out of the box.
+ */
+const backendBaseUrl =
+  process.env.PANMIRA_BACKEND_URL ?? "http://localhost:9100";
+
 const nextConfig: NextConfig = {
   // P3.5: skip TS error in tasks/page.tsx (pre-existing, A1/A2/A3 do not own it)
   typescript: { ignoreBuildErrors: true },
@@ -51,10 +64,11 @@ const nextConfig: NextConfig = {
     ];
   },
 
-  // /api/* 反代到后端 9100,避免 CORS + trailingSlash 冲突
+  // /api/* 反代到后端(PANMIRA_BACKEND_URL),避免 CORS + trailingSlash 冲突。
+  // 通过环境变量注入,便于 staging/prod 切不同后端。
   async rewrites() {
     return [
-      { source: "/api/:path*", destination: "http://localhost:9100/api/:path*" },
+      { source: "/api/:path*", destination: `${backendBaseUrl}/api/:path*` },
     ];
   },
 };
