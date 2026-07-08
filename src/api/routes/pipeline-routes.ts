@@ -387,12 +387,109 @@ function parseQueryBool(url: string | undefined, key: string): boolean {
   return false;
 }
 
+
+/**
+ * R18: POST /api/v2/admin/pipelines/:pid/runs/:runId/nodes/:nodeId/decide
+ *
+ * Records a human decision on a 'human' kind node currently in
+ * 'waiting_for_human' state. The engine polls node_states and resumes the
+ * pipeline once the decision is visible here. Also broadcasts a WS event so
+ * the UI updates in real time.
+ *
+ * Body: { decision: "approved" | "rejected", note?: string }
+ */
+async function decideNode(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  pipelineId: string,
+  runId: string,
+  nodeId: string,
+) {
+  const ctx = await requireBearer(req, res);
+  if (!ctx) return;
+  const check = requireScopes(ctx, ["agent:admin", "agent:run"]);
+  if (!check.ok) { jsonResponse(res, 403, { error: "insufficient_scope", missing: check.missing }); return; }
+
+  const body = await parseJsonBody(req);
+  const decision = body.decision;
+  const note = typeof body.note === "string" ? body.note.trim() || null : null;
+
+  if (decision !== "approved" && decision !== "rejected") {
+    jsonResponse(res, 400, { error: "decision must be 'approved' or 'rejected'" });
+    return;
+  }
+
+  const rows = await db.select().from(pipelineRuns).where(eq(pipelineRuns.id, runId)).limit(1);
+  if (rows.length === 0) {
+    jsonResponse(res, 404, { error: "run_not_found" });
+    return;
+  }
+  const run = rows[0];
+  // Tenant guard: callers may only decide on runs in their own tenant.
+  if (run.tenantId !== ctx.tenantId) {
+    jsonResponse(res, 404, { error: "run_not_found" });
+    return;
+  }
+
+  const ns = (run.nodeStates ?? {}) as Record<string, any>;
+  const current = ns[nodeId];
+
+  if (!current || current.status !== "waiting_for_human") {
+    jsonResponse(res, 400, {
+      error: "node_not_awaiting_decision",
+      currentStatus: current?.status ?? "missing",
+    });
+    return;
+  }
+  // Idempotency: a node that already has a decision cannot be re-decided.
+  if (current.approval === "approved" || current.approval === "rejected") {
+    jsonResponse(res, 409, {
+      error: "node_already_decided",
+      approval: current.approval,
+      decidedBy: current.decidedBy,
+    });
+    return;
+  }
+
+  const decidedAt = new Date().toISOString();
+  ns[nodeId] = {
+    ...current,
+    approval: decision,
+    note,
+    decidedBy: ctx.userId,
+    decidedAt,
+  };
+
+  await db
+    .update(pipelineRuns)
+    .set({ nodeStates: ns as never })
+    .where(eq(pipelineRuns.id, runId));
+
+  // Best-effort WS broadcast so the UI flips to decided instantly. The engine
+  // also polls DB and will resume regardless of whether WS is up.
+  emitPipelineProgress(runId, pipelineId, "running", nodeId, ns, Object.keys(ns).length);
+
+  jsonResponse(res, 200, {
+    success: true,
+    runId,
+    nodeId,
+    decision,
+    decidedBy: ctx.userId,
+    decidedAt,
+  });
+}
+
 export async function handlePipelineRoutes(req: http.IncomingMessage, res: http.ServerResponse, method: string, url: string) {
   if (!url.startsWith("/api/v2/admin/pipelines")) return false;
   const runMatch = url.match(/^\/api\/v2\/admin\/pipelines\/([^/]+)\/runs\/([^/?]+)$/);
   if (runMatch && method === "GET") { await getRun(req, res, runMatch[2]); return true; }
   const runsListMatch = url.match(/^\/api\/v2\/admin\/pipelines\/([^/]+)\/runs(?:\?.*)?$/);
   if (runsListMatch && method === "GET") { await listRuns(req, res, url); return true; }
+  const decideMatch = url.match(/^\/api\/v2\/admin\/pipelines\/([^/]+)\/runs\/([^/?]+)\/nodes\/([^/?]+)\/decide(?:\?.*)?$/);
+  if (decideMatch && method === "POST") {
+    await decideNode(req, res, decideMatch[1], decideMatch[2], decideMatch[3]);
+    return true;
+  }
   const triggerMatch = url.match(/^\/api\/v2\/admin\/pipelines\/([^/]+)\/trigger(?:\?.*)?$/);
   if (triggerMatch && method === "POST") { await triggerPipeline(req, res, triggerMatch[1]); return true; }
   const idMatch = url.match(/^\/api\/v2\/admin\/pipelines\/([^/?]+)(?:\?.*)?$/);
