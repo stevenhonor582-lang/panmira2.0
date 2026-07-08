@@ -40,7 +40,7 @@ import {
 } from "./types";
 import { ShapeConfigPanel } from "./shape-config-panel";
 import { validateDag } from "./dag-validators";
-import { triggerPipelineAsync } from "@/lib/pipeline-trigger";
+import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 interface TaskDagEditorProps {
@@ -206,14 +206,24 @@ export function TaskDagEditor(props: TaskDagEditorProps) {
     }
     setRunning(true);
     try {
-      const r = await triggerPipelineAsync(
-        { pipelineId: props.pipelineId, triggeredBy: "user" },
-        fetch,
+      // R16-3: 之前传原生 fetch 不带 Authorization → 401。
+      // 改为直接用 api 模块,自动注入 Bearer token + 401 refresh + 429 retry。
+      const r = await api<{
+        success?: boolean;
+        error?: string;
+        data?: { runId?: string; status?: string };
+      }>(
+        `/api/v2/admin/pipelines/${props.pipelineId}/trigger?async=true`,
+        {
+          method: "POST",
+          body: { triggeredBy: "user", initialInput: {} },
+        },
       );
-      if (r.kind === "failed") window.alert(`触发失败: ${r.error}`);
+      if (r?.error) window.alert(`触发失败: ${r.error}`);
     } catch (e) {
       window.alert(e instanceof Error ? e.message : "触发失败");
     } finally {
+      // R16-3: 失败也要停 spinner (try/finally 保底)
       setRunning(false);
     }
   }, [props.pipelineId, validationMsg]);
