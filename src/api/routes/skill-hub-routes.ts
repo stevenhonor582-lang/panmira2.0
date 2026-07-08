@@ -245,18 +245,80 @@ export async function handleSkillHubRoutes(
 
   // GET /api/skills — list all skills
   if (method === 'GET' && (url === '/api/skills' || url.startsWith('/api/skills?'))) {
-    if (!store) {
-      jsonResponse(res, 503, { error: 'Skill Hub not available' });
-      return true;
+    // R10 (2026-07-08): Skill Hub store 不一定可用 — 回退到 DB 派生:
+    //   1. bot_skill_bindings (skill_name)  → 'custom' source
+    //   2. agents.skills jsonb array        → 'built-in' source
+    // 这样无论 store 是否存在,/api/skills 永远返回真实绑定数据。
+    let storeSkills: any[] = [];
+    if (store) {
+      try { storeSkills = await store.list(); } catch { storeSkills = []; }
     }
-    const localSkills = await store.list();
     const isPeer = req.headers['x-panmira-origin'] === 'peer';
+    let peerSkills: any[] = [];
     if (!isPeer && peerManager?.getPeerSkills) {
-      const peerSkills = peerManager.getPeerSkills();
-      jsonResponse(res, 200, { skills: [...localSkills, ...peerSkills] });
-    } else {
-      jsonResponse(res, 200, { skills: localSkills });
+      try { peerSkills = peerManager.getPeerSkills() || []; } catch { peerSkills = []; }
     }
+
+    // Derived skills from DB
+    let dbSkills: any[] = [];
+    try {
+      const { pool } = await import('../../db/index.js');
+      // 1. From bot_skill_bindings — group by skill_name
+      const { rows: bindingRows } = await pool.query(`
+        SELECT
+          COALESCE(NULLIF(skill_id, ''), skill_name) AS id,
+          skill_name,
+          bool_or(COALESCE(enabled, true)) AS enabled,
+          max(installed_at) AS installed_at,
+          count(*)::int AS bot_count,
+          array_agg(DISTINCT bot_name) FILTER (WHERE bot_name IS NOT NULL) AS bots
+        FROM bot_skill_bindings
+        GROUP BY COALESCE(NULLIF(skill_id, ''), skill_name), skill_name
+        ORDER BY skill_name
+      `);
+      const byName = new Map<string, any>();
+      for (const r of bindingRows) {
+        byName.set(r.skill_name, {
+          id: String(r.id ?? r.skill_name),
+          name: r.skill_name,
+          description: `Bound to ${r.bot_count} bot(s)${r.bots ? ': ' + r.bots.slice(0, 5).join(', ') : ''}`,
+          source: 'custom' as const,
+          enabled: !!r.enabled,
+          tags: ['bot_binding'],
+          installedAt: r.installed_at ? new Date(r.installed_at).toISOString() : undefined,
+        });
+      }
+
+      // 2. From agents.skills jsonb — array of skill name strings
+      const { rows: agentRows } = await pool.query(`
+        SELECT skill::text AS skill, count(DISTINCT a.id)::int AS bot_count,
+          bool_and(a.status = 'active') AS all_active,
+          array_agg(DISTINCT a.name) AS bots
+        FROM agents a, jsonb_array_elements_text(a.skills) AS skill
+        WHERE a.skills IS NOT NULL AND a.skills != '[]'::jsonb
+        GROUP BY skill
+        ORDER BY skill
+      `);
+      for (const r of agentRows) {
+        if (byName.has(r.skill)) continue;  // bot_skill_bindings takes priority
+        byName.set(r.skill, {
+          id: r.skill,
+          name: r.skill,
+          description: `Agent skill (${r.bot_count} agent${r.bot_count === 1 ? '' : 's'}: ${(r.bots || []).slice(0, 5).join(', ')})`,
+          source: 'built-in' as const,
+          enabled: r.all_active !== false,
+          tags: ['agent_jsonb'],
+          installedAt: undefined,
+        });
+      }
+      dbSkills = Array.from(byName.values());
+    } catch (err) {
+      logger?.warn?.({ err: err instanceof Error ? err.message : 'unknown' }, 'skills DB derivation failed');
+    }
+
+    jsonResponse(res, 200, {
+      skills: [...storeSkills, ...peerSkills, ...dbSkills],
+    });
     return true;
   }
 
