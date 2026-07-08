@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * R13-C · 数智底座 / 抽取 (2026-07-08)
+ * 真数据: GET /api/v2/foundation/extraction/status (派生)
+ *         GET /api/v2/foundation/memory/l1?limit=50 (最近事件流)
+ */
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -7,322 +12,241 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
-  Play,
-  Pause,
-  Square,
-  RotateCw,
-  ChevronRight,
-  Zap,
-  Layers,
-  Brain,
-  Library,
-  ListTree,
-  CheckCircle2,
-  XCircle,
-  Loader2,
-  Activity,
+  Activity, Zap, Layers, Brain, Library, RefreshCcw,
+  CheckCircle2, XCircle, AlertTriangle, Play, Loader2, BarChart3,
 } from "lucide-react";
+import { api } from "@/lib/api";
+import { fmtRel, type MemoryItem } from "@/lib/foundation/api";
 
-interface WorkerState {
-  id: string;
-  name: string;
-  state: "running" | "paused" | "stopped";
-  processed: number;
-  queue: number;
-  rate: string;
-  uptime: string;
+interface Totals { total: number; l1: number; l2: number; l3: number; last_24h: number; last_7d: number; }
+interface DailyRow { day: string; n: number; l1: number; l2: number; l3: number; }
+
+interface StatusResponse {
+  success: boolean;
+  workers: { extraction_worker: string; memory_pipeline: string };
+  totals: Totals;
+  daily: DailyRow[];
+  extractedMemories: number;
+  note: string | null;
 }
 
-interface Extractor {
-  id: string;
-  name: string;
-  scope: string;
-  cadence: string;
-  progress: number;
-  eta: string;
-  processed: number;
-  total: number;
-  status: "active" | "idle" | "error";
-}
-
-const WORKERS: WorkerState[] = [
-  { id: "w1", name: "interaction-extractor", state: "running", processed: 1247, queue: 84, rate: "12.4/s", uptime: "03h 14m" },
-  { id: "w2", name: "feedback-promoter", state: "running", processed: 92, queue: 6, rate: "0.8/s", uptime: "03h 14m" },
-  { id: "w3", name: "kb-indexer", state: "paused", processed: 318, queue: 142, rate: "—", uptime: "01h 02m" },
-  { id: "w4", name: "embedding-refresh", state: "stopped", processed: 0, queue: 0, rate: "—", uptime: "—" },
-];
-
-const EXTRACTORS: Extractor[] = [
-  { id: "ex-1", name: "对话事实抽取", scope: "所有 bot · 24h 窗口", cadence: "5 min", progress: 64, eta: "00:02:14", processed: 847, total: 1325, status: "active" },
-  { id: "ex-2", name: "客户偏好聚合", scope: "销售/客服", cadence: "30 min", progress: 32, eta: "00:08:47", processed: 124, total: 388, status: "active" },
-  { id: "ex-3", name: "工艺知识提取", scope: "knowledge_bases.product", cadence: "1 h", progress: 100, eta: "—", processed: 218, total: 218, status: "idle" },
-  { id: "ex-4", name: "Iron law 候选筛选", scope: "L2 → L3 promotion", cadence: "manual", progress: 18, eta: "等待人工", processed: 3, total: 17, status: "active" },
-  { id: "ex-5", name: "供应商网络关系", scope: "采购对话", cadence: "1 h", progress: 0, eta: "—", processed: 0, total: 0, status: "error" },
-];
-
-interface Event {
-  ts: string;
-  level: "info" | "ok" | "warn" | "error";
-  source: string;
-  msg: string;
-}
-
-const EVENTS: Event[] = [
-  { ts: "14:32:18", level: "ok", source: "interaction-extractor", msg: "batch #1342 完成 · 41 facts · promote 6 → L2" },
-  { ts: "14:32:11", level: "info", source: "feedback-promoter", msg: "扫描到 3 条 ≥0.7 importance 候选" },
-  { ts: "14:31:55", level: "warn", source: "kb-indexer", msg: "queue 长度超过阈值 100 · 已 pause" },
-  { ts: "14:31:42", level: "ok", source: "interaction-extractor", msg: "batch #1341 完成 · 38 facts" },
-  { ts: "14:31:08", level: "error", source: "supplier-network", msg: "embedding API rate-limited · retry in 60s" },
-  { ts: "14:30:55", level: "info", source: "scheduler", msg: "iron-law 候选 3 条已加入审阅队列" },
-  { ts: "14:30:42", level: "ok", source: "interaction-extractor", msg: "batch #1340 完成 · 47 facts · promote 2 → L2" },
-  { ts: "14:30:01", level: "info", source: "embedding-refresh", msg: "停止 · 维护窗口开始" },
-];
-
-const STATE_DOT = {
-  running: "bg-emerald-500",
-  paused: "bg-amber-500",
-  stopped: "bg-zinc-400",
-} as const;
-
-function LevelIcon({ level }: { level: Event["level"] }) {
-  if (level === "ok") return <CheckCircle2 className="size-3 text-emerald-600" />;
-  if (level === "error") return <XCircle className="size-3 text-rose-600" />;
-  if (level === "warn") return <Activity className="size-3 text-amber-600" />;
-  return <Activity className="size-3 text-sky-600" />;
-}
+const LAYER_COLOR: Record<number, string> = {
+  1: "fill-sky-500",
+  2: "fill-emerald-500",
+  3: "fill-amber-500",
+};
 
 export default function ExtractionPage() {
+  const [status, setStatus] = React.useState<StatusResponse | null>(null);
+  const [events, setEvents] = React.useState<MemoryItem[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [err, setErr] = React.useState<string | null>(null);
+
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      const [s, e] = await Promise.all([
+        api<StatusResponse>("/api/v2/foundation/extraction/status"),
+        api<{ memories: MemoryItem[] }>("/api/v2/foundation/memory/l1?limit=50"),
+      ]);
+      setStatus(s);
+      setEvents(e.memories ?? []);
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => { load(); }, [load]);
+
+  const totals = status?.totals;
+  const daily = status?.daily ?? [];
+  const maxN = Math.max(1, ...daily.map((d) => d.n));
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <header>
+    <div className="-m-6 flex h-[calc(100vh-3rem)] flex-col">
+      <header className="px-6 pt-5 pb-3 border-b border-border bg-background">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span>数智底座</span>
-          <ChevronRight className="size-3" />
-          <span className="text-foreground font-medium">提取器</span>
+          <span>/</span>
+          <span className="text-foreground font-medium">抽取</span>
+          <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground/70">
+            R13-C · 真数据派生
+          </span>
         </div>
-        <div className="mt-2 flex items-end justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">提取器状态</h1>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              5 个 worker · 5 个 extractor · 自动 pipeline,可手动触发
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" className="h-8 text-xs gap-1">
-              <Pause className="size-3" />
-              pause all
-            </Button>
-            <Button size="sm" className="h-8 text-xs gap-1">
-              <Zap className="size-3" />
-              手动触发抽取
-            </Button>
+        <div className="mt-2 flex items-center gap-2">
+          <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={load}>
+            <RefreshCcw className="size-3" />刷新
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 text-xs gap-1 opacity-60"
+            disabled
+            title="需在服务器启动 extraction-worker (pm2 start extraction-worker)"
+          >
+            <Play className="size-3" />启动 worker
+          </Button>
+          <div className="ml-auto flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">
+            {loading ? "loading…" : `${totals?.total ?? 0} memories total`}
           </div>
         </div>
       </header>
 
-      {/* Workers row */}
-      <section>
-        <div className="flex items-center gap-2 mb-3">
-          <h2 className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">
-            workers
-          </h2>
-          <Badge variant="outline" className="text-[10px] font-mono">
-            {WORKERS.filter((w) => w.state === "running").length}/{WORKERS.length} active
-          </Badge>
-        </div>
-        <div className="grid grid-cols-4 gap-3">
-          {WORKERS.map((w) => (
-            <div
-              key={w.id}
-              className={cn(
-                "rounded-lg border bg-card p-4 space-y-2.5 transition-colors",
-                w.state === "running" && "border-emerald-500/30",
-                w.state === "paused" && "border-amber-500/30",
-                w.state === "stopped" && "border-border opacity-70",
-              )}
-            >
-              <div className="flex items-center gap-2">
-                <span className={cn("size-1.5 rounded-full", STATE_DOT[w.state])} />
-                <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-                  {w.state}
-                </span>
-                <span className="ml-auto text-[10px] font-mono text-muted-foreground/70">
-                  {w.uptime}
-                </span>
-              </div>
-              <p className="text-xs font-medium font-mono truncate">{w.name}</p>
-              <dl className="grid grid-cols-3 gap-x-2 gap-y-1 text-[10px] font-mono">
-                <dt className="text-muted-foreground">done</dt>
-                <dd className="col-span-2 text-right">{w.processed.toLocaleString()}</dd>
-                <dt className="text-muted-foreground">queue</dt>
-                <dd className="col-span-2 text-right">{w.queue}</dd>
-                <dt className="text-muted-foreground">rate</dt>
-                <dd className="col-span-2 text-right">{w.rate}</dd>
-              </dl>
-              <div className="flex items-center gap-1 pt-1">
-                {w.state === "running" ? (
-                  <Button variant="outline" size="sm" className="h-6 text-[10px] flex-1 gap-1">
-                    <Pause className="size-2.5" />
-                    pause
-                  </Button>
-                ) : (
-                  <Button variant="outline" size="sm" className="h-6 text-[10px] flex-1 gap-1">
-                    <Play className="size-2.5" />
-                    start
-                  </Button>
+      <ScrollArea className="flex-1">
+        <div className="p-6 space-y-5 max-w-[1400px] mx-auto">
+          {err && (
+            <div className="rounded-md border border-rose-500/30 bg-rose-500/5 p-3 text-xs text-rose-700 dark:text-rose-300 flex items-start gap-2">
+              <AlertTriangle className="size-3.5 mt-0.5 shrink-0" /><div>{err}</div>
+            </div>
+          )}
+
+          {loading && !status ? (
+            <div className="grid place-items-center py-16"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+          ) : (
+            <>
+              {/* Worker state */}
+              <section>
+                <h3 className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono mb-2">workers</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <WorkerCard name="extraction-worker" state={status?.workers.extraction_worker ?? "unknown"} desc="从对话/文档抽取事实 → L1/L2 候选" />
+                  <WorkerCard name="memory-pipeline" state={status?.workers.memory_pipeline ?? "unknown"} desc="L1 → L2 promote · 重要性维护" />
+                </div>
+                {status?.note && (
+                  <div className="mt-2 rounded border border-amber-500/40 bg-amber-500/5 p-2 text-[11px] text-amber-700 dark:text-amber-300 flex items-start gap-2">
+                    <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
+                    <div>{status.note}</div>
+                  </div>
                 )}
-                <Button variant="ghost" size="icon-sm" className="size-6">
-                  <RotateCw className="size-3" />
-                </Button>
-                <Button variant="ghost" size="icon-sm" className="size-6">
-                  <Square className="size-3" />
-                </Button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
+              </section>
 
-      {/* Extractors + Events */}
-      <section className="grid grid-cols-[1.4fr_1fr] gap-4">
-        {/* Extractors */}
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <h2 className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">
-              extractors
-            </h2>
-            <Badge variant="outline" className="text-[10px] font-mono">
-              {EXTRACTORS.length}
-            </Badge>
-          </div>
-          <div className="rounded-lg border border-border bg-card divide-y divide-border/60">
-            {EXTRACTORS.map((e) => (
-              <div key={e.id} className="p-4 space-y-2.5">
-                <div className="flex items-center gap-2">
-                  {e.status === "active" ? (
-                    <Loader2 className="size-3.5 text-sky-600 animate-spin" />
-                  ) : e.status === "error" ? (
-                    <XCircle className="size-3.5 text-rose-600" />
+              <Separator />
+
+              {/* Totals */}
+              {totals && (
+                <section>
+                  <h3 className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono mb-2">memory totals</h3>
+                  <div className="grid grid-cols-6 gap-2">
+                    <KpiCard label="total" value={totals.total} icon={<Library className="size-3" />} />
+                    <KpiCard label="L1 短期" value={totals.l1} accent="text-sky-600" icon={<Zap className="size-3" />} />
+                    <KpiCard label="L2 长期" value={totals.l2} accent="text-emerald-600" icon={<Brain className="size-3" />} />
+                    <KpiCard label="L3 永久" value={totals.l3} accent="text-amber-600" icon={<Layers className="size-3" />} />
+                    <KpiCard label="last 24h" value={totals.last_24h} accent={totals.last_24h === 0 ? "text-rose-600" : "text-emerald-600"} icon={<Activity className="size-3" />} />
+                    <KpiCard label="last 7d" value={totals.last_7d} icon={<BarChart3 className="size-3" />} />
+                  </div>
+                </section>
+              )}
+
+              <Separator />
+
+              {/* Daily chart */}
+              <section>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">
+                    daily creation · last {daily.length} days
+                  </h3>
+                  <div className="flex items-center gap-2 text-[9px] font-mono text-muted-foreground/70">
+                    {[1, 2, 3].map((l) => (
+                      <span key={l} className="flex items-center gap-1">
+                        <svg width="8" height="8"><rect width="8" height="8" className={LAYER_COLOR[l]} /></svg>
+                        L{l}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-md border border-border bg-background p-3">
+                  {daily.length === 0 ? (
+                    <p className="text-xs text-muted-foreground text-center py-4">尚无数据</p>
                   ) : (
-                    <CheckCircle2 className="size-3.5 text-muted-foreground" />
+                    <div className="flex items-end gap-[2px] h-[120px]">
+                      {daily.map((d) => {
+                        const totalH = (d.n / maxN) * 100;
+                        const l1H = d.l1 / d.n * totalH;
+                        const l2H = d.l2 / d.n * totalH;
+                        const l3H = d.l3 / d.n * totalH;
+                        return (
+                          <div key={d.day} className="flex-1 group relative flex flex-col justify-end" style={{ height: "100%" }}>
+                            <div className="flex flex-col-reverse w-full">
+                              <svg viewBox="0 0 10 100" preserveAspectRatio="none" className="w-full" style={{ height: `${totalH}%`, minHeight: totalH > 0 ? "2px" : "0" }}>
+                                <rect x="0" y={100 - l1H} width="10" height={l1H} className="fill-sky-500" />
+                                <rect x="0" y={100 - l1H - l2H} width="10" height={l2H} className="fill-emerald-500" />
+                                <rect x="0" y={100 - l1H - l2H - l3H} width="10" height={l3H} className="fill-amber-500" />
+                              </svg>
+                            </div>
+                            <div className="absolute -top-12 left-1/2 -translate-x-1/2 hidden group-hover:block bg-foreground text-background text-[10px] font-mono px-2 py-1 rounded whitespace-nowrap z-10">
+                              {d.day}: {d.n} (L1:{d.l1} L2:{d.l2} L3:{d.l3})
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
-                  <span className="text-xs font-medium">{e.name}</span>
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      "text-[10px] font-mono uppercase tracking-wider",
-                      e.status === "active" && "border-sky-500/40 text-sky-700 dark:text-sky-300",
-                      e.status === "error" && "border-rose-500/40 text-rose-700 dark:text-rose-300",
-                    )}
-                  >
-                    {e.status}
-                  </Badge>
-                  <span className="ml-auto text-[10px] font-mono text-muted-foreground">
-                    {e.cadence}
-                  </span>
                 </div>
-                <p className="text-[10px] text-muted-foreground font-mono">{e.scope}</p>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
-                    <div
-                      className={cn(
-                        "h-full transition-all",
-                        e.status === "error" ? "bg-rose-500" : "bg-sky-500",
-                      )}
-                      style={{ width: `${e.progress}%` }}
-                    />
-                  </div>
-                  <span className="text-[10px] font-mono text-muted-foreground shrink-0 w-9 text-right">
-                    {e.progress}%
-                  </span>
+              </section>
+
+              <Separator />
+
+              {/* Recent events */}
+              <section>
+                <h3 className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono mb-2">
+                  recent memory events (L1, last 50)
+                </h3>
+                <div className="rounded-md border border-border bg-background divide-y divide-border/60">
+                  {events.length === 0 ? (
+                    <p className="text-xs text-muted-foreground text-center py-6">尚无 L1 短期记忆 · memory pipeline 未运行</p>
+                  ) : events.map((m) => (
+                    <div key={m.id} className="px-3 py-2 flex items-start gap-2 text-xs">
+                      <CheckCircle2 className="size-3 text-emerald-500 mt-0.5 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-medium truncate max-w-[300px]">{m.subject || "(no subject)"}</span>
+                          {m.type && <Badge variant="outline" className="text-[9px] font-mono uppercase">{m.type}</Badge>}
+                          {m.polarity === "negate" && <Badge variant="destructive" className="text-[9px] font-mono uppercase">negate</Badge>}
+                          {m.importance !== null && (
+                            <span className="text-[10px] font-mono text-muted-foreground">imp {m.importance.toFixed(2)}</span>
+                          )}
+                          <span className="ml-auto text-[10px] font-mono text-muted-foreground/70 shrink-0">{fmtRel(m.createdAt)}</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">{m.preview || m.content || "(empty)"}</p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div className="flex items-center gap-3 text-[10px] font-mono text-muted-foreground">
-                  <span>
-                    {e.processed.toLocaleString()} / {e.total.toLocaleString()}
-                  </span>
-                  <span className="ml-auto">eta {e.eta}</span>
-                </div>
-              </div>
-            ))}
-          </div>
+              </section>
+            </>
+          )}
         </div>
+      </ScrollArea>
+    </div>
+  );
+}
 
-        {/* Events stream */}
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <h2 className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">
-              event stream
-            </h2>
-            <Badge variant="outline" className="text-[10px] font-mono">
-              live · 5s poll
-            </Badge>
-          </div>
-          <div className="rounded-lg border border-border bg-card overflow-hidden flex flex-col h-[420px]">
-            <div className="px-4 py-2 border-b border-border bg-muted/30 flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">
-              <Activity className="size-3" />
-              tail -f
-            </div>
-            <ScrollArea className="flex-1">
-              <ul className="divide-y divide-border/40 font-mono">
-                {EVENTS.map((ev, i) => (
-                  <li key={i} className="px-4 py-2 flex items-start gap-2 text-[11px]">
-                    <span className="text-muted-foreground/70 shrink-0">{ev.ts}</span>
-                    <LevelIcon level={ev.level} />
-                    <span className="text-foreground/80 shrink-0">{ev.source}</span>
-                    <span className="text-muted-foreground">·</span>
-                    <span className="text-foreground/90 flex-1">{ev.msg}</span>
-                  </li>
-                ))}
-              </ul>
-            </ScrollArea>
-          </div>
-        </div>
-      </section>
+function WorkerCard({ name, state, desc }: { name: string; state: string; desc: string }) {
+  const color = state === "running" ? "bg-emerald-500" : state === "paused" ? "bg-amber-500" : "bg-zinc-400";
+  const Icon = state === "running" ? CheckCircle2 : state === "paused" ? AlertTriangle : XCircle;
+  return (
+    <div className="rounded-md border border-border bg-background p-3">
+      <div className="flex items-center gap-2">
+        <span className={cn("size-2 rounded-full", color)} />
+        <Icon className={cn("size-3.5", state === "running" ? "text-emerald-500" : state === "paused" ? "text-amber-500" : "text-muted-foreground")} />
+        <span className="text-xs font-mono">{name}</span>
+        <span className="ml-auto text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{state}</span>
+      </div>
+      <p className="mt-1.5 text-[11px] text-muted-foreground leading-relaxed">{desc}</p>
+    </div>
+  );
+}
 
-      <Separator />
-
-      {/* Pipeline diagram */}
-      <section>
-        <div className="flex items-center gap-2 mb-3">
-          <h2 className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">
-            pipeline
-          </h2>
-          <span className="text-[10px] text-muted-foreground/70">interaction → facts → memory</span>
-        </div>
-        <div className="rounded-lg border border-border bg-card p-5">
-          <div className="flex items-center gap-2">
-            {[
-              { label: "interaction", sub: "5 bots · 1.2k/24h", icon: Activity, tone: "text-muted-foreground" },
-              { label: "extract", sub: "interaction-extractor", icon: Zap, tone: "text-sky-600" },
-              { label: "score", sub: "importance + novelty", icon: Brain, tone: "text-violet-600" },
-              { label: "L1", sub: "短期上下文", icon: ListTree, tone: "text-amber-600" },
-              { label: "promote", sub: "auto + manual", icon: ChevronRight, tone: "text-muted-foreground" },
-              { label: "L2", sub: "长期事实", icon: Library, tone: "text-sky-600" },
-              { label: "audit", sub: "双人复核", icon: Layers, tone: "text-emerald-600" },
-              { label: "L3", sub: "永久原则", icon: Library, tone: "text-emerald-700" },
-            ].map((s, i, arr) => {
-              const Icon = s.icon;
-              return (
-                <React.Fragment key={s.label}>
-                  <div className="flex flex-col items-center justify-center rounded-md border border-border bg-background px-3 py-2 min-w-[100px]">
-                    <Icon className={cn("size-3.5", s.tone)} />
-                    <span className="mt-1 text-[10px] uppercase tracking-wider font-mono">
-                      {s.label}
-                    </span>
-                    <span className="text-[9px] text-muted-foreground mt-0.5 font-mono text-center">
-                      {s.sub}
-                    </span>
-                  </div>
-                  {i < arr.length - 1 && (
-                    <ChevronRight className="size-4 text-muted-foreground/40 shrink-0" />
-                  )}
-                </React.Fragment>
-              );
-            })}
-          </div>
-        </div>
-      </section>
+function KpiCard({ label, value, accent, icon }: { label: string; value: number; accent?: string; icon: React.ReactNode }) {
+  return (
+    <div className="rounded-md border border-border bg-background p-2.5">
+      <div className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-muted-foreground/70 font-mono">
+        {icon}
+        {label}
+      </div>
+      <div className={cn("mt-1 text-lg font-mono", accent ?? "text-foreground")}>{value.toLocaleString()}</div>
     </div>
   );
 }

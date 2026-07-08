@@ -538,7 +538,8 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
       // GET /api/v2/foundation/memory/:layer 仍由下面的 r10 处理 (handler return false)
       if (url.startsWith('/api/v2/foundation/memory')
           || url.startsWith('/api/v2/foundation/folders')
-          || url.startsWith('/api/v2/foundation/documents')) {
+          || url.startsWith('/api/v2/foundation/documents')
+          || url.startsWith('/api/v2/foundation/extraction')) {
         if (await handleFoundationMemoryRoutes(req, res, method, url)) return;
         if (await handleFoundationKbRoutes(req, res, method, url)) return;
       }

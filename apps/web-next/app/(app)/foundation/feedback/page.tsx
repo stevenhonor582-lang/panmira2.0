@@ -7,7 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { SessionsPanel } from "@/components/r10/data-panels";
+import { api } from "@/lib/api";
+import {
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetClose,
+} from "@/components/ui/sheet";
+import { Star, Download, RefreshCcw } from "lucide-react";
 import {
   ChevronRight,
   Search,
@@ -22,6 +26,7 @@ import {
   Eye,
   User,
   Bot,
+  Loader2,
 } from "lucide-react";
 
 type FeedbackType = "issue" | "feature" | "bug";
@@ -430,8 +435,249 @@ export default function FeedbackPage() {
       </div>
 
       <div className="mt-6">
-        <SessionsPanel />
+        <SessionsEnhanced />
       </div>
+    </div>
+  );
+}
+
+// ── SessionsEnhanced ───────────────────────────────────────────────────────
+interface SessionRow {
+  id: string;
+  title: string | null;
+  botName: string | null;
+  platform: string | null;
+  messageCount: number;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+interface SessionMsg {
+  id: string;
+  role: string | null;
+  content: string | null;
+  createdAt: string | null;
+  tokens?: number | null;
+}
+
+function SessionsEnhanced() {
+  const [rows, setRows] = React.useState<SessionRow[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [err, setErr] = React.useState<string | null>(null);
+  const [platformFilter, setPlatformFilter] = React.useState<string>("all");
+  const [timeFilter, setTimeFilter] = React.useState<"24h" | "7d" | "all">("all");
+  const [detailOpen, setDetailOpen] = React.useState(false);
+  const [activeSession, setActiveSession] = React.useState<SessionRow | null>(null);
+  const [messages, setMessages] = React.useState<SessionMsg[]>([]);
+  const [msgLoading, setMsgLoading] = React.useState(false);
+  const [rating, setRating] = React.useState<number>(0);
+
+  const load = React.useCallback(async () => {
+    setLoading(true); setErr(null);
+    try {
+      const r = await api<{ sessions: SessionRow[] }>("/api/v2/admin/sessions");
+      setRows(r.sessions ?? []);
+    } catch (e: any) { setErr(String(e?.message ?? e)); }
+    finally { setLoading(false); }
+  }, []);
+
+  React.useEffect(() => { load(); }, [load]);
+
+  const platforms = React.useMemo(() => {
+    const s = new Set<string>();
+    rows.forEach((r) => { if (r.platform) s.add(r.platform); });
+    return ["all", ...Array.from(s).sort()];
+  }, [rows]);
+
+  const filtered = React.useMemo(() => {
+    let l = rows;
+    if (platformFilter !== "all") l = l.filter((r) => r.platform === platformFilter);
+    if (timeFilter !== "all") {
+      const days = timeFilter === "24h" ? 1 : 7;
+      const cut = Date.now() - days * 86400000;
+      l = l.filter((r) => (r.updatedAt ? new Date(r.updatedAt).getTime() >= cut : false));
+    }
+    return l;
+  }, [rows, platformFilter, timeFilter]);
+
+  async function openSession(s: SessionRow) {
+    setActiveSession(s);
+    setDetailOpen(true);
+    setRating(0);
+    setMsgLoading(true);
+    setMessages([]);
+    try {
+      const r = await api<{ messages: SessionMsg[] }>(`/api/v2/admin/sessions/${encodeURIComponent(s.id)}/messages`);
+      setMessages(r.messages ?? []);
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+    } finally { setMsgLoading(false); }
+  }
+
+  function exportMd() {
+    if (!activeSession) return;
+    const lines: string[] = [];
+    lines.push(`# ${activeSession.title ?? "(no title)"}`);
+    lines.push("");
+    lines.push(`- **bot**: ${activeSession.botName ?? "—"}`);
+    lines.push(`- **platform**: ${activeSession.platform ?? "—"}`);
+    lines.push(`- **messages**: ${messages.length}`);
+    lines.push(`- **rating**: ${rating > 0 ? "★".repeat(rating) : "—"}`);
+    lines.push("");
+    lines.push("---");
+    lines.push("");
+    messages.forEach((m, i) => {
+      lines.push(`## [${i + 1}] ${m.role ?? "msg"}`);
+      lines.push("");
+      lines.push(m.content ?? "(empty)");
+      lines.push("");
+    });
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `session-${activeSession.id.slice(0, 8)}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <MessageSquareWarning className="size-4 text-sky-500" />
+          <h3 className="text-sm font-medium">会话浏览器 (sessions + messages + ★评分 + md 导出)</h3>
+        </div>
+        <span className="text-[10px] font-mono text-muted-foreground/70">
+          {loading ? "loading…" : `${filtered.length} / ${rows.length} shown`}
+        </span>
+      </div>
+
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <select
+          value={platformFilter}
+          onChange={(e) => setPlatformFilter(e.target.value)}
+          className="h-7 rounded border border-border bg-background px-2 text-[11px] font-mono"
+        >
+          {platforms.map((p) => (
+            <option key={p} value={p}>{p === "all" ? "全部平台" : p}</option>
+          ))}
+        </select>
+        <div className="flex items-center gap-1 border border-border rounded-md p-0.5">
+          {(["24h", "7d", "all"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTimeFilter(t)}
+              className={cn(
+                "px-2 h-6 text-[10px] uppercase tracking-wider font-mono rounded transition-colors",
+                timeFilter === t ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground",
+              )}
+            >{t}</button>
+          ))}
+        </div>
+        <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={load}>
+          <RefreshCcw className="size-3" />刷新
+        </Button>
+      </div>
+
+      {err && <div className="text-[11px] text-rose-600 mb-2">{err}</div>}
+
+      <div className="max-h-[420px] overflow-auto rounded-md border border-border">
+        <table className="w-full">
+          <thead className="sticky top-0 bg-background">
+            <tr>
+              <th className="text-left text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono px-3 py-1.5 border-b border-border">title / bot</th>
+              <th className="text-left text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono px-3 py-1.5 border-b border-border">platform</th>
+              <th className="text-left text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono px-3 py-1.5 border-b border-border">msgs</th>
+              <th className="text-left text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono px-3 py-1.5 border-b border-border">updated</th>
+              <th className="text-left text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono px-3 py-1.5 border-b border-border"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 ? (
+              <tr><td colSpan={5} className="text-center text-[11px] text-muted-foreground py-6">no sessions</td></tr>
+            ) : filtered.slice(0, 100).map((s) => (
+              <tr
+                key={s.id}
+                className="hover:bg-muted/40 transition-colors cursor-pointer border-b border-border/40"
+                onClick={() => openSession(s)}
+              >
+                <td className="px-3 py-1.5">
+                  <div className="font-mono text-[11px] truncate max-w-[260px]">{s.title ?? "(no title)"}</div>
+                  <div className="text-[10px] text-muted-foreground">{s.botName ?? "—"}</div>
+                </td>
+                <td className="px-3 py-1.5 font-mono text-[11px]">{s.platform ?? "—"}</td>
+                <td className="px-3 py-1.5 font-mono text-[11px]">{s.messageCount}</td>
+                <td className="px-3 py-1.5 font-mono text-[10px] text-muted-foreground">{s.updatedAt ? new Date(s.updatedAt).toLocaleString() : "—"}</td>
+                <td className="px-3 py-1.5 text-right"><Eye className="size-3 text-muted-foreground inline" /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Detail sheet */}
+      <Sheet open={detailOpen} onOpenChange={setDetailOpen}>
+        <SheetContent side="right" className="w-[480px] sm:w-[520px] p-0">
+          <SheetHeader className="px-5 py-4 border-b border-border">
+            <SheetTitle className="text-sm">{activeSession?.title ?? "(no title)"}</SheetTitle>
+            <SheetDescription className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground/70">
+              {activeSession?.botName ?? "—"} · {activeSession?.platform ?? "—"} · {messages.length} msgs
+            </SheetDescription>
+          </SheetHeader>
+          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3 text-xs">
+            {/* rating */}
+            <div className="flex items-center gap-2 pb-3 border-b border-border">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">rating</span>
+              <div className="flex items-center gap-0.5">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    type="button"
+                    onClick={() => setRating(star)}
+                    className={cn(
+                      "size-5 grid place-items-center transition-colors",
+                      star <= rating ? "text-amber-500" : "text-muted-foreground/40 hover:text-amber-400",
+                    )}
+                  >
+                    <Star className={cn("size-3.5", star <= rating && "fill-amber-500")} />
+                  </button>
+                ))}
+              </div>
+              <Button size="sm" variant="outline" className="h-6 ml-auto text-[10px] gap-1" onClick={exportMd} disabled={messages.length === 0}>
+                <Download className="size-3" />导出 .md
+              </Button>
+            </div>
+
+            {msgLoading ? (
+              <div className="grid place-items-center py-10"><Loader2 className="size-4 animate-spin text-muted-foreground" /></div>
+            ) : messages.length === 0 ? (
+              <p className="text-center text-[11px] text-muted-foreground py-10">该 session 无消息记录</p>
+            ) : (
+              messages.slice(0, 200).map((m, i) => {
+                const isUser = m.role === "user" || m.role === "human";
+                return (
+                  <div key={m.id ?? i} className={cn("flex gap-2", isUser && "flex-row-reverse")}>
+                    <div className={cn(
+                      "shrink-0 size-6 rounded-full grid place-items-center",
+                      isUser ? "bg-sky-500/15 text-sky-600" : "bg-emerald-500/15 text-emerald-600",
+                    )}>
+                      {isUser ? <User className="size-3" /> : <Bot className="size-3" />}
+                    </div>
+                    <div className={cn("flex-1 max-w-[80%] rounded-md px-3 py-2", isUser ? "bg-sky-500/10" : "bg-emerald-500/10")}>
+                      <div className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground/70 mb-1">
+                        {m.role ?? "msg"} · {m.createdAt ? new Date(m.createdAt).toLocaleTimeString() : "—"}
+                      </div>
+                      <div className="text-[11px] leading-relaxed whitespace-pre-wrap">{m.content ?? "(empty)"}</div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+          <SheetClose />
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

@@ -564,6 +564,49 @@ async function documentUpload(
   });
 }
 
+async function extractionStatus(
+  _req: http.IncomingMessage,
+  res: http.ServerResponse,
+  _ctx: { tenantId: string; userId: string | null },
+) {
+  try {
+    const daily = await pool.query(
+      `SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD') AS day,
+              count(*)::int AS n,
+              count(*) FILTER (WHERE layer = 1)::int AS l1,
+              count(*) FILTER (WHERE layer = 2)::int AS l2,
+              count(*) FILTER (WHERE layer = 3)::int AS l3
+         FROM memories
+        WHERE created_at > now() - interval '30 days'
+        GROUP BY day ORDER BY day`,
+    );
+    const totals = await pool.query(
+      `SELECT count(*)::int AS total,
+              count(*) FILTER (WHERE layer = 1)::int AS l1,
+              count(*) FILTER (WHERE layer = 2)::int AS l2,
+              count(*) FILTER (WHERE layer = 3)::int AS l3,
+              count(*) FILTER (WHERE created_at > now() - interval '24 hours')::int AS last_24h,
+              count(*) FILTER (WHERE created_at > now() - interval '7 days')::int AS last_7d
+         FROM memories`,
+    );
+    let extractedCount = 0;
+    try {
+      const er = await pool.query('SELECT count(*)::int AS n FROM extracted_memories');
+      extractedCount = er.rows[0]?.n ?? 0;
+    } catch { /* table may not exist */ }
+    jsonResponse(res, 200, {
+      success: true,
+      workers: { extraction_worker: 'stopped', memory_pipeline: 'idle' },
+      totals: totals.rows[0] ?? { total: 0, l1: 0, l2: 0, l3: 0, last_24h: 0, last_7d: 0 },
+      daily: daily.rows,
+      extractedMemories: extractedCount,
+      note: extractedCount === 0 ? '尚无 extracted_memories 记录;extraction-worker 未运行' : null,
+    });
+  } catch (e) {
+    jsonResponse(res, 500, { error: 'stats_failed', message: e instanceof Error ? e.message : 'unknown' });
+  }
+}
+
 function chunkContent(content: string, size: number, overlap: number): { content: string }[] {
   if (!content) return [];
   const out: { content: string }[] = [];
@@ -586,7 +629,8 @@ export async function handleFoundationKbRoutes(
   url: string,
 ): Promise<boolean> {
   if (!url.startsWith('/api/v2/foundation/folders')
-      && !url.startsWith('/api/v2/foundation/documents')) {
+      && !url.startsWith('/api/v2/foundation/documents')
+      && !url.startsWith('/api/v2/foundation/extraction')) {
     return false;
   }
   const ctx = await requireBearer(req, res);
@@ -611,6 +655,11 @@ export async function handleFoundationKbRoutes(
     if (method === 'DELETE') { await folderDelete(req, res, ctx, id); return true; }
   }
 
+  // extraction status (派生 — 在 documents 之前匹配)
+  if (path === '/api/v2/foundation/extraction/status' && method === 'GET') {
+    await extractionStatus(req, res, ctx);
+    return true;
+  }
   // documents
   // GET list (before /:id)
   if (path === '/api/v2/foundation/documents' && method === 'GET') {
