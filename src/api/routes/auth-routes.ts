@@ -12,7 +12,7 @@
  *   - 5 次失败 → locked_until 30min
  */
 import type http from 'node:http';
-import type { UserStore, User, UserRole } from '../../db/user-store.js';
+import type { UserStore, User, UserRole, EmployeeStatus } from '../../db/user-store.js';
 import { generateTokenPair, verifyAccessToken, verifyRefreshToken } from '../middleware.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import { canManageUser } from '../../middleware/rbac.js';
@@ -22,6 +22,7 @@ const LOGIN_RATE_LIMIT = 5;
 const LOGIN_RATE_WINDOW = 60_000;
 
 const VALID_ROLES: ReadonlyArray<UserRole> = ['admin', 'operator', 'member'];
+const VALID_EMPLOYEE_STATUS: ReadonlyArray<EmployeeStatus> = ['active', 'paused', 'departed', 'deleted'];
 
 function stripQuery(u: string): string {
   const i = u.indexOf('?');
@@ -74,6 +75,12 @@ export async function handleAuthRoutes(
   // 修改用户 — admin 全权 / operator 仅 member
   if (url.startsWith('/api/auth/users/') && (method === 'PUT' || method === 'PATCH')) {
     return handleUpdateUser(userStore, req, res, url);
+  }
+  if (url.match(/^\/api\/auth\/users\/[0-9a-f-]+\/reset-password$/) && method === 'POST') {
+    return handleResetPassword(userStore, req, res, url);
+  }
+  if (url.match(/^\/api\/auth\/users\/[0-9a-f-]+\/activity$/) && method === 'GET') {
+    return handleGetUserActivity(userStore, req, res, url);
   }
   if (url.startsWith('/api/auth/users/') && method === 'DELETE') {
     return handleDeleteUser(userStore, req, res, url);
@@ -399,7 +406,11 @@ async function handleListUsers(
     jsonResponse(res, 403, { error: 'forbidden', message: '需要 admin (P9 RBAC)' });
     return true;
   }
-  const users = await userStore.list();
+  // R11: 支持 ?status=active|paused|departed|deleted 过滤
+  const u = new URL(req.url ?? '', 'http://localhost');
+  const statusParam = u.searchParams.get('status') as EmployeeStatus | null;
+  const status = statusParam && VALID_EMPLOYEE_STATUS.includes(statusParam) ? statusParam : undefined;
+  const users = await userStore.list(status);
   jsonResponse(res, 200, { users: users.map(sanitizeUser) });
   return true;
 }
@@ -418,13 +429,19 @@ async function handleCreateUser(
   }
   const body = await parseJsonBody(req);
   const email = (body as any).email;
-  const password = (body as any).password;
+  // R11: password 可选 (后端生成默认密码, 如通知模式选"邮件验证码")
+  const password = (body as any).password || `Pan-${Math.random().toString(36).slice(2, 10)}`;
   const name = (body as any).name;
   const phone = (body as any).phone;
   const role = (body as any).role ?? 'member';
+  const department = (body as any).department;
+  const position = (body as any).position;
+  const employeeStatus = (body as any).employeeStatus ?? 'active';
+  const agentIds: string[] = Array.isArray((body as any).agentIds) ? (body as any).agentIds : [];
+  const pipelineIds: string[] = Array.isArray((body as any).pipelineIds) ? (body as any).pipelineIds : [];
 
-  if (!email || !password || !name) {
-    jsonResponse(res, 400, { error: 'email, password, name are required' });
+  if (!email || !name) {
+    jsonResponse(res, 400, { error: 'email, name are required' });
     return true;
   }
   if (password.length < 6) {
@@ -433,6 +450,10 @@ async function handleCreateUser(
   }
   if (!VALID_ROLES.includes(role)) {
     jsonResponse(res, 400, { error: `role must be one of ${VALID_ROLES.join(', ')}` });
+    return true;
+  }
+  if (!VALID_EMPLOYEE_STATUS.includes(employeeStatus)) {
+    jsonResponse(res, 400, { error: `employeeStatus must be one of ${VALID_EMPLOYEE_STATUS.join(', ')}` });
     return true;
   }
   if (role === 'admin' && ctx.role !== 'admin') {
@@ -445,8 +466,13 @@ async function handleCreateUser(
   }
 
   try {
-    const user = await userStore.register(email, password, name, { phone, role });
-    jsonResponse(res, 201, { user: sanitizeUser(user) });
+    const user = await userStore.register(email, password, name, {
+      phone, role, department, position, employeeStatus,
+    });
+    // R11: 分配数字员工和流水线
+    if (agentIds.length > 0) await userStore.assignAgents(user.id, agentIds);
+    if (pipelineIds.length > 0) await userStore.assignPipelines(user.id, pipelineIds);
+    jsonResponse(res, 201, { user: sanitizeUser(user), generatedPassword: (body as any).password ? undefined : password });
   } catch (err: any) {
     jsonResponse(res, 400, { error: err.message });
   }
@@ -505,6 +531,29 @@ async function handleUpdateUser(
     }
     if ((body as any).isActive !== undefined) {
       await userStore.setActive(userId, !!(body as any).isActive);
+      updated = (await userStore.findById(userId))!;
+    }
+    // R11: 雇佣状态 (active/paused/departed)
+    if ((body as any).employeeStatus !== undefined) {
+      const newStatus = (body as any).employeeStatus as EmployeeStatus;
+      if (!VALID_EMPLOYEE_STATUS.includes(newStatus)) {
+        jsonResponse(res, 400, { error: `employeeStatus must be one of ${VALID_EMPLOYEE_STATUS.join(', ')}` });
+        return true;
+      }
+      await userStore.updateEmployeeStatus(userId, newStatus);
+      // 离职自动禁用登录 (但 is_active 字段保留语义独立)
+      if (newStatus === 'departed') {
+        await userStore.setActive(userId, false);
+      }
+      updated = (await userStore.findById(userId))!;
+    }
+    // R11: 部门 / 职位
+    if ((body as any).department !== undefined) {
+      await userStore.updateDepartment(userId, (body as any).department || null);
+      updated = (await userStore.findById(userId))!;
+    }
+    if ((body as any).position !== undefined) {
+      await userStore.updatePosition(userId, (body as any).position || null);
       updated = (await userStore.findById(userId))!;
     }
     if ((body as any).unlock === true) {
@@ -567,6 +616,15 @@ async function handleDeleteUser(
     return true;
   }
 
+  // R11: 仅离职员工可彻底删除
+  if (target.employeeStatus !== 'departed') {
+    jsonResponse(res, 400, {
+      error: 'not_departed',
+      message: '仅 employeeStatus=departed 的员工可彻底删除,请先标记离职',
+    });
+    return true;
+  }
+
   try {
     const ok = await userStore.delete(userId);
     if (!ok) {
@@ -577,6 +635,69 @@ async function handleDeleteUser(
   } catch (err: any) {
     jsonResponse(res, 400, { error: err.message });
   }
+  return true;
+}
+
+// R11: 单独 reset-password 端点 (RBAC: admin 全权 / operator 仅 member)
+async function handleResetPassword(
+  userStore: UserStore,
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  url: string,
+): Promise<boolean> {
+  const ctx = await authenticate(req, res);
+  if (!ctx) return true;
+
+  const match = url.match(/^\/api\/auth\/users\/([0-9a-f-]+)\/reset-password$/);
+  if (!match) return false;
+  const userId = match[1];
+  const target = await userStore.findById(userId);
+  if (!target) {
+    jsonResponse(res, 404, { error: 'User not found' });
+    return true;
+  }
+  if (!canManageUser(ctx.role, ctx.sub, target.role, target.id)) {
+    jsonResponse(res, 403, { error: 'forbidden', message: `${ctx.role} cannot manage ${target.role}` });
+    return true;
+  }
+  const body = await parseJsonBody(req);
+  const newPassword = (body as any).newPassword || (body as any).password;
+  if (!newPassword || newPassword.length < 6) {
+    jsonResponse(res, 400, { error: 'newPassword 必填且至少 6 位' });
+    return true;
+  }
+  await userStore.resetPassword(userId, newPassword);
+  jsonResponse(res, 200, { success: true });
+  return true;
+}
+
+// R11: 拉员工活动统计 (24h 调用 / 数字员工数 / 任务数)
+async function handleGetUserActivity(
+  userStore: UserStore,
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  url: string,
+): Promise<boolean> {
+  const ctx = await authenticate(req, res);
+  if (!ctx) return true;
+  const match = url.match(/^\/api\/auth\/users\/([0-9a-f-]+)\/activity$/);
+  if (!match) return false;
+  const userId = match[1];
+  const target = await userStore.findById(userId);
+  if (!target) {
+    jsonResponse(res, 404, { error: 'User not found' });
+    return true;
+  }
+  const [agents, pipelines, calls24h] = await Promise.all([
+    userStore.countAgents(userId),
+    userStore.countPipelines(userId),
+    userStore.countActivity24h(userId),
+  ]);
+  jsonResponse(res, 200, {
+    agents,
+    pipelines,
+    calls24h,
+  });
   return true;
 }
 
@@ -597,6 +718,10 @@ function sanitizeUser(user: User) {
     phone: user.phone,
     failedAttempts: user.failedAttempts,
     lockedUntil: user.lockedUntil,
+    // R11 新字段
+    department: user.department,
+    position: user.position,
+    employeeStatus: user.employeeStatus,
   };
 }
 
