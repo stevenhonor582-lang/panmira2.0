@@ -17,6 +17,7 @@ import {
 import { api } from "@/lib/api";
 import { fetchAgents } from "../_components/data";
 import { KpiTile } from "../_components/kpi-tile";
+import { RagStatsSection } from "@/components/r10/sections";
 
 export const dynamic = "force-dynamic";
 

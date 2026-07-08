@@ -1,6 +1,8 @@
 // /overview/billing - 财务/积分 (骨架,等待接入真实账单)
 "use client";
 
+import { UsageReportsPanel } from "@/components/r10/data-panels";
+
 import * as React from "react";
 import { Coins, Receipt } from "lucide-react";
 import {
