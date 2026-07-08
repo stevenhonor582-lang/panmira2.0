@@ -253,24 +253,46 @@ export function NewBotWizard() {
   );
 }
 
-// Real preview — every value comes from form state (no fake "全栈工程师 / Cloud Sonic 4.6").
+// R17-3 实时预览 — 名片样式,改进"未命名员工"的 UX
+// 用户反馈:"实时预览'未命名员工'无用",后理解这是实时名片
+// 改进:明确告诉用户这是名片预览,空字段给可操作提示
 function PreviewCard({ form }: { form: WizardForm }) {
   const personaLabel =
     PERSONA_PRESETS.find((p) => p.id === form.personaPreset)?.label ||
     (form.persona ? "自定义" : "未设定");
+  const hasName = form.name.trim().length > 0;
+  const emptyFields: string[] = [];
+  if (!hasName) emptyFields.push("名字");
+  if (!form.providerId) emptyFields.push("模型");
+  if (!form.persona) emptyFields.push("人格");
+
+  // 头像 glyph 优先用 form.glyph,其次用名字首字符
+  const previewGlyph = form.glyph !== "新" ? form.glyph : (hasName ? form.name[0] : "新");
+
   return (
     <div className="overflow-hidden rounded-2xl bg-muted/40 p-5 ring-1 ring-border">
-      <span className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/45">
-        实时预览 · 真实数据
-      </span>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/45">
+          实时名片 · 预览
+        </span>
+        {emptyFields.length > 0 && (
+          <span className="font-mono text-[10px] text-foreground/40">
+            待填 · {emptyFields.join("/")}
+          </span>
+        )}
+      </div>
       <div className="mt-3 flex items-center gap-3">
-        <AvatarMark glyph={form.glyph} hue={form.hue} size="md" />
+        <AvatarMark glyph={previewGlyph} hue={form.hue} size="md" />
         <div className="min-w-0">
           <div className="truncate text-[15px] font-semibold tracking-tight">
-            {form.name || "未命名员工"}
+            {hasName ? form.name : (
+              <span className="text-foreground/45 italic">填写名称后显示</span>
+            )}
           </div>
           <div className="truncate font-mono text-[11px] text-foreground/55">
-            {form.providerName ? `${form.providerName} · ${form.providerModel}` : "未选模型"}
+            {form.providerName ? `${form.providerName} · ${form.providerModel}` : (
+              <span className="italic text-foreground/40">未选模型(Step 2)</span>
+            )}
             {" · "}
             {(form.contextWindow / 1000).toFixed(0)}k ctx
             {" · t="}{form.temperature.toFixed(2)}
@@ -278,12 +300,20 @@ function PreviewCard({ form }: { form: WizardForm }) {
         </div>
       </div>
       <ul className="mt-4 space-y-1.5 text-[11.5px] font-mono text-foreground/55">
-        <li>人格 · {personaLabel}</li>
+        <li>
+          人格 ·{" "}
+          {personaLabel === "未设定"
+            ? <span className="italic text-foreground/40">未设定(Step 3)</span>
+            : personaLabel}
+        </li>
         <li>{form.skills.length} skills · {form.mcpServerIds.length} mcp · {form.tools.length} tools</li>
         <li>{form.kbFolderIds.length} folders · {form.knowledgeBaseIds.length} KB</li>
         <li>可见 · {form.visibility} · {form.channelIds.length} 频道</li>
         {form.workingDir && <li className="truncate">目录 · {form.workingDir}</li>}
       </ul>
+      <p className="mt-3 border-t border-border pt-2 text-[10.5px] text-foreground/45">
+        这就是你将来在员工库里看到的卡片样子。每改一步,这里实时同步。
+      </p>
     </div>
   );
 }

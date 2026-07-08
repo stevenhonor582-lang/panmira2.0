@@ -1,7 +1,22 @@
 "use client";
 import * as React from "react";
 import type { WizardForm } from "./form";
-import { Rocket, Loader2, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
+import { api } from "@/lib/api";
+import { Rocket, Loader2, CheckCircle2, AlertCircle, RefreshCw, FlaskConical, XCircle, Check } from "lucide-react";
+
+interface SubmitResult { ok: boolean; error?: string; id?: string }
+
+interface TestCheck {
+  category: string;
+  item: string;
+  key: string;
+  ok: boolean;
+  detail: string;
+}
+interface TestResult {
+  results: TestCheck[];
+  summary: { ok: number; fail: number; total: number; allOk: boolean };
+}
 
 interface SubmitResult { ok: boolean; error?: string; id?: string }
 
@@ -17,6 +32,37 @@ export function Step7({
   const [phase, setPhase] = React.useState<"idle" | "submitting" | "success" | "error">("idle");
   const [errorMsg, setErrorMsg] = React.useState<string>("");
   const [createdId, setCreatedId] = React.useState<string>("");
+  // R17-3: 发布前测试
+  const [testing, setTesting] = React.useState(false);
+  const [testResult, setTestResult] = React.useState<TestResult | null>(null);
+  const [testError, setTestError] = React.useState<string>("");
+
+  const runTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    setTestError("");
+    try {
+      const res = await api<TestResult>("/api/v2/employees/test-config", {
+        method: "POST",
+        body: {
+          providerId: form.providerId,
+          providerModel: form.providerModel,
+          skillIds: form.skills,
+          mcpServerIds: form.mcpServerIds,
+          kbFolderIds: form.kbFolderIds,
+          knowledgeBaseIds: form.knowledgeBaseIds,
+          channelIds: form.channelIds,
+        },
+        headers: { "content-type": "application/json" },
+      });
+      setTestResult(res);
+    } catch (e: unknown) {
+      const err = e as { message?: string; body?: { error?: string } };
+      setTestError(err?.body?.error || err?.message || String(e));
+    } finally {
+      setTesting(false);
+    }
+  };
 
   const handlePublish = async () => {
     setPhase("submitting");
@@ -68,6 +114,23 @@ export function Step7({
 
       <Summary form={form} />
 
+      {/* R17-3: 发布前测试结果 */}
+      {testError && (
+        <div className="rounded-2xl bg-rose-500/10 p-4 ring-1 ring-rose-500/30">
+          <div className="flex items-center gap-2 text-[13px] font-semibold text-rose-700 dark:text-rose-300">
+            <AlertCircle className="size-4" />
+            测试请求失败
+          </div>
+          <div className="mt-2 rounded-xl bg-rose-500/5 p-2.5 font-mono text-[11.5px] text-rose-800 dark:text-rose-200">
+            {testError}
+          </div>
+        </div>
+      )}
+
+      {testResult && (
+        <TestResultPanel result={testResult} />
+      )}
+
       {phase === "error" && (
         <div className="rounded-2xl bg-rose-500/10 p-5 ring-1 ring-rose-500/30">
           <div className="flex items-center gap-2 text-[13px] font-semibold text-rose-700 dark:text-rose-300">
@@ -86,6 +149,16 @@ export function Step7({
       <div className="flex items-center justify-end gap-2 border-t border-border pt-4">
         <button
           type="button"
+          onClick={runTest}
+          disabled={testing}
+          className="inline-flex items-center gap-1.5 rounded-full bg-background px-5 py-2.5 text-[13.5px] font-medium text-foreground ring-1 ring-border hover:ring-foreground/40 disabled:opacity-50"
+          data-testid="step7-test-btn"
+        >
+          {testing ? <Loader2 className="size-4 animate-spin" /> : <FlaskConical className="size-4" />}
+          {testing ? "测试中..." : "测试"}
+        </button>
+        <button
+          type="button"
           onClick={handlePublish}
           className="inline-flex items-center gap-1.5 rounded-full bg-foreground px-6 py-2.5 text-[13.5px] font-medium text-background hover:opacity-90"
         >
@@ -93,6 +166,68 @@ export function Step7({
           {phase === "error" ? "重试发布" : "发布"}
         </button>
       </div>
+    </div>
+  );
+}
+
+// 测试结果面板 — 逐项展示 ok/fail + 详情
+function TestResultPanel({ result }: { result: TestResult }) {
+  const { results, summary } = result;
+  const failItems = results.filter((r) => !r.ok);
+
+  return (
+    <div className={
+      "rounded-2xl p-5 ring-1 " +
+      (summary.allOk
+        ? "bg-emerald-500/[0.06] ring-emerald-500/30"
+        : "bg-amber-500/[0.06] ring-amber-500/40")
+    }>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-[13px] font-semibold">
+          {summary.allOk ? (
+            <Check className="size-4 text-emerald-600" />
+          ) : (
+            <AlertCircle className="size-4 text-amber-600" />
+          )}
+          <span className={summary.allOk ? "text-emerald-700 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300"}>
+            {summary.allOk ? "测试通过 · 可以发布" : `${failItems.length} 项未通过 · 需要修复`}
+          </span>
+        </div>
+        <span className="font-mono text-[11px] text-foreground/55">
+          {summary.ok}/{summary.total} 通过
+        </span>
+      </div>
+
+      <ul className="mt-3 divide-y divide-foreground/[0.06]">
+        {results.map((r) => (
+          <li key={r.key} className="flex items-start gap-2.5 py-2">
+            <span className={
+              "mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-full " +
+              (r.ok ? "bg-emerald-500/15 text-emerald-600" : "bg-rose-500/15 text-rose-600")
+            }>
+              {r.ok ? <Check className="size-3" /> : <XCircle className="size-3" />}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[12.5px] font-medium text-foreground/85">{r.item}</span>
+                <span className="rounded bg-foreground/[0.06] px-1.5 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.15em] text-foreground/55">
+                  {r.category}
+                </span>
+              </div>
+              <div className={"mt-0.5 font-mono text-[11.5px] " + (r.ok ? "text-foreground/60" : "text-rose-700 dark:text-rose-300")}>
+                {r.detail}
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      {!summary.allOk && (
+        <p className="mt-3 border-t border-foreground/[0.06] pt-2.5 text-[11.5px] text-foreground/65">
+          需修复项会阻塞实际调用(模型连不通 / 技能加载失败 / 知识库不可达等)。
+          回到对应步骤修改后,可再次点【测试】。
+        </p>
+      )}
     </div>
   );
 }
