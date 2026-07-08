@@ -25,6 +25,12 @@ import { db, pool } from '../../db/index.js';
 import { encrypt, decrypt } from '../../db/crypto.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import { requireBearer } from '../oauth-middleware.js';
+import {
+  humanizeActivityEvent,
+  humanizeAuditLog,
+  analyzeLogs,
+  type HumanizedLog,
+} from './log-analysis.js';
 
 // ═══════════════════════════════════════════════════════════════
 // 1. MCP servers
@@ -562,44 +568,141 @@ async function optimization(req: http.IncomingMessage, res: http.ServerResponse,
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 8. Logs (过滤)
+// 8. Logs (人类可读 + AI 分析)
+//    GET /api/v2/admin/logs             — 列表(默认最近 100 条,人类可读)
+//    GET /api/v2/admin/logs/analyze     — AI 规则引擎聚合分析
 // ═══════════════════════════════════════════════════════════════
+
+// 把 activity_events + audit_logs 两路原始行合并为人类可读列表。
+// activity_events 是主数据源(7827 条),audit_logs 是辅助(3 条)。
+async function fetchHumanizedLogs(opts: {
+  windowHours: number;
+  levelFilter: 'all' | 'error' | 'warn' | 'info';
+  sourceFilter: string;     // 'all' 或 source key
+  search: string;           // 在 title/description/actor 里模糊匹配
+  limit: number;
+}): Promise<{ logs: HumanizedLog[]; counts: { byLevel: Record<string, number>; bySource: Record<string, number> }; sources: string[] }> {
+  const { windowHours, levelFilter, sourceFilter, search, limit } = opts;
+
+  // 1. activity_events 主数据源
+  const activityRows = await db.execute(sql`
+    SELECT id, type, bot_name, bot_id, user_id, prompt, response_preview,
+           error_message, duration_ms, cost_usd, timestamp, model, chat_id
+    FROM activity_events
+    WHERE timestamp > (EXTRACT(EPOCH FROM NOW()) * 1000 - ${windowHours} * 3600 * 1000)::bigint
+    ORDER BY timestamp DESC
+    LIMIT ${Math.max(limit * 4, 200)}
+  `);
+  const activityArr = (Array.isArray(activityRows) ? activityRows : (activityRows as { rows?: unknown[] }).rows || []) as Array<Record<string, unknown>>;
+
+  // 2. audit_logs 辅助(若有)
+  const auditRows = await db.execute(sql`
+    SELECT id, action, resource_type, resource_id, user_id, agent_id, details, created_at
+    FROM audit_logs
+    WHERE created_at > NOW() - (${windowHours} || ' hours')::INTERVAL
+    ORDER BY created_at DESC
+    LIMIT 100
+  `);
+  const auditArr = (Array.isArray(auditRows) ? auditRows : (auditRows as { rows?: unknown[] }).rows || []) as Array<Record<string, unknown>>;
+
+  // 3. humanize
+  const fromActivity: HumanizedLog[] = activityArr.map((r) => humanizeActivityEvent({
+    id: r.id as string,
+    type: r.type as string | null,
+    bot_name: r.bot_name as string | null,
+    bot_id: r.bot_id as string | null,
+    user_id: r.user_id as string | null,
+    prompt: r.prompt as string | null,
+    response_preview: r.response_preview as string | null,
+    error_message: r.error_message as string | null,
+    duration_ms: r.duration_ms as number | null,
+    cost_usd: r.cost_usd as number | null,
+    timestamp: r.timestamp as number | null,
+    model: r.model as string | null,
+    chat_id: r.chat_id as string | null,
+  }));
+  const fromAudit: HumanizedLog[] = auditArr.map((r) => humanizeAuditLog({
+    id: r.id as string,
+    action: r.action as string | null,
+    resource_type: r.resource_type as string | null,
+    resource_id: r.resource_id as string | null,
+    user_id: r.user_id as string | null,
+    agent_id: r.agent_id as string | null,
+    details: r.details as Record<string, unknown> | null,
+    created_at: r.created_at as string | null,
+  }));
+
+  const all = [...fromActivity, ...fromAudit].sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
+
+  // 4. 统计 counts(基于未过滤数据,用于 tab 显示)
+  const byLevel: Record<string, number> = { error: 0, warn: 0, info: 0 };
+  const bySource: Record<string, number> = {};
+  for (const l of all) {
+    byLevel[l.level] = (byLevel[l.level] ?? 0) + 1;
+    bySource[l.source] = (bySource[l.source] ?? 0) + 1;
+  }
+  const sources = Array.from(new Set(all.map((l) => l.source))).sort();
+
+  // 5. 过滤
+  let filtered = all;
+  if (levelFilter !== 'all') {
+    filtered = filtered.filter((l) => l.level === levelFilter);
+  }
+  if (sourceFilter !== 'all') {
+    filtered = filtered.filter((l) => l.source === sourceFilter);
+  }
+  if (search.trim()) {
+    const s = search.trim().toLowerCase();
+    filtered = filtered.filter((l) =>
+      l.title.toLowerCase().includes(s) ||
+      l.description.toLowerCase().includes(s) ||
+      l.actor.toLowerCase().includes(s) ||
+      (l.entityName ?? '').toLowerCase().includes(s)
+    );
+  }
+  filtered = filtered.slice(0, limit);
+
+  return { logs: filtered, counts: { byLevel, bySource }, sources };
+}
+
 async function adminLogs(req: http.IncomingMessage, res: http.ServerResponse, _ctx: { tenantId: string }, url: URL) {
-  const severity = url.searchParams.get('severity') || 'all';
-  const source = url.searchParams.get('source') || 'all';
+  const levelFilter = (url.searchParams.get('level') || url.searchParams.get('severity') || 'all') as 'all' | 'error' | 'warn' | 'info';
+  const sourceFilter = url.searchParams.get('source') || 'all';
+  const search = url.searchParams.get('q') || url.searchParams.get('search') || '';
+  const windowHours = Math.min(720, Math.max(1, parseInt(url.searchParams.get('hours') || '168', 10)));
   const limit = Math.min(500, parseInt(url.searchParams.get('limit') || '100', 10));
 
   try {
-    const conditions: ReturnType<typeof sql>[] = [sql`1=1`];
-    if (severity !== 'all') conditions.push(sql`severity = ${severity}`);
-    if (source !== 'all') conditions.push(sql`resource_type = ${source}`);
-
-    const whereSql = sql.join(conditions, sql.raw(' AND '));
-
-    const rows = await db.execute(sql`
-      SELECT id, action, resource_type, resource_id, created_at, details
-      FROM audit_logs
-      WHERE ${whereSql}
-      ORDER BY created_at DESC
-      LIMIT ${limit}
-    `);
-
-    const arr = (Array.isArray(rows) ? rows : (rows as { rows?: unknown[] }).rows || []) as Array<Record<string, unknown>>;
+    const { logs, counts, sources } = await fetchHumanizedLogs({ windowHours, levelFilter, sourceFilter, search, limit });
     jsonResponse(res, 200, {
       success: true,
-      total: arr.length,
-      limit,
-      logs: arr.map((r) => ({
-        id: r.id,
-        ts: r.created_at,
-        level: r.action,
-        source: r.resource_type,
-        event: r.action,
-        message: JSON.stringify(r.details ?? {}),
-      })),
+      total: logs.length,
+      windowHours,
+      counts,
+      sources,
+      logs,
     });
   } catch (err) {
     jsonResponse(res, 500, { error: 'logs_failed', message: err instanceof Error ? err.message : 'unknown' });
+  }
+}
+
+// AI 分析(规则引擎,无真 LLM 调用)
+async function adminLogsAnalyze(req: http.IncomingMessage, res: http.ServerResponse, _ctx: { tenantId: string }, url: URL) {
+  const windowHours = Math.min(720, Math.max(1, parseInt(url.searchParams.get('hours') || '24', 10)));
+
+  try {
+    const { logs } = await fetchHumanizedLogs({
+      windowHours,
+      levelFilter: 'all',
+      sourceFilter: 'all',
+      search: '',
+      limit: 1000,
+    });
+    const analysis = analyzeLogs(logs, windowHours);
+    jsonResponse(res, 200, { success: true, analysis });
+  } catch (err) {
+    jsonResponse(res, 500, { error: 'analyze_failed', message: err instanceof Error ? err.message : 'unknown' });
   }
 }
 
@@ -1021,8 +1124,13 @@ export async function handleR9MockEndpoints(
     return true;
   }
 
-  // 8. logs
-  if (url.startsWith('/api/v2/admin/logs') && method === 'GET') {
+  // 8. logs (人类可读 + AI 分析)
+  // 注意: analyze 必须在 /logs 之前匹配;用 url.startsWith 避开 query
+  if (method === 'GET' && url.startsWith('/api/v2/admin/logs/analyze')) {
+    await adminLogsAnalyze(req, res, ctx, parsed);
+    return true;
+  }
+  if (method === 'GET' && url.startsWith('/api/v2/admin/logs')) {
     await adminLogs(req, res, ctx, parsed);
     return true;
   }
