@@ -1,6 +1,6 @@
 // 5 项系统健康度 — 水平 meter + 状态色
 import * as React from "react";
-import { Database, Zap, Wifi, Search, BrainCircuit, type LucideIcon } from "lucide-react";
+import { Database, Zap, Wifi, Search, BrainCircuit, Server, Cpu, HardDrive, Users, type LucideIcon } from "lucide-react";
 
 export interface HealthItem {
   name: string;
@@ -27,21 +27,47 @@ const STATUS_LABEL: Record<HealthItem["status"], string> = {
 };
 
 function iconFor(name: string): LucideIcon {
+  // R14-A: 6 new health dimensions
+  if (name.includes("系统服务")) return Server;
+  if (name.includes("AI") || name.includes("大模型")) return BrainCircuit;
+  if (name.includes("知识库") || name.includes("RAG")) return Search;
+  if (name.includes("任务执行")) return Zap;
+  if (name.includes("资源")) return HardDrive;
+  if (name.includes("员工")) return Users;
+  // legacy fallbacks
   if (name.includes("数据库") || name.includes("DB")) return Database;
   if (name.includes("缓存")) return Zap;
   if (name.includes("WebSocket") || name.includes("websocket")) return Wifi;
-  if (name.includes("RAG")) return Search;
   if (name.includes("Memory")) return BrainCircuit;
   return Database;
 }
 
 // 把不同维度的 value 归一化成 0-100 的进度（仅用于 meter 长度，不影响数字显示）
 function percentFor(item: HealthItem): number {
-  const d = item.detail ?? {};
+  const d = (item.detail ?? {}) as Record<string, unknown>;
+  // 系统服务: up/total
+  if (typeof d.up === "number" && typeof d.total === "number" && d.total > 0) {
+    return Math.round((d.up / d.total) * 100);
+  }
+  // AI 大模型: reachable/total
+  if (typeof d.reachable === "number" && typeof d.total === "number" && d.total > 0) {
+    return Math.round((d.reachable / d.total) * 100);
+  }
+  // 任务执行: rate
+  if (typeof d.rate === "number") return Math.max(0, Math.min(100, d.rate));
+  // 资源: 主要看磁盘 (低占用=健康=进度满)
+  if (typeof d.diskPct === "number") {
+    return Math.max(0, Math.min(100, 100 - d.diskPct));
+  }
+  // 正式员工活跃: active/total
+  if (typeof d.active === "number" && typeof d.total === "number" && d.total > 0) {
+    return Math.round((d.active / d.total) * 100);
+  }
+  // legacy: DB ms
   if (typeof d.ms === "number") {
-    // <50ms=100, 200ms=0
     return Math.max(0, Math.min(100, ((200 - d.ms) / 150) * 100));
   }
+  // legacy: percent
   if (typeof d.percent === "number") return Math.max(0, Math.min(100, d.percent));
   if (item.status === "ok") return 92;
   if (item.status === "warn") return 55;
@@ -54,14 +80,14 @@ export function HealthMeters({ items }: Props) {
       <div className="flex items-baseline justify-between gap-3">
         <div>
           <h2 className="font-heading text-base font-semibold tracking-tight">系统健康度</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">5 项核心检查 · 实时探测</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">系统/AI/KB/任务/资源/员工 · 实时探测</p>
         </div>
         <div className="text-[11px] text-muted-foreground">
           {items.filter((i) => i.status === "ok").length}/{items.length} 正常
         </div>
       </div>
 
-      <ul className="mt-4 space-y-3.5">
+      <ul className="mt-4 space-y-2.5">
         {items.map((item) => {
           const Icon = iconFor(item.name);
           const color = STATUS_COLOR[item.status];

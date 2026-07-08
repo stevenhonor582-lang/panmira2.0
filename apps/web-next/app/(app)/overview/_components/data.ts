@@ -441,7 +441,72 @@ export interface DashboardAggregate {
     updatedAt: string | null;
     messageCount: number;
   }>;
-  meta?: { generatedAt?: string; ragTotal?: number; ragHits?: number };
+  // R14-A: bottom 3 columns
+  todo: DashboardTodoItem[];
+  alerts: DashboardAlertItem[];
+  completed: DashboardCompletedItem[];
+  meta?: {
+    generatedAt?: string;
+    ragTotal?: number;
+    ragHits?: number;
+    servicesUp?: number;
+    servicesTotal?: number;
+    aiReachable?: number;
+    aiTotal?: number;
+    diskPct?: number;
+    memPct?: number;
+    cpuPct?: number;
+    pipelineTotal24h?: number;
+    pipelineCompleted24h?: number;
+    pipelineFailed24h?: number;
+    pipelineSuccessRate?: number;
+    employeesActive24h?: number;
+    employeesTotalActive?: number;
+  };
+}
+
+
+// ── R14-A: bottom 3 columns ─────────────────────────────────────
+export interface DashboardTodoItem {
+  id: string;
+  name: string;
+  status: string;
+  runCount: number;
+  successCount: number;
+  triggerType: string;
+  updatedAt: string | null;
+  ownerId: string | null;
+  ownerName: string | null;
+  kind: "pending" | "scheduled";
+}
+
+export type DashboardAlertSeverity = "error" | "warn";
+export type DashboardAlertType =
+  | "pipeline_failed"
+  | "user_errors"
+  | "ai_provider"
+  | "docs_stale";
+
+export interface DashboardAlertItem {
+  key: string;
+  severity: DashboardAlertSeverity;
+  type: DashboardAlertType;
+  label: string;
+  detail: string;
+  href?: string;
+}
+
+export interface DashboardCompletedItem {
+  id: string;
+  pipelineId: string | null;
+  name: string;
+  status: "completed";
+  startedAt: string | null;
+  finishedAt: string | null;
+  durationMs: number | null;
+  ownerId: string | null;
+  ownerName: string | null;
+  triggeredBy: string | null;
 }
 
 export async function fetchDashboardAggregate(): Promise<DashboardAggregate | null> {

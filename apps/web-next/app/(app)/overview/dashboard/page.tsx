@@ -1,10 +1,10 @@
-// /overview/dashboard — 公司运营全景仪表盘 (R12)
-// 5 大区域: KPI 8 / 30d 趋势 / 系统健康 / Top 5 / 最近活动
-// 单次 fetch 拉 aggregate payload,避免并发 N 个请求
+// /overview/dashboard — 公司运营全景仪表盘 (R14-A)
+// 5 大区域: KPI 8 / 30d 趋势 / 系统健康 6 / Top 5 / 底部 3 列 (待办/关注/完成)
+// 单次 fetch 拉 aggregate payload, 60s 自动 polling + 手动刷新
 "use client";
 
 import * as React from "react";
-import { RefreshCw, AlertCircle } from "lucide-react";
+import { RefreshCw, AlertCircle, Clock } from "lucide-react";
 import {
   fetchDashboardAggregate,
   type DashboardAggregate,
@@ -16,11 +16,14 @@ import { TopList } from "../_components/top-list";
 import { RecentActivity } from "../_components/recent-activity";
 import { Bot, Users, FileText } from "lucide-react";
 
+const POLL_INTERVAL_MS = 60_000;
+
 export default function DashboardPage() {
   const [data, setData] = React.useState<DashboardAggregate | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [updatedAt, setUpdatedAt] = React.useState<Date | null>(null);
+  const pollTimer = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -42,6 +45,11 @@ export default function DashboardPage() {
 
   React.useEffect(() => {
     load();
+    // 60s polling — single fetch per tick, no parallel bursts (429-safe)
+    pollTimer.current = setInterval(load, POLL_INTERVAL_MS);
+    return () => {
+      if (pollTimer.current) clearInterval(pollTimer.current);
+    };
   }, [load]);
 
   // sparkline 数据 — 用 trend.calls 末 7 天 / trend.errors rate 末 7 天
@@ -51,6 +59,15 @@ export default function DashboardPage() {
   const errorSpark = React.useMemo(() => {
     return (data?.trend?.errors ?? []).slice(-7).map((d) => d.rate);
   }, [data?.trend?.errors]);
+
+  // Relative time display refreshes every 30s even between polls
+  const [tick, setTick] = React.useState(0);
+  React.useEffect(() => {
+    const t = setInterval(() => setTick((x) => x + 1), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  // reference tick so linter doesn't drop it
+  void tick;
 
   return (
     <div className="space-y-5">
@@ -66,13 +83,17 @@ export default function DashboardPage() {
             公司运营全景
           </h1>
           <p className="mt-1 text-sm text-muted-foreground max-w-2xl">
-            员工 · 数字员工 · 流水线 · KB · 30 天调用 · 系统健康 · 排行 · 最近活动 — 一屏看完平台运行态。
+            员工 · 数字员工 · 流水线 · KB · 30 天调用 · 系统健康 · 排行 · 今日待办 — 一屏看完平台运行态。
           </p>
         </div>
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
           {updatedAt && (
-            <span className="font-mono">
-              更新于 {updatedAt.toLocaleTimeString("zh-CN", { hour12: false })}
+            <span className="inline-flex items-center gap-1 font-mono">
+              <Clock className="size-3" />
+              数据更新于 {updatedAt.toLocaleTimeString("zh-CN", { hour12: false })}
+              <span className="text-muted-foreground/70 ml-1">
+                (每分钟自动刷新)
+              </span>
             </span>
           )}
           <button
@@ -192,13 +213,13 @@ export default function DashboardPage() {
         )}
       </section>
 
-      {/* ─── ⑤ 最近活动 三列 ─── */}
-      <section aria-label="最近活动">
+      {/* ─── ⑤ R14-A · 底部 3 列 (今日待办 / 需要关注 / 最近完成) ─── */}
+      <section aria-label="今日待办与异常">
         {data ? (
           <RecentActivity
-            pipelines={data.recentPipelines}
-            audit={data.recentAudit}
-            sessions={data.recentSessions}
+            todo={data.todo ?? []}
+            alerts={data.alerts ?? []}
+            completed={data.completed ?? []}
           />
         ) : (
           <div className="grid gap-3 lg:grid-cols-3">
