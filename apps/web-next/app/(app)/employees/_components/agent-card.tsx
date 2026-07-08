@@ -1,9 +1,21 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import type { Agent } from "../_lib/data";
+import { updateAgent } from "../_lib/data";
 import { AvatarMark, statusTone } from "./avatar-mark";
+import {
+  MoreVertical, Pause, Play, Archive, FileText, Bot, Loader2,
+} from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 
 const ROLE_LABEL: Record<string, string> = {
   "full-stack-engineer": "全栈工程",
@@ -18,27 +30,25 @@ const ROLE_LABEL: Record<string, string> = {
 
 export type AgentCardSize = "feature" | "tall" | "wide" | "regular" | "compact";
 
-const SIZE_CLS: Record<AgentCardSize, string> = {
-  feature: "",
-  tall: "",
-  wide: "",
-  regular: "",
-  compact: "",
-};
-
 export function AgentCard({
   agent,
   size = "regular",
+  showManageActions = false,
+  onChanged,
+  isTemplateTab = false,
 }: {
   agent: Agent;
   size?: AgentCardSize;
+  showManageActions?: boolean;
+  onChanged?: () => void;
+  isTemplateTab?: boolean;
 }) {
   const ref = React.useRef<HTMLAnchorElement>(null);
+  const router = useRouter();
   const [hover, setHover] = React.useState(false);
   const [pos, setPos] = React.useState({ x: 50, y: 50 });
-  const reduceMotion = React.useEffect(() => undefined, []);
+  const [acting, setActing] = React.useState(false);
 
-  // respect reduced motion
   const reduce =
     typeof window !== "undefined" &&
     window.matchMedia &&
@@ -66,6 +76,30 @@ export function AgentCard({
       ? "sm"
       : "md";
 
+  const onAction = async (e: React.MouseEvent, action: "pause" | "activate" | "deprecate" | "toTemplate" | "toInstance") => {
+    e.preventDefault();
+    e.stopPropagation();
+    setActing(true);
+    try {
+      if (action === "pause") {
+        await updateAgent(agent.id, { status: "paused", is_active: false });
+      } else if (action === "activate") {
+        await updateAgent(agent.id, { status: "active", is_active: true });
+      } else if (action === "deprecate") {
+        await updateAgent(agent.id, { status: "deprecated", is_active: false });
+      } else if (action === "toTemplate") {
+        await updateAgent(agent.id, { is_template: true });
+      } else if (action === "toInstance") {
+        await updateAgent(agent.id, { is_template: false });
+      }
+      onChanged?.();
+    } catch (err) {
+      console.error("[agent-card] action failed:", err);
+    } finally {
+      setActing(false);
+    }
+  };
+
   return (
     <Link
       ref={ref}
@@ -80,7 +114,6 @@ export function AgentCard({
       className={cn(
         "group relative block h-full w-full overflow-hidden rounded-3xl bg-card ring-1 ring-border transition-all duration-300 will-change-transform",
         "hover:shadow-[0_30px_60px_-30px_rgba(0,0,0,0.18)] hover:-translate-y-0.5",
-        SIZE_CLS[size],
       )}
     >
       <div
@@ -106,12 +139,63 @@ export function AgentCard({
         className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0)_45%,rgba(0,0,0,0.18)_100%)]"
       />
 
+      {showManageActions && (
+        <div className="absolute right-3 top-3 z-10" onClick={(e) => e.preventDefault()}>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              className="inline-flex items-center gap-1 rounded-lg bg-background/80 px-2 py-1 text-[11px] text-foreground/70 ring-1 ring-border backdrop-blur-sm hover:bg-background hover:text-foreground disabled:opacity-50"
+              disabled={acting}
+              data-testid={`agent-card-menu-${agent.id.slice(0, 8)}`}
+            >
+              {acting ? <Loader2 className="size-3 animate-spin" /> : <MoreVertical className="size-3" />}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              {agent.status === "active" && (
+                <DropdownMenuItem onClick={(e) => onAction(e, "pause")} data-testid="menu-pause">
+                  <Pause className="size-4" /> 停用
+                </DropdownMenuItem>
+              )}
+              {(agent.status === "paused" || agent.status === "deprecated") && (
+                <DropdownMenuItem onClick={(e) => onAction(e, "activate")} data-testid="menu-activate">
+                  <Play className="size-4" /> 启用
+                </DropdownMenuItem>
+              )}
+              {agent.status !== "deprecated" && (
+                <DropdownMenuItem onClick={(e) => onAction(e, "deprecate")}>
+                  <Archive className="size-4" /> 标记弃用
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              {!isTemplateTab && agent.templateSource && (
+                <div className="px-2 py-1.5 text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/40">
+                  派生自 {agent.templateSource.slice(0, 8)}…
+                </div>
+              )}
+              {agent.isTemplate ? (
+                <DropdownMenuItem onClick={(e) => onAction(e, "toInstance")}>
+                  <Bot className="size-4" /> 转为实例
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem onClick={(e) => onAction(e, "toTemplate")}>
+                  <FileText className="size-4" /> 转为模板
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      )}
+
       <div className="relative flex h-full w-full flex-col p-6">
         <div className="flex items-start justify-between gap-3">
           <AvatarMark glyph={agent.glyph} hue={agent.hue} size={avatarSize} />
           <div className="flex items-center gap-1.5 text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/60">
             <span className={cn("size-1.5 rounded-full", t.dot)} />
             {t.label}
+            {agent.isTemplate && (
+              <span className="ml-1 rounded bg-foreground/10 px-1.5 py-0.5 text-[9.5px] tracking-[0.18em] text-foreground/70">
+                TPL
+              </span>
+            )}
           </div>
         </div>
 
@@ -119,7 +203,7 @@ export function AgentCard({
           <div>
             <div className="flex items-baseline gap-2">
               <h3 className={cn("font-semibold tracking-tight leading-tight", size === "feature" ? "text-3xl" : size === "tall" ? "text-2xl" : "text-xl")}>
-                {agent.displayName}
+                {agent.displayName || agent.name}
               </h3>
               <span className="text-xs font-mono text-foreground/40">v{agent.version}</span>
             </div>
@@ -136,7 +220,7 @@ export function AgentCard({
               ? "text-xs line-clamp-2"
               : "text-sm line-clamp-3",
           )}>
-            {agent.persona}
+            {agent.persona || agent.description || <span className="text-foreground/40">暂无人格定义</span>}
           </p>
 
           {size !== "compact" && (
@@ -144,14 +228,12 @@ export function AgentCard({
               <span>{agent.model}</span>
               <span>·</span>
               <span>{(agent.contextWindow / 1000).toFixed(0)}k ctx</span>
-              <span>·</span>
-              <span>
-                {agent.tasksToday} tasks ·{" "}
-                <span className={agent.trendPct >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
-                  {agent.trendPct >= 0 ? "+" : ""}
-                  {agent.trendPct}%
-                </span>
-              </span>
+              {agent.workingDir && (
+                <>
+                  <span>·</span>
+                  <span title={agent.workingDir}>📁 {agent.workingDir.split("/").pop()}</span>
+                </>
+              )}
             </div>
           )}
 

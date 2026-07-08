@@ -1,13 +1,27 @@
 "use client";
 import * as React from "react";
+import Link from "next/link";
 import {
   fetchAgents,
+  updateAgent,
   sortByOwnerFirst,
   facets as buildFacets,
   type Agent,
 } from "../_lib/data";
 import { AgentCard, type AgentCardSize } from "./agent-card";
 import { FilterBar, type FilterState, EMPTY_FILTER } from "./filter-bar";
+import { cn } from "@/lib/utils";
+import {
+  Plus, FileText, Bot, MoreVertical, Pause, Play, Archive, Copy, Loader2,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 
 const ROLE_LABEL: Record<string, string> = {
   "full-stack-engineer": "全栈工程",
@@ -16,18 +30,30 @@ const ROLE_LABEL: Record<string, string> = {
   general: "通用对话",
   "test-bot": "端到端测试",
   engineering: "工程(legacy)",
+  "customer-support": "客服一线",
+  "research-analyst": "调研分析",
 };
+
+type BoardTab = "instances" | "templates";
 
 export function GalleryBoard() {
   const [filter, setFilter] = React.useState<FilterState>(EMPTY_FILTER);
   const [mounted, setMounted] = React.useState(false);
   const [agents, setAgents] = React.useState<Agent[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [boardTab, setBoardTab] = React.useState<BoardTab>("instances");
+
+  const reload = React.useCallback(() => {
+    setLoading(true);
+    fetchAgents({ filter: "all" })
+      .then((list) => setAgents(list))
+      .finally(() => setLoading(false));
+  }, []);
 
   React.useEffect(() => {
     let alive = true;
     setLoading(true);
-    fetchAgents()
+    fetchAgents({ filter: "all" })
       .then((list) => {
         if (alive) setAgents(list);
       })
@@ -44,7 +70,13 @@ export function GalleryBoard() {
     return () => clearTimeout(t);
   }, []);
 
-  const all = React.useMemo(() => sortByOwnerFirst(agents), [agents]);
+  // 当前 tab 数据(实例 vs 模板)
+  const scopedList = React.useMemo(
+    () => agents.filter((a) => (boardTab === "templates" ? a.isTemplate : !a.isTemplate)),
+    [agents, boardTab],
+  );
+
+  const all = React.useMemo(() => sortByOwnerFirst(scopedList), [scopedList]);
   const list = React.useMemo(() => {
     return all.filter((a) => {
       if (filter.role !== "all" && a.role !== filter.role) return false;
@@ -74,9 +106,50 @@ export function GalleryBoard() {
     };
   }, [all]);
 
+  const instancesCount = agents.filter((a) => !a.isTemplate).length;
+  const templatesCount = agents.filter((a) => a.isTemplate).length;
+
   return (
     <div className="space-y-8">
-      <Header count={agents.length} loading={loading} />
+      <Header
+        instancesCount={instancesCount}
+        templatesCount={templatesCount}
+        loading={loading}
+        boardTab={boardTab}
+      />
+
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="inline-flex items-center gap-1 rounded-full bg-muted/40 p-1 ring-1 ring-border">
+          <BoardTabButton
+            active={boardTab === "instances"}
+            onClick={() => { setBoardTab("instances"); setFilter(EMPTY_FILTER); }}
+            icon={<Bot className="size-3.5" />}
+            label="数字员工"
+            count={instancesCount}
+          />
+          <BoardTabButton
+            active={boardTab === "templates"}
+            onClick={() => { setBoardTab("templates"); setFilter(EMPTY_FILTER); }}
+            icon={<FileText className="size-3.5" />}
+            label="模板库"
+            count={templatesCount}
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Link href="/employees/templates">
+            <Button variant="outline" size="sm" className="gap-1.5">
+              <FileText className="size-3.5" /> 模板管理
+            </Button>
+          </Link>
+          <Link href="/employees/new">
+            <Button size="sm" className="gap-1.5">
+              <Plus className="size-3.5" />
+              {boardTab === "templates" ? "新建模板" : "新建数字员工"}
+            </Button>
+          </Link>
+        </div>
+      </div>
 
       <FilterBar
         value={filter}
@@ -88,59 +161,96 @@ export function GalleryBoard() {
       {loading ? (
         <LoadingGrid />
       ) : list.length === 0 ? (
-        <EmptyState />
+        <EmptyState tab={boardTab} />
       ) : (
-        <AsymGrid agents={list} mounted={mounted} />
+        <AsymGrid agents={list} mounted={mounted} onChanged={reload} boardTab={boardTab} />
       )}
     </div>
   );
 }
 
-function Header({ count, loading }: { count: number; loading: boolean }) {
+function Header({
+  instancesCount,
+  templatesCount,
+  loading,
+  boardTab,
+}: {
+  instancesCount: number;
+  templatesCount: number;
+  loading: boolean;
+  boardTab: BoardTab;
+}) {
   return (
     <header className="flex items-end justify-between gap-6 border-b border-border pb-7">
       <div className="space-y-3">
         <div className="flex items-center gap-2 text-[10.5px] font-mono uppercase tracking-[0.22em] text-foreground/45">
           <span className="inline-block size-1.5 rounded-full bg-foreground/40" />
-          数字员工 · IA v6
+          数字员工 · IA v6 · R15-A
         </div>
         <h1 className="text-5xl font-semibold tracking-tighter leading-[1.02] max-w-[14ch]">
-          你的数字员工画廊
+          {boardTab === "templates" ? "模板库" : "你的数字员工画廊"}
         </h1>
-        <p className="max-w-[55ch] text-[15px] leading-relaxed text-foreground/65">
-          每个员工都是一组指令 + 一段人格 + 一条调用链。
+        <p className="max-w-[60ch] text-[15px] leading-relaxed text-foreground/65">
+          {boardTab === "templates"
+            ? "模板是 agent 的复制基底 — 同一个销售模板可以派生出多个独立 agent,起不同名字,配给不同员工。"
+            : "每个员工都是一组指令 + 一段人格 + 一条调用链。"}
           {loading ? (
-            <>正在拉取最新员工…</>
+            <> 正在拉取最新数据…</>
           ) : (
             <>
-              这里一共 <span className="font-mono text-foreground/90">{count}</span> 个。
+              {" "}共 <span className="font-mono text-foreground/90">{instancesCount}</span> 个实例 ·{" "}
+              <span className="font-mono text-foreground/90">{templatesCount}</span> 个模板。
             </>
           )}
         </p>
       </div>
       <div className="hidden lg:flex shrink-0 flex-col items-end gap-2 text-right">
-        <span className="text-[10.5px] font-mono uppercase tracking-[0.22em] text-foreground/40">
-          数据源
-        </span>
-        <span className="text-sm text-foreground/80">digital_employees view</span>
+        <span className="text-[10.5px] font-mono uppercase tracking-[0.22em] text-foreground/40">数据源</span>
+        <span className="text-sm text-foreground/80">agents 表 · 真实数据</span>
         <span className="font-mono text-[11px] text-foreground/40">
-          GET /api/v2/employees
+          GET /api/v2/employees?filter=all
         </span>
       </div>
     </header>
   );
 }
 
-function AsymGrid({ agents, mounted }: { agents: Agent[]; mounted: boolean }) {
+function BoardTabButton({
+  active, onClick, icon, label, count,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+  count: number;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[13px] font-medium transition-all",
+        active
+          ? "bg-foreground text-background"
+          : "text-foreground/65 hover:text-foreground",
+      )}
+    >
+      {icon}
+      {label}
+      <span className="font-mono text-[11px] opacity-60">{count}</span>
+    </button>
+  );
+}
+
+function AsymGrid({
+  agents, mounted, onChanged, boardTab,
+}: {
+  agents: Agent[];
+  mounted: boolean;
+  onChanged: () => void;
+  boardTab: BoardTab;
+}) {
   const layout: AgentCardSize[] = [
-    "feature",
-    "regular",
-    "compact",
-    "regular",
-    "tall",
-    "wide",
-    "regular",
-    "compact",
+    "feature", "regular", "compact", "regular", "tall", "wide", "regular", "compact",
   ];
 
   return (
@@ -160,11 +270,15 @@ function AsymGrid({ agents, mounted }: { agents: Agent[]; mounted: boolean }) {
               ? "row-span-2"
               : "")
           }
-          style={{
-            transitionDelay: mounted ? `${i * 50}ms` : "0ms",
-          }}
+          style={{ transitionDelay: mounted ? `${i * 50}ms` : "0ms" }}
         >
-          <AgentCard agent={a} size={layout[i]} />
+          <AgentCard
+            agent={a}
+            size={layout[i]}
+            showManageActions
+            onChanged={onChanged}
+            isTemplateTab={boardTab === "templates"}
+          />
         </div>
       ))}
     </div>
@@ -184,15 +298,16 @@ function LoadingGrid() {
   );
 }
 
-function EmptyState() {
+function EmptyState({ tab }: { tab: BoardTab }) {
   return (
     <div className="flex flex-col items-center gap-3 rounded-3xl border border-dashed border-border py-24 text-center">
       <span className="font-mono text-[10.5px] uppercase tracking-[0.22em] text-foreground/40">
         No matches
       </span>
-      <p className="max-w-[36ch] text-sm text-foreground/65">
-        没有匹配的 bot。
-        试着清空检索,或换一组筛选。
+      <p className="max-w-[44ch] text-sm text-foreground/65">
+        {tab === "templates"
+          ? "没有匹配的模板。试着清空检索,或到模板管理页新建一个。"
+          : "没有匹配的员工。试着清空检索,或从模板派生一个。"}
       </p>
     </div>
   );

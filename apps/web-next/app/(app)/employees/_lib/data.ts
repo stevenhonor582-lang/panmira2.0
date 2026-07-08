@@ -57,6 +57,12 @@ export interface Agent {
   raw: Record<string, unknown> | null;
   /** 最后一次更新时间(用于触发 draft 重新生成) */
   updatedAt: string;
+  // R15-A: template vs instance + multi-bot working_dir + channel + visibility + temperature
+  isTemplate: boolean;
+  workingDir: string | null;
+  channelIds: string[];
+  visibility: "public" | "private" | "team";
+  temperature: number;
 }
 
 export interface KBFolder {
@@ -140,15 +146,32 @@ function mapEmployeeToAgent(row: any): Agent {
     defaultModel: row.default_model ?? row.defaultModel ?? "",
     defaultContextWindow: row.default_context_window ?? row.defaultContextWindow ?? 200000,
     defaultMaxTurns: row.default_max_turns ?? row.defaultMaxTurns ?? null,
+    // R15-A
+    isTemplate: Boolean(row.is_template ?? row.isTemplate ?? false),
+    workingDir: row.working_dir ?? row.workingDir ?? null,
+    channelIds: Array.isArray(row.channel_ids)
+      ? row.channel_ids
+      : Array.isArray(row.channelIds)
+      ? row.channelIds
+      : [],
+    visibility: (row.visibility ?? "team") as Agent["visibility"],
+    temperature: typeof row.temperature === "number" ? row.temperature : 0.7,
     raw: row,
     updatedAt: row.updated_at ?? row.updatedAt ?? row.created_at ?? new Date().toISOString(),
   };
 }
 
-export async function fetchAgents(): Promise<Agent[]> {
+/**
+ * R15-A: fetchAgents 默认走 filter=all,前端按 isTemplate 分类。
+ * 选项:filter="instance" 只取实例,"template" 只取模板,"all" 全部。
+ */
+export async function fetchAgents(
+  opts: { filter?: "instance" | "template" | "all" } = {},
+): Promise<Agent[]> {
   try {
+    const filter = opts.filter ?? "all";
     const res = await api<{ success?: boolean; data?: { items?: any[] } } | { items?: any[] } | any[]>(
-      fullPath("/api/v2/employees"),
+      fullPath(`/api/v2/employees?filter=${filter}&limit=200`),
     );
     const items =
       (res as any)?.data?.items ??
@@ -334,6 +357,53 @@ export async function archiveAgent(id: string): Promise<Agent | null> {
   return updateAgent(id, { status: "deprecated", is_active: false });
 }
 
+// ── R15-A: Templates / from-template ─────────────────────────
+
+/**
+ * GET /api/v2/employees/templates — 拉模板列表(只含 is_template=true)。
+ */
+export async function fetchTemplates(): Promise<Agent[]> {
+  try {
+    const res = await api<{ success?: boolean; data?: { items?: any[] } } | { items?: any[] } | any[]>(
+      fullPath("/api/v2/employees/templates"),
+    );
+    const items =
+      (res as any)?.data?.items ?? (res as any)?.items ?? (Array.isArray(res) ? res : []);
+    return (items as any[]).map(mapEmployeeToAgent);
+  } catch (e) {
+    console.error("[employees] fetchTemplates failed:", e);
+    return [];
+  }
+}
+
+/**
+ * POST /api/v2/employees/from-template — 从模板复制创建独立实例。
+ * 返回新创建的 agent(含新 id,新 owner,is_template=false)。
+ */
+export async function createInstanceFromTemplate(input: {
+  templateId: string;
+  name: string;
+  ownerId?: string | null;
+}): Promise<Agent> {
+  const res = await api<{ success?: boolean; data?: any } | any>(
+    fullPath("/api/v2/employees/from-template"),
+    {
+      method: "POST",
+      body: {
+        templateId: input.templateId,
+        name: input.name,
+        ownerId: input.ownerId ?? null,
+      },
+    },
+  );
+  const row = (res as any)?.data ?? res;
+  if (!row || !row.id) {
+    const err = (res as any)?.error;
+    throw new Error(err?.message ?? "from_template_failed");
+  }
+  return mapEmployeeToAgent(row);
+}
+
 // ── React hooks for client components ────────────────────────
 
 import { useEffect, useState } from "react";
@@ -379,14 +449,15 @@ export function useAgent(id: string): { agent: Agent | null; loading: boolean; r
 }
 
 /**
- * Fetches the full agent list. Returns {agents, loading}.
+ * R15-A: Fetches the full agent list (filter=all → 含 templates + instances + deprecated)。
  */
-export function useAgents(): { agents: Agent[]; loading: boolean } {
+export function useAgents(): { agents: Agent[]; loading: boolean; reload: () => void } {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [nonce, setNonce] = useState(0);
   useEffect(() => {
     let alive = true;
-    fetchAgents()
+    fetchAgents({ filter: "all" })
       .then((list) => {
         if (alive) setAgents(list);
       })
@@ -396,6 +467,30 @@ export function useAgents(): { agents: Agent[]; loading: boolean } {
     return () => {
       alive = false;
     };
-  }, []);
-  return { agents, loading };
+  }, [nonce]);
+  return { agents, loading, reload: () => setNonce((n) => n + 1) };
+}
+
+/**
+ * R15-A: Fetches templates only.
+ */
+export function useTemplates(): { templates: Agent[]; loading: boolean; reload: () => void } {
+  const [templates, setTemplates] = useState<Agent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [nonce, setNonce] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    fetchTemplates()
+      .then((list) => {
+        if (alive) setTemplates(list);
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [nonce]);
+  return { templates, loading, reload: () => setNonce((n) => n + 1) };
 }
