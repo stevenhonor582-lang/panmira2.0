@@ -66,12 +66,14 @@ export async function handleAdminMemoryRoutes(
     }
     await parseJsonBody(req).catch(() => ({}));
     try {
+      // R10 (2026-07-08): drop tenant_id filter — memories.tenant_id uses
+      // legacy formats ('user:ou_xxx' / 'default' / 'tenant:backfill' / etc.)
+      // that never match users.tenant_id (UUID). Admin aggregate sees all rows.
       const byLayerRaw = await db.execute(sql`
         SELECT layer, count(*)::int AS n,
           avg(importance)::float AS avg_imp,
           max(created_at) AS latest
         FROM memories
-        WHERE tenant_id = ${ctx.tenantId}
         GROUP BY layer
         ORDER BY layer
       `);
@@ -80,7 +82,7 @@ export async function handleAdminMemoryRoutes(
       const topBotsRaw = await db.execute(sql`
         SELECT bot_id, count(*)::int AS n
         FROM memories
-        WHERE tenant_id = ${ctx.tenantId} AND bot_id IS NOT NULL
+        WHERE bot_id IS NOT NULL
         GROUP BY bot_id
         ORDER BY n DESC
         LIMIT 10
@@ -88,13 +90,13 @@ export async function handleAdminMemoryRoutes(
       const topBots: BotAgg[] = asRows<BotAgg>(topBotsRaw);
 
       const totalRaw = await db.execute(sql`
-        SELECT count(*)::int AS n FROM memories WHERE tenant_id = ${ctx.tenantId}
+        SELECT count(*)::int AS n FROM memories
       `);
       const total = asCount(totalRaw);
 
       jsonResponse(res, 200, {
         success: true,
-        summary: { total, tenantId: ctx.tenantId },
+        summary: { total, tenantId: ctx.tenantId, scope: 'all_tenants' },
         byLayer,
         topBots,
         ts: new Date().toISOString(),
@@ -116,10 +118,10 @@ export async function handleAdminMemoryRoutes(
     }
     try {
       const totalRaw = await db.execute(sql`
-        SELECT count(*)::int AS n FROM memories WHERE tenant_id = ${ctx.tenantId}
+        SELECT count(*)::int AS n FROM memories
       `);
       const total = asCount(totalRaw);
-      jsonResponse(res, 200, { success: true, total });
+      jsonResponse(res, 200, { success: true, total, scope: 'all_tenants' });
       return true;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'unknown';
