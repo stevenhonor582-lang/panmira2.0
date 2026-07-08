@@ -7,6 +7,10 @@ import type * as http from 'node:http';
 import { pool } from '../../db/index.js';
 import { jsonResponse, ok, fail, paginated, addDeprecationHeader } from './helpers.js';
 import { requireBearer, requireAnyScope } from '../oauth-middleware.js';
+import { AgentStore } from '../../db/agent-store.js';
+import { parseJsonBody } from './helpers.js';
+
+const agentStore = new AgentStore();
 
 export async function handleEmployeesRoutes(
   req: http.IncomingMessage,
@@ -95,6 +99,63 @@ export async function handleEmployeesRoutes(
         [tenantId],
       );
       jsonResponse(res, 200, ok(result.rows[0]));
+      return true;
+    } catch (e) {
+      jsonResponse(res, 500, fail('internal_error', String(e)));
+      return true;
+    }
+  }
+
+
+  // PATCH /api/v2/employees/:id — 编辑(白名单 + RBAC: admin/operator)
+  if (method === 'PATCH' && empMatch) {
+    const id = empMatch[1];
+    if (!requireAnyScope(ctx, ['agent:admin', '*'])) {
+      jsonResponse(res, 403, fail('forbidden', '需要 agent:admin 权限'));
+      return true;
+    }
+    try {
+      const body = await parseJsonBody(req);
+      // 白名单(snake_case → AgentStore camelCase 映射)。注意 display_name 是 generated column,不可写。
+      const map: Record<string, string> = {
+        name: 'name',
+        description: 'description',
+        persona: 'persona',
+        system_prompt: 'systemPrompt',
+        role_template: 'roleTemplate',
+        category: 'category',
+        template_type: 'templateType',
+        capabilities: 'capabilities',
+        tools: 'tools',
+        skills: 'skills',
+        knowledge_folders: 'knowledgeFolders',
+        iron_laws: 'ironLaws',
+        boundary: 'boundary',
+        orchestration: 'orchestration',
+        default_engine: 'defaultEngine',
+        default_model: 'defaultModel',
+        default_context_window: 'defaultContextWindow',
+        default_max_turns: 'defaultMaxTurns',
+        complexity_level: 'complexityLevel',
+        engine: 'engine',
+        status: 'status',
+        owner_user_id: 'ownerId',
+        is_active: 'isActive',
+      };
+      const updates: Record<string, unknown> = {};
+      for (const [snake, camel] of Object.entries(map)) {
+        if (snake in body) updates[camel] = body[snake];
+      }
+      if (Object.keys(updates).length === 0) {
+        jsonResponse(res, 400, fail('no_fields', '请求体未包含任何可更新字段'));
+        return true;
+      }
+      const agent = await agentStore.update(id, updates);
+      if (!agent) {
+        jsonResponse(res, 404, fail('not_found', `Employee ${id} 不存在`));
+        return true;
+      }
+      jsonResponse(res, 200, ok(agent));
       return true;
     } catch (e) {
       jsonResponse(res, 500, fail('internal_error', String(e)));

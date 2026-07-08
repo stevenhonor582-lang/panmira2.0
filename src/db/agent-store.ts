@@ -23,6 +23,11 @@ export interface AgentTemplate {
   defaultContextWindow: number;
   defaultMaxTurns: number | null;
   complexityLevel: string;
+  status: 'active' | 'paused' | 'deprecated';
+  persona: string | null;
+  engine: string | null;
+  displayName: string | null;
+  ownerId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -107,6 +112,15 @@ export class AgentStore {
       ironLaws?: string[];
       boundary?: any;
       orchestration?: any;
+      persona?: string;
+      defaultEngine?: string;
+      defaultModel?: string;
+      defaultContextWindow?: number;
+      defaultMaxTurns?: number;
+      complexityLevel?: string;
+      engine?: string;
+      status?: 'active' | 'paused' | 'deprecated';
+      ownerId?: string;
     },
   ): Promise<AgentTemplate | null> {
     const sets: string[] = [];
@@ -169,6 +183,42 @@ export class AgentStore {
       sets.push(`orchestration = $${idx++}`);
       values.push(JSON.stringify(data.orchestration));
     }
+    if (data.persona !== undefined) {
+      sets.push(`persona = $${idx++}`);
+      values.push(data.persona);
+    }
+    if (data.defaultEngine !== undefined) {
+      sets.push(`default_engine = $${idx++}`);
+      values.push(data.defaultEngine);
+    }
+    if (data.defaultModel !== undefined) {
+      sets.push(`default_model = $${idx++}`);
+      values.push(data.defaultModel);
+    }
+    if (data.defaultContextWindow !== undefined) {
+      sets.push(`default_context_window = $${idx++}`);
+      values.push(data.defaultContextWindow);
+    }
+    if (data.defaultMaxTurns !== undefined) {
+      sets.push(`default_max_turns = $${idx++}`);
+      values.push(data.defaultMaxTurns);
+    }
+    if (data.complexityLevel !== undefined) {
+      sets.push(`complexity_level = $${idx++}`);
+      values.push(data.complexityLevel);
+    }
+    if (data.engine !== undefined) {
+      sets.push(`engine = $${idx++}`);
+      values.push(data.engine);
+    }
+    if (data.status !== undefined) {
+      sets.push(`status = $${idx++}`);
+      values.push(data.status);
+    }
+    if (data.ownerId !== undefined) {
+      sets.push(`owner_user_id = $${idx++}`);
+      values.push(data.ownerId);
+    }
 
     if (sets.length === 0) return this.findById(id);
 
@@ -209,6 +259,11 @@ export class AgentStore {
       defaultContextWindow: row.default_context_window || 200000,
       defaultMaxTurns: row.default_max_turns || null,
       complexityLevel: row.complexity_level || 'L1',
+      status: row.status || 'active',
+      persona: row.persona || null,
+      engine: row.engine || null,
+      displayName: row.display_name || null,
+      ownerId: row.owner_user_id || null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
