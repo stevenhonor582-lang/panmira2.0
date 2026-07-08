@@ -17,6 +17,9 @@
  */
 import type * as http from 'node:http';
 import { randomBytes, createHash } from 'node:crypto';
+import * as os from 'node:os';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { sql } from 'drizzle-orm';
 import { db, pool } from '../../db/index.js';
 import { encrypt, decrypt } from '../../db/crypto.js';
@@ -182,89 +185,296 @@ async function listKnowledgeFolders(req: http.IncomingMessage, res: http.ServerR
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 6. Diagnosis (5 health checks)
+// 6. Diagnosis (R14-E · 真实健康度 + ping + suggestions 并入)
+//
+// 5 项核心功能健康度(真算,不再死数据):
+//   1. 系统服务 (panmira 9100 / web-next 3200 / postgres / redis)
+//   2. AI 大模型 (ping 每个 LLM provider,3s timeout,Promise.allSettled)
+//   3. 知识库检索 (7 天 RAG 命中率)
+//   4. 任务执行 (24h pipeline 成功率)
+//   5. 资源 (磁盘 / 内存 / CPU loadavg)
+//
+// 综合健康分加权: 系统 25% + AI 30% + KB 20% + 任务 20% + 资源 5%
+// 优化建议基于"不健康项"动态生成 → 跟随诊断返回,无独立模块
 // ═══════════════════════════════════════════════════════════════
-async function diagnosis(req: http.IncomingMessage, res: http.ServerResponse, _ctx: { tenantId: string }) {
-  const checks: Array<{ name: string; status: string; value: string; threshold: string }> = [];
+
+const SUGGESTION_MAP: Record<string, string> = {
+  '系统服务': '检查 pm2 服务状态,重启失败进程: `pm2 restart panmira web-next`',
+  'AI 大模型': '检查 API key 有效性、余额,或在 /channels/llm 切换备用 provider',
+  '知识库检索': '在 /foundation/knowledge 补充文档,优化 chunk 策略与 embedding 质量',
+  '任务执行': '查看失败任务日志(/overview/logs),调整超时/重试策略',
+  '资源': '清理日志/缓存(df -h),扩容磁盘或内存',
+};
+
+interface HealthCheck {
+  name: string;
+  status: 'ok' | 'warn' | 'error';
+  value: string;
+  detail: string;
+  threshold: string;
+}
+
+interface Suggestion {
+  impact: 'high' | 'medium' | 'info';
+  target: string;
+  problem: string;
+  suggestion: string;
+  action: string | null;
+}
+
+// TCP ping 一个本地端口是否在监听 — 用 fetch(健康端点) 探测。
+async function pingPort(label: string, url: string, expectStatus: number[] = [200, 401, 403, 404]): Promise<boolean> {
   try {
-    // Check 1: DB conn
-    const start = Date.now();
-    const dbPing = await db.execute(sql`SELECT 1::int AS n`);
-    const dbOk = Array.isArray(dbPing) || (dbPing as { rows?: unknown[] }).rows;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 1500);
+    const resp = await fetch(url, { method: 'GET', signal: ctrl.signal });
+    clearTimeout(t);
+    return expectStatus.includes(resp.status) || resp.status < 500;
+  } catch {
+    return false;
+  }
+}
+
+// 用 pg_isready 或直接 SELECT 1 探测 DB。
+async function dbAlive(): Promise<boolean> {
+  try {
+    const r = await db.execute(sql`SELECT 1::int AS n`);
+    return Array.isArray(r) || !!(r as { rows?: unknown[] }).rows;
+  } catch {
+    return false;
+  }
+}
+
+// 用 redis-cli ping 探测 redis。
+async function redisAlive(): Promise<boolean> {
+  try {
+    const { stdout } = await promisify(execFile)('redis-cli', ['ping'], { timeout: 1500 });
+    return String(stdout).trim() === 'PONG';
+  } catch {
+    return false;
+  }
+}
+
+// ping 一个 LLM provider。3s timeout,不阻塞。
+async function pingProvider(p: { id: string; name: string; base_url: string; api_key_encrypted: string | null; type: string }): Promise<{ ok: boolean; status: number }> {
+  // embedding provider 不参与 LLM 连通判定
+  if (p.type === 'embedding') return { ok: true, status: 200 };
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 3000);
+  try {
+    const headers: Record<string, string> = {};
+    if (p.api_key_encrypted) {
+      try { headers['Authorization'] = `Bearer ${decrypt(p.api_key_encrypted)}`; } catch { /* ignore */ }
+    }
+    // OpenAI 兼容: GET /v1/models (有的 base_url 已经带 /v1 或 /anthropic)
+    // Anthropic 兼容: GET / 后端通常会返回 405/404,只要 fetch 不报错就算连通
+    const candidates = [
+      `${p.base_url.replace(/\/$/, '')}/models`,
+      p.base_url,
+    ];
+    let lastStatus = 0;
+    for (const url of candidates) {
+      try {
+        const resp = await fetch(url, { method: 'GET', headers, signal: ctrl.signal });
+        lastStatus = resp.status;
+        if (resp.status < 500) return { ok: true, status: resp.status };
+      } catch {
+        // try next
+      }
+    }
+    return { ok: lastStatus > 0 && lastStatus < 500, status: lastStatus };
+  } catch {
+    return { ok: false, status: 0 };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// 用 df 拿根分区磁盘占用百分比。
+async function getDiskUsage(): Promise<number> {
+  try {
+    const { stdout } = await promisify(execFile)('df', ['-P', '/'], { timeout: 1500 });
+    const lines = String(stdout).trim().split('\n');
+    if (lines.length < 2) return 0;
+    const parts = lines[1].split(/\s+/);
+    // Use% like "45%"
+    const usePct = parts.find((p) => p.endsWith('%'));
+    return usePct ? parseInt(usePct, 10) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function generateSuggestions(checks: HealthCheck[]): Suggestion[] {
+  const out: Suggestion[] = [];
+  for (const c of checks) {
+    if (c.status === 'error' || c.status === 'warn') {
+      out.push({
+        impact: c.status === 'error' ? 'high' : 'medium',
+        target: c.name,
+        problem: c.detail,
+        suggestion: SUGGESTION_MAP[c.name] || `检查 ${c.name} 配置`,
+        action: ACTION_ROUTE[c.name] || null,
+      });
+    }
+  }
+  if (out.length === 0) {
+    out.push({
+      impact: 'info',
+      target: '整体',
+      problem: '所有系统运行正常',
+      suggestion: '保持当前配置,定期检查',
+      action: null,
+    });
+  }
+  return out;
+}
+
+const ACTION_ROUTE: Record<string, string> = {
+  '系统服务': '/overview/logs',
+  'AI 大模型': '/channels/llm',
+  '知识库检索': '/foundation/knowledge',
+  '任务执行': '/overview/logs',
+  '资源': '/overview/logs',
+};
+
+async function diagnosis(req: http.IncomingMessage, res: http.ServerResponse, _ctx: { tenantId: string }) {
+  try {
+    const checks: HealthCheck[] = [];
+
+    // ── Check 1: 系统服务(panmira / web-next / postgres / redis) ──
+    const [apiUp, webUp, dbUp, redisUp] = await Promise.all([
+      pingPort('panmira', 'http://localhost:9100/api/health', [200, 401, 404]),
+      pingPort('web-next', 'http://localhost:3200/', [200]),
+      dbAlive(),
+      redisAlive(),
+    ]);
+    const services = [
+      { name: 'panmira:9100', up: apiUp },
+      { name: 'web-next:3200', up: webUp },
+      { name: 'postgres:5432', up: dbUp },
+      { name: 'redis:6379', up: redisUp },
+    ];
+    const upCount = services.filter((s) => s.up).length;
+    const total = services.length;
+    const svcStatus: HealthCheck['status'] = upCount === total ? 'ok' : upCount >= Math.ceil(total / 2) ? 'warn' : 'error';
     checks.push({
-      name: '数据库连接', status: dbOk ? 'ok' : 'error', value: `${Date.now() - start}ms`, threshold: '< 50ms',
+      name: '系统服务',
+      status: svcStatus,
+      value: `${upCount}/${total} 在线`,
+      detail: services.map((s) => `${s.name}:${s.up ? '✓' : '✗'}`).join(' '),
+      threshold: '全在线',
     });
 
-    // Check 2: Agent success rate
-    const agentStats = await db.execute(sql`
+    // ── Check 2: AI 大模型连通(真 ping 每个 provider) ──
+    const providerRows = await db.execute(sql`
+      SELECT id, name, type, base_url, api_key_encrypted
+      FROM provider_configs
+      ORDER BY name
+    `);
+    const pRows = (Array.isArray(providerRows) ? providerRows : (providerRows as { rows?: unknown[] }).rows || []) as Array<{
+      id: string; name: string; type: string; base_url: string; api_key_encrypted: string | null;
+    }>;
+    const pingResults = await Promise.allSettled(pRows.map((p) => pingProvider({
+      id: p.id, name: p.name, base_url: p.base_url, api_key_encrypted: p.api_key_encrypted, type: p.type,
+    })));
+    const upProviders = pingResults.filter((r) => r.status === 'fulfilled' && r.value.ok).length;
+    const llmTotal = pRows.length;
+    const aiStatus: HealthCheck['status'] = upProviders === llmTotal ? 'ok' : upProviders >= Math.ceil(llmTotal / 2) ? 'warn' : 'error';
+    checks.push({
+      name: 'AI 大模型',
+      status: aiStatus,
+      value: `${upProviders}/${llmTotal} 连通`,
+      detail: pRows.map((p, i) => {
+        const r = pingResults[i];
+        const ok = r.status === 'fulfilled' && r.value.ok;
+        return `${p.name}:${ok ? '✓' : '✗'}`;
+      }).join(' '),
+      threshold: '>=80% 连通',
+    });
+
+    // ── Check 3: 知识库检索(7 天 RAG 命中率) ──
+    const ragRows = await db.execute(sql`
       SELECT
         count(*)::int AS total,
-        count(*) FILTER (WHERE type = 'success')::int AS ok
-      FROM activity_events
-      WHERE to_timestamp(timestamp / 1000) > now() - interval '24 hours'
+        count(*) FILTER (WHERE result_count > 0)::int AS hits
+      FROM rag_query_log
+      WHERE created_at > now() - interval '7 days'
     `);
-    const aRows = (Array.isArray(agentStats) ? agentStats : (agentStats as { rows?: unknown[] }).rows || []) as Array<Record<string, unknown>>;
-    const total = Number(aRows[0]?.total ?? 0);
-    const ok = Number(aRows[0]?.ok ?? 0);
-    const successRate = total > 0 ? Math.round((ok / total) * 100) : 100;
+    const rRows = (Array.isArray(ragRows) ? ragRows : (ragRows as { rows?: unknown[] }).rows || []) as Array<Record<string, number>>;
+    const ragTotal = Number(rRows[0]?.total ?? 0);
+    const ragHits = Number(rRows[0]?.hits ?? 0);
+    const hitRate = ragTotal > 0 ? Math.round((ragHits * 100) / ragTotal) : 0;
+    const kbStatus: HealthCheck['status'] = ragTotal === 0 ? 'warn' : hitRate >= 60 ? 'ok' : hitRate >= 30 ? 'warn' : 'error';
     checks.push({
-      name: '24h agent 成功率', status: successRate >= 95 ? 'ok' : successRate >= 80 ? 'warn' : 'error',
-      value: `${successRate}%`, threshold: '>= 95%',
+      name: '知识库检索',
+      status: kbStatus,
+      value: `${hitRate}% 命中 (7天)`,
+      detail: ragTotal > 0 ? `${ragHits}/${ragTotal} 次查询命中` : '7 天内无 RAG 查询记录',
+      threshold: '>=60%',
     });
 
-    // Check 3: Active agents count
-    const agentCount = await db.execute(sql`SELECT count(*)::int AS n FROM agents WHERE status = 'active'`);
-    const acRows = (Array.isArray(agentCount) ? agentCount : (agentCount as { rows?: unknown[] }).rows || []) as Array<Record<string, unknown>>;
-    const activeAgents = Number(acRows[0]?.n ?? 0);
-    checks.push({
-      name: '活跃数字员工', status: activeAgents > 0 ? 'ok' : 'warn',
-      value: `${activeAgents} 个`, threshold: '>= 1',
-    });
-
-    // Check 4: Active users
-    const userCount = await db.execute(sql`SELECT count(*)::int AS n FROM users WHERE is_active = true`);
-    const uRows = (Array.isArray(userCount) ? userCount : (userCount as { rows?: unknown[] }).rows || []) as Array<Record<string, unknown>>;
-    const activeUsers = Number(uRows[0]?.n ?? 0);
-    checks.push({
-      name: '活跃真人', status: activeUsers > 0 ? 'ok' : 'warn',
-      value: `${activeUsers} 个`, threshold: '>= 1',
-    });
-
-    // Check 5: Documents count
-    const docCount = await db.execute(sql`SELECT count(*)::int AS n FROM documents`);
-    const dRows = (Array.isArray(docCount) ? docCount : (docCount as { rows?: unknown[] }).rows || []) as Array<Record<string, unknown>>;
-    const docs = Number(dRows[0]?.n ?? 0);
-    checks.push({
-      name: 'KB 文档', status: docs > 100 ? 'ok' : 'warn',
-      value: `${docs} 个`, threshold: '>= 100',
-    });
-
-    const kpis = [
-      { label: '24h 请求数', value: total },
-      { label: '数字员工', value: activeAgents },
-      { label: '真人', value: activeUsers },
-      { label: 'KB 文档', value: docs },
-    ];
-
-    // Recent events from audit_logs
-    const events = await db.execute(sql`
-      SELECT id, action, resource_type, resource_id, created_at, details
-      FROM audit_logs
-      ORDER BY created_at DESC
-      LIMIT 20
+    // ── Check 4: 任务执行(24h pipeline 成功率) ──
+    const taskRows = await db.execute(sql`
+      SELECT
+        count(*)::int AS total,
+        count(*) FILTER (WHERE status = 'completed')::int AS ok
+      FROM pipeline_runs
+      WHERE started_at > now() - interval '24 hours'
     `);
-    const eRows = (Array.isArray(events) ? events : (events as { rows?: unknown[] }).rows || []) as Array<Record<string, unknown>>;
+    const tRows = (Array.isArray(taskRows) ? taskRows : (taskRows as { rows?: unknown[] }).rows || []) as Array<Record<string, number>>;
+    const taskTotal = Number(tRows[0]?.total ?? 0);
+    const taskOk = Number(tRows[0]?.ok ?? 0);
+    const taskRate = taskTotal > 0 ? Math.round((taskOk * 100) / taskTotal) : 100;
+    const taskStatus: HealthCheck['status'] = taskRate >= 90 ? 'ok' : taskRate >= 70 ? 'warn' : 'error';
+    checks.push({
+      name: '任务执行',
+      status: taskStatus,
+      value: `${taskRate}% 成功 (24h)`,
+      detail: taskTotal > 0 ? `${taskOk}/${taskTotal} 次执行` : '24h 内无任务执行',
+      threshold: '>=90%',
+    });
+
+    // ── Check 5: 资源(磁盘 / 内存 / CPU loadavg) ──
+    const cpuLoad = os.loadavg()[0]; // 1 min
+    const memTotal = os.totalmem();
+    const memFree = os.freemem();
+    const memUsedPct = Math.round(((memTotal - memFree) * 100) / memTotal);
+    const diskUsed = await getDiskUsage();
+    const resStatus: HealthCheck['status'] =
+      diskUsed < 80 && memUsedPct < 85 && cpuLoad < 4 ? 'ok' :
+      diskUsed < 90 && memUsedPct < 92 ? 'warn' : 'error';
+    checks.push({
+      name: '资源',
+      status: resStatus,
+      value: `磁盘 ${diskUsed}% · 内存 ${memUsedPct}% · CPU ${cpuLoad.toFixed(1)}`,
+      detail: `load avg(1m) ${cpuLoad.toFixed(1)} · ${os.cpus().length} cores`,
+      threshold: '磁盘 <80% · 内存 <85%',
+    });
+
+    // ── 综合健康分(加权) ──
+    const svcScore = upCount === total ? 100 : upCount >= Math.ceil(total / 2) ? 60 : 20;
+    const aiScore = llmTotal > 0 ? Math.round((upProviders * 100) / llmTotal) : 0;
+    const kbScore = ragTotal > 0 ? hitRate : 50;
+    const tScore = taskRate;
+    const resScore = diskUsed < 80 && memUsedPct < 85 ? 100 : 50;
+    const overallScore = Math.round(
+      svcScore * 0.25 +
+      aiScore * 0.30 +
+      kbScore * 0.20 +
+      tScore * 0.20 +
+      resScore * 0.05
+    );
+
+    const suggestions = generateSuggestions(checks);
 
     jsonResponse(res, 200, {
       success: true,
+      overallScore,
       checks,
-      kpis,
-      events: eRows.map((r) => ({
-        ts: r.created_at,
-        level: r.action,
-        source: r.resource_type,
-        message: JSON.stringify(r.details ?? {}),
-      })),
+      suggestions,
+      timestamp: new Date().toISOString(),
+      nextCheckIn: 60,
     });
   } catch (err) {
     jsonResponse(res, 500, { error: 'diagnosis_failed', message: err instanceof Error ? err.message : 'unknown' });
