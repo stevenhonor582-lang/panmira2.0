@@ -252,6 +252,71 @@ async function folderDelete(
 }
 
 // ── documents ───────────────────────────────────────────────────────────
+async function documentsList(
+  _req: http.IncomingMessage,
+  res: http.ServerResponse,
+  _ctx: { tenantId: string; userId: string | null },
+) {
+  const parsed = new URL(_req.url ?? '', 'http://localhost');
+  const limit = Math.min(2000, Math.max(1, parseInt(parsed.searchParams.get('limit') ?? '500', 10)));
+  const offset = Math.max(0, parseInt(parsed.searchParams.get('offset') ?? '0', 10));
+  const folderId = parsed.searchParams.get('folderId');
+  const moduleFilter = parsed.searchParams.get('module');
+  const q = parsed.searchParams.get('q');
+
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  const addCond = (frag: string, val?: unknown) => {
+    if (val !== undefined) params.push(val);
+    conditions.push(frag.replace(/\$N/g, () => `$${params.length}`));
+  };
+  if (folderId) {
+    addCond('folder_id = $N', folderId);
+  }
+  if (moduleFilter && VALID_MODULES.has(moduleFilter)) {
+    addCond('module = $N', moduleFilter);
+  }
+  if (q) {
+    addCond('(title ILIKE $N OR content ILIKE $N)', `%${q}%`);
+    addCond('', undefined); // pop
+    params[params.length - 2] = `%${q}%`;
+    params[params.length - 1] = `%${q}%`;
+    conditions.pop();
+    conditions.push(`(title ILIKE $${params.length - 1} OR content ILIKE $${params.length})`);
+  }
+  params.push(limit);
+  const limitN = `$${params.length}`;
+  params.push(offset);
+  const offsetN = `$${params.length}`;
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const result = await pool.query(
+    `SELECT d.id, d.title, d.folder_id AS "folderId", d.path, d.summary, d.tags,
+            d.quality_score AS "qualityScore", d.hit_count AS "hitCount",
+            d.last_hit_at AS "lastHitAt", d.module, d.visibility, d.kb_type AS "kbType",
+            d.version, d.kb_version AS "kbVersion", d.feedback_count AS "feedbackCount",
+            d.created_at AS "createdAt", d.updated_at AS "updatedAt",
+            (SELECT count(*)::int FROM document_chunks WHERE document_id = d.id) AS "chunkCount",
+            f.name AS "folderName", f.path AS "folderPath"
+       FROM documents d
+       LEFT JOIN folders f ON f.id = d.folder_id
+       ${where}
+       ORDER BY d.updated_at DESC NULLS LAST
+       LIMIT ${limitN} OFFSET ${offsetN}`,
+    params,
+  );
+  jsonResponse(res, 200, {
+    success: true,
+    documents: result.rows.map((r: Record<string, any>) => ({
+      ...r,
+      lastHitAt: toISO(r.lastHitAt),
+      createdAt: toISO(r.createdAt),
+      updatedAt: toISO(r.updatedAt),
+    })),
+    limit,
+    offset,
+  });
+}
+
 async function documentDetail(
   _req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -547,6 +612,11 @@ export async function handleFoundationKbRoutes(
   }
 
   // documents
+  // GET list (before /:id)
+  if (path === '/api/v2/foundation/documents' && method === 'GET') {
+    await documentsList(req, res, ctx);
+    return true;
+  }
   // upload (before /:id to avoid pattern clash)
   if (path === '/api/v2/foundation/documents/upload' && method === 'POST') {
     await documentUpload(req, res, ctx);
