@@ -40,6 +40,7 @@ import { handleAdminCacheRoutes } from "./routes/admin-cache-routes.js";
 import { handleR9MockEndpoints } from './routes/r9-mock-endpoints-routes.js';
 import { handleR10DataRoutes } from './routes/r10-data-routes.js';
 import { handleDashboardAggregateRoutes } from './routes/dashboard-aggregate-routes.js';
+import { handleBillingAggregateRoutes } from './routes/billing-aggregate-routes.js'; // R14-D
 import { handleAdminRateLimitRoutes } from "./routes/admin-ratelimit-routes.js";
 import { handleKnowledgeBaseRoutes } from './routes/knowledge-base-routes.js';
 import { handleAgentKnowledgeRoutes } from './routes/agent-knowledge-routes.js';
@@ -233,6 +234,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     handleR9MockEndpoints,
     handleR10DataRoutes,
     handleDashboardAggregateRoutes,
+    handleBillingAggregateRoutes,
 
     handleGenerateRoutes,
     handleWorkspaceRoutes,
@@ -518,6 +520,13 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
       if (url.startsWith('/api/v2/admin/dashboard-aggregate')) {
         if (await handleDashboardAggregateRoutes(req, res, method, url)) return;
         jsonResponse(res, 404, { error: 'R12 route not found' });
+        return;
+      }
+
+      // R14-D billing aggregate (2026-07-08) — single-fetch Token billing payload
+      if (url.startsWith('/api/v2/admin/billing-aggregate')) {
+        if (await handleBillingAggregateRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'R14-D route not found' });
         return;
       }
 
