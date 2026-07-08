@@ -37,6 +37,7 @@ import { handleScheduledJobsRoutes } from './routes/scheduled-jobs-routes.js';
 import { handleAgentRunLogsRoutes } from "./routes/agent-run-logs-routes.js";
 import { handlePipelineRoutes } from "./routes/pipeline-routes.js";
 import { handleAdminCacheRoutes } from "./routes/admin-cache-routes.js";
+import { handleR9MockEndpoints } from './routes/r9-mock-endpoints-routes.js';
 import { handleAdminRateLimitRoutes } from "./routes/admin-ratelimit-routes.js";
 import { handleKnowledgeBaseRoutes } from './routes/knowledge-base-routes.js';
 import { handleAgentKnowledgeRoutes } from './routes/agent-knowledge-routes.js';
@@ -224,6 +225,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     handleSkillHubRoutes,
     handleMemoryRoutes,
     handleAdminMemoryRoutes,
+    handleR9MockEndpoints,
 
     handleGenerateRoutes,
     handleWorkspaceRoutes,
@@ -496,6 +498,25 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
                 : '连接失败';
           jsonResponse(res, 200, { ok: false, error: msg });
         }
+        return;
+      }
+
+      // R9: agent log-series 跳过 agents CRUD (因为 /api/agents 也含子路径)
+      // R9 dispatch 已经在 825 行介入,这里需要 forward 回去
+      if (url.match(/^\/api\/agents\/[^/]+\/log-series$/)) {
+        // 让 R9 dispatch 处理
+      }
+
+      // R9 mock endpoints (2026-07-08) - production 10/10
+      if (url.startsWith('/api/mcp/servers')
+          || url.startsWith('/api/v2/channels/oauth')
+          || url.startsWith('/api/agents/')
+          || url.startsWith('/api/knowledge/folders')
+          || url.startsWith('/api/v2/admin/diagnosis')
+          || url.startsWith('/api/v2/admin/optimization')
+          || url.startsWith('/api/v2/admin/logs')) {
+        if (await handleR9MockEndpoints(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'R9 route not found' });
         return;
       }
 
@@ -822,7 +843,6 @@ ${content}
         jsonResponse(res, 404, { error: 'Admin memory route not found' });
         return;
       }
-
 
 
       // IA v6 新路由(2026-07-08) — 公司综阅/组织部/数字员工/任务/数智底座/资源频道

@@ -94,3 +94,4 @@ secrets/
 db_backup_*.sql
 apps/web-next/test-results/
 apps/web-next/playwright-report/
+web/
