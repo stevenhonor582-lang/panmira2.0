@@ -12,6 +12,10 @@ import {
   Search, AlertCircle, Loader2, RefreshCcw,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { mf } from "@/lib/foundation/api";
+import { MemoryDetailSheet } from "@/lib/foundation/memory-detail-sheet";
+import { MemoryAddDialog } from "@/lib/foundation/memory-add-dialog";
+import { Plus } from "lucide-react";
 
 interface IronLaw {
   id: string;
@@ -48,6 +52,10 @@ export default function L3Page() {
   const [query, setQuery] = React.useState("");
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [minImportance, setMinImportance] = React.useState<number>(0);
+  const [detailId, setDetailId] = React.useState<string | null>(null);
+  const [detailOpen, setDetailOpen] = React.useState(false);
+  const [addOpen, setAddOpen] = React.useState(false);
 
   const load = React.useCallback(() => {
     setLoading(true);
@@ -60,7 +68,7 @@ export default function L3Page() {
       })
       .catch((e: any) => setError(String(e?.message ?? e)))
       .finally(() => setLoading(false));
-  }, [query]);
+  }, [query, minImportance]);
 
   React.useEffect(() => {
     const t = setTimeout(load, query.trim() ? 300 : 0);
@@ -83,6 +91,21 @@ export default function L3Page() {
         <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={load}>
           <RefreshCcw className="size-3" />
           刷新
+        </Button>
+        <select
+          value={minImportance}
+          onChange={(e) => setMinImportance(parseFloat(e.target.value))}
+          className="h-7 rounded border border-border bg-background px-1.5 text-[11px] font-mono"
+          title="最小重要度过滤"
+        >
+          <option value={0}>imp ≥ 0</option>
+          <option value={0.5}>imp ≥ 0.5</option>
+          <option value={0.7}>imp ≥ 0.7</option>
+          <option value={0.8}>imp ≥ 0.8</option>
+        </select>
+        <Button size="sm" className="h-7 text-xs gap-1" onClick={() => setAddOpen(true)}>
+          <Plus className="size-3" />
+          新增
         </Button>
         <div className="ml-auto flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">
           <Lock className="size-3" />
@@ -124,6 +147,13 @@ export default function L3Page() {
                   <History className="size-2.5" />
                   {fmtRel(law.createdAt)}
                 </span>
+                <button
+                  type="button"
+                  onClick={() => { setDetailId(law.id); setDetailOpen(true); }}
+                  className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-mono border border-border hover:bg-muted/60 transition-colors"
+                >
+                  详情
+                </button>
               </div>
               <div className="px-4 py-3">
                 <p className="text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">
@@ -158,6 +188,19 @@ export default function L3Page() {
           ))}
         </div>
       </ScrollArea>
+          <MemoryDetailSheet
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        memoryId={detailId}
+        layer={3 as 1 | 2 | 3}
+        onChanged={load}
+      />
+      <MemoryAddDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        defaultLayer={3 as 1 | 2 | 3}
+        onCreated={load}
+      />
     </div>
   );
 }

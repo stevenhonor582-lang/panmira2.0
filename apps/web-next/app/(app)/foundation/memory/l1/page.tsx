@@ -11,6 +11,10 @@ import {
   Bot, MessageSquare, Search, RefreshCcw, Pin, Filter, Clock, Zap, Loader2, AlertCircle,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { mf } from "@/lib/foundation/api";
+import { MemoryDetailSheet } from "@/lib/foundation/memory-detail-sheet";
+import { MemoryAddDialog } from "@/lib/foundation/memory-add-dialog";
+import { Plus } from "lucide-react";
 
 interface MemoryItem {
   id: string;
@@ -65,6 +69,10 @@ export default function L1Page() {
   const [query, setQuery] = React.useState("");
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [minImportance, setMinImportance] = React.useState<number>(0);
+  const [detailId, setDetailId] = React.useState<string | null>(null);
+  const [detailOpen, setDetailOpen] = React.useState(false);
+  const [addOpen, setAddOpen] = React.useState(false);
 
   const load = React.useCallback(() => {
     setLoading(true);
@@ -78,7 +86,7 @@ export default function L1Page() {
       })
       .catch((e: any) => setError(String(e?.message ?? e)))
       .finally(() => setLoading(false));
-  }, [query]);
+  }, [query, minImportance]);
 
   React.useEffect(() => {
     const t = setTimeout(load, query.trim() ? 300 : 0);
@@ -103,6 +111,21 @@ export default function L1Page() {
         <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={load}>
           <RefreshCcw className="size-3" />
           刷新
+        </Button>
+        <select
+          value={minImportance}
+          onChange={(e) => setMinImportance(parseFloat(e.target.value))}
+          className="h-7 rounded border border-border bg-background px-1.5 text-[11px] font-mono"
+          title="最小重要度过滤"
+        >
+          <option value={0}>imp ≥ 0</option>
+          <option value={0.5}>imp ≥ 0.5</option>
+          <option value={0.7}>imp ≥ 0.7</option>
+          <option value={0.8}>imp ≥ 0.8</option>
+        </select>
+        <Button size="sm" className="h-7 text-xs gap-1" onClick={() => setAddOpen(true)}>
+          <Plus className="size-3" />
+          新增
         </Button>
         <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
           <Filter className="size-3" />
@@ -134,7 +157,7 @@ export default function L1Page() {
                 <li key={item.id}>
                   <button
                     type="button"
-                    onClick={() => setSelected(item.id)}
+                    onClick={() => { setSelected(item.id); setDetailId(item.id); setDetailOpen(true); }}
                     className={cn(
                       "w-full text-left px-5 py-3 transition-colors",
                       isActive ? "bg-muted" : "hover:bg-muted/40",
@@ -253,6 +276,19 @@ export default function L1Page() {
           )}
         </ScrollArea>
       </div>
+          <MemoryDetailSheet
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        memoryId={detailId}
+        layer={1 as 1 | 2 | 3}
+        onChanged={load}
+      />
+      <MemoryAddDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        defaultLayer={1 as 1 | 2 | 3}
+        onCreated={load}
+      />
     </div>
   );
 }
