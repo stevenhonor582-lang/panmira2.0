@@ -344,38 +344,67 @@ const APPROVAL_STATE_META: Record<
 };
 
 /**
- * R17-4: Human node decision UI.
- * Front-end only scaffolding for human-in-the-loop.
- * Backend wiring (engine pause + POST /approve endpoint) is documented in
- * .claude/handoff-2026-07-09-r17-4-tasks-canvas-done.md.
+ * R17-4 / R18: Human node decision UI.
  *
- * For now, picking a decision updates local meta so the canvas reflects it;
- * the actual pause/approve network call is stubbed via onDecideLocal.
+ * Two modes:
+ *  - Run mode (runId + pipelineId + nodeId all provided): POSTs the decision
+ *    to /api/v2/admin/pipelines/:pid/runs/:runId/nodes/:nodeId/decide, which
+ *    the engine polls to resume the paused pipeline.
+ *  - Canvas edit mode (no run context): updates local meta only, so the
+ *    designer can preview the approval states without a live run.
  */
 function HumanApprovalCard({
   meta,
   onChange,
+  runId,
+  pipelineId,
+  nodeId,
 }: {
   meta: DagNodeMeta;
   onChange: (p: Partial<DagNodeMeta>) => void;
+  /** R18: when all three are present, decide() hits the real backend. */
+  runId?: string;
+  pipelineId?: string;
+  nodeId?: string;
 }) {
   const state: ApprovalState = meta.approvalState ?? "idle";
   const m = APPROVAL_STATE_META[state];
   const [note, setNote] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
 
-  const decide = (next: ApprovalState) => {
+  const hasRunContext = Boolean(runId && pipelineId && nodeId);
+
+  const decide = async (next: ApprovalState) => {
     setBusy(true);
-    // Frontend-only stub: real implementation will POST to
-    // /api/v2/admin/pipelines/:pid/runs/:runId/nodes/:nodeId/decide
-    setTimeout(() => {
+    setErrorMsg(null);
+    const cleanNote = note.trim() || undefined;
+    try {
+      if (hasRunContext) {
+        // Run mode: call the real decide endpoint.
+        await api(
+          `/api/v2/admin/pipelines/${pipelineId}/runs/${runId}/nodes/${nodeId}/decide`,
+          {
+            method: "POST",
+            body: {
+              decision: next === "rejected" ? "rejected" : "approved",
+              note: cleanNote ?? null,
+            },
+          },
+        );
+      }
+      // Both modes: reflect the decision locally.
       onChange({
         approvalState: next,
-        approvalActor: "local:admin",
-        approvalNote: note.trim() || undefined,
+        approvalActor: hasRunContext ? "user" : "local:admin",
+        approvalNote: cleanNote,
       });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "决策提交失败";
+      setErrorMsg(msg);
+    } finally {
       setBusy(false);
-    }, 250);
+    }
   };
 
   return (
@@ -421,9 +450,13 @@ function HumanApprovalCard({
           修改
         </button>
       </div>
+      {errorMsg && (
+        <p className="text-[9px] text-rose-600 leading-snug">{errorMsg}</p>
+      )}
       <p className="text-[9px] text-muted-foreground leading-snug">
-        注:后端 pipeline 引擎对 human 节点的暂停 / WS 推送对接见 handoff。
-        此面板先在画布层验证 UX。
+        {hasRunContext
+          ? "R18: 决策实时提交到后端,引擎轮询恢复执行。"
+          : "画布编辑模式:无运行上下文,仅本地预览决策状态。"}
       </p>
     </div>
   );

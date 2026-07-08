@@ -48,6 +48,7 @@ const STATUS_LABEL: Record<string, string> = {
   failed: "失败",
   timeout: "超时",
   cancelled: "已取消",
+  waiting_for_human: "待真人决策",
 };
 
 export function ExecutionLogPanel({

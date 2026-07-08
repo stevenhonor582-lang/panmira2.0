@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   CircleAlert,
   Clock,
+  Hourglass,
   Loader2,
   Play,
   RotateCcw,
@@ -63,9 +64,12 @@ export function RunHistoryPanel({ pipelineId, refreshMs = 15000 }: Props) {
 
   // Auto-refresh while any run is pending/running
   React.useEffect(() => {
-    const hasActive = runs.some(
-      (r) => r.status === "running" || r.status === "pending",
-    );
+    const hasActive = runs.some((r) => {
+      if (r.status === "running" || r.status === "pending") return true;
+      // R18: keep polling while any node awaits a human decision.
+      const ns = (r as unknown as { nodeStates?: Record<string, { status?: string }> }).nodeStates ?? {};
+      return Object.values(ns).some((n) => n?.status === "waiting_for_human");
+    });
     if (!hasActive) return;
     const t = setInterval(load, refreshMs);
     return () => clearInterval(t);
@@ -153,6 +157,16 @@ export function RunHistoryPanel({ pipelineId, refreshMs = 15000 }: Props) {
                     {r.error}
                   </div>
                 )}
+                {r.id && (
+                  <WaitingDecision
+                    pipelineId={pipelineId}
+                    runId={r.id}
+                    nodeStates={
+                      (r as unknown as { nodeStates?: Record<string, { status?: string; label?: string }> }).nodeStates ?? {}
+                    }
+                    onChanged={load}
+                  />
+                )}
               </div>
             );
           })}
@@ -162,10 +176,84 @@ export function RunHistoryPanel({ pipelineId, refreshMs = 15000 }: Props) {
   );
 }
 
+/**
+ * R18: Inline human-decision bar. Shown for runs that have at least one node
+ * in 'waiting_for_human' state. Approve/reject POST to the decide endpoint;
+ * the parent's auto-refresh then picks up the resumed run.
+ */
+function WaitingDecision({
+  pipelineId,
+  runId,
+  nodeStates,
+  onChanged,
+}: {
+  pipelineId: string;
+  runId: string;
+  nodeStates: Record<string, { status?: string; label?: string }>;
+  onChanged: () => void;
+}) {
+  const waitingIds = Object.entries(nodeStates)
+    .filter(([, s]) => s?.status === "waiting_for_human")
+    .map(([id]) => id);
+  if (waitingIds.length === 0) return null;
+  const [busyId, setBusyId] = React.useState<string | null>(null);
+  const [err, setErr] = React.useState<string | null>(null);
+
+  const decide = async (nodeId: string, decision: "approved" | "rejected") => {
+    setBusyId(nodeId);
+    setErr(null);
+    try {
+      await api(
+        `/api/v2/admin/pipelines/${pipelineId}/runs/${runId}/nodes/${nodeId}/decide`,
+        { method: "POST", body: { decision } },
+      );
+      onChanged();
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "决策失败");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <div className="mt-1.5 rounded ring-1 ring-amber-200 bg-amber-50/60 px-2 py-1.5 space-y-1">
+      <div className="flex items-center gap-1 text-[10px] text-amber-800">
+        <Hourglass className="size-2.5" />
+        <span className="font-medium">真人审批 · {waitingIds.length} 个节点等待</span>
+      </div>
+      {waitingIds.map((nid) => (
+        <div key={nid} className="flex items-center gap-1">
+          <span className="text-[10px] font-mono text-amber-900 truncate max-w-[110px]">
+            {nodeStates[nid]?.label ?? nid.slice(0, 8)}
+          </span>
+          <button
+            type="button"
+            disabled={busyId === nid}
+            onClick={() => decide(nid, "approved")}
+            className="h-5 px-1.5 text-[10px] rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40"
+          >
+            批准
+          </button>
+          <button
+            type="button"
+            disabled={busyId === nid}
+            onClick={() => decide(nid, "rejected")}
+            className="h-5 px-1.5 text-[10px] rounded bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-40"
+          >
+            拒绝
+          </button>
+        </div>
+      ))}
+      {err && <div className="text-[9px] text-rose-600">{err}</div>}
+    </div>
+  );
+}
+
 function StatusIcon({ status }: { status: string }) {
   if (status === "completed") return <CheckCircle2 className="size-3 text-emerald-600" />;
   if (status === "failed") return <XCircle className="size-3 text-rose-600" />;
   if (status === "running") return <Loader2 className="size-3 text-sky-600 animate-spin" />;
+  if (status === "waiting_for_human") return <Hourglass className="size-3 text-amber-600" />;
   if (status === "cancelled") return <CircleAlert className="size-3 text-slate-500" />;
   return <Clock className="size-3 text-muted-foreground" />;
 }
@@ -177,6 +265,7 @@ const STATUS_LABEL: Record<string, string> = {
   failed: "失败",
   cancelled: "已取消",
   timeout: "超时",
+  waiting_for_human: "待真人决策",
 };
 
 const TRIGGER_LABEL = {
@@ -191,6 +280,7 @@ function statusTone(status: string): string {
   if (status === "completed") return "bg-emerald-50 text-emerald-700 ring-emerald-200";
   if (status === "failed") return "bg-rose-50 text-rose-700 ring-rose-200";
   if (status === "running") return "bg-sky-50 text-sky-700 ring-sky-200";
+  if (status === "waiting_for_human") return "bg-amber-50 text-amber-700 ring-amber-200";
   if (status === "timeout") return "bg-amber-50 text-amber-700 ring-amber-200";
   return "bg-slate-50 text-slate-700 ring-slate-200";
 }
