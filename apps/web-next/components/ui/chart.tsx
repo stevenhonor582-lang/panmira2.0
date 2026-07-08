@@ -71,7 +71,17 @@ function ChartContainer({
         {...props}
       >
         <ChartStyle id={chartId} config={config} />
+        {/*
+          R17-4: width/height default to -1 when ResponsiveContainer cannot
+          measure its parent (e.g. inside flex/grid with min-w-0, hidden tabs,
+          tldraw overlays). Pass explicit width/height="100%" + minWidth/minHeight
+          so recharts never logs the width(-1) height(-1) warning.
+        */}
         <RechartsPrimitive.ResponsiveContainer
+          width="100%"
+          height="100%"
+          minWidth={0}
+          minHeight={0}
           initialDimension={initialDimension}
         >
           {children}
