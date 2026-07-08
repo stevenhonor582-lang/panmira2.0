@@ -85,6 +85,7 @@ import {
   handleBindingRoutes,
   handleProviderRoutes,
   handleMemoryRoutes,
+  handleAdminMemoryRoutes,
   handleGenerateRoutes,
   handleWorkspaceRoutes,
   handleTemplateRoutes,
@@ -222,6 +223,8 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     handleProviderRoutes,
     handleSkillHubRoutes,
     handleMemoryRoutes,
+    handleAdminMemoryRoutes,
+
     handleGenerateRoutes,
     handleWorkspaceRoutes,
     handleTemplateRoutes,
@@ -250,6 +253,20 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
       res.writeHead(302, { Location: '/web/settings' });
       res.end();
       return;
+    }
+
+    // P9: v1→v2 URL alias (BLOCKER fix 2026-07-08)
+    // 5 个 v1 路径 → v2 (Q3 frontend 还在用 v1)
+    if (url.startsWith('/api/skill-dags')) {
+      url = '/api/v2/admin' + url.slice(4);
+    } else if (url.startsWith('/api/pipelines')) {
+      url = '/api/v2/admin' + url.slice(4);
+    } else if (url.startsWith('/api/scheduled-jobs')) {
+      url = '/api/v2/admin' + url.slice(4);
+    } else if (url.startsWith('/api/embedding-jobs')) {
+      url = '/api/v2/admin' + url.slice(4);
+    } else if (url.startsWith('/api/tenants/') && url.includes('/quotas')) {
+      url = '/api/v2/admin' + url.slice(4);
     }
 
     // Security headers
@@ -796,6 +813,13 @@ ${content}
       if (url.startsWith('/api/v2/admin/maintenance/')) {
         if (await handleMaintenanceRoutes(req, res, method, url)) return;
         jsonResponse(res, 404, { error: 'Maintenance route not found' });
+        return;
+      }
+
+      // P9: Admin memory aggregate (BLOCKER fix 2026-07-08)
+      if (url.startsWith('/api/v2/admin/memory')) {
+        if (await handleAdminMemoryRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Admin memory route not found' });
         return;
       }
 

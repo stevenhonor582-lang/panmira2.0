@@ -12,6 +12,7 @@ export { handleProjectRoutes } from './project-routes.js';
 export { handleBindingRoutes } from './binding-routes.js';
 export { handleProviderRoutes } from './provider-routes.js';
 export { handleMemoryRoutes } from './memory-routes.js';
+export { handleAdminMemoryRoutes } from './admin-memory-routes.js';
 export { handleGenerateRoutes } from './generate-routes.js';
 export { handleWorkspaceRoutes } from './workspace-routes.js';
 export { handleTemplateRoutes } from "./template-routes.js";
