@@ -370,6 +370,7 @@ export function TaskDagEditor(props: TaskDagEditorProps) {
             shapeUtils={DAG_SHAPE_UTILS}
             initialState={initialSnapshot as never}
             hideUi={isViewer}
+            licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
           />
           {!isViewer && selectedMeta && (
             <div className="absolute right-3 top-3 bottom-3 w-[260px] z-10">
@@ -464,6 +465,7 @@ interface TldrawLazyProps {
   shapeUtils: typeof DAG_SHAPE_UTILS;
   initialState?: unknown;
   hideUi?: boolean;
+  licenseKey?: string;
 }
 
 type TldrawCmp = React.ComponentType<Record<string, unknown>>;
@@ -516,6 +518,7 @@ const TldrawLazy: React.FC<TldrawLazyProps> = (props) => {
         onMount={props.onMount as never}
         shapeUtils={props.shapeUtils as never}
         hideUi={props.hideUi}
+        licenseKey={props.licenseKey as never}
         snapshot={props.initialState as never}
       />
     </div>
