@@ -19,10 +19,6 @@ import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { NAV_LABEL_MAP, NAV_MODULE_MAP } from "./sidebar";
 import { getUser, logout, type AuthUser } from "@/lib/auth";
 
-/** Strip an optional basePath prefix and a trailing slash from a route. */
-function cleanRoute(p: string): string {
-  return p.replace(/^\/web-next/, "").replace(/\/$/, "") || "/";
-}
 
 export function Topbar() {
   const pathname = usePathname();
@@ -32,9 +28,8 @@ export function Topbar() {
     setUser(getUser());
   }, []);
 
-  const cleanPath = cleanRoute(pathname ?? "/");
-  const currentLabel = NAV_LABEL_MAP[cleanPath] ?? "工作台";
-  const currentModule = NAV_MODULE_MAP[cleanPath];
+  const currentLabel = NAV_LABEL_MAP[pathname ?? "/"] ?? "工作台";
+  const currentModule = NAV_MODULE_MAP[pathname ?? "/"];
 
   const initials = user
     ? user.name
