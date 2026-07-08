@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
+import { ScheduledJobCreateModal } from "@/components/tasks/scheduled-job-create-modal";
 import type { ScheduledJob } from "@/components/tasks/types";
 
 interface RawJob extends ScheduledJob {
@@ -44,17 +45,34 @@ export default function ScheduledTasksPage() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [pendingToggle, setPendingToggle] = React.useState<string | null>(null);
+  // R16-3: 启用"新建调度" → 从已有任务选 modal (不跳 /tasks/new)
+  const [createOpen, setCreateOpen] = React.useState(false);
 
   const reload = React.useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = (await api("/api/schedule")) as {
-        data?: { jobs?: RawJob[] } | RawJob[];
-      };
-      const list: RawJob[] = Array.isArray(res?.data)
-        ? (res?.data as RawJob[])
-        : ((res?.data as { jobs?: RawJob[] })?.jobs ?? []);
+      // R16-3: 优先调规范接口 /api/v2/admin/scheduled-jobs, 失败 fallback /api/schedule
+      let list: RawJob[] = [];
+      try {
+        const res = (await api("/api/v2/admin/scheduled-jobs")) as {
+          data?: RawJob[] | { jobs?: RawJob[] };
+        };
+        const d = res?.data;
+        if (Array.isArray(d)) list = d;
+        else if (d && Array.isArray((d as { jobs?: RawJob[] }).jobs))
+          list = (d as { jobs?: RawJob[] }).jobs ?? [];
+      } catch {
+        // fallback
+      }
+      if (list.length === 0) {
+        const res = (await api("/api/schedule")) as {
+          data?: { jobs?: RawJob[] } | RawJob[];
+        };
+        list = Array.isArray(res?.data)
+          ? (res?.data as RawJob[])
+          : ((res?.data as { jobs?: RawJob[] })?.jobs ?? []);
+      }
       setJobs(list);
     } catch (e) {
       setError(e instanceof Error ? e.message : "加载失败");
@@ -99,7 +117,7 @@ export default function ScheduledTasksPage() {
             cron 调度 · 事件触发 · 失败重试
           </p>
         </div>
-        <Button size="sm" disabled title="后续版本提供">
+        <Button size="sm" onClick={() => setCreateOpen(true)}>
           <Plus className="size-4" />
           新建调度
         </Button>
@@ -116,7 +134,7 @@ export default function ScheduledTasksPage() {
           {error}
         </div>
       ) : jobs.length === 0 ? (
-        <EmptyState />
+        <EmptyState onCreate={() => setCreateOpen(true)} />
       ) : (
         <div className="rounded-md ring-1 ring-foreground/10 bg-card overflow-hidden">
           <div className="px-4 py-2 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground border-b bg-muted/20 grid grid-cols-12 gap-3">
@@ -142,6 +160,12 @@ export default function ScheduledTasksPage() {
         启用 <strong className="text-emerald-600 font-mono">{jobs.filter((j) => j.enabled !== false).length}</strong> ·{" "}
         暂停 <strong className="text-amber-600 font-mono">{jobs.filter((j) => j.enabled === false).length}</strong>
       </div>
+
+      <ScheduledJobCreateModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={reload}
+      />
     </div>
   );
 }
@@ -215,7 +239,7 @@ function ScheduledRow({ job, isPending, onToggle }: RowProps) {
   );
 }
 
-function EmptyState() {
+function EmptyState({ onCreate }: { onCreate: () => void }) {
   return (
     <div className="grid place-items-center py-20 border border-dashed rounded-lg bg-muted/10">
       <div className="text-center space-y-3 max-w-sm">
@@ -224,18 +248,19 @@ function EmptyState() {
         </div>
         <div className="text-sm font-medium">暂无定时任务</div>
         <div className="text-xs text-muted-foreground">
-          将任意 DAG 任务绑定到 cron 或事件触发器,即可在指定时间自动执行。
+          从已有的 DAG 任务中选一个,绑定 cron 或事件触发器,即可在指定时间自动执行。
         </div>
-        <Link
-          href="/tasks/new"
+        <button
+          type="button"
+          onClick={onCreate}
           className={cn(
             "inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-lg text-sm font-medium",
             "border border-border bg-background hover:bg-muted hover:text-foreground transition-all active:translate-y-px",
           )}
         >
           <Plus className="size-3.5" />
-          先建一个任务
-        </Link>
+          新建定时任务
+        </button>
       </div>
     </div>
   );
