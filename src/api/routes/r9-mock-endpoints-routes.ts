@@ -20,6 +20,7 @@ import { randomBytes, createHash } from 'node:crypto';
 import * as os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+const execFileAsync = promisify(execFile);
 import { sql } from 'drizzle-orm';
 import { db, pool } from '../../db/index.js';
 import { encrypt, decrypt } from '../../db/crypto.js';
@@ -786,8 +787,27 @@ async function testMcpServer(req: http.IncomingMessage, res: http.ServerResponse
     let healthy = false;
     let errorMsg: string | null = null;
     if (transport === 'stdio') {
-      // stdio MCP — cannot test without spawning; mark as manual-check
-      errorMsg = 'stdio transport requires runtime spawn — manual check needed';
+      // R16-2: spawn child process and probe via scripts/mcp-stdio-probe.py
+      // url field can be "stdio:///path/to/script.py" or just "/path"
+      const stdioPath = url.startsWith('stdio://') ? url.slice('stdio://'.length).replace(/^\/+/, '/') : url;
+      try {
+        const probePath = (await import('node:path')).default.resolve(process.cwd(), 'scripts/mcp-stdio-probe.py');
+        const { stdout: probeOut, stderr: probeErr } = await execFileAsync('python3', [probePath, stdioPath], {
+          cwd: process.cwd(),
+          timeout: 12000,
+          maxBuffer: 1024 * 1024,
+        });
+        const probe = JSON.parse((probeOut || '').trim().split('\n').pop() || '{}');
+        if (probe.ok) {
+          healthy = true;
+          tools = Array.isArray(probe.tools) ? probe.tools : [];
+        } else {
+          errorMsg = String(probe.error || 'stdio probe failed');
+          if (probeErr) errorMsg += ` | stderr: ${String(probeErr).slice(0, 200)}`;
+        }
+      } catch (err: any) {
+        errorMsg = `stdio spawn failed: ${err?.message || String(err)}`;
+      }
     } else if (!url) {
       errorMsg = 'Missing URL';
     } else {
