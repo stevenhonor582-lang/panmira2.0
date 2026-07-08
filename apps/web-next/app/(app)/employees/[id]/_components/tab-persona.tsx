@@ -54,7 +54,7 @@ export function TabPersona({ id }: { id: string }) {
                   <EditableTextarea
                     label="Persona · 人格短句(60 字内)"
                     field="persona"
-                    value={agent.persona}
+                    value={agent.persona || ""}
                     editing
                     draft={draft}
                     setDraft={setDraft}
@@ -65,7 +65,7 @@ export function TabPersona({ id }: { id: string }) {
                     <EditableTextarea
                       label="System Prompt · 完整系统提示词"
                       field="system_prompt"
-                      value={agent.systemPrompt}
+                      value={agent.systemPrompt || ""}
                       editing
                       draft={draft}
                       setDraft={setDraft}
@@ -79,12 +79,12 @@ export function TabPersona({ id }: { id: string }) {
                 <>
                   <SectionHead icon={BrainCircuit}>Persona · 人格短句</SectionHead>
                   <p className="rounded-2xl bg-card p-6 text-[17px] leading-relaxed ring-1 ring-border">
-                    {agent.persona || <span className="text-foreground/40">尚未设置 persona</span>}
+                    {agent.persona || agent.description || <span className="text-foreground/40">尚未设置 persona · 点击编辑添加</span>}
                   </p>
 
                   <SectionHead icon={BrainCircuit}>System Prompt</SectionHead>
                   <pre className="overflow-auto rounded-2xl bg-card p-6 text-[13px] leading-relaxed ring-1 ring-border font-mono whitespace-pre-wrap">
-{agent.systemPrompt || <span className="text-foreground/40">尚未设置 system_prompt</span>}
+{agent.systemPrompt || <span className="text-foreground/40">尚未设置 system_prompt · 点击编辑添加</span>}
                   </pre>
                 </>
               )}
@@ -95,7 +95,7 @@ export function TabPersona({ id }: { id: string }) {
               <IronLawsEditor
                 label=""
                 field="iron_laws"
-                items={agent.ironLaws}
+                items={Array.isArray(agent.ironLaws) ? agent.ironLaws : []}
                 editing={ctx.editing}
                 draft={draft}
                 setDraft={setDraft}

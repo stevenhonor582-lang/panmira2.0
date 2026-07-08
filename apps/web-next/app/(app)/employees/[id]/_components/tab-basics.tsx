@@ -103,7 +103,7 @@ export function TabBasics({ id }: { id: string }) {
               <EditableTextarea
                 label="描述 · description"
                 field="description"
-                value={agent.description}
+                value={agent.description || ""}
                 editing={ctx.editing}
                 draft={draft}
                 setDraft={setDraft}

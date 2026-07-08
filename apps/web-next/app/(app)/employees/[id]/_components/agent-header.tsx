@@ -136,7 +136,7 @@ export function AgentHeader({ id }: { id: string }) {
             {agent.displayName}
           </h1>
           <p className="mt-3 max-w-[58ch] text-[15px] leading-relaxed text-foreground/75">
-            {agent.persona || agent.description}
+            {agent.persona || agent.description || <span className="text-foreground/40">暂无人格定义,点击编辑添加</span>}
           </p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1 text-right">
