@@ -53,7 +53,10 @@ export interface DagNodeShape extends TLBaseShape<"dag-node", { w: number; h: nu
   type: "dag-node";
 }
 
-export class DagNodeShapeUtil extends BaseBoxShapeUtil<DagNodeShape> {
+// tldraw v5.2: BaseBoxShapeUtil<Shape extends TLBaseBoxShape> uses Extract<TLShape,...>
+// that excludes unregistered custom shapes. We use \`any\` and narrow at method level.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export class DagNodeShapeUtil extends BaseBoxShapeUtil<any> {
   static override type = "dag-node" as const;
 
   getDefaultProps(): DagNodeShape["props"] {
@@ -108,10 +111,10 @@ export class DagNodeShapeUtil extends BaseBoxShapeUtil<DagNodeShape> {
     );
   }
 
-  indicator(shape: DagNodeShape) {
-    const p = new Path2D();
-    p.rect(0, 0, shape.props.w, shape.props.h);
-    return p;
+  override getIndicatorPath(shape: DagNodeShape): Path2D {
+    const path = new Path2D();
+    path.rect(0, 0, shape.props.w, shape.props.h);
+    return path;
   }
 
   override canEdit() {
@@ -158,11 +161,11 @@ export function buildSeedRecords(
   edges: SeedEdge[],
   idGen: () => string,
 ): {
-  shapes: T.Object[];
+  shapes: Record<string, unknown>[];
   arrows: { id: string; startShapeId: string; endShapeId: string }[];
 } {
   const ids: string[] = [];
-  const shapes: T.Object[] = nodes.map((n) => {
+  const shapes: Record<string, unknown>[] = nodes.map((n) => {
     const id = idGen();
     ids.push(id);
     return {
@@ -182,7 +185,7 @@ export function buildSeedRecords(
         meta: n.meta,
       },
       meta: {},
-    } as unknown as T.Object;
+    } as unknown as Record<string, unknown>;
   });
 
   const arrows = edges
