@@ -38,6 +38,7 @@ import { handleAgentRunLogsRoutes } from "./routes/agent-run-logs-routes.js";
 import { handlePipelineRoutes } from "./routes/pipeline-routes.js";
 import { handleAdminCacheRoutes } from "./routes/admin-cache-routes.js";
 import { handleR9MockEndpoints } from './routes/r9-mock-endpoints-routes.js';
+import { handleR10DataRoutes } from './routes/r10-data-routes.js';
 import { handleAdminRateLimitRoutes } from "./routes/admin-ratelimit-routes.js";
 import { handleKnowledgeBaseRoutes } from './routes/knowledge-base-routes.js';
 import { handleAgentKnowledgeRoutes } from './routes/agent-knowledge-routes.js';
@@ -226,6 +227,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     handleMemoryRoutes,
     handleAdminMemoryRoutes,
     handleR9MockEndpoints,
+    handleR10DataRoutes,
 
     handleGenerateRoutes,
     handleWorkspaceRoutes,
@@ -517,6 +519,19 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
           || url.startsWith('/api/v2/admin/logs')) {
         if (await handleR9MockEndpoints(req, res, method, url)) return;
         jsonResponse(res, 404, { error: 'R9 route not found' });
+        return;
+      }
+
+      // R10 data access routes (2026-07-08) — memory list + sessions + 6 admin endpoints
+      if (url.startsWith('/api/v2/foundation/memory/')
+          || url.startsWith('/api/v2/admin/sessions')
+          || url.startsWith('/api/v2/admin/rag-query-stats')
+          || url.startsWith('/api/v2/admin/pipeline-runs')
+          || url.startsWith('/api/v2/admin/usage-reports')
+          || url.startsWith('/api/v2/admin/bot-history')
+          || url.startsWith('/api/v2/admin/sync-outbox')) {
+        if (await handleR10DataRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'R10 route not found' });
         return;
       }
 
