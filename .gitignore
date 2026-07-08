@@ -91,3 +91,6 @@ src/**/*.js.map
 *.p12
 secrets/
 .claude/SECURITY.local.md
+db_backup_*.sql
+apps/web-next/test-results/
+apps/web-next/playwright-report/
