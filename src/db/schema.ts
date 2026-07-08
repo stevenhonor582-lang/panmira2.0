@@ -92,6 +92,12 @@ export const agents = pgTable('agents', {
   version: integer('version').default(1),
   deploymentType: varchar('deployment_type', { length: 30 }).notNull().default('bot'),
   // 'bot' | 'job' | 'api' | 'mixed'
+  // R15-A: template vs instance + multi-bot working_dir + channel binding + visibility + temperature
+  isTemplate: boolean('is_template').notNull().default(false),
+  workingDir: text('working_dir'),
+  channelIds: jsonb('channel_ids').$type<string[]>().default([]),
+  visibility: varchar('visibility', { length: 20 }).notNull().default('team'),
+  temperature: doublePrecision('temperature').notNull().default(0.7),
 });
 
 export const memories = pgTable('memories', {
