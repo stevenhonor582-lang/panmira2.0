@@ -24,6 +24,7 @@ export interface Person {
   phone: string | null;
   failedAttempts: number;
   lockedUntil: string | null;
+  // R14-BC: 这些字段在 PATCH 响应里也会返回(updatedAt/createdAt)
   // R11 新字段
   department?: string | null;
   position?: string | null;
@@ -116,6 +117,98 @@ export async function fetchPersonActivity(id: string): Promise<PersonActivity> {
   }
 }
 
+// ── R14-BC: /api/v2/people/:id/{stats,usage,agents} ───────────────
+
+export interface PersonStats {
+  todayDone: number;
+  todayErrors: number;
+  status: "busy" | "idle" | "offline";
+  activity24h: number;
+  weekTokens: number;
+  weekCap: number;
+  weekPct: number;
+}
+
+export interface PersonUsage {
+  days: number;
+  totalTokens: number;
+  totalCalls: number;
+  dailyAvg: number;
+  daily: Array<{ day: string; tokens: string | number; calls: string | number }>;
+  byAgent: Array<{ agent: string; tokens: string | number }>;
+  byTask: Array<{ task: string; tokens: string | number }>;
+}
+
+export interface PersonAgent {
+  id: string;
+  name: string;
+  display_name: string | null;
+  role_template: string | null;
+  description: string | null;
+  is_active: boolean;
+  deployment_type: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchPersonStats(id: string): Promise<PersonStats | null> {
+  try {
+    const res = await api<{ data?: PersonStats } | PersonStats>(
+      fullPath(`/api/v2/people/${id}/stats`),
+    );
+    if ("data" in (res as any) && (res as any).data) return (res as any).data;
+    return res as PersonStats;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchPersonUsage(id: string, days = 30): Promise<PersonUsage | null> {
+  try {
+    const res = await api<{ data?: PersonUsage } | PersonUsage>(
+      fullPath(`/api/v2/people/${id}/usage?days=${days}`),
+    );
+    if ("data" in (res as any) && (res as any).data) return (res as any).data;
+    return res as PersonUsage;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchPersonAgents(id: string): Promise<PersonAgent[]> {
+  try {
+    const res = await api<{ data?: PersonAgent[] } | PersonAgent[]>(
+      fullPath(`/api/v2/people/${id}/agents`),
+    );
+    if ("data" in (res as any) && (res as any).data) return (res as any).data;
+    return Array.isArray(res) ? res : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function patchPersonAgents(
+  id: string,
+  agentIds: string[],
+  action: "add" | "remove" | "set",
+): Promise<string[] | null> {
+  try {
+    const res = await api<{ data?: { bound: string[] } } | { bound: string[] }>(
+      fullPath(`/api/v2/people/${id}/agents`),
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ agentIds, action }),
+      },
+    );
+    if ("data" in (res as any) && (res as any).data) return (res as any).data.bound;
+    return (res as { bound: string[] }).bound;
+  } catch {
+    return null;
+  }
+}
+
+
 // R11: PATCH 员工字段
 export async function patchPerson(
   id: string,
@@ -126,6 +219,9 @@ export async function patchPerson(
     position?: string | null;
     role?: Person["role"];
     phone?: string | null;
+    name?: string;
+    email?: string | null;
+    avatarUrl?: string | null;
     unlock?: boolean;
   },
 ): Promise<Person | null> {

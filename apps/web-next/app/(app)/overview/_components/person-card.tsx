@@ -12,27 +12,30 @@ import {
   Phone,
   ShieldCheck,
   Bot,
-  ListChecks,
-  Activity,
+  CheckCircle2,
+  AlertTriangle,
+  CircleDot,
   Lock,
+  BarChart3,
   PowerOff,
   Power,
   RefreshCw,
   Pencil,
   Trash2,
   LogOut,
-  CheckCircle2,
   PauseCircle,
 } from "lucide-react";
 import {
   EMPLOYEE_STATUS_LABEL,
   ROLE_LABEL,
   fetchPersonActivity,
+  fetchPersonStats,
   patchPerson,
   resetPersonPassword,
   deletePerson,
   type Person,
   type PersonActivity,
+  type PersonStats,
   type EmployeeStatus,
 } from "./data";
 import { InitialsAvatar } from "./avatar";
@@ -80,6 +83,7 @@ export function PersonCard({ person, className, onChanged }: Props) {
   const statusStyle = STATUS_STYLE[status];
 
   const [activity, setActivity] = React.useState<PersonActivity | null>(null);
+  const [stats, setStats] = React.useState<PersonStats | null>(null);
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [resetModal, setResetModal] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
@@ -89,6 +93,9 @@ export function PersonCard({ person, className, onChanged }: Props) {
     let cancelled = false;
     fetchPersonActivity(person.id).then((a) => {
       if (!cancelled) setActivity(a);
+    });
+    fetchPersonStats(person.id).then((s) => {
+      if (!cancelled) setStats(s);
     });
     return () => {
       cancelled = true;
@@ -176,7 +183,7 @@ export function PersonCard({ person, className, onChanged }: Props) {
           "group relative rounded-xl border border-border bg-card",
           "transition-[transform,box-shadow,border-color] duration-200 ease-out",
           "hover:-translate-y-0.5 hover:shadow-[0_4px_16px_-4px_oklch(0.18_0.02_264_/_0.18)] hover:border-border/80",
-          "overflow-hidden",
+          // R14-BC: 删 overflow-hidden,菜单(Popover)需要溢出可见
           status === "departed" && "opacity-70",
           isFounder && "ring-1 ring-amber-500/20",
           className,
@@ -259,11 +266,39 @@ export function PersonCard({ person, className, onChanged }: Props) {
           </div>
         </div>
 
-        {/* === 中部: 数据栏 === */}
+        {/* === 中部: 有意义数据栏(今日完成/异常/状态 + 本周 token) === */}
         <div className="px-4 py-2 border-t border-border bg-muted/20 grid grid-cols-3 gap-1 text-center">
-          <DataCell icon={Bot} value={activity?.agents ?? 0} label="数字员工" />
-          <DataCell icon={ListChecks} value={activity?.pipelines ?? 0} label="任务" />
-          <DataCell icon={Activity} value={activity?.calls24h ?? 0} label="24h 调用" />
+          <DataCell
+            icon={CheckCircle2}
+            value={stats?.todayDone ?? 0}
+            label="今日完成"
+            ok={!!stats && stats.todayDone > 0}
+          />
+          <DataCell
+            icon={AlertTriangle}
+            value={stats?.todayErrors ?? 0}
+            label="今日异常"
+            danger={!!stats && stats.todayErrors > 0}
+          />
+          <DataCell
+            icon={CircleDot}
+            value={statusLabel(stats?.status)}
+            label="当前状态"
+            textual
+          />
+        </div>
+        <div className="px-4 py-1.5 border-t border-border bg-muted/10 flex items-center gap-2 text-[10.5px] text-muted-foreground">
+          <BarChart3 className="size-3" />
+          <span className="font-mono">本周 token</span>
+          <div className="flex-1 h-1 rounded-full bg-border overflow-hidden">
+            <div
+              className="h-full bg-foreground/70"
+              style={{ width: `${stats?.weekPct ?? 0}%` }}
+            />
+          </div>
+          <span className="font-mono tabular-nums">
+            {(stats?.weekTokens ?? 0).toLocaleString()} / {(stats?.weekCap ?? 0).toLocaleString()}
+          </span>
         </div>
 
         {/* === 底部: 状态行 + 菜单 === */}
@@ -307,18 +342,14 @@ export function PersonCard({ person, className, onChanged }: Props) {
           </div>
 
           <div className="flex items-center gap-1">
-            <Link
-              href={`/overview/people/${person.id}`}
-              className="inline-flex items-center justify-center rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-            >
-              查看
-            </Link>
+            {/* R14-BC: 删"查看"按钮(用户反馈跟编辑重复,查看无意义) */}
             {canEdit && (
               <Link
                 href={`/overview/people/${person.id}?edit=true`}
-                className="inline-flex items-center justify-center rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                className="inline-flex items-center justify-center rounded-md px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors gap-1"
               >
                 <Pencil className="size-3" />
+                <span>编辑</span>
               </Link>
             )}
             {canShowMenu && (
@@ -378,20 +409,45 @@ function DataCell({
   icon: Icon,
   value,
   label,
+  danger = false,
+  ok = false,
+  textual = false,
 }: {
   icon: typeof Bot;
-  value: number;
+  value: number | string;
   label: string;
+  danger?: boolean;
+  ok?: boolean;
+  textual?: boolean;
 }) {
+  const valueClass = textual
+    ? "text-[12px] font-medium leading-none"
+    : "text-sm font-semibold tabular-nums leading-none";
+  const colorClass = danger
+    ? "text-rose-600 dark:text-rose-400"
+    : ok
+    ? "text-emerald-600 dark:text-emerald-400"
+    : "text-foreground";
+  const iconClass = danger
+    ? "text-rose-500"
+    : ok
+    ? "text-emerald-500"
+    : "text-muted-foreground";
   return (
     <div className="flex flex-col items-center gap-0.5">
-      <Icon className="size-3 text-muted-foreground" />
-      <span className="text-sm font-semibold tabular-nums text-foreground leading-none">
-        {value}
-      </span>
+      <Icon className={cn("size-3", iconClass)} />
+      <span className={cn(valueClass, colorClass)}>{value}</span>
       <span className="text-[10px] text-muted-foreground leading-none">{label}</span>
     </div>
   );
+}
+
+// 把后端 status 映射成中文短词
+function statusLabel(s: "busy" | "idle" | "offline" | undefined): string {
+  if (s === "busy") return "忙碌";
+  if (s === "idle") return "空闲";
+  if (s === "offline") return "离线";
+  return "—";
 }
 
 function PersonActionsMenu({
@@ -421,7 +477,10 @@ function PersonActionsMenu({
 }) {
   const currentStatus = person.employeeStatus ?? "active";
   return (
-    <div className="absolute right-0 top-full mt-1 z-30 w-44 rounded-lg border border-border bg-popover shadow-lg overflow-hidden">
+    <div
+      className="absolute right-0 top-full z-50 mt-1 w-44 rounded-lg border border-border bg-popover shadow-xl overflow-visible"
+      data-person-menu
+    >
       {canSetActive && (
         <MenuItem onClick={onToggleActive} disabled={busy} icon={person.isActive ? PowerOff : Power}>
           {person.isActive ? "禁用登录" : "启用登录"}
