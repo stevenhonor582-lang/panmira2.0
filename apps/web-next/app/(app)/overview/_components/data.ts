@@ -285,3 +285,74 @@ export function aggregateCostDaily(breakdown: CostBreakdown["breakdown"]): Array
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, total]) => ({ date, total: Math.round(total * 1000) / 1000 }));
 }
+
+// ── R12 dashboard aggregate (single-fetch) ─────────────────────
+export interface DashboardAggregate {
+  kpis: {
+    employees: number;
+    employeesActive: number;
+    digitalEmployees: number;
+    digitalEmployeesActive: number;
+    pipelines: number;
+    pipelinesActive: number;
+    documents: number;
+    documentsAddedToday: number;
+    calls24h: number;
+    errorRate24h: number;
+    avgLatencyMs24h: number;
+    ragHitRate: number;
+  };
+  trend: {
+    calls: Array<{ day: string; count: number }>;
+    errors: Array<{ day: string; total: number; errors: number; rate: number }>;
+    tokens: Array<{ day: string; input: number; output: number }>;
+    cost: Array<{ day: string; total: number }>;
+  };
+  health: Array<{
+    name: string;
+    status: "ok" | "warn" | "error";
+    value: string;
+    threshold: string;
+    detail?: Record<string, unknown>;
+  }>;
+  topAgents: Array<{ id: string; name: string; calls: number }>;
+  topEmployees: Array<{ id: string; name: string; avatarUrl: string | null; tasks: number }>;
+  topDocuments: Array<{ id: string; title: string; hitCount: number; lastHitAt: string | null }>;
+  recentPipelines: Array<{
+    id: string;
+    pipelineId: string | null;
+    name: string;
+    status: string;
+    triggeredBy: string | null;
+    startedAt: string | null;
+    finishedAt: string | null;
+    durationMs: number | null;
+    error: string | null;
+  }>;
+  recentAudit: Array<{
+    id: string;
+    action: string;
+    resourceType: string | null;
+    resourceId: string | null;
+    createdAt: string | null;
+    details: unknown;
+  }>;
+  recentSessions: Array<{
+    id: string;
+    botName: string | null;
+    title: string | null;
+    platform: string | null;
+    updatedAt: string | null;
+    messageCount: number;
+  }>;
+  meta?: { generatedAt?: string; ragTotal?: number; ragHits?: number };
+}
+
+export async function fetchDashboardAggregate(): Promise<DashboardAggregate | null> {
+  try {
+    const res = await api<DashboardAggregate>(fullPath("/api/v2/admin/dashboard-aggregate"));
+    return res ?? null;
+  } catch {
+    return null;
+  }
+}
