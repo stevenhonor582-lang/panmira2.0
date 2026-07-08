@@ -1,6 +1,7 @@
 import * as crypto from 'node:crypto';
 import { pool } from './index.js';
 import { encrypt, decrypt } from './crypto.js';
+// R16-1 (2026-07-08): context_window support added throughout create/update/mapRow.
 
 export interface ProviderConfig {
   id: string;
@@ -9,6 +10,7 @@ export interface ProviderConfig {
   baseUrl: string;
   apiKeyEncrypted: string | null;
   model: string;
+  contextWindow: number | null;
   isDefault: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -27,11 +29,18 @@ export class ProviderConfigStore {
         base_url TEXT NOT NULL DEFAULT '',
         api_key_encrypted TEXT,
         model TEXT NOT NULL DEFAULT '',
+        context_window INTEGER,
         is_default BOOLEAN NOT NULL DEFAULT false,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
       )
     `);
+    // Ensure context_window column exists (added 2026-07-08 R16-1)
+    try {
+      await pool.query(`ALTER TABLE provider_configs ADD COLUMN IF NOT EXISTS context_window INTEGER`);
+    } catch {
+      /* ignore — column may already exist */
+    }
     this.initialized = true;
   }
 
@@ -65,6 +74,7 @@ export class ProviderConfigStore {
     baseUrl: string;
     apiKey?: string;
     model: string;
+    contextWindow?: number | null;
     isDefault?: boolean;
   }): Promise<ProviderConfig> {
     await this.init();
@@ -76,10 +86,19 @@ export class ProviderConfigStore {
     }
 
     const { rows } = await pool.query(
-      `INSERT INTO provider_configs (id, name, type, base_url, api_key_encrypted, model, is_default)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO provider_configs (id, name, type, base_url, api_key_encrypted, model, context_window, is_default)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
-      [id, data.name, data.type, data.baseUrl, apiKeyEncrypted, data.model, data.isDefault ?? false],
+      [
+        id,
+        data.name,
+        data.type,
+        data.baseUrl,
+        apiKeyEncrypted,
+        data.model,
+        data.contextWindow ?? null,
+        data.isDefault ?? false,
+      ],
     );
     return this.mapRow(rows[0]);
   }
@@ -92,6 +111,7 @@ export class ProviderConfigStore {
       baseUrl?: string;
       apiKey?: string;
       model?: string;
+      contextWindow?: number | null;
       isDefault?: boolean;
     },
   ): Promise<ProviderConfig | null> {
@@ -125,6 +145,10 @@ export class ProviderConfigStore {
       sets.push(`model = $${idx++}`);
       params.push(data.model);
     }
+    if (data.contextWindow !== undefined) {
+      sets.push(`context_window = $${idx++}`);
+      params.push(data.contextWindow);
+    }
     if (data.isDefault !== undefined) {
       sets.push(`is_default = $${idx++}`);
       params.push(data.isDefault);
@@ -153,7 +177,7 @@ export class ProviderConfigStore {
 
   /**
    * Safe list — does NOT return decrypted api key.
-   * Returns hasApiKey boolean instead.
+   * Returns hasApiKey boolean + masked tail instead.
    */
   async listSafe(): Promise<Array<Omit<ProviderConfig, 'apiKeyEncrypted'> & { hasApiKey: boolean; apiKeyMasked: string | null }>> {
     await this.init();
@@ -161,10 +185,12 @@ export class ProviderConfigStore {
     return rows.map((r: any) => {
       const mapped = this.mapRow(r);
       const { apiKeyEncrypted, ...rest } = mapped;
+      let maskedTail = '';
+      try { maskedTail = r.api_key_encrypted ? decrypt(r.api_key_encrypted).slice(-4) : ''; } catch { /* ignore */ }
       return {
         ...rest,
         hasApiKey: !!r.api_key_encrypted,
-        apiKeyMasked: r.api_key_encrypted ? '••••••' + (decrypt(r.api_key_encrypted).slice(-4) || '') : null,
+        apiKeyMasked: r.api_key_encrypted ? '••••••' + maskedTail : null,
       };
     });
   }
@@ -196,6 +222,7 @@ export class ProviderConfigStore {
       baseUrl: r.base_url,
       apiKeyEncrypted: r.api_key_encrypted ? decrypt(r.api_key_encrypted) : null,
       model: r.model,
+      contextWindow: r.context_window ?? null,
       isDefault: r.is_default,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
