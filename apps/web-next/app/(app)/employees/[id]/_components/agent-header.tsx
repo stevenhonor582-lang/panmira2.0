@@ -2,13 +2,27 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useAgent, useAgents, findAgent, type Agent } from "../../_lib/data";
+import { useAgent, updateAgent } from "../../_lib/data";
 import { AvatarMark, statusTone } from "../../_components/avatar-mark";
-import { ArrowLeft, User2, GitBranch, Hash } from "lucide-react";
+import {
+  ArrowLeft, User2, GitBranch, Hash,
+  MoreVertical, Pause, Play, Archive, Copy, Loader2, Check,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 
 export function AgentHeader({ id }: { id: string }) {
-  const { agent, loading: agentLoading } = useAgent(id);
-  if (agentLoading) return <div className="h-48 rounded-2xl bg-muted/40 animate-pulse" />;
+  const { agent, loading, reload } = useAgent(id);
+  const [acting, setActing] = React.useState(false);
+  const [copied, setCopied] = React.useState(false);
+
+  if (loading) return <div className="h-48 rounded-2xl bg-muted/40 animate-pulse" />;
   if (!agent) {
     return (
       <div className="rounded-3xl border border-dashed border-border p-12 text-center">
@@ -19,18 +33,89 @@ export function AgentHeader({ id }: { id: string }) {
   }
   const t = statusTone(agent.status);
 
+  const onAction = async (action: "pause" | "activate" | "deprecate") => {
+    setActing(true);
+    try {
+      const patch =
+        action === "pause"
+          ? { status: "paused", is_active: false }
+          : action === "activate"
+          ? { status: "active", is_active: true }
+          : { status: "deprecated", is_active: false };
+      await updateAgent(id, patch);
+      reload();
+    } catch (e) {
+      console.error("[agent-header] action failed:", e);
+    } finally {
+      setActing(false);
+    }
+  };
+
+  const copySID = async () => {
+    try {
+      await navigator.clipboard.writeText(agent.id);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // fallback — 选中文本
+      const range = document.createRange();
+      const node = document.getElementById("agent-sid-text");
+      if (node) {
+        range.selectNodeContents(node);
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+      }
+    }
+  };
+
   return (
     <header className="relative overflow-hidden rounded-3xl bg-card p-8 ring-1 ring-border">
       <div
         aria-hidden
         className={`pointer-events-none absolute -top-20 -right-12 size-80 rounded-full blur-3xl opacity-40 bg-gradient-to-br ${hueGradient(agent.hue)}`}
       />
-      <Link
-        href="/employees"
-        className="inline-flex items-center gap-1.5 text-[12px] font-mono uppercase tracking-[0.18em] text-foreground/45 hover:text-foreground"
-      >
-        <ArrowLeft className="size-3" /> 回到员工库
-      </Link>
+      <div className="relative flex items-start justify-between">
+        <Link
+          href="/employees"
+          className="inline-flex items-center gap-1.5 text-[12px] font-mono uppercase tracking-[0.18em] text-foreground/45 hover:text-foreground"
+        >
+          <ArrowLeft className="size-3" /> 回到员工库
+        </Link>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] text-foreground/60 hover:bg-muted/40 hover:text-foreground disabled:opacity-50"
+            data-testid="agent-card-menu"
+            disabled={acting}
+          >
+            {acting ? <Loader2 className="size-3.5 animate-spin" /> : <MoreVertical className="size-3.5" />}
+            <span>操作</span>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            {agent.status === "active" && (
+              <DropdownMenuItem onClick={() => onAction("pause")} data-testid="menu-pause">
+                <Pause className="size-4" /> 停用
+              </DropdownMenuItem>
+            )}
+            {(agent.status === "paused" || agent.status === "deprecated") && (
+              <DropdownMenuItem onClick={() => onAction("activate")} data-testid="menu-activate">
+                <Play className="size-4" /> 启用
+              </DropdownMenuItem>
+            )}
+            {agent.status !== "deprecated" && (
+              <DropdownMenuItem onClick={() => onAction("deprecate")} data-testid="menu-deprecate">
+                <Archive className="size-4" /> 标记弃用
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={copySID} data-testid="menu-copy-sid">
+              {copied ? <Check className="size-4 text-emerald-500" /> : <Copy className="size-4" />}
+              {copied ? "已复制 SID" : "复制 SID"}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
 
       <div className="relative mt-6 flex flex-col gap-6 md:flex-row md:items-end">
         <AvatarMark glyph={agent.glyph} hue={agent.hue} size="xl" />
@@ -45,13 +130,13 @@ export function AgentHeader({ id }: { id: string }) {
             <span>·</span>
             <span>v{agent.version}</span>
             <span>·</span>
-            <span className="text-foreground/45">{agent.complexity}</span>
+            <span className="text-foreground/45">{agent.complexityLevel}</span>
           </div>
           <h1 className="mt-2 text-5xl font-semibold tracking-tighter leading-[1.02]">
             {agent.displayName}
           </h1>
           <p className="mt-3 max-w-[58ch] text-[15px] leading-relaxed text-foreground/75">
-            {agent.persona}
+            {agent.persona || agent.description}
           </p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1 text-right">
@@ -69,10 +154,12 @@ export function AgentHeader({ id }: { id: string }) {
         <span className="inline-flex items-center gap-1.5">
           <GitBranch className="size-3" /> {agent.templateSource ? "派生" : "原创"}
         </span>
-        <span className="inline-flex items-center gap-1.5">
+        <span id="agent-sid-text" className="inline-flex items-center gap-1.5" data-testid="agent-sid">
           <Hash className="size-3" /> {agent.id.slice(0, 8)}…
         </span>
-        <span className="ml-auto text-foreground/35">created {new Date(agent.createdAt).toLocaleDateString("zh-CN")}</span>
+        <span className="ml-auto text-foreground/35">
+          created {new Date(agent.createdAt).toLocaleDateString("zh-CN")}
+        </span>
       </div>
     </header>
   );
@@ -97,6 +184,8 @@ function hueGradient(hue: string) {
     lime: "from-lime-300 to-emerald-200",
     violet: "from-violet-300 to-indigo-200",
     zinc: "from-zinc-300 to-stone-200",
+    sky: "from-sky-300 to-blue-200",
+    emerald: "from-emerald-300 to-teal-200",
   };
   return map[hue] ?? map.amber;
 }

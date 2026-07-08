@@ -1,57 +1,115 @@
+"use client";
+
 import * as React from "react";
-import { useAgent, useAgents, findAgent, type Agent } from "../../_lib/data";
+import { useAgent } from "../../_lib/data";
 import { BrainCircuit, ShieldCheck } from "lucide-react";
+import {
+  EditPane,
+  EditBar,
+  EditableTextarea,
+  IronLawsEditor,
+  agentToDraft,
+  diffDraft,
+} from "./edit-mode";
+
+const FIELDS = ["persona", "system_prompt", "iron_laws"];
 
 export function TabPersona({ id }: { id: string }) {
-  const { agent, loading: agentLoading } = useAgent(id);
-  if (agentLoading) return <div className="h-48 rounded-2xl bg-muted/40 animate-pulse" />;
+  const { agent, loading, reload } = useAgent(id);
+  const [draft, setDraft] = React.useState<Record<string, unknown>>({});
+  const [origDraft, setOrigDraft] = React.useState<Record<string, unknown>>({});
+
+  React.useEffect(() => {
+    if (agent) {
+      const d = agentToDraft(agent, FIELDS);
+      setDraft(d);
+      setOrigDraft(d);
+    }
+  }, [agent?.id, agent?.updatedAt]);
+
+  if (loading) return <div className="h-48 rounded-2xl bg-muted/40 animate-pulse" />;
   if (!agent) return null;
+
   return (
-    <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-      <section>
-        <SectionHead icon={BrainCircuit}>Persona · 人格短句</SectionHead>
-        <p className="rounded-2xl bg-card p-6 text-[17px] leading-relaxed ring-1 ring-border">
-          {agent.persona}
-        </p>
+    <EditPane id={id} label="persona" onSaved={reload}>
+      {(ctx) => {
+        const handleSave = async () => {
+          const patch = diffDraft(origDraft, draft);
+          if (Object.keys(patch).length === 0) {
+            ctx.cancelEdit();
+            return;
+          }
+          const ok = await ctx.save(patch);
+          if (!ok) setDraft(origDraft);
+        };
 
-        <SectionHead icon={BrainCircuit}>System Prompt · 摘要</SectionHead>
-        <pre className="overflow-hidden rounded-2xl bg-card p-6 text-[13px] leading-relaxed ring-1 ring-border font-mono">{`你是 ${agent.displayName}。
-你的角色:${agent.role}。
-你的复杂度等级:${agent.complexity}。
-你的工作准则,必须遵守 ${agent.ironLaws.length} 条铁律。
+        return (
+          <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+            <section>
+              {ctx.editing ? (
+                <>
+                  <div className="mb-3 flex justify-end">
+                    <EditBar onSave={handleSave} />
+                  </div>
+                  <EditableTextarea
+                    label="Persona · 人格短句(60 字内)"
+                    field="persona"
+                    value={agent.persona}
+                    editing
+                    draft={draft}
+                    setDraft={setDraft}
+                    rows={3}
+                    placeholder="一句话写清这个员工的性格与态度"
+                  />
+                  <div className="mt-6">
+                    <EditableTextarea
+                      label="System Prompt · 完整系统提示词"
+                      field="system_prompt"
+                      value={agent.systemPrompt}
+                      editing
+                      draft={draft}
+                      setDraft={setDraft}
+                      rows={14}
+                      fullscreen
+                      placeholder="# 角色\n你是 …\n\n# 工作准则\n1. …"
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <SectionHead icon={BrainCircuit}>Persona · 人格短句</SectionHead>
+                  <p className="rounded-2xl bg-card p-6 text-[17px] leading-relaxed ring-1 ring-border">
+                    {agent.persona || <span className="text-foreground/40">尚未设置 persona</span>}
+                  </p>
 
-${agent.ironLaws.map((l, i) => `${i + 1}. ${l}`).join("\n")}
+                  <SectionHead icon={BrainCircuit}>System Prompt</SectionHead>
+                  <pre className="overflow-auto rounded-2xl bg-card p-6 text-[13px] leading-relaxed ring-1 ring-border font-mono whitespace-pre-wrap">
+{agent.systemPrompt || <span className="text-foreground/40">尚未设置 system_prompt</span>}
+                  </pre>
+                </>
+              )}
+            </section>
 
-# 输出风格
-- 用人话,不堆术语
-- 结论先行,不要绕
-- 数字必须有出处,不杜撰
-- 默认中文;客户问英文再切英文`}</pre>
-      </section>
-
-      <section>
-        <SectionHead icon={ShieldCheck}>五条铁律 · Iron Laws</SectionHead>
-        <ol className="space-y-2.5">
-          {agent.ironLaws.length === 0 ? (
-            <li className="rounded-2xl border border-dashed border-border px-4 py-6 text-center text-sm text-foreground/50">
-              这位 bot 还没设铁律
-            </li>
-          ) : (
-            agent.ironLaws.map((law, i) => (
-              <li
-                key={i}
-                className="flex gap-3 rounded-2xl bg-card p-4 ring-1 ring-border"
-              >
-                <span className="font-mono text-[11px] text-foreground/35 tabular-nums">
-                  0{i + 1}
-                </span>
-                <p className="text-[14.5px] leading-relaxed text-foreground/90">{law}</p>
-              </li>
-            ))
-          )}
-        </ol>
-      </section>
-    </div>
+            <section>
+              <SectionHead icon={ShieldCheck}>五条铁律 · Iron Laws</SectionHead>
+              <IronLawsEditor
+                label=""
+                field="iron_laws"
+                items={agent.ironLaws}
+                editing={ctx.editing}
+                draft={draft}
+                setDraft={setDraft}
+              />
+              {ctx.editing && (
+                <div className="mt-3 flex justify-end">
+                  <EditBar onSave={handleSave} />
+                </div>
+              )}
+            </section>
+          </div>
+        );
+      }}
+    </EditPane>
   );
 }
 

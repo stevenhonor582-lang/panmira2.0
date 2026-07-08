@@ -1,7 +1,26 @@
 "use client";
 import * as React from "react";
 import { fetchLogSeries, type LogEntry } from "../../_lib/data";
-import { ScrollText } from "lucide-react";
+import { ScrollText, Download } from "lucide-react";
+import { Button } from "@/components/ui/button";
+
+function exportCSV(rows: LogEntry[], agentId: string) {
+  const header = "ts,task,ok,ms\n";
+  const body = rows.map((r) => {
+    const task = (r.task || "").replace(/"/g, '""');
+    return `${r.ts},"${task}",${r.ok ? 1 : 0},${r.ms}`;
+  }).join("\n");
+  const csv = header + body;
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `agent-${agentId.slice(0, 8)}-logs-${Date.now()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 export function TabLogs({ id }: { id: string }) {
   const [series, setSeries] = React.useState<LogEntry[]>([]);
@@ -56,6 +75,16 @@ export function TabLogs({ id }: { id: string }) {
             {failCount} 失败
           </span>
           <span className="font-mono tabular-nums">avg {avg} ms</span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => exportCSV(series, id)}
+            className="gap-1 text-[12px]"
+            data-testid="logs-export-csv"
+          >
+            <Download className="size-3.5" /> 导出 CSV
+          </Button>
         </div>
       </header>
 
