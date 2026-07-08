@@ -15,8 +15,8 @@
 import * as React from "react";
 import { Bot, Trash2, UserRound, Wrench, Hammer, GitFork, Split, type LucideIcon } from "lucide-react";
 
-import type { DagNodeMeta, NodeKind } from "./types";
-import { NODE_KIND_MAP } from "./types";
+import type { ApprovalState, DagNodeMeta, NodeKind } from "./types";
+import { NODE_KIND_CONTRACTS, NODE_KIND_MAP } from "./types";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -90,6 +90,8 @@ export function ShapeConfigPanel({ meta, onChange, onDelete }: ShapeConfigPanelP
         {kind === "tool" && <ToolConfig meta={meta} onChange={onChange} />}
         {kind === "conditional" && <ConditionalConfig meta={meta} onChange={onChange} />}
         {kind === "parallel" && <ParallelConfig meta={meta} onChange={onChange} />}
+        {kind === "human" && <HumanApprovalCard meta={meta} onChange={onChange} />}
+        <IOContractCard kind={kind} />
       </div>
     </div>
   );
@@ -289,6 +291,139 @@ function ParallelConfig({ meta, onChange }: { meta: DagNodeMeta; onChange: (p: P
       </div>
       <p className="text-[10px] text-muted-foreground leading-snug">
         并行节点会同时启动 N 个下游分支,fan-in 等待全部完成。
+      </p>
+    </div>
+  );
+}
+
+// ── IO contract card ───────────────────────────────────────────────────────
+
+/**
+ * R17-4: visible per-kind IO contract.
+ * Answers the operator's "每个管道断点前后输入输出是什么?" question without
+ * making them dig through source.
+ */
+function IOContractCard({ kind }: { kind: NodeKind }) {
+  const c = NODE_KIND_CONTRACTS[kind];
+  return (
+    <div className="rounded-md ring-1 ring-foreground/10 bg-muted/20 px-2.5 py-2 space-y-1.5">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
+          输入 / 输出 契约
+        </span>
+        {c.blocking && (
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 ring-1 ring-amber-200">
+            阻塞 · 等真人
+          </span>
+        )}
+      </div>
+      <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[10px] leading-snug">
+        <span className="text-muted-foreground">输入</span>
+        <span className="font-mono text-foreground/80">{c.input}</span>
+        <span className="text-muted-foreground">输出</span>
+        <span className="font-mono text-foreground/80">{c.output}</span>
+      </div>
+      <p className="text-[10px] text-muted-foreground leading-snug pt-0.5 border-t border-foreground/5">
+        {c.behaviour}
+      </p>
+    </div>
+  );
+}
+
+// ── Human approval card ────────────────────────────────────────────────────
+
+const APPROVAL_STATE_META: Record<
+  ApprovalState,
+  { label: string; tone: string; ring: string }
+> = {
+  idle: { label: "未触发", tone: "bg-slate-100 text-slate-700", ring: "ring-slate-200" },
+  waiting: { label: "⏸ 等待真人决策", tone: "bg-amber-100 text-amber-800", ring: "ring-amber-300" },
+  approved: { label: "✓ 已批准", tone: "bg-emerald-100 text-emerald-700", ring: "ring-emerald-200" },
+  rejected: { label: "✗ 已拒绝", tone: "bg-rose-100 text-rose-700", ring: "ring-rose-200" },
+  modified: { label: "✎ 已修改", tone: "bg-sky-100 text-sky-700", ring: "ring-sky-200" },
+};
+
+/**
+ * R17-4: Human node decision UI.
+ * Front-end only scaffolding for human-in-the-loop.
+ * Backend wiring (engine pause + POST /approve endpoint) is documented in
+ * .claude/handoff-2026-07-09-r17-4-tasks-canvas-done.md.
+ *
+ * For now, picking a decision updates local meta so the canvas reflects it;
+ * the actual pause/approve network call is stubbed via onDecideLocal.
+ */
+function HumanApprovalCard({
+  meta,
+  onChange,
+}: {
+  meta: DagNodeMeta;
+  onChange: (p: Partial<DagNodeMeta>) => void;
+}) {
+  const state: ApprovalState = meta.approvalState ?? "idle";
+  const m = APPROVAL_STATE_META[state];
+  const [note, setNote] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+
+  const decide = (next: ApprovalState) => {
+    setBusy(true);
+    // Frontend-only stub: real implementation will POST to
+    // /api/v2/admin/pipelines/:pid/runs/:runId/nodes/:nodeId/decide
+    setTimeout(() => {
+      onChange({
+        approvalState: next,
+        approvalActor: "local:admin",
+        approvalNote: note.trim() || undefined,
+      });
+      setBusy(false);
+    }, 250);
+  };
+
+  return (
+    <div className="rounded-md ring-1 ring-foreground/10 bg-card px-2.5 py-2 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
+          真人决策
+        </span>
+        <span className={cn("text-[10px] px-1.5 py-0.5 rounded ring-1", m.tone, m.ring)}>
+          {m.label}
+        </span>
+      </div>
+      <textarea
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="决策备注 (可选) — 拒绝/修改原因,批准的批注"
+        rows={2}
+        className="w-full px-2 py-1 rounded-md ring-1 ring-foreground/15 bg-background text-[11px]"
+      />
+      <div className="grid grid-cols-3 gap-1">
+        <button
+          type="button"
+          disabled={busy || state === "waiting" ? false : true}
+          onClick={() => decide("approved")}
+          className="h-7 text-[11px] rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          批准
+        </button>
+        <button
+          type="button"
+          disabled={busy || state === "waiting" ? false : true}
+          onClick={() => decide("rejected")}
+          className="h-7 text-[11px] rounded-md bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          拒绝
+        </button>
+        <button
+          type="button"
+          disabled={busy || state === "waiting" ? false : true}
+          onClick={() => decide("modified")}
+          className="h-7 text-[11px] rounded-md bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          修改
+        </button>
+      </div>
+      <p className="text-[9px] text-muted-foreground leading-snug">
+        注:后端 pipeline 引擎对 human 节点的暂停 / WS 推送对接见 handoff。
+        此面板先在画布层验证 UX。
       </p>
     </div>
   );

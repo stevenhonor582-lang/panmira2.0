@@ -84,7 +84,73 @@ export interface DagNodeMeta {
   label?: string;
   /** Free-form config JSON. */
   config?: Record<string, unknown>;
+  /**
+   * Human-in-the-loop approval state.
+   * - 'idle'      : not yet reached by the engine
+   * - 'waiting'   : engine paused, awaiting a human decision
+   * - 'approved'  : human approved, downstream may proceed
+   * - 'rejected'  : human rejected, downstream skipped
+   * - 'modified'  : human altered the input, downstream proceeds with new payload
+   * Only meaningful when `kind === 'human'`. Defaults to 'idle'.
+   */
+  approvalState?: ApprovalState;
+  /** Last decision actor (e.g. user id / 'auto-bypass') — for audit trail. */
+  approvalActor?: string;
+  /** Optional note left by the human when deciding. */
+  approvalNote?: string;
 }
+
+export type ApprovalState = "idle" | "waiting" | "approved" | "rejected" | "modified";
+
+/**
+ * R17-4: per-kind IO contract.
+ * Surfaces to operators what each node consumes and produces so they can
+ * reason about pipeline breaks ("断点") before/after each step.
+ */
+export interface NodeKindContract {
+  /** What upstream feeds into this node. */
+  input: string;
+  /** What this node emits to downstream. */
+  output: string;
+  /** Behaviour when the engine hits this node. */
+  behaviour: string;
+  /** Whether this node blocks until a human decides. */
+  blocking?: boolean;
+}
+
+export const NODE_KIND_CONTRACTS: Record<NodeKind, NodeKindContract> = {
+  bot: {
+    input: "上游节点输出(或 initialInput)+ 节点 inputTemplate",
+    output: "{ text, agentId, model, toolCalls[] }",
+    behaviour: "调用数字员工 (LLM agent template) ,单跳 tool_use 循环,失败按 retryPolicy 重试",
+  },
+  human: {
+    input: "待审批的上游输出 + 节点上下文(摘要 / 风险点)",
+    output: "{ decision: 'approved'|'rejected'|'modified', note?, modifiedInput? }",
+    behaviour: "执行到此暂停 (status=waiting_for_human),等真人 approve / reject / modify 后继续下游",
+    blocking: true,
+  },
+  skill: {
+    input: "调用参数 (args JSON) + 上游上下文",
+    output: "skill 标准化结果(搜索结果 / 摘要 / 翻译等)",
+    behaviour: "调用 skill 库 (filesystem-backed) ,无状态,可并行",
+  },
+  tool: {
+    input: "工具名 + args JSON",
+    output: "{ output, error? } 工具原始返回",
+    behaviour: "底层工具函数(web_search / fetch_url / send_email...) ,单次调用,失败抛错",
+  },
+  conditional: {
+    input: "上游数据 (任意)",
+    output: "布尔分支结果(true → 第 1 条出边,false → 其余)",
+    behaviour: "求值 expression,路由到对应下游。必须 ≥2 条出边",
+  },
+  parallel: {
+    input: "任务列表(上游输出 fan-out 到 N 条出边)",
+    output: "下游 N 个节点的合并结果(fan-in 等待全部完成)",
+    behaviour: "同时启动 N 条并行分支,全部完成后汇聚到 fan-in 节点",
+  },
+};
 
 export interface DagNodeRecord {
   shapeId: string;
