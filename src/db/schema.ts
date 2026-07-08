@@ -1023,7 +1023,7 @@ export const pipelineRuns = pgTable('pipeline_runs', {
   currentNodeId: varchar('current_node_id', { length: 100 }),
   // Per-node execution state
   nodeStates: jsonb('node_states').notNull().default({}).$type<Record<string, {
-    status: 'pending' | 'running' | 'success' | 'failed' | 'skipped';
+    status: 'pending' | 'running' | 'success' | 'failed' | 'skipped' | 'waiting_for_human';
     input?: unknown;
     output?: unknown;
     error?: string;
@@ -1031,6 +1031,11 @@ export const pipelineRuns = pgTable('pipeline_runs', {
     finishedAt?: string;
     durationMs?: number;
     tokensUsed?: number;
+    /* R18: human-node decision fields, populated by the decide endpoint. */
+    approval?: 'approved' | 'rejected';
+    note?: string;
+    decidedBy?: string;
+    decidedAt?: string;
   }>>(),
   // Snapshot of node labels at trigger time, so Diff can detect label renames.
   // Format: { [nodeId]: label }. Nullable for backward compat with old runs.

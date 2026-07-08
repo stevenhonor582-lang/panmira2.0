@@ -10,7 +10,7 @@
  *   (Option C: complete single-agent invocation)
  */
 import { db } from '../db/index.js';
-import { agents, agentKnowledgeRefs } from '../db/schema.js';
+import { agents, agentKnowledgeRefs, pipelineRuns } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import {
   callLlm,
@@ -29,6 +29,16 @@ export interface PipelineNode {
   inputTemplate?: Record<string, unknown>;
   outputKey?: string;
   timeoutMs?: number;
+  /**
+   * R18: Node kind. Defaults to 'bot' for backward compat (pre-R18 pipelines
+   * have no `kind` field and are all bot/LLM nodes).
+   * - 'bot'        : LLM agent invocation (default)
+   * - 'human'      : pauses pipeline, waits for a human decide() call
+   * - 'skill'/'tool'/'conditional'/'parallel': reserved for future phases
+   */
+  kind?: 'bot' | 'human' | 'skill' | 'tool' | 'conditional' | 'parallel';
+  /** R18: kind-specific config. For 'human' this holds approval settings. */
+  meta?: Record<string, unknown>;
 }
 
 /**
@@ -67,7 +77,7 @@ export interface RunTrigger {
 }
 
 export interface NodeState {
-  status: 'pending' | 'running' | 'success' | 'failed' | 'skipped';
+  status: 'pending' | 'running' | 'success' | 'failed' | 'skipped' | 'waiting_for_human';
   input?: unknown;
   output?: unknown;
   error?: string;
@@ -75,6 +85,14 @@ export interface NodeState {
   finishedAt?: string;
   durationMs?: number;
   tokensUsed?: number;
+  /**
+   * R18: Human-node decision result. Set by the decide() endpoint and polled
+   * by the engine's human branch to resume execution.
+   */
+  approval?: 'approved' | 'rejected';
+  note?: string;
+  decidedBy?: string;
+  decidedAt?: string;
 }
 
 export interface RunResult {
@@ -398,6 +416,106 @@ export function computeLevels(nodes: PipelineNode[], edges: PipelineEdge[]): Map
   return levels;
 }
 
+/**
+ * R18: Execute a 'human' kind node.
+ *
+ * Sets status to 'waiting_for_human', then polls pipeline_runs.node_states for
+ * a decision written by POST .../nodes/:nodeId/decide. Resumes the pipeline
+ * with success (approved) or failed (rejected/timeout).
+ *
+ * Polling (vs. an in-memory trigger) is deliberately chosen so the engine and
+ * the decide endpoint stay decoupled: the decide endpoint just writes to the
+ * DB row, and any engine process (including one restarted mid-wait) can pick
+ * it up. Default timeout 1h, overridable via node.timeoutMs.
+ */
+async function runHumanNode(
+  node: PipelineNode,
+  input: unknown,
+  ctx: InvokeContext,
+  onNodeUpdate: (nodeId: string, state: NodeState) => Promise<void>,
+  sleep: (ms: number) => Promise<void>,
+): Promise<NodeState> {
+  const startedAt = new Date().toISOString();
+  const waitingState: NodeState = {
+    status: 'waiting_for_human',
+    input,
+    startedAt,
+  };
+  await onNodeUpdate(node.id, waitingState);
+
+  const pollIntervalMs = 2000;
+  const timeoutMs = node.timeoutMs && node.timeoutMs > 0 ? node.timeoutMs : 3_600_000;
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    await sleep(pollIntervalMs);
+    try {
+      const rows = await db.select().from(pipelineRuns).where(eq(pipelineRuns.id, ctx.runId)).limit(1);
+      const row = rows[0];
+      if (!row) {
+        // Run vanished (deleted?) — fail fast.
+        return {
+          status: 'failed',
+          input,
+          error: 'run_not_found_while_waiting_for_human',
+          startedAt,
+          finishedAt: new Date().toISOString(),
+        };
+      }
+      const ns = (row.nodeStates ?? {}) as Record<string, NodeState>;
+      const mine = ns[node.id];
+      const decision = mine?.approval;
+      if (decision === 'approved' || decision === 'rejected') {
+        const finishedAt = new Date().toISOString();
+        if (decision === 'approved') {
+          return {
+            status: 'success',
+            input,
+            output: {
+              approved: true,
+              note: mine?.note,
+              decidedBy: mine?.decidedBy,
+              decidedAt: mine?.decidedAt,
+              label: node.label,
+            },
+            approval: 'approved',
+            note: mine?.note,
+            decidedBy: mine?.decidedBy,
+            startedAt,
+            finishedAt,
+            durationMs: Date.now() - new Date(startedAt).getTime(),
+          };
+        }
+        return {
+          status: 'failed',
+          input,
+          output: { rejected: true, note: mine?.note, decidedBy: mine?.decidedBy },
+          error: '人工拒绝' + (mine?.note ? ': ' + mine.note : ''),
+          approval: 'rejected',
+          note: mine?.note,
+          decidedBy: mine?.decidedBy,
+          startedAt,
+          finishedAt,
+          durationMs: Date.now() - new Date(startedAt).getTime(),
+        };
+      }
+      // else: still waiting, keep polling
+    } catch {
+      // Transient DB error — keep polling rather than killing the run.
+    }
+  }
+
+  // Timed out
+  return {
+    status: 'failed',
+    input,
+    output: { timeout: true },
+    error: '人工审批超时',
+    startedAt,
+    finishedAt: new Date().toISOString(),
+  };
+}
+
 /** Run a single node with retry on failure. Exposed for testing. */
 export async function runNodeWithRetry(
   node: PipelineNode,
@@ -408,6 +526,11 @@ export async function runNodeWithRetry(
   state: NodeState,
   sleep: (ms: number) => Promise<void> = (ms) => new Promise(r => setTimeout(r, ms)),
 ): Promise<NodeState> {
+  // ── R18: Human node — pause until a real person calls decide() ──
+  if (node.kind === 'human') {
+    return runHumanNode(node, input, ctx, onNodeUpdate, sleep);
+  }
+
   const maxAttempts = Math.max(1, retryPolicy?.maxAttempts ?? 1);
   const backoffMs = Math.max(0, retryPolicy?.backoffMs ?? 0);
   let attempt = 0;
