@@ -253,10 +253,10 @@ export default function PersonDetailPage() {
         </div>
       </header>
 
-      {/* === Tab 行 (sticky) + 右侧醒目 [编辑] 按钮 === */}
+      {/* === Tab 行 + 右侧醒目 [编辑] 按钮 === R32-A 改动 12: 取消 sticky/fixed,跟随页面滚动 */}
       <nav
         aria-label="详情 tab"
-        className="sticky top-12 z-20 -mx-6 px-6 bg-background/95 backdrop-blur border-b border-border"
+        className="-mx-6 px-6 bg-background/95 backdrop-blur border-b border-border"
       >
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-0.5 overflow-x-auto -mb-px flex-1 min-w-0">
