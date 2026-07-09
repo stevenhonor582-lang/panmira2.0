@@ -182,14 +182,31 @@ export function AgentCard({
         </div>
       )}
 
+      {/* R25: 状态 accent 顶线(参照 person-card) — 暂停/弃用时显示 */}
+      <div
+        aria-hidden
+        className={cn(
+          "absolute left-0 top-0 h-0.5 w-full transition-opacity",
+          agent.status === "active" ? "opacity-0" : "opacity-100",
+          t.accent,
+        )}
+      />
       <div className="relative flex h-full w-full flex-col p-5">
         <div className="flex items-start justify-between gap-3">
           <AvatarMark glyph={agent.glyph} hue={agent.hue} size={avatarSize} />
-          <div className="flex items-center gap-1.5 text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/60">
-            <span className={cn("size-1.5 rounded-full", t.dot)} />
-            {t.label}
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
+            {/* R25: 状态 chip(参照真人卡片) */}
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-[0.18em]",
+                t.chip,
+              )}
+            >
+              <span className={cn("size-1.5 rounded-full", t.dot)} />
+              {t.label}
+            </span>
             {agent.isTemplate && (
-              <span className="ml-1 rounded bg-foreground/10 px-1.5 py-0.5 text-[9.5px] tracking-[0.18em] text-foreground/70">
+              <span className="rounded bg-foreground/10 px-1.5 py-0.5 text-[9.5px] tracking-[0.18em] text-foreground/70">
                 模板
               </span>
             )}

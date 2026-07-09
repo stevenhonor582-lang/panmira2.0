@@ -83,9 +83,43 @@ export function AvatarMark({
   );
 }
 
-export function statusTone(status: Agent["status"]): { dot: string; label: string } {
-  if (status === "active") return { dot: "bg-emerald-500", label: "运行中" };
-  if (status === "paused") return { dot: "bg-amber-500", label: "已暂停" };
-  if (status === "draft") return { dot: "bg-sky-500", label: "草稿" };
-  return { dot: "bg-zinc-400", label: "已弃用" };
+// R25: chip 样式参照 person-card STATUS_STYLE(oklch 不刺眼)
+export function statusTone(status: Agent["status"]): {
+  dot: string;
+  label: string;
+  /** chip 包装(label + dot 用),参照真人卡片样式 */
+  chip: string;
+  /** 卡片顶部细线 accent(可选) */
+  accent: string;
+} {
+  if (status === "active") {
+    return {
+      dot: "bg-emerald-500",
+      label: "运行中",
+      chip: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 ring-1 ring-emerald-500/20",
+      accent: "bg-emerald-500/0",
+    };
+  }
+  if (status === "paused") {
+    return {
+      dot: "bg-amber-500",
+      label: "已暂停",
+      chip: "bg-amber-500/10 text-amber-700 dark:text-amber-400 ring-1 ring-amber-500/20",
+      accent: "bg-amber-500/40",
+    };
+  }
+  if (status === "draft") {
+    return {
+      dot: "bg-sky-500",
+      label: "草稿",
+      chip: "bg-sky-500/10 text-sky-700 dark:text-sky-400 ring-1 ring-sky-500/20",
+      accent: "bg-sky-500/40",
+    };
+  }
+  return {
+    dot: "bg-zinc-400",
+    label: "已弃用",
+    chip: "bg-zinc-500/10 text-zinc-600 dark:text-zinc-400 ring-1 ring-zinc-500/20",
+    accent: "bg-zinc-500/40",
+  };
 }
