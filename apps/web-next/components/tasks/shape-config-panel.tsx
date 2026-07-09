@@ -19,6 +19,7 @@ import type { ApprovalState, DagNodeMeta, NodeKind } from "./types";
 import { NODE_KIND_CONTRACTS, NODE_KIND_MAP } from "./types";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { NodeRunDetails, type NodeRunState } from "./node-run-details";
 
 interface Option {
   id: string;
@@ -48,6 +49,11 @@ interface ShapeConfigPanelProps {
   runId?: string;
   pipelineId?: string;
   nodeId?: string;
+  /**
+   * R21: 显式传入的节点执行状态(优先级最高)。
+   * 若未传,会尝试根据 pipelineId + nodeId 拉最近一次 run 的 node state。
+   */
+  runState?: NodeRunState;
 }
 
 export function ShapeConfigPanel({
@@ -57,6 +63,7 @@ export function ShapeConfigPanel({
   runId,
   pipelineId,
   nodeId,
+  runState,
 }: ShapeConfigPanelProps) {
   const kind = meta.kind;
   const M = NODE_KIND_MAP[kind];
@@ -113,6 +120,12 @@ export function ShapeConfigPanel({
             nodeId={nodeId}
           />
         )}
+        <RunDetailsCard
+          kind={kind}
+          nodeId={nodeId}
+          pipelineId={pipelineId}
+          runState={runState}
+        />
         <IOContractCard kind={kind} />
       </div>
     </div>
@@ -348,6 +361,86 @@ function IOContractCard({ kind }: { kind: NodeKind }) {
       <p className="text-[10px] text-muted-foreground leading-snug pt-0.5 border-t border-foreground/5">
         {c.behaviour}
       </p>
+    </div>
+  );
+}
+
+// ── Run details card (R21) ──────────────────────────────────────────────────
+
+/**
+ * R21: Per-node run details.
+ *
+ * 优先级:runState prop(父组件直接传)> 自取最近一次 run 的 nodeStates。
+ * 后端不动 — 数据存在 pipeline_runs.node_states jsonb,WS 只推汇总进度,
+ * 所以这里需要 GET /pipelines/:id/runs 拿最近一次的 nodeStates[nodeId]。
+ */
+function RunDetailsCard({
+  kind,
+  nodeId,
+  pipelineId,
+  runState,
+}: {
+  kind: NodeKind;
+  nodeId?: string;
+  pipelineId?: string;
+  runState?: NodeRunState;
+}) {
+  const [fetched, setFetched] = React.useState<NodeRunState | null>(null);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  // 父组件直接传 — 优先级最高,跳过 fetch
+  const effective = runState ?? fetched;
+
+  React.useEffect(() => {
+    if (runState) return; // 显式 prop 优先
+    if (!pipelineId || !nodeId) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    (async () => {
+      try {
+        const r = (await api(`/api/v2/admin/pipelines/${pipelineId}/runs?limit=1`)) as {
+          // backend may return either data: Run[] or data: { runs: Run[] }
+          data?:
+            | Array<{ nodeStates?: Record<string, NodeRunState> }>
+            | { runs?: Array<{ nodeStates?: Record<string, NodeRunState> }> };
+        };
+        if (cancelled) return;
+        const data = r?.data;
+        const runs = Array.isArray(data) ? data : (data?.runs ?? []);
+        if (runs.length === 0) {
+          setFetched(null);
+          return;
+        }
+        const ns = runs[0].nodeStates ?? {};
+        setFetched(ns[nodeId] ?? null);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "加载执行状态失败");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pipelineId, nodeId, runState]);
+
+  return (
+    <div className="rounded-md ring-1 ring-foreground/10 bg-card px-2.5 py-2 space-y-1.5">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
+          执行详情 (最近一次)
+        </span>
+        {loading && (
+          <span className="text-[10px] text-muted-foreground animate-pulse">加载中…</span>
+        )}
+      </div>
+      {error ? (
+        <div className="text-[11px] text-rose-600">{error}</div>
+      ) : (
+        <NodeRunDetails state={effective} nodeKind={kind} />
+      )}
     </div>
   );
 }
