@@ -118,19 +118,24 @@ export function NewBotWizard() {
 
   const submit = async (): Promise<{ ok: boolean; error?: string; id?: string }> => {
     const payload = formToAgentPayload(form);
+    // R27 规则 1: api() 不抛 4xx,需手动检查返回体里的 error 字段(name_taken / bot_already_bound)
     try {
-      const res = await api<{ agent: { id: string } }>("/api/agents/", {
+      const res = await api<{ agent: { id: string }; error?: string; message?: string }>("/api/agents/", {
         method: "POST",
         body: payload,
         headers: { "content-type": "application/json" },
       });
-      return { ok: true, id: res.agent?.id };
+      // 成功:有 agent.id
+      if (res?.agent?.id) return { ok: true, id: res.agent.id };
+      // 409 / 其它错误:后端返回 { error, message }
+      const errMsg = res?.message || res?.error || "创建失败(未知原因)";
+      return { ok: false, error: String(errMsg) };
     } catch (e: any) {
       const msg =
         e?.body?.error ||
         e?.body?.message ||
         e?.message ||
-        (typeof e === "string" ? e : "未知错误");
+        (typeof e === "string" ? e : "网络错误,请重试");
       return { ok: false, error: String(msg) };
     }
   };

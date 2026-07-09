@@ -57,7 +57,8 @@ export async function handleEmployeesRoutes(
       const limit = Math.min(parseInt(u.searchParams.get('limit') || '100', 10), 200);
       const offset = parseInt(u.searchParams.get('offset') || '0', 10);
       const status = u.searchParams.get('status'); // active|paused|deprecated
-      const filter = u.searchParams.get('filter') || 'instance'; // instance|template|all
+      const filter = u.searchParams.get('filter') || 'instance'; // instance|template|all|unassigned
+      const owner = u.searchParams.get('owner'); // R27 规则 4: 配合 filter=unassigned,owner_user_id IS NULL OR = owner
 
       const params: unknown[] = [tenantId];
       let where = 'tenant_id = $1';
@@ -65,6 +66,15 @@ export async function handleEmployeesRoutes(
         where += ' AND is_template = true';
       } else if (filter === 'all') {
         // 不加 is_template 条件
+      } else if (filter === 'unassigned') {
+        // R27 规则 4: 未归属 OR 归属当前真人(用于真人详情添加 agent 选择器)
+        where += ' AND is_template = false';
+        if (owner) {
+          params.push(owner);
+          where += ` AND (owner_user_id IS NULL OR owner_user_id = $${params.length})`;
+        } else {
+          where += ' AND owner_user_id IS NULL';
+        }
       } else {
         // instance (默认)
         where += ' AND is_template = false';

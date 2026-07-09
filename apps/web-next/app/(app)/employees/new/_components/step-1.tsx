@@ -14,6 +14,20 @@ import {
 } from "@/components/resource-picker/resource-picker";
 // Loader2 已不再需要(模板/实例列表 picker 内部自带 loading)
 
+// R27 规则 1: 中文→拼音首字母(与后端 generateWorkingDir 同源,仅用于预览)
+const PINYIN_PREVIEW: Record<string, string> = {
+  '不':'b','盈':'y','墨':'m','言':'y','守':'s','静':'j','得':'d','一':'y','玄':'x','鉴':'j','全':'q','栈':'z',
+  '文':'w','案':'a','运':'y','维':'w','替':'t','补':'b',
+};
+function previewSlug(name: string): string {
+  let r = "";
+  for (const ch of String(name || "")) {
+    if (/[a-zA-Z0-9]/.test(ch)) r += ch.toLowerCase();
+    else if (PINYIN_PREVIEW[ch]) r += PINYIN_PREVIEW[ch];
+  }
+  return r.slice(0, 6) || "agent";
+}
+
 const GLYPHS = ["新", "工", "文", "运", "客", "研", "守", "得", "墨", "玄", "不", "销", "服"];
 const HUES = ["amber", "rose", "teal", "sky", "indigo", "stone", "emerald", "violet", "lime"];
 
@@ -219,6 +233,15 @@ export function Step1({
           className="mt-2 w-full rounded-2xl bg-background px-5 py-4 text-[28px] font-semibold tracking-tight ring-1 ring-border placeholder:text-foreground/30 focus:outline-none focus:ring-foreground/40"
           data-testid="field-name"
         />
+        {/* R27 规则 1: 工作目录自动生成预览(只读,英文拼音首字母+随机,保存时后端最终生成) */}
+        {form.name.trim().length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl bg-muted/40 px-3 py-2 text-[12px] text-foreground/55">
+            <span className="font-mono">
+              工作目录(自动生成): /workspace/agents/{previewSlug(form.name)}-<span className="text-foreground/40">随机6位</span>
+            </span>
+            <span className="ml-auto rounded bg-foreground/5 px-1.5 py-0.5 font-mono text-[10px] text-foreground/45">只读 · 不可手改</span>
+          </div>
+        )}
       </section>
 
       <section>
