@@ -490,18 +490,15 @@ bot ──> agent_pipeline ──< pipeline_run ──< node_state
 document ──< document_chunk (pgvector embedding)
 ```
 
-### 6.3 人机协同的数据结构（现状与缺口）
+### 6.3 人机协同的数据结构（方案 B 已设计，待 apply）
 
-据 `scripts/schema.sql`，**「真人×Agent 绑定」目前数据模型未充分支撑**：
+**缺口**：`users` 表无 agent 绑定字段，无专门绑定表。
 
-- `users` 表只有基础字段（id / tenant / email / name / role / feishu_user_id …），**没有「绑定哪个 agent / 数字员工」的字段**
-- **没有专门的员工-agent 绑定关系表**（现有绑定表是 `bot_skill_bindings` / `group_memberships` / `routing_bindings`，均非「人 ↔ agent」）
-
-> ⚠️ 这是第 4.9 节「人机协同」核心域的**数据缺口**，需补：
-> - **方案 A**：`users` 表加 `primary_agent_id` 等字段（轻量，一人一助手）
-> - **方案 B**：新增 `user_agent_bindings` 表（灵活，一人多 agent / 按岗位绑）
->
-> 注：`scripts/schema.sql` 可能非最新，需核对 `db_backup_2026_07_08_q1.sql`（最新备份）确认 users 是否已扩部门/职位字段（R11-R13 提交曾扩过）。
+**方案 B 已落地设计**（P1，2026-07-09）：
+- 新表 `user_agent_bindings`：`user_id → users.id`、`agent_id → agents.id`、`role`(owner/user/approver)、`is_primary`、`tenant_id`
+- migration：`migrations/2026_07_09_r20_user_agent_bindings.sql`
+- FK 验证通过：`agents.id` / `users.id` 均为 uuid ✅
+- 状态：**待 apply 到生产库**（apply 前需备份数据库）
 
 ---
 
