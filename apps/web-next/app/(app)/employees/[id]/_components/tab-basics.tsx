@@ -88,6 +88,16 @@ function engineFromProvider(p: ProviderInfo): string {
   return t || "openai";
 }
 
+/** 安全解析 JSON 字符串,失败返回空对象(用于 orchestration 等字段)。 */
+function safeParse(raw: string): Record<string, unknown> {
+  try {
+    const v = JSON.parse(raw);
+    return v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
 // R28-A: Agent 基础信息卡片统一真人 BasicTab 卡片布局
 // - 基本信息 卡片(名称/描述/角色/分类)
 // - 系统信息 卡片(Agent ID/工作目录/引擎·模型/主理人/模板来源/版本/创建于)
@@ -341,6 +351,15 @@ function ModelBindingCard({ agent, onSaved }: { agent: Agent; onSaved: () => voi
     }
   }, [currentBinding, selectedId]);
 
+  // R32-B: 模型路由开关 — 存 agent.orchestration.useModelRouting
+  const rawOrch = (agent.raw as Record<string, unknown> | null)?.orchestration;
+  const orchObj = (typeof rawOrch === "string" ? safeParse(rawOrch) : rawOrch) as
+    | Record<string, unknown>
+    | null;
+  const [useRouting, setUseRouting] = React.useState<boolean>(
+    typeof orchObj?.useModelRouting === "boolean" ? (orchObj.useModelRouting as boolean) : true,
+  );
+
   const isDirty = !!selectedId && selectedId !== currentBinding?.id;
 
   async function save() {
@@ -349,11 +368,16 @@ function ModelBindingCard({ agent, onSaved }: { agent: Agent; onSaved: () => voi
     if (!p) return;
     setSaving(true);
     try {
+      // 合并 orchestration(保留既有键,写入 useModelRouting)
+      const mergedOrch = { ...(orchObj ?? {}), useModelRouting: useRouting };
       await updateAgent(agent.id, {
         default_engine: engineFromProvider(p),
         default_model: p.model,
+        orchestration: mergedOrch,
       });
-      toast.success(`已绑定 ${p.name} · ${p.model}`);
+      toast.success(
+        `已绑定 ${p.name} · ${p.model}${useRouting ? "(遵循全局路由)" : "(固定模型)"}`,
+      );
       onSaved();
     } catch (e: unknown) {
       toast.error(`保存失败:${e instanceof Error ? e.message : String(e)}`);
@@ -400,6 +424,24 @@ function ModelBindingCard({ agent, onSaved }: { agent: Agent; onSaved: () => voi
           </span>
         ) : null}
       </div>
+
+      {/* R32-B: 模型路由开关 */}
+      <label className="mb-4 flex items-start gap-2.5 rounded-lg ring-1 ring-border bg-background/40 px-3 py-2.5 cursor-pointer hover:bg-muted/30 transition-colors">
+        <input
+          type="checkbox"
+          checked={useRouting}
+          onChange={(e) => setUseRouting(e.target.checked)}
+          className="mt-0.5 size-3.5 accent-amber-500"
+        />
+        <div className="flex-1">
+          <div className="text-[13px] font-medium text-foreground/90">遵循全局路由(自动调度最优模型)</div>
+          <div className="text-[11px] text-muted-foreground leading-snug mt-0.5">
+            开启时:失败自动 fallback 到备用模型,按全局策略选最优。
+            <br />
+            关闭时:固定使用下方选定模型,不触发路由切换。
+          </div>
+        </div>
+      </label>
 
       {/* 加载 / 错误 / 列表 */}
       {loading ? (
