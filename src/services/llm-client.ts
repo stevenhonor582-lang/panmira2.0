@@ -113,6 +113,8 @@ export async function callLlm(opts: LlmCallOptions): Promise<LlmCallResult> {
   };
   if (opts.system) body.system = opts.system;
   if (opts.tools && opts.tools.length > 0) body.tools = opts.tools;
+  // 禁用 extended thinking(DeepSeek anthropic 默认开,吃 maxTokens)
+  body.thinking = { type: 'disabled' };
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);

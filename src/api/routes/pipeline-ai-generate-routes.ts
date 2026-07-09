@@ -119,8 +119,8 @@ ${agentList}
     const llmResult = await callLlm({
       system,
       messages: [{ role: 'user', content: description }],
-      maxTokens: 2048,
-      timeoutMs: 60000,
+      maxTokens: 8192,
+      timeoutMs: 90000,
     });
 
     // 4. Parse JSON — LLM may wrap it in markdown fences or add prose.
