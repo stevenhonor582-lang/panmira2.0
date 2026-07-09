@@ -2,7 +2,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, ArrowRight, SkipForward, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, SkipForward, CheckCircle2, AlertCircle, Loader2, X } from "lucide-react";
 import { EMPTY_FORM, PERSONA_PRESETS, formToAgentPayload, type WizardForm, type ProviderInfo, type SkillInfo, type McpServerInfo, type KbFolderInfo, type KbInfo, type ChannelBotInfo } from "./form";
 import { StepRail, STEPS } from "./stepper";
 import { Step1 } from "./step-1";
@@ -230,22 +230,43 @@ export function NewBotWizard() {
         </div>
 
         {!isLast && (
-          <div className="mt-8 flex items-center justify-between border-t border-border pt-5">
+          <div className="mt-8 flex items-center justify-between gap-3 border-t border-border pt-5">
+            {/* R25: 显式取消按钮 — 任何 step 都能直接回员工库,不丢已填字段提示 */}
             <button
               type="button"
-              onClick={prev}
-              disabled={current === 1}
-              className="inline-flex items-center gap-1.5 rounded-full bg-muted px-4 py-2 text-[13px] font-medium text-foreground disabled:opacity-40 hover:bg-muted/70"
+              onClick={() => {
+                if (typeof window !== "undefined") {
+                  const hasInput = form.name.trim() || form.description.trim() || form.persona.trim();
+                  if (hasInput) {
+                    const ok = window.confirm("取消新建?已填字段不会保存。");
+                    if (!ok) return;
+                  }
+                }
+                router.push("/employees");
+              }}
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-[12.5px] font-medium text-foreground/55 hover:text-foreground hover:bg-muted/60"
+              data-testid="wizard-cancel"
+              aria-label="取消新建"
             >
-              <ArrowLeft className="size-3.5" /> 上一步
+              <X className="size-3.5" /> 取消
             </button>
-            <button
-              type="button"
-              onClick={next}
-              className="inline-flex items-center gap-1.5 rounded-full bg-foreground px-5 py-2 text-[13px] font-medium text-background hover:opacity-90"
-            >
-              下一步 <ArrowRight className="size-3.5" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={prev}
+                disabled={current === 1}
+                className="inline-flex items-center gap-1.5 rounded-full bg-muted px-4 py-2 text-[13px] font-medium text-foreground disabled:opacity-40 hover:bg-muted/70"
+              >
+                <ArrowLeft className="size-3.5" /> 上一步
+              </button>
+              <button
+                type="button"
+                onClick={next}
+                className="inline-flex items-center gap-1.5 rounded-full bg-foreground px-5 py-2 text-[13px] font-medium text-background hover:opacity-90"
+              >
+                下一步 <ArrowRight className="size-3.5" />
+              </button>
+            </div>
           </div>
         )}
       </section>
