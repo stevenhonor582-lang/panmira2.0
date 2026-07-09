@@ -2,13 +2,14 @@
 
 /**
  * R13-B 通用编辑组件 — 7 tab 共用。
+ * R24: 统一保存按钮 — EditPane 顶部右侧管理 编辑/保存/取消,tab 内容不再放 EditBar。
  *
  * 设计:
- * - <EditPane> 包装一个 tab 区块,提供"编辑/取消"切换 + 保存调度 + 乐观更新
+ * - <EditPane> 包装一个 tab 区块,提供 编辑/保存/取消 统一按钮 + 乐观更新
  * - 字段组件:EditableText / EditableTextarea / EditableSelect
  * - 列表组件:ChipListEditor(增删 chip) / IronLawsEditor(增删改排序 textarea)
  *
- * 保存策略:本地 draft → 保存按钮 → updateAgent(PATCH) → 成功后 reload() → 失败回滚
+ * 保存策略:本地 draft → onSave(diff) → ctx.save(PATCH) → 成功后 reload() → 失败回滚
  */
 
 import * as React from "react";
@@ -39,6 +40,10 @@ export interface EditPaneProps {
   onSaved?: () => void;
   /** 是否禁用编辑(member 只读) */
   readOnly?: boolean;
+  /** R24: 保存回调 — tab 内做 diff + ctx.save,返回后 EditPane 自动退出编辑态 */
+  onSave?: (ctx: EditCtx) => Promise<void>;
+  /** R24: 是否有改动 — 控制 保存按钮 disabled */
+  isDirty?: boolean;
 }
 
 export interface EditCtx {
@@ -50,13 +55,13 @@ export interface EditCtx {
   error: string | null;
 }
 
-const EditCtx = React.createContext<EditCtx | null>(null);
+const EditCtxCtx = React.createContext<EditCtx | null>(null);
 
 export function useEditContext(): EditCtx | null {
-  return React.useContext(EditCtx);
+  return React.useContext(EditCtxCtx);
 }
 
-export function EditPane({ id, label, children, onSaved, readOnly }: EditPaneProps) {
+export function EditPane({ id, label, children, onSaved, readOnly, onSave, isDirty }: EditPaneProps) {
   const [editing, setEditing] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -85,6 +90,11 @@ export function EditPane({ id, label, children, onSaved, readOnly }: EditPanePro
     error,
   }), [editing, saving, error, id, onSaved]);
 
+  const handleSaveClick = React.useCallback(async () => {
+    if (!onSave) return;
+    await onSave(ctx);
+  }, [onSave, ctx]);
+
   return (
     <div className="relative">
       {!readOnly && (
@@ -102,57 +112,42 @@ export function EditPane({ id, label, children, onSaved, readOnly }: EditPanePro
               <Pencil className="size-3.5" />
               <span>编辑</span>
             </Button>
-          ) : null}
+          ) : (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleSaveClick}
+                disabled={saving || !isDirty}
+                className="gap-1.5 text-[12px]"
+                data-testid={`save-${label}`}
+              >
+                {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                {saving ? "保存中…" : "保存"}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={ctx.cancelEdit}
+                disabled={saving}
+                className="gap-1.5 text-[12px]"
+              >
+                <X className="size-3.5" />
+                取消
+              </Button>
+            </>
+          )}
         </div>
       )}
-      <EditCtx.Provider value={ctx}>
-        {/* children 是 render prop,但 EditPane 本身用 ctx 包装 */}
-        <EditPaneRenderer ctx={ctx}>{children(ctx)}</EditPaneRenderer>
-      </EditCtx.Provider>
+      <EditCtxCtx.Provider value={ctx}>
+        {children(ctx)}
+      </EditCtxCtx.Provider>
       {error && (
         <div className="mt-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
           保存失败: {error}
         </div>
       )}
-    </div>
-  );
-}
-
-// 把 ctx 透出到 children(子组件用 useEditContext 也能读)
-function EditPaneRenderer({ ctx, children }: { ctx: EditCtx; children: React.ReactNode }) {
-  return <>{children}</>;
-}
-
-// ── 顶部按钮组(EditBar):保存/取消 ───────────────────────────
-
-export function EditBar({ onSave, saveLabel = "保存" }: { onSave: () => void; saveLabel?: string }) {
-  const ctx = useEditContext();
-  if (!ctx || !ctx.editing) return null;
-  return (
-    <div className="flex items-center gap-2">
-      <Button
-        type="button"
-        size="sm"
-        onClick={() => {
-          void onSave();
-        }}
-        disabled={ctx.saving}
-        className="gap-1.5 text-[12px]"
-      >
-        {ctx.saving ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-        {ctx.saving ? "保存中…" : saveLabel}
-      </Button>
-      <Button
-        type="button"
-        size="sm"
-        variant="ghost"
-        onClick={ctx.cancelEdit}
-        disabled={ctx.saving}
-        className="gap-1.5 text-[12px]"
-      >
-        <X className="size-3.5" />
-        取消
-      </Button>
     </div>
   );
 }
@@ -228,6 +223,7 @@ export function EditableTextarea({
   placeholder,
   rows = 4,
   fullscreen = false,
+  mono = false,
 }: {
   label: string;
   value: React.ReactNode;
@@ -238,9 +234,21 @@ export function EditableTextarea({
   placeholder?: string;
   rows?: number;
   fullscreen?: boolean;
+  /** R24: 查看态是否用 mono pre 卡片样式(长文本/代码);默认 false 用普通文本 */
+  mono?: boolean;
 }) {
   const [zoom, setZoom] = React.useState(false);
   if (!editing) {
+    if (mono) {
+      return (
+        <div>
+          <FieldLabel label={label} />
+          <pre className="whitespace-pre-wrap rounded-2xl bg-card p-6 font-mono text-[13px] leading-relaxed text-foreground/85 ring-1 ring-border">
+{typeof value === "string" && value ? value : <span className="text-foreground/40">—</span>}
+          </pre>
+        </div>
+      );
+    }
     return (
       <div>
         <FieldLabel label={label} />
@@ -259,7 +267,7 @@ export function EditableTextarea({
           onChange={(e) => setDraft({ ...draft, [field]: e.target.value })}
           placeholder={placeholder}
           rows={rows}
-          className="w-full resize-y rounded-lg border border-input bg-transparent px-3 py-2 text-[13.5px] leading-relaxed outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+          className="w-full resize-y rounded-lg border border-input bg-transparent px-3 py-2 font-mono text-[13px] leading-relaxed outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
           data-testid={`field-${field}`}
         />
         {fullscreen && (
@@ -363,6 +371,7 @@ export function ChipListEditor({
   setDraft,
   field,
   placeholder = "新增一项,回车添加",
+  renderItem,
 }: {
   label: string;
   items: string[];
@@ -371,6 +380,8 @@ export function ChipListEditor({
   setDraft: React.Dispatch<React.SetStateAction<Record<string, unknown>>>;
   field: string;
   placeholder?: string;
+  /** R24: 自定义 chip 渲染(用于 skills 显示描述) */
+  renderItem?: (item: string) => React.ReactNode;
 }) {
   const list: string[] = editing
     ? Array.isArray(draft[field]) ? (draft[field] as string[]) : items
@@ -424,14 +435,17 @@ export function ChipListEditor({
           {editing ? "暂无项,输入后回车添加" : "尚未配置"}
         </div>
       ) : (
-        <ul className="flex flex-wrap gap-1.5">
+        <ul className={editing ? "flex flex-col gap-1.5" : "flex flex-wrap gap-1.5"}>
           {list.map((item) => (
             <li
               key={item}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-card px-2.5 py-1 font-mono text-[12px] ring-1 ring-border"
+              className={editing
+                ? "inline-flex items-center justify-between gap-1.5 rounded-lg bg-card px-2.5 py-1 font-mono text-[12px] ring-1 ring-border"
+                : "inline-flex items-center gap-1.5 rounded-lg bg-card px-2.5 py-1 font-mono text-[12px] ring-1 ring-border"
+              }
               data-testid={`chip-${field}-${item}`}
             >
-              <span>{item}</span>
+              {renderItem ? renderItem(item) : <span>{item}</span>}
               {editing && (
                 <button
                   type="button"
@@ -575,7 +589,6 @@ export function agentToDraft(agent: Agent, fields: string[]): Record<string, unk
   const raw = agent.raw ?? {};
   const out: Record<string, unknown> = {};
   for (const f of fields) {
-    // 优先取 raw row 的 snake_case 字段,fallback 到 Agent 的 camelCase
     if (f in raw) {
       out[f] = raw[f];
     } else if (f === "persona") {
@@ -616,6 +629,8 @@ export function agentToDraft(agent: Agent, fields: string[]): Record<string, unk
       out[f] = agent.ironLaws;
     } else if (f === "knowledge_folders") {
       out[f] = agent.knowledgeFolders;
+    } else if (f === "owner_user_id") {
+      out[f] = (raw as any).owner_user_id ?? agent.ownerId ?? "";
     }
   }
   return out;

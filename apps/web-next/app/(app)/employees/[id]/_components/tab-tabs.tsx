@@ -4,13 +4,13 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Bot, BrainCircuit, Wrench, Brain, Network, ListChecks, ScrollText } from "lucide-react";
 
 export const EMPLOYEE_TABS = [
-  { value: "basics",   label: "基础",     icon: Bot },
-  { value: "persona",  label: "人格",     icon: BrainCircuit },
-  { value: "skills",   label: "能力",     icon: Wrench },
-  { value: "memory",   label: "记忆",     icon: Brain },
-  { value: "collab",   label: "协作",     icon: Network },
-  { value: "tasks",    label: "任务",     icon: ListChecks },
-  { value: "logs",     label: "日志",     icon: ScrollText },
+  { value: "basics",   label: "基础信息",  icon: Bot },
+  { value: "persona",  label: "人格",      icon: BrainCircuit },
+  { value: "skills",   label: "技能",      icon: Wrench },
+  { value: "memory",   label: "记忆",      icon: Brain },
+  { value: "collab",   label: "协作",      icon: Network },
+  { value: "tasks",    label: "任务",      icon: ListChecks },
+  { value: "logs",     label: "日志",      icon: ScrollText },
 ] as const;
 
 export type EmployeeTabValue = (typeof EMPLOYEE_TABS)[number]["value"];

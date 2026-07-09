@@ -1,11 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { useAgent, type Agent } from "../../_lib/data";
+import { useAgent } from "../../_lib/data";
 import { Calendar, Tag, Cpu, GitBranch, User2 } from "lucide-react";
 import {
   EditPane,
-  EditBar,
   EditableText,
   EditableTextarea,
   EditableSelect,
@@ -64,33 +63,26 @@ export function TabBasics({ id }: { id: string }) {
   if (loading) return <div className="h-48 rounded-2xl bg-muted/40 animate-pulse" />;
   if (!agent) return null;
 
-  return (
-    <EditPane id={id} label="basics" onSaved={reload}>
-      {(ctx) => {
-        const handleSave = async () => {
-          const patch = diffDraft(origDraft, draft);
-          if (Object.keys(patch).length === 0) {
-            ctx.cancelEdit();
-            return;
-          }
-          const ok = await ctx.save(patch);
-          if (!ok) {
-            // 还原
-            setDraft(origDraft);
-          }
-        };
+  const isDirty = Object.keys(diffDraft(origDraft, draft)).length > 0;
 
+  const onSave = async (ctx: { save: (p: Record<string, unknown>) => Promise<boolean>; cancelEdit: () => void }) => {
+    const patch = diffDraft(origDraft, draft);
+    if (Object.keys(patch).length === 0) {
+      ctx.cancelEdit();
+      return;
+    }
+    const ok = await ctx.save(patch);
+    if (!ok) setDraft(origDraft);
+  };
+
+  return (
+    <EditPane id={id} label="basics" onSaved={reload} isDirty={isDirty} onSave={onSave}>
+      {(ctx) => {
         return (
           <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
             <div className="space-y-6">
-              {ctx.editing && (
-                <div className="flex justify-end">
-                  <EditBar onSave={handleSave} />
-                </div>
-              )}
-
               <EditableText
-                label="名称 · name"
+                label="名称"
                 field="name"
                 value={agent.displayName}
                 editing={ctx.editing}
@@ -101,7 +93,7 @@ export function TabBasics({ id }: { id: string }) {
               />
 
               <EditableTextarea
-                label="描述 · description"
+                label="描述"
                 field="description"
                 value={agent.description || ""}
                 editing={ctx.editing}
@@ -113,7 +105,7 @@ export function TabBasics({ id }: { id: string }) {
 
               {ctx.editing ? (
                 <EditableSelect
-                  label="角色模板 · role_template"
+                  label="角色模板"
                   field="role_template"
                   value={agent.role}
                   editing
@@ -129,7 +121,7 @@ export function TabBasics({ id }: { id: string }) {
 
               {ctx.editing ? (
                 <EditableText
-                  label="分类 · category"
+                  label="分类"
                   field="category"
                   value={(agent.raw as any)?.category ?? "general"}
                   editing
@@ -148,7 +140,7 @@ export function TabBasics({ id }: { id: string }) {
               {ctx.editing ? (
                 <>
                   <EditableSelect
-                    label="引擎 · default_engine"
+                    label="引擎"
                     field="default_engine"
                     value={agent.defaultEngine}
                     editing
@@ -157,7 +149,7 @@ export function TabBasics({ id }: { id: string }) {
                     options={ENGINE_OPTIONS}
                   />
                   <EditableText
-                    label="模型 · default_model"
+                    label="模型"
                     field="default_model"
                     value={agent.defaultModel || "—"}
                     editing
@@ -167,7 +159,7 @@ export function TabBasics({ id }: { id: string }) {
                     mono
                   />
                   <EditableSelect
-                    label="复杂度 · complexity_level"
+                    label="复杂度"
                     field="complexity_level"
                     value={agent.complexityLevel}
                     editing
@@ -176,7 +168,7 @@ export function TabBasics({ id }: { id: string }) {
                     options={COMPLEXITY_OPTIONS}
                   />
                   <EditableSelect
-                    label="状态 · status"
+                    label="状态"
                     field="status"
                     value={agent.status}
                     editing
@@ -218,12 +210,6 @@ export function TabBasics({ id }: { id: string }) {
                 </>
               )}
             </div>
-
-            {ctx.editing && (
-              <div className="lg:col-span-2 flex justify-end">
-                <EditBar onSave={handleSave} />
-              </div>
-            )}
           </div>
         );
       }}
