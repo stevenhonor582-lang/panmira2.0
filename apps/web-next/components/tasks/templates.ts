@@ -1,6 +1,6 @@
 // 5 bot default pipeline templates — one per bot 史德飞 uses.
 // Each returns an array of nodes (with positions) and edges (shape id pairs).
-// The editor will translate these into tldraw shape records at insert-time.
+// The editor builds React Flow nodes/edges from these at insert-time.
 
 import type { DagDocument, DagEdgeRecord, DagNodeMeta } from "./types";
 
@@ -146,7 +146,7 @@ export const DAG_TEMPLATES: DagTemplate[] = [
   },
 ];
 
-/** Build a DagDocument from a template (without tldraw snapshot — set later). */
+/** Build a DagDocument from a template (snapshot is filled in by the editor). */
 export function templateToEmptyDoc(t: DagTemplate): DagDocument {
   return {
     snapshot: null,

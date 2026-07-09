@@ -136,9 +136,3 @@
     @apply font-sans;
   }
 }
-
-/* ── tldraw license watermark(内部工具用,建议长期申请 license key)── */
-/* 未授权水印隐藏 — panmira 内部工具,不对外 */
-[data-testid="tl-watermark-unlicensed"] {
-  display: none !important;
-}
