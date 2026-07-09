@@ -109,8 +109,11 @@ export function AgentCard({
         transformStyle: "preserve-3d",
       }}
       className={cn(
-        "group relative block h-full w-full overflow-hidden rounded-3xl bg-card ring-1 ring-border transition-all duration-300 will-change-transform",
+        "group relative block h-full w-full overflow-hidden rounded-3xl bg-card transition-all duration-300 will-change-transform",
         "hover:shadow-[0_30px_60px_-30px_rgba(0,0,0,0.18)] hover:-translate-y-0.5",
+        agent.isTemplate
+          ? "border-2 border-dashed border-violet-400/70"
+          : "border border-border",
       )}
     >
       <div
@@ -186,11 +189,27 @@ export function AgentCard({
       <div
         aria-hidden
         className={cn(
-          "absolute left-0 top-0 h-0.5 w-full transition-opacity",
+          "absolute left-0 top-0 h-0.5 w-full z-[5] transition-opacity",
           agent.status === "active" ? "opacity-0" : "opacity-100",
           t.accent,
         )}
       />
+      {/* R28-A: 实例卡片蓝色左 accent 线(一眼区分实例 vs 模板) */}
+      {!agent.isTemplate && (
+        <div
+          aria-hidden
+          className="absolute left-0 top-0 h-full w-1.5 bg-blue-500/80 z-[5]"
+        />
+      )}
+      {/* R28-A: 模板卡片右下水印 */}
+      {agent.isTemplate && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute bottom-2 right-4 select-none text-6xl font-black leading-none tracking-tighter text-violet-500/[0.07]"
+        >
+          模板
+        </div>
+      )}
       <div className="relative flex h-full w-full flex-col p-5">
         <div className="flex items-start justify-between gap-3">
           <AvatarMark glyph={agent.glyph} hue={agent.hue} size={avatarSize} />
@@ -205,9 +224,15 @@ export function AgentCard({
               <span className={cn("size-1.5 rounded-full", t.dot)} />
               {t.label}
             </span>
-            {agent.isTemplate && (
-              <span className="rounded bg-foreground/10 px-1.5 py-0.5 text-[9.5px] tracking-[0.18em] text-foreground/70">
+            {agent.isTemplate ? (
+              <span className="inline-flex items-center gap-1 rounded bg-violet-500/15 px-1.5 py-0.5 text-[9.5px] font-medium tracking-[0.18em] text-violet-700 dark:text-violet-300 ring-1 ring-violet-500/30">
+                <FileText className="size-2.5" />
                 模板
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded bg-blue-500/15 px-1.5 py-0.5 text-[9.5px] font-medium tracking-[0.18em] text-blue-700 dark:text-blue-300 ring-1 ring-blue-500/30">
+                <Bot className="size-2.5" />
+                实例
               </span>
             )}
           </div>
@@ -234,7 +259,16 @@ export function AgentCard({
           </p>
 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-foreground/55 font-mono">
-            <span className="truncate">{agent.model}</span>
+            <span
+              className={cn(
+                "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] ring-1",
+                agent.isTemplate
+                  ? "bg-violet-500/10 text-violet-700 dark:text-violet-300 ring-violet-500/25"
+                  : "bg-blue-500/10 text-blue-700 dark:text-blue-300 ring-blue-500/25",
+              )}
+            >
+              {agent.model}
+            </span>
             <span className="text-foreground/30">·</span>
             <span>{(agent.contextWindow / 1000).toFixed(0)}k ctx</span>
             {agent.workingDir && (
