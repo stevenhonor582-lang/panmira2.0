@@ -3,16 +3,21 @@
 import * as React from "react";
 import { useAgent } from "../../_lib/data";
 import { api } from "@/lib/api";
-import { ListChecks, LinkIcon, UnlinkIcon, Loader2, Check, X } from "lucide-react";
+import { ResourcePicker, type ResourceItem } from "@/components/resource-picker/resource-picker";
+import { ListChecks, LinkIcon, UnlinkIcon, Loader2, X, Plus } from "lucide-react";
 
 /**
- * R24: 任务 tab — 真实 pipeline 绑定/解绑。
- * 数据来源:
- *   - GET /api/v2/admin/pipelines               (全量 pipeline)
- *   - PATCH /api/v2/admin/pipelines/:id          (改 nodes 数组 → 绑定/解绑)
+ * R26-B: 任务 tab — 已绑定列表 + ResourcePicker 添加(搜索+选择)。
  *
- * 绑定判断:pipeline.nodes 里是否有 node.agentTemplateId === agent.id。
- * 绑定 = 加 node;解绑 = 删 node。
+ * 用户反馈:"可绑定/已绑定在屏幕上操作,任务过多难发现。
+ *           应该单独走流程:搜索+呈现+选择。"
+ *
+ * 改动:
+ * - 已绑定:列表 + 解绑按钮(保留)
+ * - 可绑定:**不在屏幕内堆**;点"添加任务" → 弹 ResourcePicker,搜索过滤后批量绑定
+ * - 数据源不变:
+ *   - GET /api/v2/admin/pipelines
+ *   - PATCH /api/v2/admin/pipelines/:id (改 nodes 数组 → 绑定/解绑)
  */
 
 interface PipelineNode {
@@ -37,6 +42,8 @@ export function TabTasks({ id }: { id: string }) {
   const [pipelines, setPipelines] = React.useState<Pipeline[]>([]);
   const [loadingPipelines, setLoadingPipelines] = React.useState(true);
   const [pendingId, setPendingId] = React.useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = React.useState(false);
+  const [batchPending, setBatchPending] = React.useState(false);
 
   const loadPipelines = React.useCallback(async () => {
     setLoadingPipelines(true);
@@ -66,28 +73,6 @@ export function TabTasks({ id }: { id: string }) {
   const bound = pipelines.filter(isBound);
   const available = pipelines.filter((p) => !isBound(p));
 
-  /** 绑定:给 pipeline 加一个 node 引用本 agent */
-  const handleBind = async (pipeline: Pipeline) => {
-    setPendingId(pipeline.id);
-    try {
-      const newNode: PipelineNode = {
-        id: `n-${agent.id.slice(0, 8)}-${Date.now().toString(36)}`,
-        label: agent.displayName,
-        agentTemplateId: agent.id,
-      };
-      const nextNodes = [...(pipeline.nodes || []), newNode];
-      await api(`/api/v2/admin/pipelines/${pipeline.id}`, {
-        method: "PATCH",
-        body: { nodes: nextNodes },
-      });
-      await loadPipelines();
-    } catch (e) {
-      console.error("[tasks] bind failed:", e);
-    } finally {
-      setPendingId(null);
-    }
-  };
-
   /** 解绑:从 pipeline 删掉引用本 agent 的 node */
   const handleUnbind = async (pipeline: Pipeline) => {
     setPendingId(pipeline.id);
@@ -107,6 +92,45 @@ export function TabTasks({ id }: { id: string }) {
     }
   };
 
+  /** 批量绑定:ResourcePicker onConfirm */
+  const handleBatchBind = async (selected: ResourceItem[]) => {
+    if (selected.length === 0) return;
+    setBatchPending(true);
+    try {
+      const newNode: PipelineNode = {
+        id: `n-${agent.id.slice(0, 8)}-${Date.now().toString(36)}`,
+        label: agent.displayName,
+        agentTemplateId: agent.id,
+      };
+      // 串行 PATCH 每个 pipeline,任一失败 console.error 但不打断其余
+      await Promise.all(
+        selected.map(async (s) => {
+          const pipeline = pipelines.find((p) => p.id === s.id);
+          if (!pipeline) return;
+          const nextNodes = [...(pipeline.nodes || []), newNode];
+          try {
+            await api(`/api/v2/admin/pipelines/${pipeline.id}`, {
+              method: "PATCH",
+              body: { nodes: nextNodes },
+            });
+          } catch (e) {
+            console.error(`[tasks] bind ${pipeline.id} failed:`, e);
+          }
+        }),
+      );
+      await loadPipelines();
+    } finally {
+      setBatchPending(false);
+    }
+  };
+
+  // ResourcePicker items:只把可绑定的 pipelines 喂给选择器(屏蔽已绑定)
+  const pickerItems: ResourceItem[] = available.map((p) => ({
+    id: p.id,
+    label: p.name,
+    description: p.description || `${Array.isArray(p.nodes) ? p.nodes.length : 0} 个节点`,
+  }));
+
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-4">
@@ -116,12 +140,24 @@ export function TabTasks({ id }: { id: string }) {
             任务绑定 · Pipelines
           </h3>
           <p className="mt-1 text-[13px] text-foreground/55 max-w-[60ch]">
-            这位员工被哪些 pipeline 雇佣。在这里直接绑定 / 解绑,不需要跳到 tasks 模块。
+            这位员工被哪些 pipeline 雇佣。点"添加任务"从库里搜索后批量绑定。
           </p>
         </div>
-        <span className="font-mono text-[11px] text-foreground/40">
-          {bound.length} 条已绑定 · {available.length} 条可绑定
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-[11px] text-foreground/40">
+            {bound.length} 条已绑定 · {available.length} 条可绑定
+          </span>
+          <button
+            type="button"
+            onClick={() => setPickerOpen(true)}
+            disabled={available.length === 0 || loadingPipelines}
+            data-testid="tasks-add-open-picker"
+            className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground ring-1 ring-primary/30 transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Plus className="size-3.5" />
+            添加任务
+          </button>
+        </div>
       </header>
 
       {loadingPipelines ? (
@@ -130,57 +166,60 @@ export function TabTasks({ id }: { id: string }) {
           加载 pipelines…
         </div>
       ) : (
-        <>
-          <section>
-            <h4 className="mb-3 flex items-center gap-1.5 text-[12px] font-medium uppercase tracking-[0.18em] text-foreground/55">
-              <LinkIcon className="size-3.5" /> 已绑定
-            </h4>
-            <PipelineTable
-              rows={bound}
-              kind="bound"
-              agentId={agent.id}
-              pendingId={pendingId}
-              onAction={handleUnbind}
-            />
-          </section>
-
-          <section>
-            <h4 className="mb-3 flex items-center gap-1.5 text-[12px] font-medium uppercase tracking-[0.18em] text-foreground/55">
-              <UnlinkIcon className="size-3.5" /> 可绑定
-            </h4>
-            <PipelineTable
-              rows={available}
-              kind="available"
-              agentId={agent.id}
-              pendingId={pendingId}
-              onAction={handleBind}
-            />
-          </section>
-        </>
+        <section>
+          <h4 className="mb-3 flex items-center gap-1.5 text-[12px] font-medium uppercase tracking-[0.18em] text-foreground/55">
+            <LinkIcon className="size-3.5" /> 已绑定
+          </h4>
+          <BoundTable
+            rows={bound}
+            pendingId={pendingId}
+            onUnbind={handleUnbind}
+            onAddMore={() => setPickerOpen(true)}
+          />
+        </section>
       )}
+
+      <ResourcePicker
+        open={pickerOpen}
+        onOpenChange={(v) => !batchPending && setPickerOpen(v)}
+        title={`添加任务到「${agent.displayName}」`}
+        items={pickerItems}
+        selectedIds={[]}
+        onConfirm={(sel) => void handleBatchBind(sel)}
+        loading={batchPending}
+        multi
+        confirmText={`绑定 ${pickerItems.length > 0 ? "(选中的)" : ""}`}
+        placeholder="搜索任务名或描述…"
+      />
     </div>
   );
 }
 
-function PipelineTable({
+function BoundTable({
   rows,
-  kind,
-  agentId,
   pendingId,
-  onAction,
+  onUnbind,
+  onAddMore,
 }: {
   rows: Pipeline[];
-  kind: "bound" | "available";
-  agentId: string;
   pendingId: string | null;
-  onAction: (p: Pipeline) => Promise<void>;
+  onUnbind: (p: Pipeline) => Promise<void>;
+  onAddMore: () => void;
 }) {
   if (rows.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-border p-6 text-center text-[13px] text-foreground/50">
-        {kind === "bound"
-          ? "尚未绑定任何 pipeline(在下方「可绑定」里点绑定)"
-          : "没有可绑定的 pipeline(全部已绑定,或系统还没有 pipeline)"}
+      <div className="rounded-2xl border border-dashed border-border p-8 text-center">
+        <UnlinkIcon className="mx-auto mb-3 size-5 text-foreground/35" />
+        <p className="text-[13px] text-foreground/55">尚未绑定任何任务</p>
+        <p className="mt-1 text-[12px] text-foreground/40">点右上方"添加任务"从库里搜索后绑定。</p>
+        <button
+          type="button"
+          onClick={onAddMore}
+          className="mt-4 inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+          data-testid="tasks-empty-add"
+        >
+          <Plus className="size-3.5" /> 添加任务
+        </button>
       </div>
     );
   }
@@ -234,22 +273,16 @@ function PipelineTable({
                   <button
                     type="button"
                     disabled={isPending}
-                    onClick={() => void onAction(p)}
-                    data-testid={`${kind === "bound" ? "unbind" : "bind"}-${p.id.slice(0, 8)}`}
-                    className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[12px] font-medium ring-1 transition-colors disabled:opacity-50 ${
-                      kind === "bound"
-                        ? "ring-destructive/30 text-destructive hover:bg-destructive/10"
-                        : "ring-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
-                    }`}
+                    onClick={() => void onUnbind(p)}
+                    data-testid={`unbind-${p.id.slice(0, 8)}`}
+                    className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[12px] font-medium ring-1 ring-destructive/30 text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
                   >
                     {isPending ? (
                       <Loader2 className="size-3 animate-spin" />
-                    ) : kind === "bound" ? (
-                      <X className="size-3" />
                     ) : (
-                      <Check className="size-3" />
+                      <X className="size-3" />
                     )}
-                    {kind === "bound" ? "解绑" : "绑定"}
+                    解绑
                   </button>
                 </td>
               </tr>
