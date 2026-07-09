@@ -93,6 +93,7 @@ import {
   validateEdgeRules,
 } from "./dag-validators";
 import { api } from "@/lib/api";
+import { usePipelineProgress, type NodeRunStateLike } from "@/lib/use-pipeline-progress";
 import { cn } from "@/lib/utils";
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -113,6 +114,11 @@ interface TaskDagEditorProps {
   readOnly?: boolean;
   /** R18: live execution context — when all 3 are set the panel posts decisions. */
   runId?: string;
+  /**
+   * R22: 没 pipelineId 时,"测试运行"会先调用此回调把当前 DAG 保存为草稿,
+   * 拿到 pipelineId 再触发执行。返回 undefined 表示保存失败(测试中止)。
+   */
+  onSaveDraft?: () => Promise<string | undefined>;
 }
 
 const PALETTE: Array<{ kind: NodeKind; icon: LucideIcon; hint: string }> = [
@@ -437,31 +443,42 @@ function TaskDagEditorInner(props: TaskDagEditorProps) {
   }, [nodes, edges, props]);
 
   const handleTestRun = React.useCallback(async () => {
-    if (!props.pipelineId) {
-      window.alert("请先保存任务后再测试运行");
-      return;
-    }
     if (!validationMsg.ok) {
       window.alert(`DAG 校验未通过: ${validationMsg.text}`);
       return;
     }
     setRunning(true);
     try {
+      let pid = props.pipelineId;
+      // R22: 新建未保存 → 先调 onSaveDraft 把当前 DAG 写库拿 pipelineId
+      // (tasks/new 页面传入 saveDraft 实现 POST /pipelines)
+      if (!pid && props.onSaveDraft) {
+        pid = await props.onSaveDraft();
+      }
+      if (!pid) {
+        window.alert("请先保存任务后再测试运行");
+        return;
+      }
       const r = await api<{
         success?: boolean;
         error?: string;
         data?: { runId?: string; status?: string };
-      }>(`/api/v2/admin/pipelines/${props.pipelineId}/trigger?async=true`, {
+      }>(`/api/v2/admin/pipelines/${pid}/trigger?async=true`, {
         method: "POST",
         body: { triggeredBy: "user", initialInput: {} },
       });
-      if (r?.error) window.alert(`触发失败: ${r.error}`);
+      if (r?.error) {
+        window.alert(`触发失败: ${r.error}`);
+      } else if (!props.pipelineId && pid) {
+        // 第一次保存成功 → 提示用户草稿已落库(详情页将基于此 pid 渲染 WS)
+        window.alert(`已自动保存为草稿,任务 ID: ${pid}\n触发中,执行日志将实时刷新。`);
+      }
     } catch (e) {
       window.alert(e instanceof Error ? e.message : "触发失败");
     } finally {
       setRunning(false);
     }
-  }, [props.pipelineId, validationMsg]);
+  }, [props.pipelineId, props.onSaveDraft, validationMsg]);
 
   // ── Derived: selected node meta ──────────────────────────────────────────
   const selectedNode = React.useMemo(
@@ -471,6 +488,14 @@ function TaskDagEditorInner(props: TaskDagEditorProps) {
   const selectedMeta: DagNodeMeta | null = selectedNode
     ? (selectedNode.data as DagNodeMeta)
     : null;
+
+  // R22: 订阅 WS 实时进度(有 pipelineId 才订阅)。ShapeConfigPanel 的执行详情
+  // 卡片优先用这里推过来的 nodeStates[selectedId],省一次 GET /runs?limit=1。
+  const { state: progressState } = usePipelineProgress(props.pipelineId ?? "");
+  const selectedRunState: NodeRunStateLike | undefined =
+    selectedId && progressState.nodeStates
+      ? progressState.nodeStates[selectedId]
+      : undefined;
 
   // ── Keyboard shortcuts (Delete / Cmd+Z / Shift+Cmd+Z) ────────────────────
   React.useEffect(() => {
@@ -703,6 +728,7 @@ function TaskDagEditorInner(props: TaskDagEditorProps) {
                 runId={props.runId}
                 pipelineId={props.pipelineId}
                 nodeId={selectedId ?? undefined}
+                runState={selectedRunState}
               />
             </div>
           )}

@@ -44,11 +44,20 @@ export default function NewTaskPage() {
   const [snapshot, setSnapshot] = React.useState<unknown>(null);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  // R22: 第一次测试运行会触发自动保存,把生成的 pipelineId 记在这里。
+  // 之后画布上的"测试运行"复用这个 id(避免每次测试都新建草稿)。
+  const [savedPipelineId, setSavedPipelineId] = React.useState<string | undefined>();
 
-  const handleSave = React.useCallback(async () => {
+  /**
+   * R22 saveDraft — 创建草稿 pipeline,返回 id (不跳转)。
+   * - 给"测试运行"用:TaskDagEditor 没 pipelineId 时通过 onSaveDraft 调用它。
+   * - 给"保存草稿"按钮用:handleSave 先 saveDraft 拿 id,再 router.push 详情页。
+   * 失败时返回 undefined,调用方自己决定如何提示。
+   */
+  const saveDraft = React.useCallback(async (): Promise<string | undefined> => {
     if (!name.trim()) {
       setError("请先填写任务名称");
-      return;
+      return undefined;
     }
     setSaving(true);
     setError(null);
@@ -56,7 +65,7 @@ export default function NewTaskPage() {
       const payload = {
         name: name.trim(),
         description: description.trim() || undefined,
-        status: "draft",
+        status: "draft" as const,
         config: {
           snapshot: snapshot ?? null,
           nodes: [],
@@ -69,15 +78,26 @@ export default function NewTaskPage() {
       );
       const id = r?.data?.id;
       if (!id) throw new Error("服务端未返回任务 ID");
-      router.push(`/tasks/${id}/`);
+      setSavedPipelineId(id);
+      return id;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
-      window.alert(`保存失败: ${msg}`);
+      return undefined;
     } finally {
       setSaving(false);
     }
-  }, [name, description, snapshot, router]);
+  }, [name, description, snapshot]);
+
+  const handleSave = React.useCallback(async () => {
+    const id = await saveDraft();
+    if (!id) {
+      // saveDraft 已经把 error 写进 state;额外弹窗兜底
+      window.alert(`保存失败: ${error ?? "未知错误"}`);
+      return;
+    }
+    router.push(`/tasks/${id}/`);
+  }, [saveDraft, router, error]);
 
   return (
     <div className="-m-6 h-[calc(100dvh-49px)] flex flex-col">
@@ -160,6 +180,8 @@ export default function NewTaskPage() {
             readOnly={false}
             onChange={(value) => setSnapshot(value)}
             initialValue={null}
+            pipelineId={savedPipelineId}
+            onSaveDraft={saveDraft}
           />
         </section>
       </div>
