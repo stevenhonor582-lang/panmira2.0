@@ -36,6 +36,8 @@ import { handleSkillDagRoutes } from './routes/skill-dag-routes.js';
 import { handleScheduledJobsRoutes } from './routes/scheduled-jobs-routes.js';
 import { handleAgentRunLogsRoutes } from "./routes/agent-run-logs-routes.js";
 import { handlePipelineRoutes } from "./routes/pipeline-routes.js";
+// R20: AI DAG generator — must dispatch before pipeline-routes (:id regex)
+import { handlePipelineAiGenerate } from "./routes/pipeline-ai-generate-routes.js";
 import { handleAdminCacheRoutes } from "./routes/admin-cache-routes.js";
 import { handleR9MockEndpoints } from './routes/r9-mock-endpoints-routes.js';
 import { handleR10DataRoutes } from './routes/r10-data-routes.js';
@@ -844,6 +846,11 @@ ${content}
       // Phase 2: Multi-agent Pipelines
       if (url.startsWith("/api/v2/admin/pipelines")) {
         addDeprecationHeader(res, '/api/v2/tasks/pipelines');
+        // R20: /pipelines/ai-generate must run before handlePipelineRoutes
+        // (whose :id/trigger regex would otherwise swallow it).
+        if (url.startsWith("/api/v2/admin/pipelines/ai-generate")) {
+          if (await handlePipelineAiGenerate(req, res, method, url)) return;
+        }
         if (await handlePipelineRoutes(req, res, method, url)) return;
         if (await handleAdminCacheRoutes(req, res, method, url)) return;
         jsonResponse(res, 404, { error: "Pipeline route not found" });
