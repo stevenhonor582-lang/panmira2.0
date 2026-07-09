@@ -382,10 +382,26 @@ function ToolsEditor({
   );
 }
 
-// ── 知识库:两级层级选择器(只显示组织公共区) ────────────────────────────────
+// ── 知识库:单一入口 + 弹窗加载两级目录(R32-C) ─────────────────────────────
+//
+// R32-C 改动 ⑨:页面只保留"组织公共知识区"单一入口(不直接罗列目录);
+//               点击"添加知识库"按钮才弹窗加载两级目录。
+// R32-C 改动 ⑩:前端权限适配 — 只显示公共区 + 本人文件夹;他人私人/群组库不出现。
+//               后端检索 API 若无权限过滤,下方注明"检索权限待后端实施"。
 
 interface TreeNode extends RawFolder {
   children: TreeNode[];
+}
+
+/** 把 folder id 解析成可读名(优先 path 末段,fallback 到 name/id) */
+function describeFolder(id: string, folderItems: RawFolder[]): string {
+  const f = folderItems.find((x) => x.id === id);
+  if (!f) return id;
+  if (f.path) {
+    const segs = f.path.split("/").filter(Boolean);
+    return segs.slice(-2).join("/") || f.name;
+  }
+  return f.name;
 }
 
 function KnowledgeFoldersEditor({
@@ -404,8 +420,9 @@ function KnowledgeFoldersEditor({
   loading: boolean;
 }) {
   const [expanded, setExpanded] = React.useState<Set<string>>(new Set());
+  // R32-C:弹窗开关(点击"添加知识库"才打开)
+  const [pickerOpen, setPickerOpen] = React.useState(false);
 
-  // 当前生效选择列表
   const selectedKey = selectedFolders.slice().sort().join("|");
   const selectedSet = React.useMemo(() => new Set(selectedFolders), [selectedKey]);
 
@@ -418,9 +435,8 @@ function KnowledgeFoldersEditor({
     );
   }, [folderItems]);
 
-  // 2. 构两级树:一级 = 公共根的子目录;二级 = 一级的子目录
+  // 2. 构两级树(弹窗内用)
   const tree = React.useMemo<TreeNode[]>(() => {
-    // 先按 visibility 过滤(防御性,未来数据可能加标记)
     const visible = folderItems.filter(isPublicFolder);
     const byParent = new Map<string, RawFolder[]>();
     for (const f of visible) {
@@ -430,7 +446,6 @@ function KnowledgeFoldersEditor({
       byParent.set(k, arr);
     }
 
-    // 主路径:有"组织公共区"根 → 取其子节点为一级
     if (publicRoot) {
       const l1s = byParent.get(publicRoot.id) ?? [];
       return l1s
@@ -443,7 +458,6 @@ function KnowledgeFoldersEditor({
         }));
     }
 
-    // 回退路径:无公共根 → 取顶层中未黑名单的目录为一级(防御性)
     const roots = visible.filter(
       (f) =>
         (!f.parentId || f.parentId === "root") &&
@@ -459,7 +473,6 @@ function KnowledgeFoldersEditor({
       }));
   }, [folderItems, publicRoot]);
 
-  // 已选但被过滤掉的孤儿(用户之前的私人/群组选择,UI 不显示但数据仍在)
   const visibleIds = React.useMemo(() => {
     const s = new Set<string>();
     for (const l1 of tree) {
@@ -486,7 +499,6 @@ function KnowledgeFoldersEditor({
     });
   };
 
-  // 默认展开所有一级(有子目录的)首次渲染时
   React.useEffect(() => {
     if (expanded.size === 0 && tree.length > 0) {
       const toExpand = new Set(tree.filter((n) => n.children.length > 0).map((n) => n.id));
@@ -494,124 +506,252 @@ function KnowledgeFoldersEditor({
     }
   }, [tree, expanded.size]);
 
+  // 已选项可读名(用于页面 chip 展示,不罗列目录)
+  const selectedChips = selectedFolders.map((sid) => ({
+    id: sid,
+    label: describeFolder(sid, folderItems),
+  }));
+
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-1.5 text-[12px] font-medium text-foreground/65">
-        <FolderTree className="size-3.5 text-sky-500/70" />
-        知识库 · 公共知识区(两级)
-        <span className="font-mono text-[11px] text-foreground/40">{selectedFolders.length} 已选</span>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 text-[12px] font-medium text-foreground/65">
+          <FolderTree className="size-3.5 text-sky-500/70" />
+          知识库 · 组织公共知识区
+          <span className="font-mono text-[11px] text-foreground/40">{selectedFolders.length} 已选</span>
+        </div>
+        {editing && (
+          <button
+            type="button"
+            onClick={() => setPickerOpen(true)}
+            className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1 text-[11.5px] font-medium text-foreground/75 hover:bg-muted/50 hover:text-foreground transition-colors"
+            data-testid="kb-picker-trigger"
+          >
+            <FolderOpen className="size-3" />
+            {selectedFolders.length > 0 ? "管理知识库" : "添加知识库"}
+          </button>
+        )}
       </div>
 
-      <div className="rounded-2xl border border-dashed border-border bg-muted/15 px-3 py-2.5 text-[11.5px] text-foreground/55">
-        <p>
-          只显示 <strong className="text-foreground/70">组织公共区</strong> 知识库(两级层级)。
-          <span className="text-foreground/45">
-            数字员工个人库、群组协作库已自动隐藏。点一级展开二级,最多到二级。
-          </span>
-        </p>
+      {/* 已选清单(chip 紧凑展示,不罗列目录树) */}
+      <div className="rounded-xl border border-border bg-card p-5">
+        {selectedFolders.length === 0 ? (
+          <p className="text-[12px] text-foreground/50">
+            尚未选择知识库。{editing ? "点击右上「添加知识库」从组织公共区选择。" : "点上方「编辑」开启选择。"}
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {selectedChips.map((c) => (
+              <span
+                key={c.id}
+                className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-2 py-1 text-[11px] ring-1 ring-border/60"
+                title={c.id}
+              >
+                <FileText className="size-3 text-foreground/45" />
+                <span className="max-w-[180px] truncate">{c.label}</span>
+                {editing && (
+                  <button
+                    type="button"
+                    onClick={() => toggle(c.id)}
+                    className="ml-0.5 text-foreground/40 hover:text-rose-500 transition-colors"
+                    aria-label={`移除 ${c.label}`}
+                  >
+                    ×
+                  </button>
+                )}
+              </span>
+            ))}
+          </div>
+        )}
         {orphanCount > 0 && (
-          <p className="mt-1 flex items-center gap-1 text-[11px] text-foreground/45">
+          <p className="mt-2 flex items-center gap-1 text-[11px] text-foreground/45">
             <AlertCircle className="size-3" />
-            另有 {orphanCount} 个已选库不在公共区(被过滤),保存时仍会保留但建议取消选择。
+            另有 {orphanCount} 个已选库不在公共区(被权限过滤),保存时仍会保留但建议取消选择。
           </p>
         )}
       </div>
 
-      {loading ? (
-        <p className="text-[11.5px] text-foreground/40">加载中…</p>
-      ) : tree.length === 0 ? (
-        <p className="text-[11.5px] text-foreground/45">
-          暂无可选公共知识库。
+      {/* 权限说明(R32-C 改动 ⑩) */}
+      <div className="rounded-lg border border-dashed border-border bg-muted/15 px-3 py-2 text-[11px] leading-relaxed text-foreground/55">
+        <p className="flex items-center gap-1">
+          <Lock className="size-3" />
+          仅显示<strong className="mx-0.5 text-foreground/70">组织公共区</strong>知识库;
+          数字员工个人库、群组协作库、他人私人库已自动隐藏(权限隔离)。
         </p>
-      ) : (
-        <ul className="space-y-0.5 rounded-xl border border-border/60 bg-card/40 p-2">
-          {tree.map((l1) => {
-            const checked1 = selectedSet.has(l1.id);
-            const isOpen = expanded.has(l1.id);
-            const hasChildren = l1.children.length > 0;
-            return (
-              <li key={l1.id}>
-                {/* 一级 */}
-                <label
-                  className={`flex items-center gap-1.5 rounded-md px-1.5 py-1.5 text-[12px] transition-colors ${
-                    editing ? "cursor-pointer hover:bg-muted/50" : "cursor-default"
-                  } ${checked1 ? "bg-muted/40 ring-1 ring-foreground/10" : ""}`}
-                >
-                  {/* 展开按钮 */}
-                  {hasChildren ? (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        toggleExpand(l1.id);
-                      }}
-                      className="grid size-4 place-items-center rounded text-foreground/50 hover:bg-foreground/10"
-                      aria-label={isOpen ? "收起" : "展开"}
-                    >
-                      {isOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-                    </button>
-                  ) : (
-                    <span className="inline-block size-4" />
-                  )}
-                  <FolderOpen className="size-3.5 shrink-0 text-amber-500/70" />
-                  <input
-                    type="checkbox"
-                    checked={checked1}
-                    disabled={!editing}
-                    onChange={() => editing && toggle(l1.id)}
-                    className="size-3.5 accent-foreground/70"
-                  />
-                  <span className="min-w-0 flex-1 truncate font-medium text-foreground/85">{l1.name}</span>
-                  {l1.docCount !== undefined && l1.docCount > 0 && (
-                    <span className="shrink-0 font-mono text-[10.5px] text-foreground/40">
-                      {l1.docCount} 文档
-                    </span>
-                  )}
-                </label>
+        <p className="mt-0.5 flex items-center gap-1 text-foreground/40">
+          <Info className="size-3" />
+          检索权限规则:个人文件夹可检索;仅能检索本人加入的群组知识库。
+          <span className="text-amber-600 dark:text-amber-400">后端检索 API 权限过滤待实施。</span>
+        </p>
+      </div>
 
-                {/* 二级(展开时) */}
-                {hasChildren && isOpen && (
-                  <ul className="ml-7 mt-0.5 space-y-0.5 border-l border-border/60 pl-2.5">
-                    {l1.children.map((l2) => {
-                      const checked2 = selectedSet.has(l2.id);
-                      return (
-                        <li key={l2.id}>
-                          <label
-                            className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[12px] transition-colors ${
-                              editing ? "cursor-pointer hover:bg-muted/50" : "cursor-default"
-                            } ${checked2 ? "bg-muted/40 ring-1 ring-foreground/10" : ""}`}
-                          >
-                            <FileText className="size-3 shrink-0 text-foreground/45" />
-                            <input
-                              type="checkbox"
-                              checked={checked2}
-                              disabled={!editing}
-                              onChange={() => editing && toggle(l2.id)}
-                              className="size-3.5 accent-foreground/70"
-                            />
-                            <span className="min-w-0 flex-1 truncate text-foreground/75">{l2.name}</span>
-                            {l2.docCount !== undefined && l2.docCount > 0 && (
-                              <span className="shrink-0 font-mono text-[10.5px] text-foreground/40">
-                                {l2.docCount} 文档
-                              </span>
-                            )}
-                          </label>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+      {/* R32-C 改动 ⑨:弹窗 — 点击"添加知识库"才加载两级目录 */}
+      {pickerOpen && (
+        <KnowledgeFolderPickerModal
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          tree={tree}
+          expanded={expanded}
+          toggleExpand={toggleExpand}
+          selectedSet={selectedSet}
+          onToggle={toggle}
+          loading={loading}
+        />
       )}
+    </div>
+  );
+}
 
-      {/* 锁图标提示 — 移除原"该 Agent 专属"区,保持简洁 */}
-      <p className="flex items-center gap-1 text-[11px] text-foreground/45">
-        <Lock className="size-3" />
-        个人 / 群组知识库不在选择范围(权限隔离)。
-      </p>
+// ── 知识库选择弹窗(点击"添加知识库"才打开,内含两级目录) ────────────────────
+
+function KnowledgeFolderPickerModal({
+  open,
+  onOpenChange,
+  tree,
+  expanded,
+  toggleExpand,
+  selectedSet,
+  onToggle,
+  loading,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  tree: TreeNode[];
+  expanded: Set<string>;
+  toggleExpand: (id: string) => void;
+  selectedSet: Set<string>;
+  onToggle: (id: string) => void;
+  loading: boolean;
+}) {
+  React.useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onOpenChange(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onOpenChange]);
+
+  if (!open) return null;
+  const pickedCount = selectedSet.size;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-foreground/40 backdrop-blur-sm p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="选择知识库"
+      onClick={() => onOpenChange(false)}
+    >
+      <div
+        className="flex w-full max-w-lg max-h-[80vh] flex-col rounded-xl bg-card ring-1 ring-foreground/10 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* 标题 */}
+        <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
+          <div className="flex items-center gap-2">
+            <FolderTree className="size-4 text-sky-500/70" />
+            <h3 className="text-sm font-semibold tracking-tight">选择知识库 · 组织公共区</h3>
+          </div>
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+            aria-label="关闭"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* 两级目录树 */}
+        <div className="flex-1 overflow-y-auto px-4 py-3">
+          {loading ? (
+            <p className="py-6 text-center text-[12px] text-foreground/45">加载中…</p>
+          ) : tree.length === 0 ? (
+            <p className="py-6 text-center text-[12px] text-foreground/50">
+              暂无可选公共知识库。
+            </p>
+          ) : (
+            <ul className="space-y-0.5">
+              {tree.map((l1) => {
+                const checked1 = selectedSet.has(l1.id);
+                const isOpen = expanded.has(l1.id);
+                const hasChildren = l1.children.length > 0;
+                return (
+                  <li key={l1.id}>
+                    <label
+                      className={`flex items-center gap-1.5 rounded-md px-1.5 py-1.5 text-[12px] transition-colors cursor-pointer hover:bg-muted/50 ${checked1 ? "bg-muted/40 ring-1 ring-foreground/10" : ""}`}
+                    >
+                      {hasChildren ? (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.preventDefault(); toggleExpand(l1.id); }}
+                          className="grid size-4 place-items-center rounded text-foreground/50 hover:bg-foreground/10"
+                          aria-label={isOpen ? "收起" : "展开"}
+                        >
+                          {isOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+                        </button>
+                      ) : (
+                        <span className="inline-block size-4" />
+                      )}
+                      <FolderOpen className="size-3.5 shrink-0 text-amber-500/70" />
+                      <input
+                        type="checkbox"
+                        checked={checked1}
+                        onChange={() => onToggle(l1.id)}
+                        className="size-3.5 accent-foreground/70"
+                      />
+                      <span className="min-w-0 flex-1 truncate font-medium text-foreground/85">{l1.name}</span>
+                      {l1.docCount !== undefined && l1.docCount > 0 && (
+                        <span className="shrink-0 font-mono text-[10.5px] text-foreground/40">{l1.docCount} 文档</span>
+                      )}
+                    </label>
+
+                    {hasChildren && isOpen && (
+                      <ul className="ml-7 mt-0.5 space-y-0.5 border-l border-border/60 pl-2.5">
+                        {l1.children.map((l2) => {
+                          const checked2 = selectedSet.has(l2.id);
+                          return (
+                            <li key={l2.id}>
+                              <label
+                                className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[12px] transition-colors cursor-pointer hover:bg-muted/50 ${checked2 ? "bg-muted/40 ring-1 ring-foreground/10" : ""}`}
+                              >
+                                <FileText className="size-3 shrink-0 text-foreground/45" />
+                                <input
+                                  type="checkbox"
+                                  checked={checked2}
+                                  onChange={() => onToggle(l2.id)}
+                                  className="size-3.5 accent-foreground/70"
+                                />
+                                <span className="min-w-0 flex-1 truncate text-foreground/75">{l2.name}</span>
+                                {l2.docCount !== undefined && l2.docCount > 0 && (
+                                  <span className="shrink-0 font-mono text-[10.5px] text-foreground/40">{l2.docCount} 文档</span>
+                                )}
+                              </label>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        {/* 底部 */}
+        <div className="flex items-center justify-between border-t border-border bg-muted/10 px-5 py-3">
+          <span className="font-mono text-xs text-muted-foreground">已选 {pickedCount} 个</span>
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            className="rounded-md bg-foreground px-3 py-1.5 text-[12px] font-medium text-background hover:opacity-90 transition-opacity"
+          >
+            完成
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
