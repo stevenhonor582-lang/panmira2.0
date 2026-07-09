@@ -35,16 +35,19 @@ test('R15-B wizard: step 2 loads real providers + temperature explanation', asyn
   await page.getByPlaceholder('例:不盈 / 墨言 / 守静 / 销售助手-A').fill('R15B 测试员工');
   // Step 2 — go via rail
   await jumpTo(page, '大脑模型');
-  await expect(page.getByText('LLM 服务商')).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText('大脑模型 · 选哪个 AI 驱动这个员工')).toBeVisible({ timeout: 5000 });
   // Wait for parallel fetch to populate the dropdown
   await expect(page.getByText(/MiniMax|DeepSeek|智谱/).first()).toBeVisible({ timeout: 5000 });
-  // temperature explanation
-  await expect(page.getByText(/temperature = 模型选词时的/)).toBeVisible();
-  await expect(page.getByText('越确定 ↔ 越随机')).toBeVisible();
+  // temperature section present (subtitle is the stable copy)
+  await expect(page.getByText(/低 = 每次回答都一样/)).toBeVisible();
+  // R34-B: context window section (auto-read from provider_configs) + auto-compress section
+  await expect(page.getByText(/记忆容量 · 上下文窗口/)).toBeVisible();
+  await expect(page.getByText('上下文自动压缩')).toBeVisible();
+  await expect(page.getByText('启用自动压缩')).toBeVisible();
   // No fake Cloud Sonic anywhere
   expect(await page.locator('body').textContent() || '').not.toContain('Cloud Sonic');
   // Real-time preview uses real data
-  await expect(page.getByText('实时预览 · 真实数据')).toBeVisible();
+  await expect(page.getByText(/实时名片 · 预览/)).toBeVisible();
 });
 
 test('R15-B wizard: step 4 skills + MCP loaded from real APIs', async ({ page }) => {
@@ -64,10 +67,12 @@ test('R15-B wizard: step 6 channel binding + working dir', async ({ page }) => {
   await page.goto('http://localhost:3200/employees/new/');
   await expect(page.getByText('创建新的数字员工')).toBeVisible({ timeout: 10000 });
   await jumpTo(page, '协作配置');
-  await expect(page.getByText(/频道绑定/)).toBeVisible({ timeout: 5000 });
-  await expect(page.getByText(/一个员工可绑多个 bot/)).toBeVisible();
-  // Working directory input present
-  await expect(page.getByPlaceholder('/workspace/agents/<员工名>')).toBeVisible();
+  // R34-B: 频道→入口 rename
+  await expect(page.getByText(/入口绑定/)).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText(/一个员工可绑多个入口/)).toBeVisible();
+  // R34-B: 工作目录系统生成 + 锁定(只读 input + 锁定 badge)
+  await expect(page.getByLabel('工作目录(系统生成,只读)')).toBeVisible();
+  await expect(page.getByText('锁定')).toBeVisible();
   // Visibility options
   await expect(page.getByText('私有')).toBeVisible();
   await expect(page.getByText('团队可见')).toBeVisible();
