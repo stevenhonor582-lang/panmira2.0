@@ -9,6 +9,9 @@ import {
   agentToDraft,
   diffDraft,
 } from "./edit-mode";
+import { api } from "@/lib/api";
+import { BUILT_IN_TOOLS } from "../../new/_components/form";
+import type { ResourceItem } from "@/components/resource-picker/resource-picker";
 
 /**
  * R24: 技能 tab — 删 capabilities,只留 skills(带描述)/ tools / knowledge_folders。
@@ -51,10 +54,52 @@ function describeSkill(skillId: string): string {
   return SKILL_DESCRIPTIONS[skillId] ?? skillId;
 }
 
+// R25: 内置工具目录(从 form.ts 复用),给 ChipListEditor 的 pickerConfig 用
+const TOOL_ITEMS: ResourceItem[] = BUILT_IN_TOOLS.map((t) => ({
+  id: t.id,
+  label: t.label,
+  description: t.description,
+}));
+
 export function TabSkills({ id }: { id: string }) {
   const { agent, loading, reload } = useAgent(id);
   const [draft, setDraft] = React.useState<Record<string, unknown>>({});
   const [origDraft, setOrigDraft] = React.useState<Record<string, unknown>>({});
+
+  // R25: 拉真实 skill / KB folder 列表,供"从库选"
+  const [skillItems, setSkillItems] = React.useState<ResourceItem[]>([]);
+  const [folderItems, setFolderItems] = React.useState<ResourceItem[]>([]);
+  const [pickerLoading, setPickerLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    let alive = true;
+    setPickerLoading(true);
+    Promise.all([
+      api<{ skills: { id: string; name: string; description?: string }[] } | { id: string; name: string; description?: string }[]>("/api/skills").catch(() => null),
+      api<{ folders: { id: string; name: string; path?: string; docCount?: number }[] } | { id: string; name: string; path?: string; docCount?: number }[]>("/api/knowledge/folders").catch(() => null),
+    ]).then(([skillRes, folderRes]) => {
+      if (!alive) return;
+      const sRaw = (skillRes as any)?.skills ?? (Array.isArray(skillRes) ? skillRes : []);
+      const fRaw = (folderRes as any)?.folders ?? (Array.isArray(folderRes) ? folderRes : []);
+      setSkillItems(
+        (sRaw as any[]).map((s) => ({
+          id: s.id ?? s.name,
+          label: s.name ?? s.id,
+          description: s.description,
+        })),
+      );
+      setFolderItems(
+        (fRaw as any[]).map((f) => ({
+          id: f.id ?? f.name,
+          label: f.name ?? f.id,
+          description: f.path ? `路径 · ${f.path}` : undefined,
+        })),
+      );
+    }).finally(() => {
+      if (alive) setPickerLoading(false);
+    });
+    return () => { alive = false; };
+  }, []);
 
   React.useEffect(() => {
     if (agent) {
@@ -117,6 +162,12 @@ export function TabSkills({ id }: { id: string }) {
                     )}
                   </span>
                 )}
+                pickerConfig={{
+                  title: "选择技能",
+                  items: skillItems,
+                  loading: pickerLoading,
+                  placeholder: "搜索技能名或描述…",
+                }}
               />
               {!ctx.editing && skillsList.length > 0 && (
                 <ul className="mt-3 space-y-1">
@@ -142,6 +193,12 @@ export function TabSkills({ id }: { id: string }) {
               draft={draft}
               setDraft={setDraft}
               placeholder="如: web_search / shell / file_read"
+              pickerConfig={{
+                title: "选择工具",
+                items: TOOL_ITEMS,
+                loading: false,
+                placeholder: "搜索工具…",
+              }}
             />
 
             <ChipListEditor
@@ -152,6 +209,12 @@ export function TabSkills({ id }: { id: string }) {
               draft={draft}
               setDraft={setDraft}
               placeholder="如: kb-product / kb-sales"
+              pickerConfig={{
+                title: "选择知识库文件夹",
+                items: folderItems,
+                loading: pickerLoading,
+                placeholder: "搜索文件夹…",
+              }}
             />
           </div>
         </div>

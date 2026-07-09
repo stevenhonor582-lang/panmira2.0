@@ -13,9 +13,13 @@
  */
 
 import * as React from "react";
-import { Pencil, Check, X, Plus, Trash2, ArrowUp, ArrowDown, Loader2 } from "lucide-react";
+import { Pencil, Check, X, Plus, Trash2, ArrowUp, ArrowDown, Loader2, Library } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  ResourcePicker,
+  type ResourceItem,
+} from "@/components/resource-picker/resource-picker";
 import {
   Select,
   SelectContent,
@@ -372,6 +376,7 @@ export function ChipListEditor({
   field,
   placeholder = "新增一项,回车添加",
   renderItem,
+  pickerConfig,
 }: {
   label: string;
   items: string[];
@@ -382,11 +387,19 @@ export function ChipListEditor({
   placeholder?: string;
   /** R24: 自定义 chip 渲染(用于 skills 显示描述) */
   renderItem?: (item: string) => React.ReactNode;
+  /** R25: 可选 — 提供 pickerConfig 时,显示"从库选"按钮,弹出 ResourcePicker */
+  pickerConfig?: {
+    title: string;
+    items: ResourceItem[];
+    loading?: boolean;
+    placeholder?: string;
+  };
 }) {
   const list: string[] = editing
     ? Array.isArray(draft[field]) ? (draft[field] as string[]) : items
     : items;
   const [input, setInput] = React.useState("");
+  const [pickerOpen, setPickerOpen] = React.useState(false);
 
   const add = (v: string) => {
     const t = v.trim();
@@ -399,11 +412,18 @@ export function ChipListEditor({
     setDraft({ ...draft, [field]: list.filter((x) => x !== v) });
   };
 
+  // R25: 从库选 — 合并去重
+  const mergePicked = (picked: ResourceItem[]) => {
+    const ids = picked.map((p) => p.id);
+    const merged = Array.from(new Set([...list, ...ids]));
+    setDraft({ ...draft, [field]: merged });
+  };
+
   return (
     <div>
       <FieldLabel label={label} hint={`${list.length} 项`} />
       {editing && (
-        <div className="mb-2 flex gap-1.5">
+        <div className="mb-2 flex flex-wrap gap-1.5">
           <Input
             type="text"
             value={input}
@@ -415,7 +435,7 @@ export function ChipListEditor({
               }
             }}
             placeholder={placeholder}
-            className="text-[13px]"
+            className="text-[13px] flex-1 min-w-[160px]"
             data-testid={`field-${field}-input`}
           />
           <Button
@@ -428,6 +448,18 @@ export function ChipListEditor({
           >
             <Plus className="size-3.5" /> 添加
           </Button>
+          {pickerConfig && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setPickerOpen(true)}
+              className="gap-1 text-[12px]"
+              data-testid={`field-${field}-picker`}
+            >
+              <Library className="size-3.5" /> 从库选
+            </Button>
+          )}
         </div>
       )}
       {list.length === 0 ? (
@@ -460,6 +492,19 @@ export function ChipListEditor({
             </li>
           ))}
         </ul>
+      )}
+      {pickerConfig && (
+        <ResourcePicker
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          title={pickerConfig.title}
+          items={pickerConfig.items}
+          selectedIds={list}
+          loading={pickerConfig.loading}
+          multi
+          placeholder={pickerConfig.placeholder ?? "搜索…"}
+          onConfirm={mergePicked}
+        />
       )}
     </div>
   );
