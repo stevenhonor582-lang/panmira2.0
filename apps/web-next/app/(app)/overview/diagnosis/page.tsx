@@ -306,7 +306,7 @@ function OverallScoreCard({
       <div className="grid gap-6 p-6 md:grid-cols-[260px_1fr] md:items-center">
         {/* 圆环 */}
         <div className="relative mx-auto h-[200px] w-[200px]">
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
             <RadialBarChart
               innerRadius="76%"
               outerRadius="100%"

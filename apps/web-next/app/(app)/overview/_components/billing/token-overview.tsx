@@ -75,7 +75,7 @@ export function TokenOverview({ today, week, month, cost30d, daily }: Props) {
       </div>
 
       <div className="mt-5 h-64">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
           <BarChart data={daily} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
             <XAxis

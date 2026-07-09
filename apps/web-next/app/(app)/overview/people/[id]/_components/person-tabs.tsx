@@ -520,7 +520,7 @@ export function ResourcesTab({ person }: { person: Person }) {
       <div className="rounded-xl border border-border bg-card p-4">
         <h4 className="text-[12.5px] font-medium mb-3">每日 token 消耗(30 天)</h4>
         <div className="h-56">
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
             <BarChart data={daily} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(120,120,120,0.15)" vertical={false} />
               <XAxis dataKey="day" tick={{ fontSize: 10 }} stroke="rgba(120,120,120,0.5)" />
@@ -548,7 +548,7 @@ export function ResourcesTab({ person }: { person: Person }) {
             <p className="text-[12px] text-muted-foreground py-6 text-center">无数据</p>
           ) : (
             <div className="h-48">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                 <PieChart>
                   <Pie data={byAgent} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} innerRadius={40}>
                     {byAgent.map((entry, i) => (

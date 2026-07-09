@@ -426,8 +426,6 @@ export class AgentStore {
     if (data.avatarGlyph !== undefined) { sets.push(`avatar_glyph = $${idx++}`); values.push(data.avatarGlyph); }
     if (data.avatarHue !== undefined) { sets.push(`avatar_hue = $${idx++}`); values.push(data.avatarHue); }
     if (data.modelId !== undefined) { sets.push(`model_id = $${idx++}`); values.push(data.modelId); }
-    if (data.defaultContextWindow !== undefined) { sets.push(`default_context_window = $${idx++}`); values.push(data.defaultContextWindow); }
-    if (data.persona !== undefined) { sets.push(`persona = $${idx++}`); values.push(data.persona); }
 
     if (sets.length === 0) return this.findById(id);
 
