@@ -354,15 +354,26 @@ export async function handleEmployeesRoutes(
         jsonResponse(res, 400, fail('bad_request', 'name 必填'));
         return true;
       }
-      const created = await agentStore.createInstanceFromTemplate(templateId, {
-        name: name.trim(),
-        ownerId,
-      });
+      let created;
+      try {
+        created = await agentStore.createInstanceFromTemplate(templateId, {
+          name: name.trim(),
+          ownerId,
+        });
+      } catch (e: any) {
+        const msg = String(e?.message || e);
+        if (msg.includes('已存在')) {
+          jsonResponse(res, 409, fail('name_taken', msg));
+          return true;
+        }
+        jsonResponse(res, 500, fail('internal_error', msg));
+        return true;
+      }
       if (!created) {
         jsonResponse(res, 404, fail('not_found', `Template ${templateId} 不存在`));
         return true;
       }
-      jsonResponse(res, 201, ok(created));
+      jsonResponse(res, 201, ok({ ...created, _hint: '已创建独立实例' }));
       return true;
     } catch (e) {
       jsonResponse(res, 500, fail('internal_error', String(e)));
@@ -418,7 +429,23 @@ export async function handleEmployeesRoutes(
         jsonResponse(res, 400, fail('no_fields', '请求体未包含任何可更新字段'));
         return true;
       }
-      const agent = await agentStore.update(id, updates);
+      let agent;
+      try {
+        agent = await agentStore.update(id, updates);
+      } catch (e: any) {
+        const code = (e && e.code) || '';
+        const msg = String(e?.message || e);
+        if (code === 'bot_already_bound') {
+          jsonResponse(res, 409, fail('bot_already_bound', msg));
+          return true;
+        }
+        if (msg.includes('已存在')) {
+          jsonResponse(res, 409, fail('name_taken', msg));
+          return true;
+        }
+        jsonResponse(res, 500, fail('update_failed', msg));
+        return true;
+      }
       if (!agent) {
         jsonResponse(res, 404, fail('not_found', `Employee ${id} 不存在`));
         return true;

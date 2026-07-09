@@ -1,5 +1,97 @@
 import { pool } from './index.js';
 
+/**
+ * R27 规则 1: 中文→拼音首字母 + 工作目录自动生成。
+ * 不依赖完整拼音库,首字母够用(工作目录只求唯一 + 可读)。
+ * 中文名→拼音首字母(不盈→by, 墨言→my, 守静→sj);英文/数字原样小写;符号忽略。
+ */
+const PINYIN_INITIAL: Record<string, string> = {
+  '不': 'b', '盈': 'y', '墨': 'm', '言': 'y', '守': 's', '静': 'j',
+  '得': 'd', '一': 'y', '玄': 'x', '鉴': 'j', '全': 'q', '栈': 'z',
+  '文': 'w', '案': 'a', '运': 'y', '维': 'w', '替': 't', '补': 'b',
+  '阿': 'a', '艾': 'a', '安': 'a', '奥': 'a',
+  '巴': 'b', '白': 'b', '包': 'b', '宝': 'b', '贝': 'b', '毕': 'b', '薄': 'b', '卜': 'b', '步': 'b',
+  '蔡': 'c', '曹': 'c', '岑': 'c', '柴': 'c', '常': 'c', '陈': 'c', '成': 'c', '程': 'c', '迟': 'c', '储': 'c', '崔': 'c',
+  '戴': 'd', '邓': 'd', '狄': 'd', '丁': 'd', '董': 'd', '杜': 'd', '段': 'd',
+  '鄂': 'e',
+  '樊': 'f', '范': 'f', '方': 'f', '房': 'f', '费': 'f', '冯': 'f', '凤': 'f', '符': 'f', '傅': 'f',
+  '高': 'g', '戈': 'g', '葛': 'g', '龚': 'g', '宫': 'g', '巩': 'g', '古': 'g', '谷': 'g', '顾': 'g', '管': 'g', '郭': 'g',
+  '哈': 'h', '海': 'h', '韩': 'h', '何': 'h', '贺': 'h', '洪': 'h', '侯': 'h', '胡': 'h', '华': 'h', '黄': 'h', '霍': 'h',
+  '嵇': 'j', '吉': 'j', '计': 'j', '季': 'j', '贾': 'j', '江': 'j', '姜': 'j', '蒋': 'j', '金': 'j', '靳': 'j', '经': 'j', '景': 'j',
+  '孔': 'k', '寇': 'k',
+  '赖': 'l', '兰': 'l', '蓝': 'l', '郎': 'l', '劳': 'l', '雷': 'l', '黎': 'l', '李': 'l', '连': 'l', '廉': 'l', '练': 'l', '梁': 'l', '林': 'l', '凌': 'l', '刘': 'l', '柳': 'l', '龙': 'l', '楼': 'l', '卢': 'l', '鲁': 'l', '陆': 'l', '吕': 'l', '罗': 'l', '骆': 'l',
+  '马': 'm', '麻': 'm', '麦': 'm', '毛': 'm', '梅': 'm', '孟': 'm', '莫': 'm', '牟': 'm', '苗': 'm', '闵': 'm',
+  '倪': 'n', '宁': 'n', '牛': 'n',
+  '欧': 'o',
+  '潘': 'p', '庞': 'p', '裴': 'p', '彭': 'p', '皮': 'p', '蒲': 'p',
+  '戚': 'q', '齐': 'q', '钱': 'q', '强': 'q', '乔': 'q', '秦': 'q', '邱': 'q', '屈': 'q',
+  '任': 'r', '荣': 'r', '茹': 'r', '阮': 'r',
+  '桑': 's', '沙': 's', '商': 's', '邵': 's', '沈': 's', '施': 's', '石': 's', '史': 's', '舒': 's', '宋': 's', '苏': 's', '孙': 's', '隋': 's',
+  '谭': 't', '汤': 't', '唐': 't', '陶': 't', '田': 't', '童': 't', '涂': 't',
+  '万': 'w', '汪': 'w', '王': 'w', '韦': 'w', '魏': 'w', '温': 'w', '翁': 'w', '吴': 'w', '武': 'w',
+  '席': 'x', '夏': 'x', '鲜': 'x', '向': 'x', '项': 'x', '萧': 'x', '谢': 'x', '辛': 'x', '徐': 'x', '许': 'x', '薛': 'x',
+  '严': 'y', '颜': 'y', '杨': 'y', '姚': 'y', '叶': 'y', '殷': 'y', '于': 'y', '余': 'y', '俞': 'y', '虞': 'y', '元': 'y', '袁': 'y', '岳': 'y',
+  '查': 'z', '翟': 'z', '詹': 'z', '张': 'z', '章': 'z', '赵': 'z', '郑': 'z', '钟': 'z', '周': 'z', '朱': 'z', '诸': 'z', '祝': 'z', '邹': 'z',
+};
+
+/** 中文名→拼音首字母(不盈→by);英文/数字原样小写;符号忽略。最多 6 字母。 */
+export function toPinyinInitials(name: string): string {
+  let result = '';
+  for (const ch of String(name || '')) {
+    if (/[a-zA-Z0-9]/.test(ch)) {
+      result += ch.toLowerCase();
+    } else if (PINYIN_INITIAL[ch]) {
+      result += PINYIN_INITIAL[ch];
+    }
+  }
+  return result.slice(0, 6) || 'agent';
+}
+
+/** 生成英文工作目录:/workspace/agents/<slug>-<6位随机>。每次调用都不同。 */
+export function generateWorkingDir(name: string): string {
+  const slug = toPinyinInitials(name);
+  const random = Math.random().toString(36).slice(2, 8);
+  return `/workspace/agents/${slug}-${random}`;
+}
+
+/**
+ * R27 规则 2: bot 绑定一对一校验。
+ * 检查某个 bot 是否已被其他 agent 绑定(在 channel_ids jsonb 数组里)。
+ * 返回冲突 agent 的 name,无冲突返回 null。
+ */
+export async function findBotBindingConflict(
+  botId: string,
+  currentAgentId: string,
+): Promise<string | null> {
+  const result = await pool.query(
+    `SELECT a.name FROM agents a
+     WHERE a.channel_ids @> $1::jsonb
+       AND a.id::text != $2
+       AND a.is_template = false`,
+    [JSON.stringify([botId]), currentAgentId],
+  );
+  return result.rows.length > 0 ? (result.rows[0].name as string) : null;
+}
+
+/**
+ * R27 规则 1: 实例间重名检查。模板可以同名,实例之间不重名。
+ * 抛 Error(中文消息)如果实例重名。
+ */
+async function assertInstanceNameUnique(name: string, isTemplate: boolean, excludeId?: string): Promise<void> {
+  if (isTemplate) return; // 模板允许重名
+  const params: unknown[] = [name];
+  let sql = `SELECT id FROM agents WHERE name = $1 AND is_template = false`;
+  if (excludeId) {
+    params.push(excludeId);
+    sql += ` AND id::text != $2`;
+  }
+  const result = await pool.query(sql, params);
+  if (result.rows.length > 0) {
+    throw new Error(`实例名称"${name}"已存在,请用其他名称`);
+  }
+}
+
+
 export interface AgentTemplate {
   id: string;
   tenantId: string;
@@ -117,6 +209,11 @@ export class AgentStore {
     if (tenantResult.rows.length === 0) throw new Error('No tenant found');
     const tenantId = tenantResult.rows[0].id;
 
+    // R27 规则 1: 实例间重名检查(模板允许重名)
+    await assertInstanceNameUnique(data.name, data.isTemplate ?? false);
+    // R27 规则 1: 自动生成英文工作目录(如果调用方没传)
+    const workingDir = data.workingDir || generateWorkingDir(data.name);
+
     const result = await pool.query(
       `INSERT INTO agents (
           tenant_id, name, role_template, description, system_prompt,
@@ -146,7 +243,7 @@ export class AgentStore {
         JSON.stringify(data.boundary || {}),
         JSON.stringify(data.ironLaws || []),
         data.isTemplate ?? false,
-        data.workingDir ?? null,
+        workingDir,
         JSON.stringify(data.channelIds || []),
         data.visibility || 'team',
         data.temperature ?? 0.7,
@@ -179,6 +276,9 @@ export class AgentStore {
     const tenantResult = await pool.query('SELECT id FROM tenants LIMIT 1');
     if (tenantResult.rows.length === 0) throw new Error('No tenant found');
     const tenantId = tenantResult.rows[0].id;
+
+    // R27 规则 1 + 规则 5: 复制 = 独立实例,实例间重名检查 + 新工作目录(不复用模板的)
+    await assertInstanceNameUnique(overrides.name, false);
 
     const result = await pool.query(
       `INSERT INTO agents (
@@ -227,10 +327,10 @@ export class AgentStore {
     );
     const created = result.rows[0];
 
-    // 补 working_dir(用生成的 id)
+    // 补 working_dir — R27 规则 5: 用拼音首字母生成新目录(不复用模板的)
     await pool.query(
       `UPDATE agents SET working_dir = $1 WHERE id = $2`,
-      [`/workspace/agents/${created.id}`, created.id],
+      [generateWorkingDir(overrides.name), created.id],
     );
     const refreshed = await pool.query('SELECT * FROM agents WHERE id = $1', [created.id]);
     return this.mapRow(refreshed.rows[0]);
@@ -273,6 +373,24 @@ export class AgentStore {
       modelId?: string;
     },
   ): Promise<AgentTemplate | null> {
+    // R27 规则 1: 改名时实例间重名检查(排除自己)
+    if (data.name !== undefined) {
+      const isTemplate = data.isTemplate ?? (await this.findById(id))?.isTemplate ?? false;
+      await assertInstanceNameUnique(data.name, isTemplate, id);
+    }
+    // R27 规则 2: bot 绑定一对一 — 新增绑定前检查每个 bot 是否已被其他 agent 占用
+    if (data.channelIds !== undefined && Array.isArray(data.channelIds)) {
+      for (const botId of data.channelIds) {
+        if (typeof botId !== 'string' || botId.length === 0) continue;
+        const conflict = await findBotBindingConflict(botId, id);
+        if (conflict) {
+          const err = new Error(`该入口已绑定 ${conflict},请先在该 agent 解绑`) as Error & { code?: string; boundAgent?: string };
+          err.code = 'bot_already_bound';
+          err.boundAgent = conflict;
+          throw err;
+        }
+      }
+    }
     const sets: string[] = [];
     const values: any[] = [];
     let idx = 1;

@@ -595,37 +595,47 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
             jsonResponse(res, 400, { error: 'name is required' });
             return;
           }
-          const agent = await agentStore.create({
-            name: body.name,
-            roleTemplate: body.roleTemplate,
-            description: body.description,
-            systemPrompt: body.systemPrompt,
-            capabilities: body.capabilities,
-            tools: body.tools,
-            category: body.category,
-            templateType: body.templateType,
-            sourceTemplateId: body.sourceTemplateId,
-            knowledgeFolders: body.knowledgeFolders,
-            skills: body.skills,
-            ironLaws: body.ironLaws,
-            boundary: body.boundary,
-            orchestration: body.orchestration,
-            // R15-B wizard fields (forwarded if present)
-            isTemplate: body.isTemplate,
-            workingDir: body.workingDir,
-            channelIds: body.channelIds,
-            visibility: body.visibility,
-            temperature: body.temperature,
-            ownerId: body.ownerId,
-            persona: body.persona,
-            defaultEngine: body.defaultEngine,
-            defaultModel: body.defaultModel,
-            defaultContextWindow: body.defaultContextWindow,
-            avatarGlyph: body.avatarGlyph,
-            avatarHue: body.avatarHue,
-            modelId: body.modelId,
-          });
-          jsonResponse(res, 201, { agent });
+          try {
+            const agent = await agentStore.create({
+              name: body.name,
+              roleTemplate: body.roleTemplate,
+              description: body.description,
+              systemPrompt: body.systemPrompt,
+              capabilities: body.capabilities,
+              tools: body.tools,
+              category: body.category,
+              templateType: body.templateType,
+              sourceTemplateId: body.sourceTemplateId,
+              knowledgeFolders: body.knowledgeFolders,
+              skills: body.skills,
+              ironLaws: body.ironLaws,
+              boundary: body.boundary,
+              orchestration: body.orchestration,
+              // R15-B wizard fields (forwarded if present)
+              isTemplate: body.isTemplate,
+              workingDir: body.workingDir,
+              channelIds: body.channelIds,
+              visibility: body.visibility,
+              temperature: body.temperature,
+              ownerId: body.ownerId,
+              persona: body.persona,
+              defaultEngine: body.defaultEngine,
+              defaultModel: body.defaultModel,
+              defaultContextWindow: body.defaultContextWindow,
+              avatarGlyph: body.avatarGlyph,
+              avatarHue: body.avatarHue,
+              modelId: body.modelId,
+            });
+            jsonResponse(res, 201, { agent });
+          } catch (e: any) {
+            // R27 规则 1: 实例重名 → 409
+            const msg = String(e?.message || e);
+            if (msg.includes('已存在')) {
+              jsonResponse(res, 409, { error: 'name_taken', message: msg });
+            } else {
+              jsonResponse(res, 500, { error: 'create_failed', message: msg });
+            }
+          }
           return;
         }
         // PUT /api/agents/:id — update
@@ -634,7 +644,21 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
           const raw = await readBody(req);
           const body = JSON.parse(raw);
           logger.info({ agentId: putMatch[1], kf: body.knowledgeFolders, allKeys: Object.keys(body) }, '[TRACE] PUT /api/agents body');
-          const agent = await agentStore.update(putMatch[1], body);
+          let agent;
+          try {
+            agent = await agentStore.update(putMatch[1], body);
+          } catch (e: any) {
+            const code = (e && e.code) || '';
+            const msg = String(e?.message || e);
+            if (code === 'bot_already_bound') {
+              jsonResponse(res, 409, { error: 'bot_already_bound', message: msg, boundAgent: e.boundAgent });
+            } else if (msg.includes('已存在')) {
+              jsonResponse(res, 409, { error: 'name_taken', message: msg });
+            } else {
+              jsonResponse(res, 500, { error: 'update_failed', message: msg });
+            }
+            return;
+          }
           if (!agent) {
             jsonResponse(res, 404, { error: 'Agent not found' });
             return;
