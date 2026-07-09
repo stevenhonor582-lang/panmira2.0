@@ -35,6 +35,7 @@ import {
   useReactFlow,
   BackgroundVariant,
   ConnectionMode,
+  MarkerType,
   type Node,
   type Edge,
   type Connection,
@@ -130,6 +131,16 @@ const PALETTE: Array<{ kind: NodeKind; icon: LucideIcon; hint: string }> = [
   { kind: "conditional", icon: GitFork, hint: "if/else 条件路由" },
   { kind: "parallel", icon: Split, hint: "并行分支 fan-out/fan-in" },
 ];
+
+// R33-A: 所有连线默认带箭头 + smoothstep 样式。
+// 之前无 defaultEdgeOptions,AI 生成的 edges 虽有 animated 但无箭头,
+// 视觉上像"缺连线"。加了之后 AI/手动连接的 edge 都清晰可见。
+const DEFAULT_EDGE_OPTIONS = {
+  type: "smoothstep" as const,
+  animated: true,
+  markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
+  style: { strokeWidth: 1.8, stroke: "hsl(var(--foreground) / 0.45)" },
+};
 
 // ────────────────────────────────────────────────────────────────────────────
 // Public component (wrapped in ReactFlowProvider)
@@ -239,10 +250,11 @@ function TaskDagEditorInner(props: TaskDagEditorProps) {
       setNodes(rawNodes as DagRfNode[]);
       setEdges(rawEdges as DagRfEdge[]);
       setSelectedId(null);
-      // Fit the new graph into view on the next tick (RF needs the nodes mounted).
+      // R33-A: 画布适配窗口。AI 生成图通常 3-12 节点,padding 0.15 一键看全局;
+      // duration 让缩放有平滑过渡;延迟 80ms 确保节点挂载后再 fit(节点多时 60ms 偶尔未挂载)。
       window.setTimeout(() => {
-        try { reactFlow.fitView({ padding: 0.2 }); } catch { /* noop */ }
-      }, 60);
+        try { reactFlow.fitView({ padding: 0.15, duration: 400 }); } catch { /* noop */ }
+      }, 80);
     },
     [pushHistory, setNodes, setEdges, reactFlow],
   );
@@ -694,7 +706,9 @@ function TaskDagEditorInner(props: TaskDagEditorProps) {
             multiSelectionKeyCode={["Meta", "Control"]}
             connectionMode={ConnectionMode.loose}
             fitView
-            minZoom={0.2}
+            fitViewOptions={{ padding: 0.15 }}
+            defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+            minZoom={0.15}
             maxZoom={2}
             proOptions={{ hideAttribution: true }}
           >
