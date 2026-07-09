@@ -66,11 +66,30 @@ export default function NewTaskPage() {
         name: name.trim(),
         description: description.trim() || undefined,
         status: "draft" as const,
-        config: {
-          snapshot: snapshot ?? null,
-          nodes: [],
-          edges: [],
-        },
+        ...((): Record<string, unknown> => {
+          // R22: 从 RF snapshot 抽 nodes/edges 填顶层(后端 trigger 读 rows[0].nodes)
+          const doc = snapshot as { snapshot?: { nodes?: unknown[]; edges?: unknown[] } } | null;
+          const rfNodes = (doc?.snapshot?.nodes ?? []) as Array<{ id?: string; position?: { x: number; y: number }; data?: Record<string, unknown> }>;
+          const rfEdges = (doc?.snapshot?.edges ?? []) as Array<{ source?: string; target?: string; label?: string }>;
+          const backendNodes = rfNodes.map((n) => ({
+            id: String(n.id ?? ""),
+            label: String(n.data?.label ?? n.data?.kind ?? "节点"),
+            agentTemplateId: String(n.data?.refId ?? ""),
+            type: "dagNode",
+            position: n.position ?? { x: 0, y: 0 },
+            config: { kind: n.data?.kind, meta: n.data ?? {} },
+          }));
+          const backendEdges = rfEdges.map((e) => ({
+            from: String(e.source ?? ""),
+            to: String(e.target ?? ""),
+            ...(e.label ? { label: e.label } : {}),
+          }));
+          return {
+            config: { snapshot: snapshot ?? null, nodes: backendNodes, edges: backendEdges },
+            nodes: backendNodes,
+            edges: backendEdges,
+          };
+        })(),
       };
       const r = await api<{ success: boolean; data: { id: string } }>(
         "/api/v2/admin/pipelines",
