@@ -47,6 +47,12 @@ import {
   UsersRound,
   Circle,
   AlertTriangle,
+  Cable,
+  Plus,
+  X,
+  Loader2,
+  Check,
+  AlertCircle,
 } from "lucide-react";
 import {
   EditPane,
@@ -65,6 +71,8 @@ import {
   type RelationEdge,
   type RelationNodeData,
 } from "@/components/relation-graph/relation-graph";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/toast/toast-provider";
 import { cn } from "@/lib/utils";
 
 // ────────────────────────────────────────────────────────────
@@ -83,6 +91,13 @@ interface BotInfo {
   name: string;
   platform: string;
   agentId?: string;
+  // R34-B: 富字段(用于入口管理可视化 / 占用标注 / 在线状态)
+  bot_id?: string;
+  display_name?: string;
+  remark?: string;
+  engine?: string;
+  paused?: boolean;
+  updated_at?: string;
 }
 
 interface RelatedAgent {
@@ -90,6 +105,14 @@ interface RelatedAgent {
   name: string;
   displayName: string | null;
   pipelines: string[]; // 共同出现的 pipeline 名字
+}
+
+/** 简版 agent 行(用于入口占用归属展示 + 切换时定位旧绑定)。 */
+interface AgentRow {
+  id: string;
+  name: string;
+  displayName: string | null;
+  channelIds: string[];
 }
 
 const FIELDS = ["owner_user_id", "visibility"];
@@ -153,6 +176,8 @@ export function TabCollab({ id }: { id: string }) {
   const [bots, setBots] = React.useState<BotInfo[]>([]);
   const [related, setRelated] = React.useState<RelatedAgent[]>([]);
   const [pipelinesOfAgent, setPipelinesOfAgent] = React.useState<{ id: string; name: string }[]>([]);
+  // R34-B: 全量 agent 行(入口占用归属 + 切换时定位旧绑定)
+  const [agentRows, setAgentRows] = React.useState<AgentRow[]>([]);
 
   const loadPeople = React.useCallback(async () => {
     try {
@@ -220,6 +245,24 @@ export function TabCollab({ id }: { id: string }) {
           pipelines: [...info.pipelines],
         })),
       );
+
+      // R34-B: 拉全量 agent 行(入口占用归属 + 切换时定位旧绑定 channel_ids)
+      try {
+        const empRes = await api<{ data?: { items?: any[] } } | { items?: any[] }>(
+          "/api/v2/employees?filter=all&limit=200",
+        );
+        const empList = (empRes as any)?.data?.items ?? (empRes as any)?.items ?? [];
+        setAgentRows(
+          (empList as any[]).map((e) => ({
+            id: e.id,
+            name: e.name ?? e.display_name ?? e.id,
+            displayName: e.display_name ?? e.name ?? null,
+            channelIds: Array.isArray(e.channel_ids) ? e.channel_ids : [],
+          })),
+        );
+      } catch {
+        setAgentRows([]);
+      }
     } catch (e) {
       console.error("[collab] loadRelationData failed:", e);
     }
@@ -295,6 +338,9 @@ export function TabCollab({ id }: { id: string }) {
             related={related}
             pipelines={pipelinesOfAgent}
           />
+
+          {/* === R34-B: 接入入口管理(绑定/解绑/独占/切换确认)=== */}
+          <EntryManagement agent={agent} bots={bots} agentRows={agentRows} onSaved={reload} />
 
           <div className="grid gap-4 md:grid-cols-2">
             {/* === 主理人 === */}
@@ -702,22 +748,23 @@ function R15AFields({ agent }: { agent: Agent }) {
   return (
     <div>
       <h3 className="mb-3 flex items-center gap-2 text-[13px] font-medium tracking-tight text-foreground/65">
-        R15-A · 多 Bot 字段(只读)
+        运行参数(只读)
       </h3>
       <div className="space-y-2 rounded-xl border border-border bg-card p-5">
-        <Row label="工作目录 · working_dir">
+        <Row label="工作目录 · 系统生成">
           <div className="inline-flex items-center gap-2">
             <code className="font-mono text-[12.5px]">
               {workingDir || (
-                <span className="text-foreground/40">未设置(默认 /workspace/agents/&lt;id&gt;)</span>
+                <span className="text-foreground/40">未设置(默认 /workspace/agents/&lt;编号&gt;)</span>
               )}
             </code>
-            <span className="rounded bg-foreground/5 px-1.5 py-0.5 text-[10px] font-mono text-foreground/45">
-              只读
+            <span className="inline-flex items-center gap-1 rounded bg-foreground/5 px-1.5 py-0.5 text-[10px] font-mono text-foreground/45">
+              <Lock className="size-2.5" />
+              锁定
             </span>
           </div>
         </Row>
-        <Row label="绑定频道 · channel_ids">
+        <Row label="绑定入口 · channel_ids">
           {channelIds.length === 0 ? (
             <span className="text-foreground/40 text-[12.5px]">未绑定</span>
           ) : (
@@ -771,5 +818,335 @@ function LegendDot({ color, label }: { color: string; label: string }) {
       <span className={cn("size-2 rounded-sm", color)} />
       {label}
     </span>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// R34-B: 接入入口管理 — 独占模式(空闲可选 / 已占用置灰+标注归属)
+//        + 切换二次确认弹窗(展示旧绑定,前端编排释放→认领)
+// ────────────────────────────────────────────────────────────
+
+/** 从 bot 对象取 bot_id(兼容 local/DB/paused 三种来源) */
+function getBotId(b: BotInfo): string {
+  return String((b as any).bot_id || b.id || b.name || "");
+}
+
+/** 从 bot 对象取显示名 */
+function getBotDisplayName(b: BotInfo): string {
+  return String((b as any).display_name || (b as any).remark || b.name || "未命名");
+}
+
+/** 找到占用某入口的 agent 行(用于标注归属 + 切换时定位旧绑定) */
+function findOccupant(botId: string, agentRows: AgentRow[], myId: string): AgentRow | null {
+  return agentRows.find((a) => a.id !== myId && a.channelIds.includes(botId)) ?? null;
+}
+
+function EntryManagement({
+  agent,
+  bots,
+  agentRows,
+  onSaved,
+}: {
+  agent: Agent;
+  bots: BotInfo[];
+  agentRows: AgentRow[];
+  onSaved: () => void;
+}) {
+  const toast = useToast();
+  const [operating, setOperating] = React.useState<string | null>(null);
+  // R34-B: 切换确认弹窗的目标 bot(占用态点击后弹出)
+  const [switchTarget, setSwitchTarget] = React.useState<BotInfo | null>(null);
+
+  const raw = agent.raw as Record<string, unknown> | null;
+  const channelIds: string[] = Array.isArray(raw?.channel_ids)
+    ? (raw?.channel_ids as string[])
+    : agent.channelIds;
+
+  const richBots = bots;
+
+  // 已绑定(本 agent 占用)
+  const boundBots = richBots.filter((b) => {
+    const bid = getBotId(b);
+    return (bid && channelIds.includes(bid)) || b.agentId === agent.id;
+  });
+  const boundIdSet = new Set(boundBots.map((b) => getBotId(b)));
+
+  // 其余入口(按占用态分组)
+  const others = richBots.filter((b) => {
+    const bid = getBotId(b);
+    return !!bid && !boundIdSet.has(bid);
+  });
+
+  async function bindFree(botId: string) {
+    setOperating(botId);
+    try {
+      await updateAgent(agent.id, { channel_ids: [...channelIds, botId] });
+      toast.success("入口绑定成功");
+      onSaved();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(`绑定失败:${msg}`);
+    } finally {
+      setOperating(null);
+    }
+  }
+
+  async function unbindBot(botId: string, botName: string) {
+    setOperating(botId);
+    try {
+      await updateAgent(agent.id, { channel_ids: channelIds.filter((c) => c !== botId) });
+      toast.success(`已解绑「${botName}」`);
+      onSaved();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(`解绑失败:${msg}`);
+    } finally {
+      setOperating(null);
+    }
+  }
+
+  // R34-B: 切换入口 — 前端编排两步(先释放旧绑定,再认领到本 agent)
+  async function confirmSwitch() {
+    if (!switchTarget) return;
+    const bid = getBotId(switchTarget);
+    const occupant = findOccupant(bid, agentRows, agent.id);
+    setOperating(bid);
+    try {
+      // 1) 释放旧绑定(从占用 agent 的 channel_ids 移除该入口)
+      if (occupant) {
+        const remain = occupant.channelIds.filter((c) => c !== bid);
+        await updateAgent(occupant.id, { channel_ids: remain });
+      }
+      // 2) 认领到本 agent
+      await updateAgent(agent.id, { channel_ids: [...channelIds, bid] });
+      toast.success(
+        `已切换入口「${getBotDisplayName(switchTarget)}」${occupant ? `(原归属 ${occupant.displayName || occupant.name} 已自动解除)` : ""}`,
+      );
+      setSwitchTarget(null);
+      onSaved();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(`切换失败:${msg}`);
+    } finally {
+      setOperating(null);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="flex items-center gap-2 text-sm font-semibold">
+          <Cable className="size-4 text-emerald-500" />
+          接入入口管理
+        </h3>
+        <span className="font-mono text-[11px] text-foreground/45">
+          已绑定 {boundBots.length} 个 · 共 {richBots.length} 个入口
+        </span>
+      </div>
+
+      <p className="mb-4 text-[11.5px] leading-relaxed text-muted-foreground">
+        每个 Agent 实例可绑定多个入口(飞书 / 钉钉 / 企微等)。
+        <strong className="mx-1 text-foreground/80">入口为独占资源</strong>:同一入口同时只能被一个 Agent 实例绑定。
+        空闲入口可直接绑定;已被其他实例占用的入口置灰显示归属,点击会弹出二次确认,确认后自动解除旧绑定。
+      </p>
+
+      {/* 已绑定入口列表 */}
+      {boundBots.length === 0 ? (
+        <div className="mb-4 rounded-lg border border-dashed border-border px-4 py-5 text-center text-[12.5px] text-muted-foreground">
+          暂未绑定任何入口。从下方选择空闲入口绑定,或将其他实例占用的入口切换过来。
+        </div>
+      ) : (
+        <ul className="mb-4 space-y-2">
+          {boundBots.map((b) => {
+            const bid = getBotId(b);
+            const name = getBotDisplayName(b);
+            const meta = platformMeta(b.platform);
+            const isOnline = !b.paused && !String(b.engine || "").includes("paused");
+            const updatedAt = b.updated_at ? String(b.updated_at).slice(0, 10) : null;
+            return (
+              <li
+                key={bid || b.name}
+                className="flex items-center justify-between gap-3 rounded-lg ring-1 ring-emerald-500/30 bg-emerald-500/[0.05] px-3 py-2.5"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span
+                    className={cn(
+                      "inline-block size-2 shrink-0 rounded-full",
+                      isOnline ? "bg-emerald-500" : "bg-foreground/30",
+                    )}
+                    title={isOnline ? "在线" : "离线"}
+                  />
+                  <span className="text-[13px] font-medium truncate">{name}</span>
+                  <span className="shrink-0 rounded bg-foreground/5 px-1.5 py-0.5 text-[10px] font-mono text-foreground/50">
+                    {meta.label}
+                  </span>
+                  <span className="shrink-0 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-mono text-emerald-700 dark:text-emerald-300">
+                    已绑定
+                  </span>
+                  {updatedAt && (
+                    <span className="shrink-0 font-mono text-[10.5px] text-foreground/40">
+                      绑定于 {updatedAt}
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => unbindBot(bid, name)}
+                  disabled={operating === bid}
+                  className="shrink-0 inline-flex items-center justify-center size-6 rounded text-foreground/40 hover:text-rose-600 hover:bg-rose-500/10 transition-colors disabled:opacity-40"
+                  title="解绑"
+                  aria-label={`解绑 ${name}`}
+                  data-testid={`unbind-entry-${bid.slice(0, 8)}`}
+                >
+                  {operating === bid ? <Loader2 className="size-3.5 animate-spin" /> : <X className="size-3.5" />}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {/* 可绑定入口(空闲 + 已占用,占用态置灰) */}
+      {others.length > 0 && (
+        <>
+          <div className="mb-2 text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/45">
+            可绑定的入口
+          </div>
+          <ul className="space-y-1.5">
+            {others.map((b) => {
+              const bid = getBotId(b);
+              const name = getBotDisplayName(b);
+              const meta = platformMeta(b.platform);
+              const occupant = findOccupant(bid, agentRows, agent.id);
+              const occupied = !!occupant;
+              const isBusy = operating === bid;
+              return (
+                <li key={bid}>
+                  <button
+                    type="button"
+                    onClick={() => (occupied ? setSwitchTarget(b) : bindFree(bid))}
+                    disabled={isBusy}
+                    data-testid={`bind-entry-${bid.slice(0, 8)}`}
+                    className={cn(
+                      "flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left ring-1 transition-colors disabled:opacity-60",
+                      occupied
+                        ? "ring-border bg-muted/30 hover:bg-muted/50"
+                        : "ring-border bg-background/40 hover:bg-muted/30",
+                    )}
+                  >
+                    <span className="flex items-center gap-2 min-w-0">
+                      <Plug className={cn("size-3.5 shrink-0", occupied ? "text-foreground/30" : "text-foreground/45")} />
+                      <span className={cn("text-[12.5px] truncate", occupied && "text-foreground/55")}>
+                        {name}
+                      </span>
+                      <span className="shrink-0 rounded bg-foreground/5 px-1.5 py-0.5 text-[10px] font-mono text-foreground/50">
+                        {meta.label}
+                      </span>
+                      {occupied && (
+                        <span className="shrink-0 inline-flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-mono text-amber-700 dark:text-amber-300">
+                          <Lock className="size-2.5" />
+                          已占用 · {occupant!.displayName || occupant!.name}
+                        </span>
+                      )}
+                    </span>
+                    <span className="flex items-center gap-1 shrink-0 text-[11px] text-foreground/55">
+                      {isBusy ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : occupied ? (
+                        <>切换<Plus className="size-3" /></>
+                      ) : (
+                        <><Check className="size-3.5 text-emerald-600" />绑定</>
+                      )}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+
+      {/* 切换二次确认弹窗 */}
+      {switchTarget && (
+        <SwitchConfirmDialog
+          bot={switchTarget}
+          occupant={findOccupant(getBotId(switchTarget), agentRows, agent.id)}
+          myName={agent.displayName || agent.name}
+          loading={operating === getBotId(switchTarget)}
+          onCancel={() => setSwitchTarget(null)}
+          onConfirm={confirmSwitch}
+        />
+      )}
+    </div>
+  );
+}
+
+/** R34-B: 入口切换二次确认弹窗 — 展示旧绑定 + 切换后果说明。 */
+function SwitchConfirmDialog({
+  bot,
+  occupant,
+  myName,
+  loading,
+  onCancel,
+  onConfirm,
+}: {
+  bot: BotInfo;
+  occupant: AgentRow | null;
+  myName: string;
+  loading: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const bid = getBotId(bot);
+  const name = getBotDisplayName(bot);
+  const meta = platformMeta(bot.platform);
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="switch-entry-title"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl bg-card p-5 shadow-xl ring-1 ring-border"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex items-center gap-2">
+          <AlertTriangle className="size-4 text-amber-500" />
+          <h3 id="switch-entry-title" className="text-sm font-semibold">
+            切换入口确认
+          </h3>
+        </div>
+        <div className="space-y-2 text-[12.5px] leading-relaxed text-foreground/85">
+          <p>
+            入口<strong className="mx-0.5">「{name}」</strong>
+            <span className="ml-1 rounded bg-foreground/5 px-1.5 py-0.5 text-[10px] font-mono text-foreground/55">
+              {meta.label}
+            </span>
+          </p>
+          <p className="text-foreground/70">
+            当前绑定:{occupant ? <strong className="mx-0.5">{occupant.displayName || occupant.name}</strong> : <span className="text-foreground/45">无</span>}
+          </p>
+          <div className="mt-2 rounded-lg bg-muted/40 p-2.5 ring-1 ring-border">
+            <p className="mb-1 font-medium text-foreground/85">切换后:</p>
+            <ul className="ml-4 list-disc space-y-0.5 text-[11.5px] text-foreground/70">
+              <li>旧绑定({occupant?.displayName || occupant?.name || "无"})自动解除</li>
+              <li>新绑定({myName})立即生效</li>
+              <li>智能体整体实例与能力同步更换</li>
+            </ul>
+          </div>
+        </div>
+        <div className="mt-4 flex items-center justify-end gap-2">
+          <Button size="sm" variant="outline" onClick={onCancel} disabled={loading}>
+            取消
+          </Button>
+          <Button size="sm" onClick={onConfirm} disabled={loading} data-testid={`confirm-switch-${bid.slice(0, 8)}`} className="gap-1.5">
+            {loading && <Loader2 className="size-3.5 animate-spin" />}
+            确认切换
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
