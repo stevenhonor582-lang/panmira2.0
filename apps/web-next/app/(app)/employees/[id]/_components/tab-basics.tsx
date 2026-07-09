@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/toast/toast-provider";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { buildModelBindingPatch, engineFromProvider, readUseModelRouting } from "./tab-basics-config";
 
 // ⑨ 复杂度四档(中文,智能体运行参数,不受底层模型影响)
 const COMPLEXITY_OPTIONS = [
@@ -64,17 +65,6 @@ const TYPE_LABEL: Record<string, string> = {
   zhipu: "智谱 GLM",
   minimax: "MiniMax",
 };
-
-/** provider.type/name → agent.default_engine(对齐 ENGINE_OPTIONS) */
-function engineFromProvider(p: ProviderInfo): string {
-  const t = (p.type || "").toLowerCase();
-  if (t === "anthropic" || /claude/i.test(p.name)) return "claude";
-  if (t === "openai") return "openai";
-  if (t === "glm" || t === "zhipu") return "glm";
-  if (t === "minimax") return "minimax";
-  if (t === "deepseek") return "deepseek";
-  return t || "openai";
-}
 
 /** 安全解析 JSON 字符串,失败返回空对象(用于 orchestration 等字段)。 */
 function safeParse(raw: string): Record<string, unknown> {
@@ -584,39 +574,43 @@ function ModelBindingCard({ agent, onSaved }: { agent: Agent; onSaved: () => voi
     );
   }, [providers, agent.defaultModel, agent.defaultEngine]);
 
-  // 初始化选中(默认指向当前绑定)
+  // 初始化选中(默认指向当前绑定);agent 刷新后同步,但不覆盖用户未保存选择。
   React.useEffect(() => {
-    if (currentBinding && selectedId === null) {
+    if (currentBinding) {
       setSelectedId(currentBinding.id);
     }
-  }, [currentBinding, selectedId]);
+  }, [agent.id, agent.updatedAt, currentBinding?.id]);
 
-  // R32-B: 模型路由开关 — 存 agent.orchestration.useModelRouting
+  // R32-B/R36-1: 模型路由开关 — 存 agent.orchestration.useModelRouting
   const rawOrch = (agent.raw as Record<string, unknown> | null)?.orchestration;
   const orchObj = (typeof rawOrch === "string" ? safeParse(rawOrch) : rawOrch) as
     | Record<string, unknown>
     | null;
-  const [useRouting, setUseRouting] = React.useState<boolean>(
-    typeof orchObj?.useModelRouting === "boolean" ? (orchObj.useModelRouting as boolean) : true,
-  );
+  const savedUseRouting = readUseModelRouting(orchObj);
+  const [useRouting, setUseRouting] = React.useState<boolean>(savedUseRouting);
 
-  const isDirty = !!selectedId && selectedId !== currentBinding?.id;
+  React.useEffect(() => {
+    setUseRouting(savedUseRouting);
+  }, [agent.id, agent.updatedAt, savedUseRouting]);
+
+  const selectedProvider = selectedId ? providers.find((x) => x.id === selectedId) ?? null : null;
+  const modelDirty = !!selectedProvider && selectedProvider.id !== currentBinding?.id;
+  const routingDirty = useRouting !== savedUseRouting;
+  const isDirty = modelDirty || routingDirty;
 
   async function save() {
-    if (!selectedId) return;
-    const p = providers.find((x) => x.id === selectedId);
-    if (!p) return;
+    if (!selectedProvider) return;
     setSaving(true);
     try {
-      // 合并 orchestration(保留既有键,写入 useModelRouting)
-      const mergedOrch = { ...(orchObj ?? {}), useModelRouting: useRouting };
-      await updateAgent(agent.id, {
-        default_engine: engineFromProvider(p),
-        default_model: p.model,
-        orchestration: mergedOrch,
+      const patch = buildModelBindingPatch({
+        selectedProvider,
+        currentProvider: currentBinding,
+        useModelRouting: useRouting,
+        orchestration: orchObj,
       });
+      await updateAgent(agent.id, patch);
       toast.success(
-        `已绑定 ${p.name} · ${p.model}${useRouting ? "(遵循全局路由)" : "(固定模型)"}`,
+        `已${modelDirty ? `绑定 ${selectedProvider.name} · ${selectedProvider.model}` : "更新模型路由"}${useRouting ? "(遵循全局路由)" : "(固定模型)"}`,
       );
       onSaved();
     } catch (e: unknown) {
@@ -704,10 +698,13 @@ function ModelBindingCard({ agent, onSaved }: { agent: Agent; onSaved: () => voi
               <li key={p.id}>
                 <label
                   className={cn(
-                    "flex items-start gap-3 rounded-lg px-3 py-2.5 cursor-pointer ring-1 transition-colors",
+                    "flex items-start gap-3 rounded-lg px-3 py-2.5 ring-1 transition-colors",
+                    useRouting ? "cursor-not-allowed opacity-55" : "cursor-pointer",
                     checked
                       ? "ring-amber-500/40 bg-amber-500/[0.06]"
-                      : "ring-border hover:bg-muted/30",
+                      : useRouting
+                        ? "ring-border"
+                        : "ring-border hover:bg-muted/30",
                   )}
                 >
                   <input
@@ -715,8 +712,9 @@ function ModelBindingCard({ agent, onSaved }: { agent: Agent; onSaved: () => voi
                     name="model-binding"
                     value={p.id}
                     checked={checked}
+                    disabled={useRouting}
                     onChange={() => setSelectedId(p.id)}
-                    className="mt-1 size-3.5 accent-amber-500"
+                    className="mt-1 size-3.5 accent-amber-500 disabled:cursor-not-allowed"
                   />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
@@ -754,7 +752,7 @@ function ModelBindingCard({ agent, onSaved }: { agent: Agent; onSaved: () => voi
         <Button
           size="sm"
           onClick={save}
-          disabled={!isDirty || saving || loading || !!err}
+          disabled={!isDirty || !selectedProvider || saving || loading || !!err}
           className="gap-1.5"
           data-testid="save-model-binding"
         >
