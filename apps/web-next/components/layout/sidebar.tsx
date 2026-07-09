@@ -45,9 +45,15 @@ interface NavGroup {
   items: NavItem[];
 }
 
+/** R30-B: 移动端折叠抽屉的受控 props。 */
+export interface SidebarProps {
+  mobileOpen: boolean;
+  setMobileOpen: (v: boolean) => void;
+}
+
 // R29-A: 一级板块仅为分类标签,点击固定跳仪表盘(/overview/dashboard)。
 // 独立"路由"菜单删除(内置到大模型);"优化"已合并到诊断(R14-E)。
-const NAV_GROUPS: NavGroup[] = [
+export const NAV_GROUPS: NavGroup[] = [
   {
     module: "overview",
     title: "公司综业",
@@ -120,11 +126,17 @@ export const NAV_MODULE_MAP: Record<string, string> = Object.fromEntries(
   NAV_GROUPS.flatMap((g) => g.items.map((i) => [i.href, g.title])),
 );
 
-export function Sidebar() {
+export function Sidebar({ mobileOpen, setMobileOpen }: SidebarProps) {
   const pathname = usePathname() ?? "/";
 
-  return (
-    <aside className="w-64 shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground flex flex-col h-full">
+  // R30-B: 路由切换后自动关闭移动抽屉,避免抽屉挡住新页面。
+  React.useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname, setMobileOpen]);
+
+  // 内部内容在桌面 / 移动两处复用。
+  const sidebarContent = (
+    <>
       <div className="px-4 py-4 border-b border-sidebar-border">
         <Link href="/overview/dashboard" className="flex items-center gap-2.5">
           <div className="size-8 rounded-md bg-primary text-primary-foreground grid place-items-center font-semibold text-sm shadow-sm">
@@ -194,6 +206,29 @@ export function Sidebar() {
         <div>PAMELA 2.4</div>
         <div className="text-[9px] opacity-60">by 海联智达</div>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* 桌面(>= md):固定显示,与原行为一致 */}
+      <aside className="hidden md:flex w-64 shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground flex-col h-full">
+        {sidebarContent}
+      </aside>
+
+      {/* 移动(< md):overlay 抽屉,由 hamburger 触发 */}
+      {mobileOpen && (
+        <div className="md:hidden fixed inset-0 z-50">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setMobileOpen(false)}
+            aria-hidden
+          />
+          <aside className="absolute left-0 top-0 bottom-0 w-64 border-r border-sidebar-border bg-sidebar text-sidebar-foreground flex flex-col h-full shadow-2xl">
+            {sidebarContent}
+          </aside>
+        </div>
+      )}
+    </>
   );
 }
