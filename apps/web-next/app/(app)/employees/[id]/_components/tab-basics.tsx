@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useAgent, updateAgent, type Agent } from "../../_lib/data";
-import { Calendar, Tag, Cpu, GitBranch, User2, Sparkles, Check, Loader2, AlertCircle } from "lucide-react";
+import { Calendar, Tag, Cpu, GitBranch, User2, Sparkles, Check, Loader2, AlertCircle, Gauge, Archive } from "lucide-react";
 import {
   EditPane,
   EditableText,
@@ -253,9 +253,285 @@ export function TabBasics({ id }: { id: string }) {
 
           {/* === 专属大模型 绑定卡片 (R31-C) === */}
           <ModelBindingCard agent={agent} onSaved={reload} />
+
+          {/* === R34-B: 上下文窗口 + 自动压缩 === */}
+          <ContextWindowCard agent={agent} onSaved={reload} />
         </div>
       )}
     </EditPane>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// R34-B: 上下文窗口 + 自动压缩配置卡片
+// - 读 agent.defaultContextWindow + agent.raw.orchestration.autoCompress
+// - 窗口:预设档位(32/64/128/200K)+ 自定义数值;提示当前模型最大值
+// - 压缩:启用/阈值/比例,存 orchestration.autoCompress jsonb
+// - 保存:PATCH /api/v2/employees/:id { default_context_window, orchestration }
+// ────────────────────────────────────────────────────────────
+
+const CONTEXT_PRESETS = [
+  { value: 32000, label: "32K · 轻量客服" },
+  { value: 64000, label: "64K · 通用平衡" },
+  { value: 128000, label: "128K · 长文分析" },
+  { value: 200000, label: "200K · 全量记忆" },
+];
+
+interface AutoCompressConfig {
+  enabled: boolean;
+  thresholdPct: number;
+  ratioPct: number;
+}
+
+/** 从 agent.raw.orchestration 解析出 autoCompress 配置(兜底默认值)。 */
+function readAutoCompress(agent: Agent): AutoCompressConfig {
+  const raw = agent.raw as Record<string, unknown> | null;
+  const orchRaw = raw?.orchestration;
+  const orch =
+    typeof orchRaw === "string" ? safeParse(orchRaw) : (orchRaw as Record<string, unknown> | null);
+  const ac = (orch?.autoCompress ?? {}) as Record<string, unknown>;
+  return {
+    enabled: typeof ac.enabled === "boolean" ? (ac.enabled as boolean) : true,
+    thresholdPct: typeof ac.thresholdPct === "number" ? (ac.thresholdPct as number) : 80,
+    ratioPct: typeof ac.ratioPct === "number" ? (ac.ratioPct as number) : 50,
+  };
+}
+
+function ContextWindowCard({ agent, onSaved }: { agent: Agent; onSaved: () => void }) {
+  const toast = useToast();
+  const [providers, setProviders] = React.useState<ProviderInfo[]>([]);
+  const [ctxDraft, setCtxDraft] = React.useState<number>(agent.defaultContextWindow || 200000);
+  const [ac, setAc] = React.useState<AutoCompressConfig>(() => readAutoCompress(agent));
+  const [saving, setSaving] = React.useState(false);
+
+  // 拉 providers 用来提示当前模型最大值
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await api<{ providers: ProviderInfo[] } | ProviderInfo[]>("/api/providers");
+        if (!alive) return;
+        const list =
+          (res as { providers?: ProviderInfo[] })?.providers ??
+          (Array.isArray(res) ? (res as ProviderInfo[]) : []);
+        setProviders(list.filter((p) => (p.type || "").toLowerCase() !== "embedding"));
+      } catch {
+        setProviders([]);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // 外部 agent 变化(保存后刷新)→ 同步本地草稿
+  React.useEffect(() => {
+    setCtxDraft(agent.defaultContextWindow || 200000);
+    setAc(readAutoCompress(agent));
+  }, [agent?.id, agent?.updatedAt, agent.defaultContextWindow]);
+
+  // 当前绑定模型的最大上下文
+  const curModel = (agent.defaultModel || "").toLowerCase();
+  const curEngine = (agent.defaultEngine || "").toLowerCase();
+  const currentProvider =
+    providers.find((p) => (p.model || "").toLowerCase() === curModel) ??
+    providers.find((p) => engineFromProvider(p) === curEngine) ??
+    null;
+  const providerMax =
+    currentProvider && typeof currentProvider.contextWindow === "number" && currentProvider.contextWindow > 0
+      ? currentProvider.contextWindow
+      : null;
+
+  const origAc = readAutoCompress(agent);
+  const origCtx = agent.defaultContextWindow || 200000;
+  const dirtyCtx = ctxDraft !== origCtx;
+  const dirtyAc =
+    ac.enabled !== origAc.enabled ||
+    ac.thresholdPct !== origAc.thresholdPct ||
+    ac.ratioPct !== origAc.ratioPct;
+  const isDirty = dirtyCtx || dirtyAc;
+  const exceedsMax = providerMax !== null && ctxDraft > providerMax;
+
+  const presetValues = CONTEXT_PRESETS.map((p) => p.value);
+  const isCustom = !presetValues.includes(ctxDraft);
+
+  async function save() {
+    setSaving(true);
+    try {
+      // 合并 orchestration(保留既有键,写入 autoCompress)
+      const raw = agent.raw as Record<string, unknown> | null;
+      const orchRaw = raw?.orchestration;
+      const baseOrch =
+        (typeof orchRaw === "string" ? safeParse(orchRaw) : (orchRaw as Record<string, unknown> | null)) ?? {};
+      const patch: Record<string, unknown> = {
+        orchestration: { ...baseOrch, autoCompress: ac },
+      };
+      if (dirtyCtx) patch.default_context_window = ctxDraft;
+      await updateAgent(agent.id, patch);
+      toast.success("上下文与压缩配置已保存");
+      onSaved();
+    } catch (e: unknown) {
+      toast.error(`保存失败:${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="mb-1 flex items-center gap-2">
+        <Gauge className="size-4 text-sky-500" />
+        <h3 className="text-sm font-semibold">上下文窗口与自动压缩</h3>
+      </div>
+      <p className="mb-4 text-[11.5px] text-muted-foreground">
+        窗口决定一次能读入多少对话历史;自动压缩在临近上限时把早期历史摘要成精简版,避免对话被截断。
+        {providerMax && (
+          <>
+            当前模型 <code className="font-mono">{currentProvider?.model}</code> 最大支持{" "}
+            <code className="font-mono">{providerMax.toLocaleString()}</code> tokens(自动读取)。
+          </>
+        )}
+      </p>
+
+      {/* 窗口预设 */}
+      <div className="mb-2 text-[11px] font-mono uppercase tracking-[0.18em] text-foreground/45">
+        上下文窗口
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {CONTEXT_PRESETS.map((p) => {
+          const active = !isCustom && ctxDraft === p.value;
+          return (
+            <button
+              key={p.value}
+              type="button"
+              onClick={() => setCtxDraft(p.value)}
+              className={cn(
+                "rounded-lg px-3 py-2 text-left text-[12px] ring-1 transition-colors",
+                active
+                  ? "ring-sky-500/50 bg-sky-500/[0.07] text-foreground"
+                  : "ring-border hover:bg-muted/30 text-foreground/80",
+              )}
+            >
+              <span className="font-medium">{p.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 自定义窗口 */}
+      <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-muted/30 px-3 py-2 ring-1 ring-border">
+        <span className="text-[11.5px] font-medium text-foreground/75">自定义</span>
+        <input
+          type="number"
+          min={1000}
+          step={1000}
+          inputMode="numeric"
+          value={ctxDraft}
+          onChange={(e) => {
+            const n = Math.max(0, Math.floor(Number(e.target.value) || 0));
+            setCtxDraft(n);
+          }}
+          className="w-40 rounded-md bg-background px-2.5 py-1.5 text-right font-mono text-[12.5px] tabular-nums ring-1 ring-border focus:outline-none focus:ring-foreground/40"
+          aria-label="自定义上下文窗口 tokens"
+        />
+        <span className="text-[11px] text-foreground/55">tokens</span>
+        {exceedsMax && (
+          <span className="text-[11px] text-amber-700 dark:text-amber-300">
+            ⚠ 超过模型最大值 {providerMax!.toLocaleString()},实际会被截断
+          </span>
+        )}
+      </div>
+
+      {/* 自动压缩 */}
+      <div className="mt-4 mb-2 flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-[0.18em] text-foreground/45">
+        <Archive className="size-3" />
+        自动压缩
+      </div>
+      <label className="flex items-start gap-2.5 rounded-lg bg-muted/30 px-3 py-2.5 ring-1 ring-border cursor-pointer hover:bg-muted/50 transition-colors">
+        <input
+          type="checkbox"
+          checked={ac.enabled}
+          onChange={(e) => setAc({ ...ac, enabled: e.target.checked })}
+          className="mt-0.5 size-3.5 accent-sky-500"
+        />
+        <div className="flex-1">
+          <div className="text-[12.5px] font-medium text-foreground/90">启用自动压缩</div>
+          <div className="text-[11px] leading-snug text-muted-foreground mt-0.5">
+            对话累积到阈值时,系统自动把早期历史压缩成摘要,腾出空间继续对话。
+          </div>
+        </div>
+      </label>
+      {ac.enabled && (
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          <CompactNumberField
+            label="压缩触发阈值"
+            suffix="%"
+            min={10}
+            max={95}
+            value={ac.thresholdPct}
+            onChange={(n) => setAc({ ...ac, thresholdPct: n })}
+            hint={`用到 ${ac.thresholdPct}% 时触发`}
+          />
+          <CompactNumberField
+            label="压缩比例"
+            suffix="%"
+            min={10}
+            max={90}
+            value={ac.ratioPct}
+            onChange={(n) => setAc({ ...ac, ratioPct: n })}
+            hint={`压缩到原来的 ${ac.ratioPct}%`}
+          />
+        </div>
+      )}
+
+      <div className="mt-4 flex items-center justify-end gap-2">
+        <Button size="sm" onClick={save} disabled={!isDirty || saving || exceedsMax} className="gap-1.5">
+          {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+          {saving ? "保存中…" : "保存配置"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function CompactNumberField({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  suffix,
+  hint,
+}: {
+  label: string;
+  value: number;
+  onChange: (n: number) => void;
+  min: number;
+  max: number;
+  suffix?: string;
+  hint?: string;
+}) {
+  return (
+    <div className="rounded-lg bg-background/40 px-3 py-2 ring-1 ring-border">
+      <div className="mb-1 flex items-baseline justify-between gap-2">
+        <span className="text-[11.5px] font-medium text-foreground/80">{label}</span>
+        <div className="flex items-center gap-1">
+          <input
+            type="number"
+            min={min}
+            max={max}
+            value={value}
+            onChange={(e) => {
+              const n = Math.min(max, Math.max(min, Math.floor(Number(e.target.value) || 0)));
+              onChange(n);
+            }}
+            className="w-16 rounded-md bg-background px-2 py-1 text-right font-mono text-[12px] tabular-nums ring-1 ring-border focus:outline-none focus:ring-foreground/40"
+          />
+          {suffix && <span className="text-[11px] text-foreground/55">{suffix}</span>}
+        </div>
+      </div>
+      {hint && <p className="text-[10.5px] leading-snug text-foreground/55">{hint}</p>}
+    </div>
   );
 }
 

@@ -11,6 +11,15 @@ export interface ProviderInfo {
   baseUrl?: string;
   isDefault?: boolean;
   hasApiKey?: boolean;
+  // R34-B: 真实最大上下文(来自 provider_configs.context_window),用于自动填充窗口档位。
+  contextWindow?: number | null;
+}
+
+// R34-B: 上下文自动压缩配置(存 agent.orchestration.autoCompress jsonb)。
+export interface AutoCompressConfig {
+  enabled: boolean;       // 是否启用自动压缩
+  thresholdPct: number;   // 触发阈值(上下文用到 N% 时触发),默认 80
+  ratioPct: number;       // 压缩比例(压缩到原来的 N%),默认 50
 }
 
 export interface SkillInfo {
@@ -77,6 +86,8 @@ export interface WizardForm {
   providerName: string;      // denormalized for preview
   contextWindow: number;
   temperature: number;
+  // R34-B: 上下文自动压缩配置
+  autoCompress: AutoCompressConfig;
   // Step 3 — persona
   personaPreset: string;     // preset id, or "" for custom
   persona: string;           // short description (60 chars, drives first impression)
@@ -108,6 +119,7 @@ export const EMPTY_FORM: WizardForm = {
   providerName: "",
   contextWindow: 200000,
   temperature: 0.5,
+  autoCompress: { enabled: true, thresholdPct: 80, ratioPct: 50 },
   personaPreset: "",
   persona: "",
   systemPrompt: "",
@@ -213,6 +225,8 @@ export function formToAgentPayload(form: WizardForm): Record<string, unknown> {
     orchestration: {
       dispatcherAgentIds: form.dispatcher,
       callableByUsers: form.callableBy,
+      // R34-B: 上下文自动压缩配置(存 jsonb,引擎按需读取)
+      autoCompress: form.autoCompress,
     },
     boundary: {
       visibilityHint: form.visibility,
