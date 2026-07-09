@@ -35,7 +35,7 @@ type TabKey =
   | "collaborators" | "resources" | "activity";
 
 const TABS: Array<{ key: TabKey; label: string; icon: typeof Key }> = [
-  { key: "basic", label: "基础", icon: Key },
+  { key: "basic", label: "基础信息", icon: Key },
   { key: "employees", label: "数字员工", icon: Bot },
   { key: "tasks", label: "任务历史", icon: ListChecks },
   { key: "decisions", label: "决策记录", icon: Sparkles },
@@ -278,31 +278,7 @@ export default function PersonDetailPage() {
             })}
           </div>
 
-          {/* 醒目编辑按钮 - 始终可见 */}
-          {canEdit && (
-            <button
-              type="button"
-              onClick={() => {
-                if (tab !== "basic") {
-                  setTab("basic");
-                  setGlobalEdit(true);
-                } else {
-                  setGlobalEdit((v) => !v);
-                }
-              }}
-              aria-label="编辑基础信息"
-              title="编辑基础信息"
-              className={cn(
-                "shrink-0 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-medium transition-colors",
-                globalEdit && tab === "basic"
-                  ? "bg-muted text-foreground hover:bg-muted/70"
-                  : "bg-foreground text-background hover:opacity-90",
-              )}
-            >
-              <Pencil className="size-3.5" />
-              <span>{globalEdit && tab === "basic" ? "退出编辑" : "编辑"}</span>
-            </button>
-          )}
+          {/* R23: 编辑按钮移到 BasicTab 内部 */}
         </div>
       </nav>
 
@@ -313,7 +289,7 @@ export default function PersonDetailPage() {
             person={person}
             reload={load}
             externalEdit={globalEdit}
-            onEditConsumed={() => {/* BasicTab 内部自己控制 */}}
+            onEditConsumed={setGlobalEdit}
           />
         )}
         {tab === "employees" && <EmployeesTab person={person} onChanged={load} />}

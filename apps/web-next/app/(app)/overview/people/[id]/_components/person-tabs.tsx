@@ -19,6 +19,7 @@ import {
 import {
   Bot, Plus, Trash2, Network, Sparkles, Clock, CheckCircle2, AlertTriangle,
   Info, FileText, Database, Workflow,
+  Pencil,
 } from "lucide-react";
 import {
   fetchAgents, fetchPipelines, fetchPersonAgents, patchPersonAgents,
@@ -56,7 +57,7 @@ export function BasicTab({
   person: Person;
   reload: () => void;
   externalEdit?: boolean;
-  onEditConsumed?: () => void;
+  onEditConsumed?: (editing: boolean) => void;
 }) {
   const FIELDS = ["name", "email", "phone", "department", "position", "role", "avatarUrl", "employeeStatus"];
   const [draft, setDraft] = React.useState<Record<string, unknown>>({});
@@ -67,6 +68,13 @@ export function BasicTab({
     setDraft(d);
     setOrigDraft(d);
   }, [person.id]);
+
+  const isDirty = React.useMemo(
+    () => JSON.stringify(draft) !== JSON.stringify(origDraft),
+    [draft, origDraft],
+  );
+
+  const enterEdit = () => onEditConsumed?.(true);
 
   return (
     <PersonEditPane id={person.id} label="basics" onSaved={reload} controlledEditing={externalEdit} onEditingChange={onEditConsumed}>
@@ -80,133 +88,105 @@ export function BasicTab({
           const ok = await ctx.save(patch);
           if (!ok) setDraft(origDraft);
         };
+        const handleCancel = () => {
+          setDraft(origDraft);
+          ctx.cancelEdit();
+        };
 
-        return (
-          <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-            <div className="space-y-6">
-              {ctx.editing && (
-                <div className="flex justify-end">
-                  <PersonEditBar onSave={handleSave} />
+        // ── 查看模式:卡片布局 ──
+        if (!ctx.editing) {
+          return (
+            <div className="space-y-4">
+              {/* 基本信息 卡片 */}
+              <div className="rounded-xl border border-border bg-card p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-semibold">基本信息</h3>
+                  <button
+                    type="button"
+                    onClick={enterEdit}
+                    className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium bg-foreground text-background hover:opacity-90 transition-opacity"
+                  >
+                    <Pencil className="size-3" />
+                    编辑
+                  </button>
                 </div>
-              )}
-
-              <PersonText
-                label="姓名 · name"
-                field="name"
-                value={person.name}
-                editing={ctx.editing}
-                draft={draft}
-                setDraft={setDraft}
-                placeholder="真实姓名"
-              />
-
-              <PersonText
-                label="邮箱 · email"
-                field="email"
-                value={person.email}
-                editing={ctx.editing}
-                draft={draft}
-                setDraft={setDraft}
-                placeholder="name@company.com"
-                mono
-              />
-
-              <PersonText
-                label="手机 · phone"
-                field="phone"
-                value={person.phone}
-                editing={ctx.editing}
-                draft={draft}
-                setDraft={setDraft}
-                placeholder="11 位手机号"
-                mono
-              />
-
-              <PersonText
-                label="部门 · department"
-                field="department"
-                value={person.department}
-                editing={ctx.editing}
-                draft={draft}
-                setDraft={setDraft}
-                placeholder="例如:创始团队 / 销售部"
-              />
-
-              <PersonText
-                label="职位 · position"
-                field="position"
-                value={person.position}
-                editing={ctx.editing}
-                draft={draft}
-                setDraft={setDraft}
-                placeholder="例如:CEO / 销售经理"
-              />
-            </div>
-
-            <div className="space-y-6 rounded-2xl bg-muted/30 p-5">
-              {ctx.editing ? (
-                <>
-                  <PersonSelect
-                    label="角色 · role"
-                    field="role"
-                    value={person.role}
-                    editing
-                    draft={draft}
-                    setDraft={setDraft}
-                    options={ROLE_OPTIONS}
-                  />
-                  <PersonSelect
-                    label="雇佣状态 · employee_status"
-                    field="employeeStatus"
-                    value={person.employeeStatus ?? "active"}
-                    editing
-                    draft={draft}
-                    setDraft={setDraft}
-                    options={STATUS_OPTIONS}
-                  />
-                  <PersonText
-                    label="头像 · avatar_url"
-                    field="avatarUrl"
-                    value={person.avatarUrl}
-                    editing={ctx.editing}
-                    draft={draft}
-                    setDraft={setDraft}
-                    placeholder="https://..."
-                    mono
-                    hint="留空用首字母头像"
-                  />
-                </>
-              ) : (
-                <>
-                  <ReadonlyField label="SID">
-                    <code className="font-mono text-[12.5px]">{person.sid ?? "—"}</code>
-                  </ReadonlyField>
-                  <ReadonlyField label="角色">
-                    <span>{ROLE_OPTIONS.find((r) => r.value === person.role)?.label ?? person.role}</span>
-                  </ReadonlyField>
-                  <ReadonlyField label="雇佣状态">
-                    <span>{EMPLOYEE_STATUS_LABEL[person.employeeStatus ?? "active"]}</span>
-                  </ReadonlyField>
-                  <ReadonlyField label="账号状态">
-                    <span>{person.isActive ? "启用" : "禁用"}</span>
-                  </ReadonlyField>
-                  <ReadonlyField label="登录失败">
-                    <span className="font-mono">{person.failedAttempts} 次</span>
-                  </ReadonlyField>
-                  <ReadonlyField label="创建于">
-                    <span className="font-mono text-[12.5px]">
-                      {person.createdAt ? new Date(person.createdAt).toLocaleString("zh-CN", { hour12: false }) : "—"}
-                    </span>
-                  </ReadonlyField>
-                </>
-              )}
-            </div>
-
-            {ctx.editing && (
-              <div className="lg:col-span-2 flex justify-end">
-                <PersonEditBar onSave={handleSave} />
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <div className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/45 mb-1">姓名</div>
+                    <div className="text-sm">{person.name || "—"}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/45 mb-1">邮箱</div>
+                    <code className="font-mono text-[12.5px]">{person.email || "—"}</code>
+                  </div>
+                  <div>
+                    <div className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/45 mb-1">手机</div>
+                    <code className="font-mono text-[12.5px]">{person.phone || "—"}</code>
+                  </div>
+                  <div>
+                    <div className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/45 mb-1">部门</div>
+                    <div className="text-sm">{person.department || "—"}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/45 mb-1">职位</div>
+                    <div className="text-sm">{person.position || "—"}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/45 mb-1">角色</div>
+                    <div className="text-sm">{ROLE_OPTIONS.find((r) => r.value === person.role)?.label ?? person.role}</div>
+                  </div>
+                </div>
               </div>
-            )}
+
+              {/* 账号信息 卡片 */}
+              <div className="rounded-xl border border-border bg-card p-5">
+                <h3 className="text-sm font-semibold mb-4">账号信息</h3>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <div className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/45 mb-1">SID</div>
+                    <code className="font-mono text-[12.5px]">{person.sid ?? "—"}</code>
+                  </div>
+                  <div>
+                    <div className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/45 mb-1">雇佣状态</div>
+                    <div className="text-sm">{EMPLOYEE_STATUS_LABEL[person.employeeStatus ?? "active"]}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/45 mb-1">账号状态</div>
+                    <div className="text-sm">{person.isActive ? "启用" : "禁用"}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/45 mb-1">登录失败</div>
+                    <div className="text-sm font-mono">{person.failedAttempts} 次</div>
+                  </div>
+                  <div>
+                    <div className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/45 mb-1">创建于</div>
+                    <div className="text-sm font-mono text-[12.5px]">{person.createdAt ? new Date(person.createdAt).toLocaleString("zh-CN", { hour12: false }) : "—"}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        // ── 编辑模式:表单 + 底部保存/取消 ──
+        return (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-border bg-card p-5 space-y-5">
+              <h3 className="text-sm font-semibold">编辑基本信息</h3>
+              <div className="grid gap-5 md:grid-cols-2">
+                <PersonText label="姓名" field="name" value={person.name} editing draft={draft} setDraft={setDraft} placeholder="真实姓名" />
+                <PersonText label="邮箱" field="email" value={person.email} editing draft={draft} setDraft={setDraft} placeholder="name@company.com" mono />
+                <PersonText label="手机" field="phone" value={person.phone} editing draft={draft} setDraft={setDraft} placeholder="11 位手机号" mono />
+                <PersonText label="部门" field="department" value={person.department} editing draft={draft} setDraft={setDraft} placeholder="例如:创始团队 / 销售部" />
+                <PersonText label="职位" field="position" value={person.position} editing draft={draft} setDraft={setDraft} placeholder="例如:CEO / 销售经理" />
+                <PersonSelect label="角色" field="role" value={person.role} editing draft={draft} setDraft={setDraft} options={ROLE_OPTIONS} />
+                <PersonSelect label="雇佣状态" field="employeeStatus" value={person.employeeStatus ?? "active"} editing draft={draft} setDraft={setDraft} options={STATUS_OPTIONS} />
+                <PersonText label="头像 URL" field="avatarUrl" value={person.avatarUrl} editing draft={draft} setDraft={setDraft} placeholder="https://..." mono hint="留空用首字母" />
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <PersonEditBar onSave={handleSave} onCancel={handleCancel} isDirty={isDirty} />
+            </div>
           </div>
         );
       }}

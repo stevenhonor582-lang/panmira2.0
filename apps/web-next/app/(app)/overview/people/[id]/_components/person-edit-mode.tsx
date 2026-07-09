@@ -111,16 +111,16 @@ export function PersonEditPane({
   );
 }
 
-export function PersonEditBar({ onSave, saveLabel = "保存" }: { onSave: () => void; saveLabel?: string }) {
+export function PersonEditBar({ onSave, onCancel, saveLabel = "保存", isDirty = true }: { onSave: () => void; onCancel?: () => void; saveLabel?: string; isDirty?: boolean }) {
   const ctx = usePersonEdit();
   if (!ctx || !ctx.editing) return null;
   return (
     <div className="flex items-center gap-2">
-      <Button type="button" size="sm" onClick={() => void onSave()} disabled={ctx.saving} className="gap-1.5 text-[12px]">
+      <Button type="button" size="sm" onClick={() => void onSave()} disabled={ctx.saving || !isDirty} className="gap-1.5 text-[12px]">
         {ctx.saving ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
         {ctx.saving ? "保存中…" : saveLabel}
       </Button>
-      <Button type="button" size="sm" variant="ghost" onClick={ctx.cancelEdit} disabled={ctx.saving} className="gap-1.5 text-[12px]">
+      <Button type="button" size="sm" variant="ghost" onClick={() => { if (onCancel) onCancel(); else ctx.cancelEdit(); }} disabled={ctx.saving} className="gap-1.5 text-[12px]">
         <X className="size-3.5" />
         取消
       </Button>
