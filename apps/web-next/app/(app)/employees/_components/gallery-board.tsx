@@ -296,7 +296,7 @@ function RoleLegend({
   activeRole: string | null;
   onPickRole: (r: string) => void;
 }) {
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = React.useState(true);
   return (
     <section className="rounded-2xl border border-border bg-card/40 backdrop-blur-sm">
       <button
@@ -316,6 +316,25 @@ function RoleLegend({
       {open && (
         <div className="border-t border-border px-4 py-3">
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <button
+              type="button"
+              onClick={() => onPickRole("all")}
+              className={
+                "group flex items-start gap-2.5 rounded-xl px-2.5 py-2 text-left text-[12px] ring-1 transition-all " +
+                (activeRole === null
+                  ? "bg-foreground/[0.06] ring-foreground/40"
+                  : "bg-background/40 ring-border hover:ring-foreground/20")
+              }
+            >
+              <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold bg-foreground/10 text-foreground/70">
+                全
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium text-foreground/85">全部角色</span>
+                <span className="block truncate font-mono text-[10.5px] text-foreground/45">all</span>
+                <span className="mt-0.5 block text-[11px] leading-snug text-foreground/65">显示所有员工,不按角色筛选</span>
+              </span>
+            </button>
             {ROLE_GROUPS.map((r) => {
               const on = activeRole === r.key;
               return (
