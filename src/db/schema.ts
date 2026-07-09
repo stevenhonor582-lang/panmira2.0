@@ -794,7 +794,11 @@ export const mcpServers = pgTable('mcp_servers', {
   transport: varchar('transport', { length: 20 }).notNull().default('http'), // http / sse
   authType: varchar('auth_type', { length: 20 }).notNull().default('none'), // oauth / api_key / none
   authRefId: uuid('auth_ref_id'), // FK → external_oauth_credentials
-  apiKeyEncrypted: text('api_key_encrypted'), // 直接存 API key
+  apiKeyEncrypted: text('api_key_encrypted'), // 直接存 API key (MCP server 自身认证)
+  // R29-C: 外部平台许可密钥(GitHub OAuth token / API key),与 MCP 自身认证区分
+  externalPlatformName: varchar('external_platform_name', { length: 100 }),
+  externalPlatformKeyEncrypted: text('external_platform_key_encrypted'),
+  externalKeyLastRotated: timestamp('external_key_last_rotated', { withTimezone: true }),
   toolsCache: jsonb('tools_cache').$type<Array<{ name: string; description: string; schema: unknown }>>().default([]),
   healthStatus: varchar('health_status', { length: 20 }).notNull().default('unknown'),
   lastCheckAt: timestamp('last_check_at', { withTimezone: true }),
