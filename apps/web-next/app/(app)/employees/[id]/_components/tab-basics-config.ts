@@ -49,3 +49,11 @@ export function buildModelBindingPatch({
 
   return patch;
 }
+
+export const CONTEXT_PRESETS = [
+  { value: 32000, label: '32K · 轻量客服' },
+  { value: 64000, label: '64K · 通用平衡' },
+  { value: 128000, label: '128K · 长文分析' },
+  { value: 200000, label: '200K · 全量记忆' },
+  { value: 512000, label: '512K · M3 长上下文' },
+] as const;

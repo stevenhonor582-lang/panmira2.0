@@ -86,6 +86,13 @@ const CONTEXT_LEVELS = [
     desc: "最大记忆容量,深度任务必备",
     good: "深度研究、超长对话、跨多文档综述",
   },
+  {
+    id: "m3-long",
+    label: "M3 长上下文",
+    value: 512000,
+    desc: "适配 MiniMax-M3 512K 实测窗口",
+    good: "超长会话、全库审阅、多文档连续推理",
+  },
 ];
 
 export function Step2({
@@ -267,7 +274,7 @@ export function Step2({
             : "数值越大记得越多,但 Token 消耗和费用也越高"
         }
       >
-        <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
           {CONTEXT_LEVELS.map((lvl) => {
             const active = !isCustomContext && activeContextLevel.id === lvl.id;
             return (

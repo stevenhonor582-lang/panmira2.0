@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/toast/toast-provider";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { buildModelBindingPatch, engineFromProvider, readUseModelRouting } from "./tab-basics-config";
+import { CONTEXT_PRESETS, buildModelBindingPatch, engineFromProvider, readUseModelRouting } from "./tab-basics-config";
 
 // ⑨ 复杂度四档(中文,智能体运行参数,不受底层模型影响)
 const COMPLEXITY_OPTIONS = [
@@ -260,13 +260,6 @@ export function TabBasics({ id }: { id: string }) {
 // - 保存:PATCH /api/v2/employees/:id { default_context_window, orchestration }
 // ────────────────────────────────────────────────────────────
 
-const CONTEXT_PRESETS = [
-  { value: 32000, label: "32K · 轻量客服" },
-  { value: 64000, label: "64K · 通用平衡" },
-  { value: 128000, label: "128K · 长文分析" },
-  { value: 200000, label: "200K · 全量记忆" },
-];
-
 interface AutoCompressConfig {
   enabled: boolean;
   thresholdPct: number;
@@ -387,7 +380,7 @@ function ContextWindowCard({ agent, onSaved }: { agent: Agent; onSaved: () => vo
       <div className="mb-2 text-[11px] font-mono uppercase tracking-[0.18em] text-foreground/45">
         上下文窗口
       </div>
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
         {CONTEXT_PRESETS.map((p) => {
           const active = !isCustom && ctxDraft === p.value;
           return (

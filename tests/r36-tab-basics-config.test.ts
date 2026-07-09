@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CONTEXT_PRESETS,
   buildModelBindingPatch,
   type ModelBindingProvider,
 } from '../apps/web-next/app/(app)/employees/[id]/_components/tab-basics-config.js';
@@ -53,5 +54,12 @@ describe('R36 tab-basics model binding helpers', () => {
       default_model: 'GLM-5.2',
       orchestration: { useModelRouting: false },
     });
+  });
+});
+
+
+describe('R36 tab-basics context presets', () => {
+  it('offers 512K as a first-class context window preset', () => {
+    expect(CONTEXT_PRESETS.map((preset) => preset.value)).toContain(512000);
   });
 });
