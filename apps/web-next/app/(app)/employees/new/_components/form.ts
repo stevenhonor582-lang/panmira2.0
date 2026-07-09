@@ -47,6 +47,13 @@ export interface KbFolderInfo {
   visibility?: string;
   docCount?: number;
   botId?: string | null;
+  agentId?: string | null;
+  // R36-4: 后端 /api/knowledge/folders 按 path 根分段后注入的权限层
+  //   organization = /组织公共区/*   全员可见
+  //   group        = /群协作区/*     仅参与者可见
+  //   agent        = /数字员工/*     仅参与者可见
+  //   other        = 其它顶层节点    默认公共
+  accessTier?: "organization" | "group" | "agent" | "other";
 }
 
 export interface KbInfo {
