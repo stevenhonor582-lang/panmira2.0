@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, ChevronRight, LogOut, User } from "lucide-react";
+import { ChevronRight, LogOut, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -66,11 +66,6 @@ export function Topbar() {
       </div>
 
       <div className="flex items-center gap-1">
-        <Button variant="ghost" size="icon-sm" aria-label="通知" className="relative">
-          <Bell className="size-4" />
-          <span className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-primary" />
-        </Button>
-        <Separator orientation="vertical" className="h-5 mx-1" />
         <ThemeToggle />
         <Separator orientation="vertical" className="h-5 mx-1" />
         <DropdownMenu>

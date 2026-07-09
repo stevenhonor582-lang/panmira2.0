@@ -47,6 +47,10 @@ const FIELDS = [
   "complexity_level", "default_engine", "default_model", "status",
 ];
 
+// R28-A: Agent 基础信息卡片统一真人 BasicTab 卡片布局
+// - 基本信息 卡片(名称/描述/角色/分类)
+// - 系统信息 卡片(Agent ID/工作目录/引擎·模型/主理人/模板来源/版本/创建于)
+// - 编辑模式: 第二卡片切换为"引擎与模型"编辑表单
 export function TabBasics({ id }: { id: string }) {
   const { agent, loading, reload } = useAgent(id);
   const [draft, setDraft] = React.useState<Record<string, unknown>>({});
@@ -75,12 +79,17 @@ export function TabBasics({ id }: { id: string }) {
     if (!ok) setDraft(origDraft);
   };
 
+  const categoryValue =
+    (agent.raw as Record<string, unknown> | null)?.category ?? "general";
+
   return (
     <EditPane id={id} label="basics" onSaved={reload} isDirty={isDirty} onSave={onSave}>
-      {(ctx) => {
-        return (
-          <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-            <div className="space-y-6">
+      {(ctx) => (
+        <div className="space-y-4">
+          {/* === 基本信息 卡片 === */}
+          <div className="rounded-xl border border-border bg-card p-5">
+            <h3 className="text-sm font-semibold mb-4">基本信息</h3>
+            <div className="grid gap-4 md:grid-cols-2">
               <EditableText
                 label="名称"
                 field="name"
@@ -91,18 +100,6 @@ export function TabBasics({ id }: { id: string }) {
                 placeholder="给员工取个名字"
                 hint="display_name 跟随 name"
               />
-
-              <EditableTextarea
-                label="描述"
-                field="description"
-                value={agent.description || ""}
-                editing={ctx.editing}
-                draft={draft}
-                setDraft={setDraft}
-                placeholder="一句话描述这位员工"
-                rows={3}
-              />
-
               {ctx.editing ? (
                 <EditableSelect
                   label="角色模板"
@@ -118,12 +115,11 @@ export function TabBasics({ id }: { id: string }) {
                   <code className="font-mono text-[13px] tracking-tight">{agent.role}</code>
                 </ReadonlyField>
               )}
-
               {ctx.editing ? (
                 <EditableText
                   label="分类"
                   field="category"
-                  value={(agent.raw as any)?.category ?? "general"}
+                  value={String(categoryValue)}
                   editing
                   draft={draft}
                   setDraft={setDraft}
@@ -131,14 +127,30 @@ export function TabBasics({ id }: { id: string }) {
                 />
               ) : (
                 <ReadonlyField label="分类" icon={Tag}>
-                  <code className="font-mono text-[13px]">{(agent.raw as any)?.category ?? "general"}</code>
+                  <code className="font-mono text-[13px]">{String(categoryValue)}</code>
                 </ReadonlyField>
               )}
+              <div className="md:col-span-2">
+                <EditableTextarea
+                  label="描述"
+                  field="description"
+                  value={agent.description || ""}
+                  editing={ctx.editing}
+                  draft={draft}
+                  setDraft={setDraft}
+                  placeholder="一句话描述这位员工"
+                  rows={2}
+                />
+              </div>
             </div>
+          </div>
 
-            <div className="space-y-3 rounded-2xl bg-muted/30 p-5">
-              {ctx.editing ? (
-                <>
+          {/* === 系统信息 / 引擎与模型 卡片 === */}
+          <div className="rounded-xl border border-border bg-card p-5">
+            {ctx.editing ? (
+              <>
+                <h3 className="text-sm font-semibold mb-4">引擎与模型</h3>
+                <div className="grid gap-4 md:grid-cols-2">
                   <EditableSelect
                     label="引擎"
                     field="default_engine"
@@ -176,19 +188,30 @@ export function TabBasics({ id }: { id: string }) {
                     setDraft={setDraft}
                     options={STATUS_OPTIONS}
                   />
-                </>
-              ) : (
-                <>
-                  <ReadonlyField label="主理人" icon={User2}>
-                    <span className="font-medium">{agent.ownerName}</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 className="text-sm font-semibold mb-4">系统信息</h3>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <ReadonlyField label="Agent ID" icon={Cpu}>
+                    <code className="font-mono text-[12.5px]">{agent.id}</code>
                   </ReadonlyField>
-                  <ReadonlyField label="引擎" icon={Cpu}>
+                  <ReadonlyField label="工作目录" icon={GitBranch}>
+                    <code className="font-mono text-[12.5px] break-all">
+                      {agent.workingDir || "—"}
+                    </code>
+                  </ReadonlyField>
+                  <ReadonlyField label="引擎 · 模型" icon={Cpu}>
                     <span className="font-mono text-[12.5px]">
                       {agent.defaultEngine} · {agent.defaultModel || "默认"}
                     </span>
                   </ReadonlyField>
                   <ReadonlyField label="复杂度" icon={Tag}>
                     <span className="font-mono">{agent.complexityLevel}</span>
+                  </ReadonlyField>
+                  <ReadonlyField label="主理人" icon={User2}>
+                    <span className="font-medium">{agent.ownerName}</span>
                   </ReadonlyField>
                   <ReadonlyField label="模板来源" icon={GitBranch}>
                     {agent.templateSource ? (
@@ -207,16 +230,17 @@ export function TabBasics({ id }: { id: string }) {
                       {new Date(agent.createdAt).toLocaleString("zh-CN", { hour12: false })}
                     </span>
                   </ReadonlyField>
-                </>
-              )}
-            </div>
+                </div>
+              </>
+            )}
           </div>
-        );
-      }}
+        </div>
+      )}
     </EditPane>
   );
 }
 
+// ReadonlyField: BasicTab 同款 label 风格(小字大写 + value text-sm)
 function ReadonlyField({
   label,
   icon: Icon,
@@ -228,11 +252,11 @@ function ReadonlyField({
 }) {
   return (
     <div>
-      <div className="mb-2 flex items-center gap-1.5 text-[10.5px] font-mono uppercase tracking-[0.22em] text-foreground/45">
+      <div className="mb-1 flex items-center gap-1.5 text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/45">
         <Icon className="size-3" />
         <span>{label}</span>
       </div>
-      <div className="text-foreground/85">{children}</div>
+      <div className="text-sm text-foreground/85">{children}</div>
     </div>
   );
 }
