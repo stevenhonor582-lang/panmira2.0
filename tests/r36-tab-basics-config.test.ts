@@ -3,6 +3,7 @@ import { normalizeAutoCompressDraft } from '../apps/web-next/app/(app)/employees
 import {
   CONTEXT_PRESETS,
   buildModelBindingPatch,
+  nextSelectedProviderIdOnBindingRefresh,
   type ModelBindingProvider,
 } from '../apps/web-next/app/(app)/employees/[id]/_components/tab-basics-config.js';
 
@@ -58,6 +59,28 @@ describe('R36 tab-basics model binding helpers', () => {
   });
 });
 
+
+describe('R36 tab-basics provider selection sync', () => {
+  it('preserves unsaved provider selection during agent refresh', () => {
+    expect(
+      nextSelectedProviderIdOnBindingRefresh({
+        selectedId: 'provider-b',
+        currentBindingId: 'provider-a',
+        lastSyncedBindingId: 'provider-a',
+      }),
+    ).toBe('provider-b');
+  });
+
+  it('syncs to new binding when there is no unsaved provider selection', () => {
+    expect(
+      nextSelectedProviderIdOnBindingRefresh({
+        selectedId: 'provider-a',
+        currentBindingId: 'provider-b',
+        lastSyncedBindingId: 'provider-a',
+      }),
+    ).toBe('provider-b');
+  });
+});
 
 describe('R36 tab-basics context presets', () => {
   it('offers 512K as a first-class context window preset', () => {

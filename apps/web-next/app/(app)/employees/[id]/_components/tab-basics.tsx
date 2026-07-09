@@ -17,7 +17,7 @@ import { useToast } from "@/components/toast/toast-provider";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { normalizeAutoCompressDraft } from "../../new/_components/form";
-import { CONTEXT_PRESETS, buildModelBindingPatch, engineFromProvider, readUseModelRouting } from "./tab-basics-config";
+import { CONTEXT_PRESETS, buildModelBindingPatch, engineFromProvider, nextSelectedProviderIdOnBindingRefresh, readUseModelRouting } from "./tab-basics-config";
 
 // ⑨ 复杂度四档(中文,智能体运行参数,不受底层模型影响)
 const COMPLEXITY_OPTIONS = [
@@ -595,10 +595,23 @@ function ModelBindingCard({ agent, onSaved }: { agent: Agent; onSaved: () => voi
   }, [providers, agent.defaultModel, agent.defaultEngine]);
 
   // 初始化选中(默认指向当前绑定);agent 刷新后同步,但不覆盖用户未保存选择。
+  const lastSyncedBindingId = React.useRef<string | null>(null);
+
   React.useEffect(() => {
-    if (currentBinding) {
-      setSelectedId(currentBinding.id);
-    }
+    lastSyncedBindingId.current = null;
+    setSelectedId(null);
+  }, [agent.id]);
+
+  React.useEffect(() => {
+    const currentBindingId = currentBinding?.id ?? null;
+    setSelectedId((prev) =>
+      nextSelectedProviderIdOnBindingRefresh({
+        selectedId: prev,
+        currentBindingId,
+        lastSyncedBindingId: lastSyncedBindingId.current,
+      }),
+    );
+    lastSyncedBindingId.current = currentBindingId;
   }, [agent.id, agent.updatedAt, currentBinding?.id]);
 
   // R32-B/R36-1: 模型路由开关 — 存 agent.orchestration.useModelRouting
@@ -619,7 +632,7 @@ function ModelBindingCard({ agent, onSaved }: { agent: Agent; onSaved: () => voi
   const isDirty = modelDirty || routingDirty;
 
   async function save() {
-    if (!selectedProvider) return;
+    if (!selectedProvider && !routingDirty) return;
     setSaving(true);
     try {
       const patch = buildModelBindingPatch({
@@ -630,7 +643,7 @@ function ModelBindingCard({ agent, onSaved }: { agent: Agent; onSaved: () => voi
       });
       await updateAgent(agent.id, patch);
       toast.success(
-        `已${modelDirty ? `绑定 ${selectedProvider.name} · ${selectedProvider.model}` : "更新模型路由"}${useRouting ? "(遵循全局路由)" : "(固定模型)"}`,
+        `已${modelDirty && selectedProvider ? `绑定 ${selectedProvider.name} · ${selectedProvider.model}` : "更新模型路由"}${useRouting ? "(遵循全局路由)" : "(固定模型)"}`,
       );
       onSaved();
     } catch (e: unknown) {
@@ -772,7 +785,7 @@ function ModelBindingCard({ agent, onSaved }: { agent: Agent; onSaved: () => voi
         <Button
           size="sm"
           onClick={save}
-          disabled={!isDirty || !selectedProvider || saving || loading || !!err}
+          disabled={!isDirty || saving || loading || !!err}
           className="gap-1.5"
           data-testid="save-model-binding"
         >

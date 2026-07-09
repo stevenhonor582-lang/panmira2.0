@@ -33,7 +33,7 @@ export function buildModelBindingPatch({
   useModelRouting,
   orchestration,
 }: {
-  selectedProvider: ModelBindingProvider;
+  selectedProvider: ModelBindingProvider | null;
   currentProvider: ModelBindingProvider | null;
   useModelRouting: boolean;
   orchestration: Record<string, unknown> | null | undefined;
@@ -42,7 +42,7 @@ export function buildModelBindingPatch({
     orchestration: { ...(orchestration ?? {}), useModelRouting },
   };
 
-  if (selectedProvider.id !== currentProvider?.id) {
+  if (selectedProvider && selectedProvider.id !== currentProvider?.id) {
     patch.default_engine = engineFromProvider(selectedProvider);
     patch.default_model = selectedProvider.model;
   }
@@ -57,3 +57,17 @@ export const CONTEXT_PRESETS = [
   { value: 200000, label: '200K · 全量记忆' },
   { value: 512000, label: '512K · M3 长上下文' },
 ] as const;
+
+export function nextSelectedProviderIdOnBindingRefresh({
+  selectedId,
+  currentBindingId,
+  lastSyncedBindingId,
+}: {
+  selectedId: string | null;
+  currentBindingId: string | null;
+  lastSyncedBindingId: string | null;
+}): string | null {
+  if (selectedId === null) return currentBindingId;
+  if (selectedId === lastSyncedBindingId) return currentBindingId;
+  return selectedId;
+}
