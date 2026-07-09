@@ -257,6 +257,17 @@ async function invokeRealAgent(
 ): Promise<{ output: unknown; tokensUsed: number }> {
   const tenantId = ctx.tenantId;
 
+  // R33-A: 模型路由锁定。agent.orchestration.useModelRouting === false 时,
+  // 强制用 agent.defaultModel,不走全局 default provider。
+  // 修复"玄剑 Bot 固定 DeepSeek,飞书调用却变 Minimax"的根因:
+  // 原来 invokeRealAgent 的 callLlm 没传 model,总走全局 is_default provider。
+  const orchRaw = agent.orchestration as Record<string, unknown> | null | undefined;
+  const orch = orchRaw ?? {};
+  const useRouting =
+    typeof orch.useModelRouting === 'boolean' ? orch.useModelRouting : true;
+  const modelOverride =
+    !useRouting && agent.defaultModel ? agent.defaultModel : undefined;
+
   // 1. KB refs (RAG injection is conditional)
   const refs = await db.select().from(agentKnowledgeRefs)
     .where(eq(agentKnowledgeRefs.agentId, agent.id));
@@ -299,6 +310,7 @@ async function invokeRealAgent(
     messages,
     tools,
     maxTokens: 1024,
+    ...(modelOverride ? { model: modelOverride } : {}),
   });
 
   // 5. tool_use 1-hop loop (matches agent-run-routes.ts:88-117)
@@ -320,6 +332,7 @@ async function invokeRealAgent(
       messages,
       tools,
       maxTokens: 1024,
+      ...(modelOverride ? { model: modelOverride } : {}),
     });
     result = {
       ...result,

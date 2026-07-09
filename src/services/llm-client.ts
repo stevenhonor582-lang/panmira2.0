@@ -92,9 +92,44 @@ export async function loadDefaultLlmProvider(): Promise<LlmProvider | null> {
   }
 }
 
+/**
+ * R33-A: 按 model 精确反查 provider(锁定端点 + key)。
+ * useModelRouting=false 时,agent 走自己绑定的 provider,而非全局 default。
+ * 匹配失败返回 null,调用方回退到 loadDefaultLlmProvider。
+ */
+export async function loadLlmProviderByModel(model: string): Promise<LlmProvider | null> {
+  const result = await pool.query(
+    `SELECT name, base_url, api_key_encrypted, model
+     FROM provider_configs
+     WHERE LOWER(model) = LOWER($1)
+     LIMIT 1`,
+    [model],
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  if (!row.api_key_encrypted) {
+    return { name: row.name, baseUrl: row.base_url, apiKey: '', model: row.model };
+  }
+  try {
+    const apiKey = decrypt(row.api_key_encrypted);
+    return { name: row.name, baseUrl: row.base_url, apiKey, model: row.model };
+  } catch {
+    return null;
+  }
+}
+
 export async function callLlm(opts: LlmCallOptions): Promise<LlmCallResult> {
   const start = Date.now();
-  const provider = await loadDefaultLlmProvider();
+  // R33-A: 传入 model 时优先按 model 反查对应 provider(切端点 + key,锁定模型);
+  // 找不到才回退全局 default。这是 useModelRouting=false 锁定的核心:
+  // 否则 DeepSeek model 会被送到 Minimax 端点直接失败。
+  let provider: LlmProvider | null = null;
+  if (opts.model) {
+    provider = await loadLlmProviderByModel(opts.model);
+  }
+  if (!provider) {
+    provider = await loadDefaultLlmProvider();
+  }
   if (!provider) {
     throw new LlmCallError('No default LLM provider configured', 503);
   }

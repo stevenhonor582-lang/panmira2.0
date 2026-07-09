@@ -30,6 +30,16 @@ async function runAgent(req: http.IncomingMessage, res: http.ServerResponse, age
   const [agent] = await db.select().from(agents).where(eq(agents.id, agentId)).limit(1);
   if (!agent) { jsonResponse(res, 404, { error: 'agent not found' }); return; }
 
+  // R33-A: 模型路由锁定(与 pipeline-engine.invokeRealAgent 同逻辑)。
+  // useModelRouting=false 时强制用 agent.defaultModel,不走全局 default provider。
+  // callLlm 收到 model 会按 model 反查对应 provider(切端点+key)。
+  const orchRaw = agent.orchestration as Record<string, unknown> | null | undefined;
+  const orch = orchRaw ?? {};
+  const useRouting =
+    typeof orch.useModelRouting === 'boolean' ? orch.useModelRouting : true;
+  const modelOverride =
+    !useRouting && agent.defaultModel ? agent.defaultModel : undefined;
+
   const body = (await parseJsonBody(req)) as Record<string, unknown>;
   const { query, topK, mode, minScore } = body;
   if (!query || typeof query !== 'string') { jsonResponse(res, 400, { error: 'query required' }); return; }
@@ -83,6 +93,7 @@ async function runAgent(req: http.IncomingMessage, res: http.ServerResponse, age
         messages,
         tools,
         maxTokens: Number(body.maxTokens) || 1024,
+        ...(modelOverride ? { model: modelOverride } : {}),
       });
 
       // tool_use 循环: 检测到 tool_use 时执行 + 喂回 LLM (单跳)
@@ -100,6 +111,7 @@ async function runAgent(req: http.IncomingMessage, res: http.ServerResponse, age
           messages,
           tools,
           maxTokens: Number(body.maxTokens) || 1024,
+          ...(modelOverride ? { model: modelOverride } : {}),
         });
         // 用 follow-up 的 text, 累加 token
         llmResult = {

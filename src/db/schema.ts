@@ -98,6 +98,12 @@ export const agents = pgTable('agents', {
   channelIds: jsonb('channel_ids').$type<string[]>().default([]),
   visibility: varchar('visibility', { length: 20 }).notNull().default('team'),
   temperature: doublePrecision('temperature').notNull().default(0.7),
+  // R33-A: agent-level model binding. These DB columns already exist but were
+  // missing from the drizzle schema, so pipeline-engine couldn't read the
+  // agent's chosen model via drizzle — root cause of "agent bound to DeepSeek
+  // but global default (Minimax) wins at runtime". Now readable.
+  defaultEngine: varchar('default_engine', { length: 64 }),
+  defaultModel: varchar('default_model', { length: 128 }),
 });
 
 export const memories = pgTable('memories', {
