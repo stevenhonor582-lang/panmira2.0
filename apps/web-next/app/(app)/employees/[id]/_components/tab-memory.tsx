@@ -2,19 +2,75 @@
 
 import * as React from "react";
 import { useAgent } from "../../_lib/data";
+import { api } from "@/lib/api";
 import { Brain, Clock, Database, Archive, Lock } from "lucide-react";
+
+/**
+ * R24: 记忆 tab — 接真实 memories。
+ * 从 GET /api/v2/foundation/memory/l1|l2|l3?bot_id=<agent.id> 拉最近 3 条。
+ * 没数据 → "暂无记忆",不显示 mock。
+ */
+
+interface MemoryItem {
+  id: string;
+  layer: number;
+  subject: string | null;
+  content: string | null;
+  preview: string | null;
+  importance: number | null;
+  createdAt: string | null;
+}
+
+interface MemoryLayerData {
+  count: number;
+  items: MemoryItem[];
+  loading: boolean;
+}
+
+function useMemoryLayer(layer: 1 | 2 | 3, botId: string | null): MemoryLayerData {
+  const [data, setData] = React.useState<MemoryLayerData>({ count: 0, items: [], loading: true });
+
+  React.useEffect(() => {
+    if (!botId) {
+      setData({ count: 0, items: [], loading: false });
+      return;
+    }
+    let alive = true;
+    setData((d) => ({ ...d, loading: true }));
+    (async () => {
+      try {
+        const res = await api<{ total?: number; memories?: MemoryItem[] } | MemoryItem[]>(
+          `/api/v2/foundation/memory/l${layer}?bot_id=${encodeURIComponent(botId)}&limit=3`,
+        );
+        if (!alive) return;
+        const items = (res as any)?.memories ?? (Array.isArray(res) ? res : []);
+        const total = (res as any)?.total ?? items.length;
+        setData({ count: total, items, loading: false });
+      } catch {
+        if (alive) setData({ count: 0, items: [], loading: false });
+      }
+    })();
+    return () => { alive = false; };
+  }, [layer, botId]);
+
+  return data;
+}
 
 export function TabMemory({ id }: { id: string }) {
   const { agent, loading } = useAgent(id);
+
+  const l1 = useMemoryLayer(1, agent?.id ?? null);
+  const l2 = useMemoryLayer(2, agent?.id ?? null);
+  const l3 = useMemoryLayer(3, agent?.id ?? null);
+
   if (loading) return <div className="h-48 rounded-2xl bg-muted/40 animate-pulse" />;
   if (!agent) return null;
 
-  const m = agent.memoryLayers;
-  const total = m.short + m.long + m.permanent;
+  const total = l1.count + l2.count + l3.count;
   const layers = [
-    { key: "short", label: "短期 · L1", icon: Clock, count: m.short, color: "amber" },
-    { key: "long", label: "长期 · L2", icon: Database, count: m.long, color: "indigo" },
-    { key: "permanent", label: "永久 · L3", icon: Archive, count: m.permanent, color: "emerald" },
+    { key: "L1", label: "短期 · L1", icon: Clock, count: l1.count, color: "amber", data: l1 },
+    { key: "L2", label: "长期 · L2", icon: Database, count: l2.count, color: "indigo", data: l2 },
+    { key: "L3", label: "永久 · L3", icon: Archive, count: l3.count, color: "emerald", data: l3 },
   ];
 
   return (
@@ -47,10 +103,16 @@ export function TabMemory({ id }: { id: string }) {
                 <span className="font-mono text-[11px] text-foreground/40 tabular-nums">{pct}%</span>
               </div>
               <div className="mt-4 flex items-baseline gap-1.5">
-                <span className="font-mono text-4xl font-semibold tabular-nums tracking-tight">
-                  {l.count}
-                </span>
-                <span className="text-[12px] text-foreground/50">条</span>
+                {l.data.loading ? (
+                  <span className="text-[12px] text-foreground/40">加载中…</span>
+                ) : (
+                  <>
+                    <span className="font-mono text-4xl font-semibold tabular-nums tracking-tight">
+                      {l.count}
+                    </span>
+                    <span className="text-[12px] text-foreground/50">条</span>
+                  </>
+                )}
               </div>
               <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-muted">
                 <div className={`h-full bg-${l.color}-500/80`} style={{ width: `${pct}%` }} />
@@ -68,32 +130,74 @@ export function TabMemory({ id }: { id: string }) {
         </p>
       </div>
 
-      <SampleList agentId={agent.id} />
+      <SampleList layers={layers} agentId={agent.id} />
     </div>
   );
 }
 
-function SampleList({ agentId }: { agentId: string }) {
-  const samples = [
-    { layer: "L1", text: "用户本轮要求把首页 hero 改成三段叙事" },
-    { layer: "L1", text: "客户偏好先发版本二,不要三版同发" },
-    { layer: "L2", text: "署名要不要加大字号:历史口径是不要" },
-    { layer: "L2", text: "工业品跨境客户最在意海关 HS Code 准确度" },
-    { layer: "L3", text: "公司品牌色禁用纯紫,见 brand-v3.md 第 4 段" },
-  ];
+function SampleList({
+  layers,
+  agentId,
+}: {
+  layers: Array<{ key: string; label: string; data: MemoryLayerData }>;
+  agentId: string;
+}) {
+  const hasAny = layers.some((l) => l.data.items.length > 0);
+  if (!hasAny) {
+    return (
+      <section>
+        <h4 className="mb-3 text-[12px] font-medium text-foreground/55">最近的记忆样本(只读)</h4>
+        <div className="rounded-2xl border border-dashed border-border p-6 text-center text-[13px] text-foreground/50">
+          暂无记忆 — 这个员工还没有产生记忆数据。
+          <span className="mt-1 block font-mono text-[11px] text-foreground/35">agent {agentId.slice(0, 8)}…</span>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section>
       <h4 className="mb-3 text-[12px] font-medium text-foreground/55">最近的记忆样本(只读)</h4>
-      <ul className="divide-y divide-border rounded-2xl ring-1 ring-border">
-        {samples.map((s, i) => (
-          <li key={i} className="flex items-start gap-4 px-5 py-3">
-            <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-foreground/40 mt-0.5 w-6">
-              {s.layer}
-            </span>
-            <p className="text-[13.5px] text-foreground/85 leading-relaxed">{s.text}</p>
-          </li>
-        ))}
-      </ul>
+      <div className="space-y-4">
+        {layers.map((l) => {
+          if (l.data.items.length === 0) return null;
+          return (
+            <div key={l.key}>
+              <h5 className="mb-2 flex items-center gap-2 text-[11px] font-mono uppercase tracking-[0.18em] text-foreground/45">
+                <span>{l.label}</span>
+                <span className="text-foreground/30">· {l.data.items.length} 条样本</span>
+              </h5>
+              <ul className="divide-y divide-border rounded-2xl ring-1 ring-border">
+                {l.data.items.map((m) => (
+                  <li key={m.id} className="flex items-start gap-4 px-5 py-3">
+                    <span className="mt-0.5 w-6 shrink-0 font-mono text-[11px] uppercase tracking-[0.18em] text-foreground/40">
+                      {l.key}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      {m.subject && (
+                        <p className="text-[12.5px] font-medium text-foreground/75">{m.subject}</p>
+                      )}
+                      <p className="text-[13.5px] leading-relaxed text-foreground/85">
+                        {(m.preview || m.content || "—").slice(0, 120)}
+                      </p>
+                      <div className="mt-1 flex items-center gap-3 text-[11px] text-foreground/40">
+                        {m.importance !== null && (
+                          <span className="font-mono">重要度 {m.importance.toFixed(2)}</span>
+                        )}
+                        {m.createdAt && (
+                          <span className="font-mono">
+                            {new Date(m.createdAt).toLocaleString("zh-CN", { hour12: false })}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+      </div>
       <p className="mt-2 text-[11px] font-mono text-foreground/30">
         refs: agent={agentId.slice(0, 8)}…
       </p>

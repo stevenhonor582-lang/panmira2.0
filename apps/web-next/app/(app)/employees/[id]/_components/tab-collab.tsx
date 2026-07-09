@@ -1,13 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { useAgent } from "../../_lib/data";
+import { useAgent, type Agent } from "../../_lib/data";
 import { api } from "@/lib/api";
 import { AvatarMark } from "../../_components/avatar-mark";
-import { Network, Bot, User2 } from "lucide-react";
+import { Network, Bot, User2, Info } from "lucide-react";
 import {
   EditPane,
-  EditBar,
   EditableSelect,
   agentToDraft,
   diffDraft,
@@ -28,7 +27,6 @@ export function TabCollab({ id }: { id: string }) {
   const [origDraft, setOrigDraft] = React.useState<Record<string, unknown>>({});
   const [people, setPeople] = React.useState<Person[]>([]);
 
-  // 拉 users 列表(进入页面就拉一次)
   const loadPeople = React.useCallback(async () => {
     try {
       const res = await api<{ data?: { items?: Person[] } } | { items?: Person[] }>(
@@ -64,36 +62,39 @@ export function TabCollab({ id }: { id: string }) {
     agent.ownerName ??
     "未指定";
 
-  return (
-    <EditPane id={id} label="collab" onSaved={reload}>
-      {(ctx) => {
-        const handleStart = () => ctx.startEdit();
-        const handleSave = async () => {
-          const patch = diffDraft(origDraft, draft);
-          if (Object.keys(patch).length === 0) {
-            ctx.cancelEdit();
-            return;
-          }
-          const ok = await ctx.save(patch);
-          if (!ok) setDraft(origDraft);
-        };
+  const isDirty = Object.keys(diffDraft(origDraft, draft)).length > 0;
 
-        return (
+  const onSave = async (ctx: { save: (p: Record<string, unknown>) => Promise<boolean>; cancelEdit: () => void }) => {
+    const patch = diffDraft(origDraft, draft);
+    if (Object.keys(patch).length === 0) {
+      ctx.cancelEdit();
+      return;
+    }
+    const ok = await ctx.save(patch);
+    if (!ok) setDraft(origDraft);
+  };
+
+  return (
+    <EditPane id={id} label="collab" onSaved={reload} isDirty={isDirty} onSave={onSave}>
+      {(ctx) => (
+        <div className="space-y-4">
+          {/* R24: 协作关系图说明 */}
+          <div className="flex items-start gap-2 rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-3 text-[12.5px] text-foreground/55">
+            <Info className="mt-0.5 size-3.5 shrink-0" />
+            <div>
+              <p className="font-medium text-foreground/70">协作关系图</p>
+              <p className="mt-0.5">
+                这个数字员工在哪些任务(pipeline)里被调用,以及它跟哪些其他员工一起干活。
+              </p>
+              <ul className="mt-1 space-y-0.5 text-[12px]">
+                <li>• <strong>内链(它调用的)</strong>:pipeline 里它之后的节点</li>
+                <li>• <strong>外链(调用它的)</strong>:pipeline 里它之前的节点 + 谁拥有这些 pipeline</li>
+              </ul>
+            </div>
+          </div>
+
           <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
             <section>
-              <div className="mb-2 flex justify-end">
-                {!ctx.editing ? (
-                  <button
-                    type="button"
-                    onClick={handleStart}
-                    className="text-[12px] text-foreground/55 hover:text-foreground"
-                  >
-                    编辑主理人
-                  </button>
-                ) : (
-                  <EditBar onSave={handleSave} />
-                )}
-              </div>
               <h3 className="mb-3 flex items-center gap-2 text-[13px] font-medium tracking-tight text-foreground/65">
                 <Network className="size-4 text-foreground/45" />
                 协作关系图
@@ -148,15 +149,15 @@ export function TabCollab({ id }: { id: string }) {
                   与 Bot · Bot network
                 </h3>
                 <div className="rounded-2xl border border-dashed border-border p-4 text-[13px] text-foreground/55">
-                  这位 bot 的上下游关系由 pipeline 配置维护(任务 tab 中可看)。
+                  这位 bot 的上下游关系由 pipeline 配置维护(任务 tab 中可看 + 直接绑定)。
                 </div>
               </div>
 
               <R15AFields agent={agent} />
             </section>
           </div>
-        );
-      }}
+        </div>
+      )}
     </EditPane>
   );
 }
@@ -164,7 +165,7 @@ export function TabCollab({ id }: { id: string }) {
 
 /**
  * R15-A 字段区块:working_dir / channel_ids / visibility / temperature / is_template
- * 只读展示。编辑由基础 tab + 后续 R15-B 处理。
+ * 只读展示。
  */
 function R15AFields({ agent }: { agent: Agent }) {
   const raw = agent.raw as Record<string, unknown> | null;
