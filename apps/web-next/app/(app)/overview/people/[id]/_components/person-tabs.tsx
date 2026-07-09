@@ -17,8 +17,8 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, CartesianGrid,
 } from "recharts";
 import {
-  Bot, Plus, Trash2, Network, Sparkles, Clock, CheckCircle2, AlertTriangle,
-  Info, FileText, Database, Workflow,
+  Bot, Plus, Trash2, Sparkles, Clock, CheckCircle2, AlertTriangle,
+  Info, FileText,
   Pencil,
 } from "lucide-react";
 import {
@@ -35,6 +35,7 @@ import {
   PersonEditPane, PersonEditBar, PersonText, PersonSelect,
   personToDraft, diffDraft,
 } from "./person-edit-mode";
+export { CollaboratorsTab } from "./collab-overview";
 
 const ROLE_OPTIONS = [
   { value: "admin", label: "管理员 · admin" },
@@ -474,151 +475,8 @@ export function DecisionsTab(): React.ReactNode {
 // collaborators tab — R17-2 协作对象 3 分区清晰说明
 // 协作对象 = 员工可调度哪些数字员工 + 访问哪些知识库 + 使用哪些任务模板
 // ────────────────────────────────────────────────────────────
-export function CollaboratorsTab({ person }: { person: Person }) {
-  const [bound, setBound] = React.useState<PersonAgent[]>([]);
-  const [pipelines, setPipelines] = React.useState<Pipeline[]>([]);
-  React.useEffect(() => {
-    fetchPersonAgents(person.id).then(setBound);
-    fetchPipelines().then((all) => {
-      setPipelines(all.filter((p) => p.createdBy === person.id));
-    });
-  }, [person.id]);
-
-  return (
-    <div className="space-y-5">
-      {/* === 总说明 === */}
-      <div className="rounded-xl border border-foreground/15 bg-foreground/[0.03] p-4">
-        <div className="flex items-center gap-2 mb-2">
-          <Network className="size-4 text-foreground/70" />
-          <h4 className="font-medium text-[13px]">协作对象说明</h4>
-        </div>
-        <p className="text-[12.5px] text-foreground/80 mb-2">
-          这个员工<strong className="text-foreground">能做什么、看什么、用什么</strong>:
-        </p>
-        <ul className="space-y-1.5 text-[12px] text-muted-foreground">
-          <li className="flex items-start gap-2">
-            <Bot className="size-3.5 mt-0.5 shrink-0 text-foreground/55" />
-            <span><strong className="text-foreground/85">调度哪些数字员工</strong> — 决定能力范围(写文案/查数据/发邮件…)</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <Database className="size-3.5 mt-0.5 shrink-0 text-foreground/55" />
-            <span><strong className="text-foreground/85">访问哪些知识库</strong> — 决定知识范围(产品资料/客户档案/历史对话…)</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <Workflow className="size-3.5 mt-0.5 shrink-0 text-foreground/55" />
-            <span><strong className="text-foreground/85">使用哪些任务模板</strong> — 决定工作流(自动化流程+审批节点…)</span>
-          </li>
-        </ul>
-      </div>
-
-      {/* === 3 个分区 === */}
-      <div className="grid gap-4 md:grid-cols-3">
-        {/* 数字员工 */}
-        <CollaboratorSection
-          icon={Bot}
-          title="可调度的数字员工"
-          count={bound.length}
-          accent="bg-violet-500/10 text-violet-700 dark:text-violet-400"
-          items={bound.map((b) => ({
-            id: b.id,
-            primary: b.display_name ?? b.name,
-            secondary: b.role_template ?? "general",
-          }))}
-          emptyHint="未关联数字员工"
-          manageHref={`/overview/people/${person.id}`}
-          manageLabel="在【数字员工】tab 管理"
-        />
-
-        {/* 知识库 */}
-        <CollaboratorSection
-          icon={Database}
-          title="可访问的知识库"
-          count={null}
-          accent="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-          items={[]}
-          emptyHint="KB 访问权限按角色授予"
-          manageHref="/foundation"
-          manageLabel="在【数智底座】配置"
-        />
-
-        {/* 任务模板 */}
-        <CollaboratorSection
-          icon={Workflow}
-          title="可使用的任务模板"
-          count={pipelines.length}
-          accent="bg-sky-500/10 text-sky-700 dark:text-sky-400"
-          items={pipelines.map((p) => ({
-            id: p.id,
-            primary: p.name,
-            secondary: p.enabled ? "在用" : "停用",
-          }))}
-          emptyHint="未绑定任务模板"
-          manageHref={`/tasks`}
-          manageLabel="在【任务】tab 创建"
-        />
-      </div>
-    </div>
-  );
-}
-
-function CollaboratorSection({
-  icon: Icon, title, count, items, emptyHint, manageHref, manageLabel, accent,
-}: {
-  icon: typeof Bot;
-  title: string;
-  count: number | null;
-  items: Array<{ id: string; primary: string; secondary?: string }>;
-  emptyHint: string;
-  manageHref: string;
-  manageLabel: string;
-  accent: string;
-}) {
-  return (
-    <div className="rounded-xl border border-border bg-card overflow-hidden flex flex-col">
-      <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-        <span className={cn("inline-flex items-center justify-center rounded-md p-1.5", accent)}>
-          <Icon className="size-4" />
-        </span>
-        <div className="flex-1 min-w-0">
-          <div className="text-[12.5px] font-medium leading-tight truncate">{title}</div>
-          <div className="text-[10.5px] text-muted-foreground font-mono tabular-nums">
-            {count === null ? "—" : `${count} 项`}
-          </div>
-        </div>
-      </div>
-      <div className="px-4 py-3 flex-1 min-h-[6rem]">
-        {items.length === 0 ? (
-          <p className="text-[12px] text-muted-foreground italic">{emptyHint}</p>
-        ) : (
-          <ul className="space-y-1.5">
-            {items.slice(0, 5).map((it) => (
-              <li key={it.id} className="flex items-baseline gap-2 text-[12px]">
-                <span className="flex-1 truncate">{it.primary}</span>
-                {it.secondary && (
-                  <code className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                    {it.secondary}
-                  </code>
-                )}
-              </li>
-            ))}
-            {items.length > 5 && (
-              <li className="text-[11px] text-muted-foreground">+{items.length - 5} 项…</li>
-            )}
-          </ul>
-        )}
-      </div>
-      <div className="px-4 py-2 border-t border-border bg-muted/30">
-        <Link
-          href={manageHref}
-          className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-        >
-          {manageLabel} →
-        </Link>
-      </div>
-    </div>
-  );
-}
-
+// R26-A: CollaboratorsTab 已移至 collab-overview.tsx(关系总图,只读)
+// 删掉原 3 个配置入口(可调度数字员工/可访问知识库/可使用任务模板),重做为只读关系总览。
 // ────────────────────────────────────────────────────────────
 // resources tab — 30 天 token 图表(recharts)
 // ────────────────────────────────────────────────────────────
