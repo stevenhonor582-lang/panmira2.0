@@ -1,12 +1,48 @@
-// R13-D: Real tldraw-based DAG editor (replaces P3.4 placeholder).
-// 6-shape palette + canvas + config panel + toolbar (validate/save/test-run).
+// R19 (2026-07-09): React Flow (@xyflow/react) DAG editor.
+// Replaces the tldraw v5 implementation to remove the license watermark +
+// unlock perpetual MIT use. Functional parity preserved:
+//   - 6 node kinds (Bot / Human / Skill / Tool / Conditional / Parallel)
+//   - ShapeConfigPanel with per-kind forms + IO contract + Human approval
+//   - Connection validation (Conditional >=2 out, parallel degree, cycle, dup)
+//   - Toolbar: undo / redo / zoom / grid / validate / save / test-run
+//   - Read-only viewer mode (variant="viewer" or readOnly=true)
+//   - Live execution preview (node.data.status highlights)
+//
+// Data format (DagDocument):
+//   snapshot: { nodes: RFNode[], edges: RFEdge[] }
+//   nodes:    derived flat list [{shapeId, meta}] for the server engine
+//   edges:    derived flat list [{from, to}]
+//   botId:    owning bot id
+//
+// Back-compat: if an old pipeline ships a tldraw TLStoreSnapshot, we can't
+// parse it, so we fall back to the flat nodes/edges lists (re-laid out on
+// a grid). The user re-arranges once and saves; from then on RF is the
+// source of truth.
+
 "use client";
 
 import * as React from "react";
-import type { Editor } from "@tldraw/editor";
-import type { TLStoreSnapshot } from "@tldraw/editor";
-import { createShapeId, type TLShapeId } from "@tldraw/tlschema";
-import "tldraw/tldraw.css";
+import {
+  ReactFlow,
+  ReactFlowProvider,
+  Background,
+  Controls,
+  MiniMap,
+  Panel,
+  addEdge,
+  useNodesState,
+  useEdgesState,
+  useReactFlow,
+  BackgroundVariant,
+  ConnectionMode,
+  type Node,
+  type Edge,
+  type Connection,
+  type NodeChange,
+  type EdgeChange,
+  type NodeMouseHandler,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 
 import {
   Bot,
@@ -22,6 +58,7 @@ import {
   Redo2,
   Save,
   Split,
+  Trash2,
   Undo2,
   UserRound,
   Wrench,
@@ -30,29 +67,49 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { DAG_SHAPE_UTILS, DAG_SHAPE_H, DAG_SHAPE_W, type DagNodeShape } from "./node-shapes";
 import {
-  DagEdgeRecord,
-  DagNodeMeta,
-  DagNodeRecord,
-  NodeKind,
+  DAG_SHAPE_W,
+  DAG_SHAPE_H,
+  NODE_TYPES,
+} from "./node-shapes";
+import {
+  type DagDocument,
+  type DagEdgeRecord,
+  type DagNodeMeta,
+  type DagNodeRecord,
+  type DagRfEdge,
+  type DagRfNode,
+  type NodeKind,
   NODE_KIND_MAP,
 } from "./types";
 import { ShapeConfigPanel } from "./shape-config-panel";
-import { validateDag } from "./dag-validators";
+import {
+  detectCycle,
+  isConnectionAllowed,
+  validateDag,
+  validateEdgeRules,
+} from "./dag-validators";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
+// ────────────────────────────────────────────────────────────────────────────
+// Props
+// ────────────────────────────────────────────────────────────────────────────
+
 interface TaskDagEditorProps {
   pipelineId?: string;
+  /** Pipeline's DagDocument snapshot (RF format) or legacy tldraw snapshot. */
   initialSnapshot?: unknown;
+  /** Alias of initialSnapshot (some pages pass initialValue). */
   initialValue?: unknown;
   initialName?: string;
   initialBotId?: string;
   variant?: "editor" | "viewer";
-  onChange?: (value: unknown) => void;
+  onChange?: (value: DagDocument) => void;
   hideToolbar?: boolean;
   readOnly?: boolean;
+  /** R18: live execution context — when all 3 are set the panel posts decisions. */
+  runId?: string;
 }
 
 const PALETTE: Array<{ kind: NodeKind; icon: LucideIcon; hint: string }> = [
@@ -64,136 +121,300 @@ const PALETTE: Array<{ kind: NodeKind; icon: LucideIcon; hint: string }> = [
   { kind: "parallel", icon: Split, hint: "并行分支 fan-out/fan-in" },
 ];
 
+// ────────────────────────────────────────────────────────────────────────────
+// Public component (wrapped in ReactFlowProvider)
+// ────────────────────────────────────────────────────────────────────────────
+
 export function TaskDagEditor(props: TaskDagEditorProps) {
+  return (
+    <ReactFlowProvider>
+      <TaskDagEditorInner {...props} />
+    </ReactFlowProvider>
+  );
+}
+
+export default TaskDagEditor;
+
+// ────────────────────────────────────────────────────────────────────────────
+// Inner component — has access to useReactFlow()
+// ────────────────────────────────────────────────────────────────────────────
+
+interface DocState {
+  nodes: DagRfNode[];
+  edges: DagRfEdge[];
+}
+
+function TaskDagEditorInner(props: TaskDagEditorProps) {
   const isViewer = props.variant === "viewer" || props.readOnly === true;
-  const [editor, setEditor] = React.useState<Editor | null>(null);
-  const [selectedShapeId, setSelectedShapeId] = React.useState<string | null>(null);
-  const [validationMsg, setValidationMsg] = React.useState<{ ok: boolean; text: string }>({
-    ok: true,
-    text: "校验: 待编辑",
-  });
+  const reactFlow = useReactFlow();
+
+  // ── Bootstrap: load + normalise initial doc ──────────────────────────────
+  const initialDoc = React.useMemo<DocState>(() => {
+    return normaliseInitialDoc(
+      props.initialSnapshot ?? props.initialValue,
+      props.initialBotId,
+    );
+  }, [props.initialSnapshot, props.initialValue, props.initialBotId]);
+
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>(initialDoc.nodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initialDoc.edges);
+
+  const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const [showGrid, setShowGrid] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [running, setRunning] = React.useState(false);
-  const [showGrid, setShowGrid] = React.useState(true);
-  const [snapshotVersion, setSnapshotVersion] = React.useState(0);
+  const [dragKind, setDragKind] = React.useState<NodeKind | null>(null);
+  const wrapperRef = React.useRef<HTMLDivElement | null>(null);
 
-  const initialSnapshot = (props.initialSnapshot ?? props.initialValue ?? null) as TLStoreSnapshot | null;
+  // Undo/redo history — snapshot the whole graph on structural changes only.
+  const past = React.useRef<DocState[]>([]);
+  const future = React.useRef<DocState[]>([]);
+  const [historyVer, setHistoryVer] = React.useState(0);
 
-  const docRef = React.useRef<{
-    snapshot: unknown;
-    nodes: DagNodeRecord[];
-    edges: DagEdgeRecord[];
-    botId?: string;
-  }>({
-    snapshot: initialSnapshot as unknown,
-    nodes: [],
-    edges: [],
-    botId: props.initialBotId,
-  });
-
-  const handleMount = React.useCallback(
-    (e: Editor) => {
-      setEditor(e);
-      e.updateInstanceState({ isGridMode: showGrid });
-    },
-    [showGrid],
-  );
-
-  React.useEffect(() => {
-    if (!editor) return;
-    const unsub = editor.store.listen(
-      () => {
-        const only = editor.getSelectedShapeIds();
-        setSelectedShapeId(only.length === 1 ? (only[0] as string) : null);
-        setSnapshotVersion((v) => v + 1);
-      },
-      { scope: "session", source: "user" },
-    );
-    return () => unsub();
-  }, [editor]);
-
-  const derived = React.useMemo(() => {
-    if (!editor) return { nodes: [] as DagNodeRecord[], edges: [] as DagEdgeRecord[] };
-    return deriveDoc(editor);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor, snapshotVersion]);
-
-  React.useEffect(() => {
-    docRef.current = {
-      snapshot: editor ? (editor.store.serialize() as unknown) : initialSnapshot,
-      nodes: derived.nodes,
-      edges: derived.edges,
-      botId: props.initialBotId ?? pickFirstBot(derived.nodes),
-    };
-    props.onChange?.(docRef.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [derived, editor]);
-
-  React.useEffect(() => {
+  // Validation (derived)
+  const validationMsg = React.useMemo(() => {
+    const flat = toFlatLists(nodes, edges);
     const v = validateDag(
-      derived.nodes.map((n) => ({ shapeId: n.shapeId, kind: n.meta.kind })),
-      derived.edges,
+      flat.nodes.map((n) => ({ shapeId: n.shapeId, kind: n.meta.kind })),
+      flat.edges,
+      parallelismFromNodes(nodes),
     );
-    setValidationMsg({ ok: v.ok, text: v.summary });
-  }, [derived]);
+    return { ok: v.ok, text: v.summary };
+  }, [nodes, edges]);
+
+  // ── History helpers ──────────────────────────────────────────────────────
+  const snapshotCurrent = React.useCallback((): DocState => {
+    // Deep-ish clone — RF nodes carry data which we mutate; clone to avoid
+    // later in-place edits corrupting the stored snapshot.
+    return {
+      nodes: nodes.map((n) => ({ ...n, data: { ...(n.data as object) } })) as DagRfNode[],
+      edges: edges.map((e) => ({ ...e })) as DagRfEdge[],
+    };
+  }, [nodes, edges]);
+
+  const pushHistory = React.useCallback(() => {
+    past.current.push(snapshotCurrent());
+    if (past.current.length > 50) past.current.shift();
+    future.current = [];
+    setHistoryVer((v) => v + 1);
+  }, [snapshotCurrent]);
+
+  const undo = React.useCallback(() => {
+    const prev = past.current.pop();
+    if (!prev) return;
+    future.current.push(snapshotCurrent());
+    setNodes(prev.nodes);
+    setEdges(prev.edges);
+    setSelectedId(null);
+    setHistoryVer((v) => v + 1);
+  }, [setNodes, setEdges, snapshotCurrent]);
+
+  const redo = React.useCallback(() => {
+    const next = future.current.pop();
+    if (!next) return;
+    past.current.push(snapshotCurrent());
+    setNodes(next.nodes);
+    setEdges(next.edges);
+    setSelectedId(null);
+    setHistoryVer((v) => v + 1);
+  }, [setNodes, setEdges, snapshotCurrent]);
+
+  const canUndo = past.current.length > 0;
+  const canRedo = future.current.length > 0;
+  // historyVer exists only to make canUndo/canRedo re-render; reference it.
+  void historyVer;
+
+  // ── Node operations ──────────────────────────────────────────────────────
+  const genId = React.useCallback(() => {
+    // Stable-ish unique id without external deps.
+    return `n_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+  }, []);
 
   const addNode = React.useCallback(
-    (kind: NodeKind) => {
-      if (!editor || isViewer) return;
-      const meta: DagNodeMeta = { kind, label: NODE_KIND_MAP[kind].label + " · 新" };
-      const id = createShapeId() as TLShapeId;
-      const vp = editor.getViewportPageBounds();
-      const cx = vp.center.x - DAG_SHAPE_W / 2;
-      const cy = vp.center.y - DAG_SHAPE_H / 2;
-      editor.createShape<any>({
-        id,
-        type: "dag-node",
-        x: cx,
-        y: cy,
-        props: { w: DAG_SHAPE_W, h: DAG_SHAPE_H, meta },
-      });
+    (kind: NodeKind, pos?: { x: number; y: number }) => {
+      if (isViewer) return;
+      pushHistory();
+      const meta: DagNodeMeta = {
+        kind,
+        label: NODE_KIND_MAP[kind].label + " · 新",
+      };
+      // Default position: near viewport centre. RF's project() takes screen
+      // coords; we fall back to a grid based on node count.
+      let position = pos;
+      if (!position) {
+        const wrapper = wrapperRef.current;
+        if (wrapper) {
+          const rect = wrapper.getBoundingClientRect();
+          const projected = reactFlow.screenToFlowPosition({
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2,
+          });
+          position = {
+            x: projected.x - DAG_SHAPE_W / 2,
+            y: projected.y - DAG_SHAPE_H / 2,
+          };
+        } else {
+          position = {
+            x: 80 + (nodes.length % 5) * 240,
+            y: 80 + Math.floor(nodes.length / 5) * 140,
+          };
+        }
+      }
+      const node: DagRfNode = {
+        id: genId(),
+        type: "dagNode",
+        position,
+        data: meta,
+      };
+      setNodes((cur) => [...cur, node]);
+      setSelectedId(node.id);
     },
-    [editor, isViewer],
+    [isViewer, nodes.length, pushHistory, reactFlow, setNodes, genId],
   );
 
   const updateSelectedMeta = React.useCallback(
     (patch: Partial<DagNodeMeta>) => {
-      if (!editor || !selectedShapeId) return;
-      const shape = editor.getShape(selectedShapeId as TLShapeId) as unknown as
-        | { id: TLShapeId; props: { w: number; h: number; meta: DagNodeMeta } }
-        | undefined;
-      if (!shape) return;
-      const nextMeta = { ...shape.props.meta, ...patch } as DagNodeMeta;
-      editor.updateShape<any>({
-        id: shape.id,
-        type: "dag-node",
-        props: { w: shape.props.w, h: shape.props.h, meta: nextMeta },
-      });
+      if (!selectedId) return;
+      setNodes((cur) =>
+        cur.map((n) =>
+          n.id === selectedId
+            ? { ...n, data: { ...(n.data as DagNodeMeta), ...patch } }
+            : n,
+        ),
+      );
     },
-    [editor, selectedShapeId],
+    [selectedId, setNodes],
   );
 
   const deleteSelected = React.useCallback(() => {
-    if (!editor || isViewer) return;
-    editor.deleteShapes(editor.getSelectedShapeIds());
-  }, [editor, isViewer]);
+    if (isViewer || !selectedId) return;
+    pushHistory();
+    const id = selectedId;
+    setNodes((cur) => cur.filter((n) => n.id !== id));
+    setEdges((cur) => cur.filter((e) => e.source !== id && e.target !== id));
+    setSelectedId(null);
+  }, [isViewer, selectedId, pushHistory, setNodes, setEdges]);
 
+  // ── Connection validation ────────────────────────────────────────────────
+  const onConnect = React.useCallback(
+    (conn: Connection) => {
+      if (isViewer) return;
+      const src = nodes.find((n) => n.id === conn.source);
+      const tgt = nodes.find((n) => n.id === conn.target);
+      if (!src || !tgt) return;
+      const srcKind = (src.data as DagNodeMeta).kind;
+      const tgtKind = (tgt.data as DagNodeMeta).kind;
+      if (!isConnectionAllowed(srcKind, tgtKind)) {
+        window.alert(`不允许的连线: ${srcKind} → ${tgtKind}`);
+        return;
+      }
+      // Duplicate edge?
+      if (edges.some((e) => e.source === conn.source && e.target === conn.target)) {
+        return;
+      }
+      // Tentatively add, then cycle-check; revert if cyclic.
+      const trial: DagEdgeRecord[] = [
+        ...toFlatLists(nodes, edges).edges,
+        { from: conn.source!, to: conn.target! },
+      ];
+      const flatNodes = toFlatLists(nodes, edges).nodes.map((n) => ({
+        shapeId: n.shapeId,
+      }));
+      const cycle = detectCycle(flatNodes, trial);
+      if (cycle) {
+        window.alert(`连线会形成环: ${cycle.join(" → ")}`);
+        return;
+      }
+      pushHistory();
+      setEdges((eds) =>
+        addEdge(
+          {
+            ...conn,
+            id: `e_${conn.source}_${conn.target}_${Date.now().toString(36)}`,
+            type: "smoothstep",
+            animated: true,
+          } as Edge,
+          eds,
+        ),
+      );
+    },
+    [isViewer, nodes, edges, pushHistory, setEdges],
+  );
+
+  // ── selection ────────────────────────────────────────────────────────────
+  const onNodeClick: NodeMouseHandler = React.useCallback((_, node) => {
+    setSelectedId(node.id);
+  }, []);
+
+  const onPaneClick = React.useCallback(() => setSelectedId(null), []);
+
+  // ── selection visual: mark `selected` on the active node ──────────────────
+  React.useEffect(() => {
+    setNodes((cur) =>
+      cur.map((n) => ({ ...n, selected: n.id === selectedId })),
+    );
+  }, [selectedId, setNodes]);
+
+  // ── Drag-drop from palette ───────────────────────────────────────────────
+  const onDragStart = (kind: NodeKind) => (e: React.DragEvent) => {
+    setDragKind(kind);
+    e.dataTransfer.setData("application/x-dag-kind", kind);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const onDrop = React.useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      const kind = e.dataTransfer.getData("application/x-dag-kind") as NodeKind;
+      if (!kind) return;
+      const projected = reactFlow.screenToFlowPosition({
+        x: e.clientX,
+        y: e.clientY,
+      });
+      addNode(kind, {
+        x: projected.x - DAG_SHAPE_W / 2,
+        y: projected.y - DAG_SHAPE_H / 2,
+      });
+      setDragKind(null);
+    },
+    [addNode, reactFlow],
+  );
+
+  const onDragOver = React.useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  }, []);
+
+  // ── Doc serialisation → onChange ─────────────────────────────────────────
+  React.useEffect(() => {
+    const flat = toFlatLists(nodes, edges);
+    const doc: DagDocument = {
+      snapshot: { nodes: nodes as DagRfNode[], edges: edges as DagRfEdge[] },
+      nodes: flat.nodes,
+      edges: flat.edges,
+      botId: props.initialBotId ?? pickFirstBot(flat.nodes),
+    };
+    props.onChange?.(doc);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodes, edges]);
+
+  // ── Save / test-run ──────────────────────────────────────────────────────
   const handleSave = React.useCallback(async () => {
-    if (!editor) return;
     setSaving(true);
     try {
-      const doc = {
-        snapshot: editor.store.serialize() as unknown,
-        nodes: derived.nodes,
-        edges: derived.edges,
-        botId: docRef.current.botId,
+      const flat = toFlatLists(nodes, edges);
+      const doc: DagDocument = {
+        snapshot: { nodes: nodes as DagRfNode[], edges: edges as DagRfEdge[] },
+        nodes: flat.nodes,
+        edges: flat.edges,
+        botId: props.initialBotId ?? pickFirstBot(flat.nodes),
       };
       props.onChange?.(doc);
       window.dispatchEvent(new CustomEvent("dag:save", { detail: doc }));
     } finally {
       setSaving(false);
     }
-  }, [editor, derived, props]);
+  }, [nodes, edges, props]);
 
   const handleTestRun = React.useCallback(async () => {
     if (!props.pipelineId) {
@@ -206,47 +427,62 @@ export function TaskDagEditor(props: TaskDagEditorProps) {
     }
     setRunning(true);
     try {
-      // R16-3: 之前传原生 fetch 不带 Authorization → 401。
-      // 改为直接用 api 模块,自动注入 Bearer token + 401 refresh + 429 retry。
       const r = await api<{
         success?: boolean;
         error?: string;
         data?: { runId?: string; status?: string };
-      }>(
-        `/api/v2/admin/pipelines/${props.pipelineId}/trigger?async=true`,
-        {
-          method: "POST",
-          body: { triggeredBy: "user", initialInput: {} },
-        },
-      );
+      }>(`/api/v2/admin/pipelines/${props.pipelineId}/trigger?async=true`, {
+        method: "POST",
+        body: { triggeredBy: "user", initialInput: {} },
+      });
       if (r?.error) window.alert(`触发失败: ${r.error}`);
     } catch (e) {
       window.alert(e instanceof Error ? e.message : "触发失败");
     } finally {
-      // R16-3: 失败也要停 spinner (try/finally 保底)
       setRunning(false);
     }
   }, [props.pipelineId, validationMsg]);
 
-  const selectedMeta: DagNodeMeta | null = React.useMemo(() => {
-    if (!editor || !selectedShapeId) return null;
-    const s = editor.getShape(selectedShapeId as TLShapeId) as unknown as
-      | { props?: { meta?: DagNodeMeta } }
-      | undefined;
-    return s?.props?.meta ?? null;
-  }, [editor, selectedShapeId, snapshotVersion]);
-
-  const tg = React.useCallback(
-    (fn: (e: Editor) => void) => () => {
-      if (editor) fn(editor);
-    },
-    [editor],
+  // ── Derived: selected node meta ──────────────────────────────────────────
+  const selectedNode = React.useMemo(
+    () => (selectedId ? (nodes.find((n) => n.id === selectedId) ?? null) : null),
+    [selectedId, nodes],
   );
+  const selectedMeta: DagNodeMeta | null = selectedNode
+    ? (selectedNode.data as DagNodeMeta)
+    : null;
 
+  // ── Keyboard shortcuts (Delete / Cmd+Z / Shift+Cmd+Z) ────────────────────
+  React.useEffect(() => {
+    if (isViewer) return;
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      // Don't hijack typing in form fields (the config panel).
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedId) {
+        e.preventDefault();
+        deleteSelected();
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [isViewer, selectedId, deleteSelected, undo, redo]);
+
+  // ── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="flex h-full min-h-[640px] border rounded-xl overflow-hidden bg-card">
       {!isViewer && (
-        <aside className="w-[148px] shrink-0 border-r bg-muted/20 p-2 flex flex-col gap-1.5 overflow-y-auto">
+        <aside
+          className="w-[148px] shrink-0 border-r bg-muted/20 p-2 flex flex-col gap-1.5 overflow-y-auto"
+          data-testid="dag-palette"
+        >
           <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-1 py-1">
             节点
           </div>
@@ -257,9 +493,11 @@ export function TaskDagEditor(props: TaskDagEditorProps) {
               <button
                 key={p.kind}
                 type="button"
+                draggable
+                onDragStart={onDragStart(p.kind)}
                 onClick={() => addNode(p.kind)}
                 title={p.hint}
-                className="group flex items-center gap-2 px-2 py-1.5 rounded-md ring-1 ring-transparent hover:ring-foreground/15 hover:bg-card transition-colors text-left"
+                className="group flex items-center gap-2 px-2 py-1.5 rounded-md ring-1 ring-transparent hover:ring-foreground/15 hover:bg-card transition-colors text-left cursor-grab active:cursor-grabbing"
               >
                 <span
                   className="grid place-items-center size-7 rounded-md shrink-0"
@@ -271,13 +509,15 @@ export function TaskDagEditor(props: TaskDagEditorProps) {
                   <div className="text-[11px] font-medium leading-tight truncate">
                     {meta.label}
                   </div>
-                  <div className="text-[9px] text-muted-foreground truncate">点击添加</div>
+                  <div className="text-[9px] text-muted-foreground truncate">
+                    点击 / 拖入
+                  </div>
                 </div>
               </button>
             );
           })}
           <div className="mt-auto pt-2 border-t text-[9px] text-muted-foreground leading-snug">
-            拖拽画布平移 · 滚轮缩放 · 选中后 Delete 删除
+            拖拽画布平移 · 滚轮缩放 · 选中后 Delete 删除 · ⌘Z 撤销
           </div>
         </aside>
       )}
@@ -286,32 +526,36 @@ export function TaskDagEditor(props: TaskDagEditorProps) {
         {!props.hideToolbar && (
           <div className="flex items-center gap-1 px-3 py-2 border-b bg-muted/10 flex-wrap">
             <div className="flex items-center gap-0.5 mr-2">
-              <ToolBtn title="撤销" onClick={tg((e) => e.undo())} disabled={isViewer}>
+              <ToolBtn
+                title="撤销 (⌘Z)"
+                onClick={undo}
+                disabled={isViewer || !canUndo}
+              >
                 <Undo2 className="size-3.5" />
               </ToolBtn>
-              <ToolBtn title="重做" onClick={tg((e) => e.redo())} disabled={isViewer}>
+              <ToolBtn
+                title="重做 (⇧⌘Z)"
+                onClick={redo}
+                disabled={isViewer || !canRedo}
+              >
                 <Redo2 className="size-3.5" />
               </ToolBtn>
             </div>
             <div className="w-px h-5 bg-foreground/10 mx-1" />
-            <ToolBtn title="缩小" onClick={tg((e) => e.zoomOut())}>
+            <ToolBtn title="缩小" onClick={() => reactFlow.zoomOut()}>
               <ZoomOut className="size-3.5" />
             </ToolBtn>
-            <ToolBtn title="放大" onClick={tg((e) => e.zoomIn())}>
+            <ToolBtn title="放大" onClick={() => reactFlow.zoomIn()}>
               <ZoomIn className="size-3.5" />
             </ToolBtn>
             <ToolBtn
               title="对齐网格"
               active={showGrid}
-              onClick={() => {
-                const next = !showGrid;
-                setShowGrid(next);
-                editor?.updateInstanceState({ isGridMode: next });
-              }}
+              onClick={() => setShowGrid((s) => !s)}
             >
               <Grid3x3 className="size-3.5" />
             </ToolBtn>
-            <ToolBtn title="适应内容" onClick={tg((e) => e.zoomToFit())}>
+            <ToolBtn title="适应内容" onClick={() => reactFlow.fitView({ padding: 0.2 })}>
               <Maximize2 className="size-3.5" />
             </ToolBtn>
             <div className="w-px h-5 bg-foreground/10 mx-1" />
@@ -344,7 +588,11 @@ export function TaskDagEditor(props: TaskDagEditorProps) {
                     disabled={saving}
                     className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-xs bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                   >
-                    {saving ? <Loader2 className="size-3 animate-spin" /> : <Save className="size-3" />}
+                    {saving ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : (
+                      <Save className="size-3" />
+                    )}
                     保存
                   </button>
                   {props.pipelineId && (
@@ -354,7 +602,11 @@ export function TaskDagEditor(props: TaskDagEditorProps) {
                       disabled={running}
                       className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-xs ring-1 ring-foreground/15 hover:bg-muted disabled:opacity-50"
                     >
-                      {running ? <Loader2 className="size-3 animate-spin" /> : <Play className="size-3" />}
+                      {running ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : (
+                        <Play className="size-3" />
+                      )}
                       测试运行
                     </button>
                   )}
@@ -364,30 +616,84 @@ export function TaskDagEditor(props: TaskDagEditorProps) {
           </div>
         )}
 
-        <div className="flex-1 min-h-0 relative">
-          <TldrawLazy
-            onMount={handleMount}
-            shapeUtils={DAG_SHAPE_UTILS}
-            initialState={initialSnapshot as never}
-            hideUi={isViewer}
-            licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
-          />
+        <div
+          className="flex-1 min-h-0 relative"
+          ref={wrapperRef}
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+        >
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onNodeClick={onNodeClick}
+            onPaneClick={onPaneClick}
+            nodeTypes={NODE_TYPES}
+            nodesDraggable={!isViewer}
+            nodesConnectable={!isViewer}
+            elementsSelectable
+            deleteKeyCode={null}
+            multiSelectionKeyCode={["Meta", "Control"]}
+            connectionMode={ConnectionMode.loose}
+            fitView
+            minZoom={0.2}
+            maxZoom={2}
+            proOptions={{ hideAttribution: true }}
+          >
+            {showGrid && (
+              <Background
+                variant={BackgroundVariant.Dots}
+                gap={16}
+                size={1}
+                color="hsl(var(--foreground) / 0.1)"
+              />
+            )}
+            <Controls
+              showInteractive={!isViewer}
+              className="!bg-card !border !border-foreground/10 !rounded-md !shadow-sm"
+            />
+            <MiniMap
+              pannable
+              zoomable
+              className="!bg-card !border !border-foreground/10 !rounded-md"
+              nodeColor={(n) => {
+                const kind = (n.data as DagNodeMeta | undefined)?.kind;
+                return kind ? NODE_KIND_MAP[kind].tone : "#94a3b8";
+              }}
+            />
+          </ReactFlow>
+
           {!isViewer && selectedMeta && (
             <div className="absolute right-3 top-3 bottom-3 w-[260px] z-10">
               <ShapeConfigPanel
                 meta={selectedMeta}
                 onChange={updateSelectedMeta}
                 onDelete={deleteSelected}
+                runId={props.runId}
+                pipelineId={props.pipelineId}
+                nodeId={selectedId ?? undefined}
               />
             </div>
           )}
-          {derived.nodes.length === 0 && !isViewer && (
-            <div className="absolute inset-0 grid place-items-center pointer-events-none">
-              <div className="text-center text-xs text-muted-foreground bg-card/80 backdrop-blur-sm rounded-lg px-4 py-3 ring-1 ring-foreground/10">
+
+          {nodes.length === 0 && !isViewer && (
+            <Panel position="top-center" className="!m-0 !pointer-events-none">
+              <div className="text-center text-xs text-muted-foreground bg-card/80 backdrop-blur-sm rounded-lg px-4 py-3 ring-1 ring-foreground/10 mt-4">
                 <ListChecks className="size-5 mx-auto mb-1.5 opacity-50" />
-                从左侧点击添加节点开始编排
+                从左侧点击或拖入节点开始编排
               </div>
-            </div>
+            </Panel>
+          )}
+
+          {isViewer && nodes.length === 0 && (
+            <Panel position="top-center" className="!m-0 !pointer-events-none">
+              <div className="text-center text-xs text-muted-foreground bg-card/80 backdrop-blur-sm rounded-lg px-4 py-3 ring-1 ring-foreground/10 mt-4">
+                <ListChecks className="size-5 mx-auto mb-1.5 opacity-50" />
+                画布为空 · 此任务尚未编排
+              </div>
+            </Panel>
           )}
         </div>
       </div>
@@ -395,38 +701,171 @@ export function TaskDagEditor(props: TaskDagEditorProps) {
   );
 }
 
-export default TaskDagEditor;
+// ────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ────────────────────────────────────────────────────────────────────────────
 
 function pickFirstBot(nodes: DagNodeRecord[]): string | undefined {
-  for (const n of nodes) if (n.meta.kind === "bot" && n.meta.refId) return n.meta.refId;
+  for (const n of nodes)
+    if (n.meta.kind === "bot" && n.meta.refId) return n.meta.refId;
   return undefined;
 }
 
-function deriveDoc(editor: Editor): { nodes: DagNodeRecord[]; edges: DagEdgeRecord[] } {
-  const nodes: DagNodeRecord[] = [];
-  const edges: DagEdgeRecord[] = [];
-  for (const s of editor.getCurrentPageShapes()) {
-    const shapeAny = s as unknown as {
-      id: string;
-      type: string;
-      props: {
-        meta?: DagNodeMeta;
-        start?: { type?: string; boundShapeId?: string };
-        end?: { type?: string; boundShapeId?: string };
-      };
-    };
-    if (shapeAny.type === "dag-node") {
-      if (shapeAny.props?.meta) {
-        nodes.push({ shapeId: shapeAny.id, meta: shapeAny.props.meta });
-      }
-    } else if (shapeAny.type === "arrow") {
-      const from = shapeAny.props.start?.boundShapeId;
-      const to = shapeAny.props.end?.boundShapeId;
-      if (from && to) edges.push({ from, to });
+function toFlatLists(
+  nodes: Node[],
+  edges: Edge[],
+): { nodes: DagNodeRecord[]; edges: DagEdgeRecord[] } {
+  const out: {
+    nodes: DagNodeRecord[];
+    edges: DagEdgeRecord[];
+  } = { nodes: [], edges: [] };
+  for (const n of nodes) {
+    const meta = n.data as DagNodeMeta | undefined;
+    if (!meta) continue;
+    // Strip runtime-only status/approvalActor/approvalNote from the persisted
+    // meta? Keep them for now — the engine treats them as idempotent state.
+    out.nodes.push({ shapeId: n.id, meta });
+  }
+  for (const e of edges) {
+    if (!e.source || !e.target) continue;
+    out.edges.push({ from: e.source, to: e.target });
+  }
+  return out;
+}
+
+function parallelismFromNodes(nodes: Node[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const n of nodes) {
+    const meta = n.data as DagNodeMeta | undefined;
+    if (meta?.kind === "parallel" && typeof meta.config?.degree === "number") {
+      out[n.id] = meta.config.degree as number;
     }
   }
-  return { nodes, edges };
+  return out;
 }
+
+/**
+ * Normalise the incoming snapshot into RF nodes/edges.
+ * Three branches:
+ *  1. null / undefined        → empty canvas
+ *  2. RF format {nodes, edges} → use directly
+ *  3. DagDocument {snapshot: {nodes, edges}, nodes, edges}
+ *  4. Legacy tldraw snapshot   → fall back to derived flat nodes/edges with
+ *                                grid layout (positions are unrecoverable)
+ */
+function normaliseInitialDoc(
+  snapshot: unknown,
+  _botId?: string,
+): DocState {
+  if (!snapshot) return { nodes: [], edges: [] };
+
+  // Branch: DagDocument wrapper (this is what /tasks/[id] passes via
+  // initialSnapshot = pipeline.config.snapshot which is itself an RF doc now).
+  const asDoc = snapshot as Partial<{
+    snapshot: { nodes: unknown[]; edges: unknown[] };
+    nodes: unknown[];
+    edges: unknown[];
+  }>;
+
+  // If snapshot is a DagDocument with embedded RF doc
+  if (asDoc.snapshot && typeof asDoc.snapshot === "object") {
+    const inner = asDoc.snapshot as { nodes?: unknown[]; edges?: unknown[] };
+    if (Array.isArray(inner.nodes) && Array.isArray(inner.edges)) {
+      const nodes = inner.nodes
+        .filter(isRfNodeLike)
+        .map(cloneRfNode) as DagRfNode[];
+      const edges = inner.edges
+        .filter(isRfEdgeLike)
+        .map(cloneRfEdge) as DagRfEdge[];
+      if (nodes.length || edges.length) return { nodes, edges };
+    }
+  }
+
+  // Direct RF document { nodes, edges } (no wrapper)
+  const asRf = snapshot as { nodes?: unknown[]; edges?: unknown[] };
+  if (
+    Array.isArray(asRf.nodes) &&
+    Array.isArray(asRf.edges) &&
+    !asDoc.nodes // not the flat-list DagDocument shape
+  ) {
+    const nodes = asRf.nodes!.filter(isRfNodeLike).map(cloneRfNode) as DagRfNode[];
+    const edges = asRf.edges!.filter(isRfEdgeLike).map(cloneRfEdge) as DagRfEdge[];
+    if (nodes.length || edges.length) return { nodes, edges };
+  }
+
+  // Branch 4: legacy fallback — rebuild from flat nodes/edges lists.
+  // Positions are laid out on a simple grid.
+  const flatNodes = (asDoc.nodes ?? []) as Array<{
+    shapeId: string;
+    meta: DagNodeMeta;
+  }>;
+  const flatEdges = (asDoc.edges ?? []) as DagEdgeRecord[];
+  if (flatNodes.length > 0) {
+    const nodes: DagRfNode[] = flatNodes.map((n, i) => ({
+      id: n.shapeId,
+      type: "dagNode",
+      position: {
+        x: 80 + (i % 5) * 240,
+        y: 80 + Math.floor(i / 5) * 140,
+      },
+      data: { ...n.meta },
+    }));
+    const nodesById = new Set(nodes.map((n) => n.id));
+    const edges: DagRfEdge[] = flatEdges
+      .filter((e) => nodesById.has(e.from) && nodesById.has(e.to))
+      .map((e, i) => ({
+        id: `e_${e.from}_${e.to}_${i}`,
+        source: e.from,
+        target: e.to,
+        type: "smoothstep",
+        animated: false,
+      }));
+    return { nodes, edges };
+  }
+
+  // Legacy tldraw TLStoreSnapshot — we can't parse it; render empty canvas.
+  // The user re-creates the graph. (Panmira is pre-production; no real data
+  // was ever persisted in the tldraw format from a customer pipeline.)
+  return { nodes: [], edges: [] };
+}
+
+function isRfNodeLike(v: unknown): v is Node {
+  if (!v || typeof v !== "object") return false;
+  const n = v as Record<string, unknown>;
+  return (
+    typeof n.id === "string" &&
+    typeof n.position === "object" &&
+    typeof n.data === "object"
+  );
+}
+
+function isRfEdgeLike(v: unknown): v is Edge {
+  if (!v || typeof v !== "object") return false;
+  const e = v as Record<string, unknown>;
+  return (
+    typeof e.id === "string" &&
+    typeof e.source === "string" &&
+    typeof e.target === "string"
+  );
+}
+
+function cloneRfNode(n: Node): DagRfNode {
+  return {
+    ...n,
+    type: "dagNode",
+    // RF sometimes stores undefined for selected; normalise.
+    selected: false,
+    data: { ...(n.data as object) },
+  } as DagRfNode;
+}
+
+function cloneRfEdge(e: Edge): DagRfEdge {
+  return { ...e, selected: false };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Toolbar button
+// ────────────────────────────────────────────────────────────────────────────
 
 function ToolBtn({
   children,
@@ -460,67 +899,6 @@ function ToolBtn({
   );
 }
 
-interface TldrawLazyProps {
-  onMount: (editor: Editor) => void;
-  shapeUtils: typeof DAG_SHAPE_UTILS;
-  initialState?: unknown;
-  hideUi?: boolean;
-  licenseKey?: string;
-}
-
-type TldrawCmp = React.ComponentType<Record<string, unknown>>;
-
-/**
- * Lazy wrapper around `tldraw`'s default `<Tldraw />`.
- *
- * NOTE: must hold the loaded component in **useState**, not useRef.
- * Setting `ref.current` does not trigger a re-render, so the loader would spin
- * forever even after a successful dynamic import. (R17-4 fix.)
- */
-const TldrawLazy: React.FC<TldrawLazyProps> = (props) => {
-  const [Comp, setComp] = React.useState<TldrawCmp | null>(null);
-  const [err, setErr] = React.useState<string | null>(null);
-  React.useEffect(() => {
-    let mounted = true;
-    import("tldraw")
-      .then((m) => {
-        if (!mounted) return;
-        setComp(() => m.Tldraw as TldrawCmp);
-      })
-      .catch((e) => {
-        if (!mounted) return;
-        setErr(e instanceof Error ? e.message : String(e));
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
-  if (err) {
-    return (
-      <div className="absolute inset-0 grid place-items-center text-xs text-rose-600">
-        tldraw 加载失败: {err}
-      </div>
-    );
-  }
-  if (!Comp) {
-    return (
-      <div className="absolute inset-0 grid place-items-center">
-        <div className="flex flex-col items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="size-5 animate-spin" />
-          <span>画布加载中…</span>
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className="absolute inset-0">
-      <Comp
-        onMount={props.onMount as never}
-        shapeUtils={props.shapeUtils as never}
-        hideUi={props.hideUi}
-        licenseKey={props.licenseKey as never}
-        snapshot={props.initialState as never}
-      />
-    </div>
-  );
-};
+// Silence unused-import warnings for type-only / future imports.
+void validateEdgeRules;
+void Trash2;

@@ -1,5 +1,9 @@
 // Shared types & constants for the /tasks DAG module.
-// 6 node kinds we expose in the palette. Each maps to one custom tldraw shape.
+// R19 (2026-07-09): tldraw -> React Flow (@xyflow/react) migration.
+// 6 node kinds we expose in the palette. Each renders via one React Flow
+// custom node component (see node-shapes.tsx).
+
+import type { Edge, Node } from "@xyflow/react";
 
 export type NodeKind =
   | "bot"
@@ -59,7 +63,7 @@ export const NODE_KINDS: NodeKindMeta[] = [
     kind: "conditional",
     label: "条件分支",
     icon: "GitFork",
-    tone: "#64748b",
+    tone: "#475569",
     hint: "if/else 条件路由",
   },
   {
@@ -75,7 +79,31 @@ export const NODE_KIND_MAP: Record<NodeKind, NodeKindMeta> = Object.fromEntries(
   NODE_KINDS.map((k) => [k.kind, k]),
 ) as Record<NodeKind, NodeKindMeta>;
 
-/** A node's persistent payload (stored in tldraw shape's `meta`). */
+/** Runtime execution status per node (live preview during a run). */
+export type NodeRunStatus =
+  | "pending"
+  | "running"
+  | "waiting"
+  | "success"
+  | "failed";
+
+export const NODE_STATUS_TONE: Record<NodeRunStatus, string> = {
+  pending: "#94a3b8",
+  running: "#0ea5e9",
+  waiting: "#f59e0b",
+  success: "#10b981",
+  failed: "#ef4444",
+};
+
+export const NODE_STATUS_LABEL: Record<NodeRunStatus, string> = {
+  pending: "待执行",
+  running: "执行中",
+  waiting: "等待真人",
+  success: "成功",
+  failed: "失败",
+};
+
+/** A node's persistent payload (stored as React Flow node.data). */
 export interface DagNodeMeta {
   kind: NodeKind;
   /** Reference id into the chosen catalogue (agent.id, user.id, skill.id, ...). */
@@ -98,9 +126,16 @@ export interface DagNodeMeta {
   approvalActor?: string;
   /** Optional note left by the human when deciding. */
   approvalNote?: string;
+  /** Runtime status (live preview only — not persisted). */
+  status?: NodeRunStatus;
 }
 
-export type ApprovalState = "idle" | "waiting" | "approved" | "rejected" | "modified";
+export type ApprovalState =
+  | "idle"
+  | "waiting"
+  | "approved"
+  | "rejected"
+  | "modified";
 
 /**
  * R17-4: per-kind IO contract.
@@ -152,7 +187,9 @@ export const NODE_KIND_CONTRACTS: Record<NodeKind, NodeKindContract> = {
   },
 };
 
+/** Derived node record stored alongside the snapshot for server-side reads. */
 export interface DagNodeRecord {
+  /** Equals the React Flow node.id (kept the name for back-compat). */
   shapeId: string;
   meta: DagNodeMeta;
 }
@@ -162,16 +199,34 @@ export interface DagEdgeRecord {
   to: string;
 }
 
-/** Whole pipeline snapshot we save into pipeline.config. */
+/**
+ * Whole pipeline snapshot we save into pipeline.config.
+ *
+ * R19: `snapshot` switched from a tldraw TLStoreSnapshot to a
+ * React Flow document `{ nodes, edges }`. We still derive the flat
+ * `nodes` / `edges` lists for the server-side engine to read without
+ * parsing React Flow.
+ */
 export interface DagDocument {
-  /** tldraw store snapshot JSON (TLStoreSnapshot). */
-  snapshot: unknown;
-  /** Derived lists for quick read on the server side without parsing tldraw. */
+  /** React Flow document: { nodes: RFNode[], edges: RFEdge[] }. */
+  snapshot:
+    | {
+        nodes: DagRfNode[];
+        edges: DagRfEdge[];
+      }
+    | unknown
+    | null;
+  /** Derived flat lists for the engine / server. */
   nodes: DagNodeRecord[];
   edges: DagEdgeRecord[];
   /** Bot that owns the template (used by the 5-bot templates). */
   botId?: string;
 }
+
+/** React Flow Node specialized for our DAG (data = DagNodeMeta). */
+export type DagRfNode = Node<DagNodeMeta, "dagNode">;
+/** React Flow Edge specialised for our DAG. */
+export type DagRfEdge = Edge;
 
 export type TaskStatus =
   | "ready"

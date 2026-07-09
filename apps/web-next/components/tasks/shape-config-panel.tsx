@@ -41,9 +41,23 @@ interface ShapeConfigPanelProps {
   meta: DagNodeMeta;
   onChange: (patch: Partial<DagNodeMeta>) => void;
   onDelete?: () => void;
+  /**
+   * R18 run context — when all 3 are provided, the Human approval card
+   * POSTs decisions to the engine. Omit for canvas edit (preview) mode.
+   */
+  runId?: string;
+  pipelineId?: string;
+  nodeId?: string;
 }
 
-export function ShapeConfigPanel({ meta, onChange, onDelete }: ShapeConfigPanelProps) {
+export function ShapeConfigPanel({
+  meta,
+  onChange,
+  onDelete,
+  runId,
+  pipelineId,
+  nodeId,
+}: ShapeConfigPanelProps) {
   const kind = meta.kind;
   const M = NODE_KIND_MAP[kind];
   const Icon = ICON_MAP[kind];
@@ -90,7 +104,15 @@ export function ShapeConfigPanel({ meta, onChange, onDelete }: ShapeConfigPanelP
         {kind === "tool" && <ToolConfig meta={meta} onChange={onChange} />}
         {kind === "conditional" && <ConditionalConfig meta={meta} onChange={onChange} />}
         {kind === "parallel" && <ParallelConfig meta={meta} onChange={onChange} />}
-        {kind === "human" && <HumanApprovalCard meta={meta} onChange={onChange} />}
+        {kind === "human" && (
+          <HumanApprovalCard
+            meta={meta}
+            onChange={onChange}
+            runId={runId}
+            pipelineId={pipelineId}
+            nodeId={nodeId}
+          />
+        )}
         <IOContractCard kind={kind} />
       </div>
     </div>
