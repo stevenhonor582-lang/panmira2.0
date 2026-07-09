@@ -34,12 +34,25 @@ import {
 } from './log-analysis.js';
 
 // ═══════════════════════════════════════════════════════════════
-// 1. MCP servers
+// 1. MCP servers (R29-C: 含外部平台许可密钥绑定)
 // ═══════════════════════════════════════════════════════════════
+
+// R29-C: 把明文外部密钥 → mask 串(列表/详情不回显明文)
+// 例: "ghp_abc1234567xyz" → "••••••••••••7xyz"
+function maskExternalKey(plain: string): string {
+  if (!plain) return '';
+  const n = plain.length;
+  if (n <= 6) return '•'.repeat(Math.max(n, 4));
+  const tail = plain.slice(-4);
+  const head = '•'.repeat(Math.min(n - 4, 12));
+  return `${head}${tail}`;
+}
+
 async function listMcpServers(req: http.IncomingMessage, res: http.ServerResponse, ctx: { tenantId: string }) {
   try {
     const rows = await db.execute(sql`
-      SELECT id, name, url, transport, auth_type, status, health_status, last_check_at, created_at
+      SELECT id, name, url, transport, auth_type, status, health_status, last_check_at, created_at,
+             external_platform_name, external_platform_key_encrypted, external_key_last_rotated
       FROM mcp_servers
       WHERE tenant_id = ${ctx.tenantId} AND status = 'active'
       ORDER BY name
@@ -47,17 +60,30 @@ async function listMcpServers(req: http.IncomingMessage, res: http.ServerRespons
     const arr = (Array.isArray(rows) ? rows : (rows as { rows?: unknown[] }).rows || []) as Array<Record<string, unknown>>;
     jsonResponse(res, 200, {
       success: true,
-      servers: arr.map((r) => ({
-        id: r.id,
-        name: r.name,
-        url: r.url,
-        transport: r.transport,
-        authType: r.auth_type,
-        status: r.status,
-        health: r.health_status,
-        lastCheckAt: r.last_check_at,
-        createdAt: r.created_at,
-      })),
+      servers: arr.map((r) => {
+        const enc = r.external_platform_key_encrypted ? String(r.external_platform_key_encrypted) : null;
+        let masked = '';
+        // 解密一次拿尾部 4 位(不影响安全,密文与明文尾部 4 字符用于 UI 识别)
+        if (enc) {
+          try { masked = maskExternalKey(decrypt(enc)); } catch { masked = '••••••••'; }
+        }
+        return {
+          id: r.id,
+          name: r.name,
+          url: r.url,
+          transport: r.transport,
+          authType: r.auth_type,
+          status: r.status,
+          health: r.health_status,
+          lastCheckAt: r.last_check_at,
+          createdAt: r.created_at,
+          // R29-C: 外部平台许可密钥(列表不回显明文)
+          externalPlatformName: r.external_platform_name || null,
+          hasExternalKey: !!enc,
+          externalKeyMasked: masked,
+          externalKeyLastRotated: r.external_key_last_rotated || null,
+        };
+      }),
     });
   } catch (err) {
     jsonResponse(res, 500, { error: 'list_failed', message: err instanceof Error ? err.message : 'unknown' });
@@ -70,7 +96,7 @@ async function listMcpServers(req: http.IncomingMessage, res: http.ServerRespons
 async function listOAuthClientsChannel(req: http.IncomingMessage, res: http.ServerResponse, ctx: { tenantId: string }) {
   try {
     const rows = await db.execute(sql`
-      SELECT id, name, type, client_id, redirect_uris, scopes, status, created_at
+      SELECT id, name, type, client_id, redirect_uris, scopes, status, created_at, business_system
       FROM oauth_clients
       WHERE tenant_id = ${ctx.tenantId} AND status != 'revoked'
       ORDER BY created_at DESC
@@ -87,6 +113,7 @@ async function listOAuthClientsChannel(req: http.IncomingMessage, res: http.Serv
         scopes: r.scopes,
         status: r.status,
         createdAt: r.created_at,
+        businessSystem: r.business_system || null,
       })),
     });
   } catch (err) {
@@ -712,21 +739,40 @@ async function adminLogsAnalyze(req: http.IncomingMessage, res: http.ServerRespo
 // ═══════════════════════════════════════════════════════════════
 async function createMcpServer(req: http.IncomingMessage, res: http.ServerResponse, ctx: { tenantId: string }) {
   const body = (await parseJsonBody(req)) as Record<string, any>;
-  const { name, url, transport, authType, apiKey, command, args } = body;
+  const { name, url, transport, authType, apiKey, command, args, externalPlatformName, externalPlatformKey } = body;
   if (!name || typeof name !== 'string') {
     jsonResponse(res, 400, { error: 'name required' }); return;
   }
   const t = (transport === 'stdio' || transport === 'sse' || transport === 'http') ? transport : 'http';
   const a = (authType === 'none' || authType === 'bearer' || authType === 'basic' || authType === 'api_key') ? authType : 'none';
+  // R29-C: 外部平台名/密钥(与 MCP 自身认证分开)
+  const extName = typeof externalPlatformName === 'string' && externalPlatformName.trim() ? externalPlatformName.trim().slice(0, 100) : null;
+  const extKeyEnc = (typeof externalPlatformKey === 'string' && externalPlatformKey) ? encrypt(externalPlatformKey) : null;
   try {
     const apiKeyEnc = apiKey ? encrypt(String(apiKey)) : null;
     const row = await db.execute(sql`
-      INSERT INTO mcp_servers (tenant_id, name, url, transport, auth_type, api_key_encrypted, status, health_status)
-      VALUES (${ctx.tenantId}, ${name}, ${url || command || ''}, ${t}, ${a}, ${apiKeyEnc}, 'active', 'unknown')
-      RETURNING id, name, url, transport, auth_type, status, health_status, created_at
+      INSERT INTO mcp_servers (tenant_id, name, url, transport, auth_type, api_key_encrypted, status, health_status,
+                               external_platform_name, external_platform_key_encrypted, external_key_last_rotated)
+      VALUES (${ctx.tenantId}, ${name}, ${url || command || ''}, ${t}, ${a}, ${apiKeyEnc}, 'active', 'unknown',
+              ${extName}, ${extKeyEnc}, ${extKeyEnc ? new Date() : null})
+      RETURNING id, name, url, transport, auth_type, status, health_status, created_at,
+                external_platform_name, external_platform_key_encrypted, external_key_last_rotated
     `);
     const arr = (Array.isArray(row) ? row : (row as { rows?: unknown[] }).rows || []) as Array<Record<string, unknown>>;
-    jsonResponse(res, 201, { success: true, server: arr[0] });
+    const srv0 = arr[0] as Record<string, unknown>;
+    const enc0 = srv0?.external_platform_key_encrypted ? String(srv0.external_platform_key_encrypted) : null;
+    let masked0 = '';
+    if (enc0) { try { masked0 = maskExternalKey(decrypt(enc0)); } catch { masked0 = '••••••••'; } }
+    jsonResponse(res, 201, {
+      success: true,
+      server: {
+        ...srv0,
+        externalPlatformName: srv0.external_platform_name || null,
+        hasExternalKey: !!enc0,
+        externalKeyMasked: masked0,
+        externalKeyLastRotated: srv0.external_key_last_rotated || null,
+      },
+    });
   } catch (err) {
     jsonResponse(res, 500, { error: 'create_failed', message: err instanceof Error ? err.message : 'unknown' });
   }
@@ -745,16 +791,42 @@ async function updateMcpServer(req: http.IncomingMessage, res: http.ServerRespon
     sets.push(`api_key_encrypted = $${idx++}`);
     params.push(body.apiKey ? encrypt(String(body.apiKey)) : null);
   }
+  // R29-C: 外部平台名 + 许可密钥
+  if (body.externalPlatformName !== undefined) {
+    sets.push(`external_platform_name = $${idx++}`);
+    const n = typeof body.externalPlatformName === 'string' && body.externalPlatformName.trim()
+      ? body.externalPlatformName.trim().slice(0, 100) : null;
+    params.push(n);
+  }
+  if (body.externalPlatformKey !== undefined) {
+    const k = typeof body.externalPlatformKey === 'string' && body.externalPlatformKey ? body.externalPlatformKey : '';
+    sets.push(`external_platform_key_encrypted = $${idx++}`);
+    params.push(k ? encrypt(k) : null);
+    if (k) { sets.push(`external_key_last_rotated = $${idx++}`); params.push(new Date()); }
+  }
   if (body.status !== undefined) { sets.push(`status = $${idx++}`); params.push(body.status); }
   params.push(id); params.push(ctx.tenantId);
   try {
     const result = await pool.query(
-      `UPDATE mcp_servers SET ${sets.join(', ')} WHERE id = $${idx} AND tenant_id = $${idx + 1} RETURNING id, name, url, transport, auth_type, status, health_status`,
+      `UPDATE mcp_servers SET ${sets.join(', ')} WHERE id = $${idx} AND tenant_id = $${idx + 1} RETURNING id, name, url, transport, auth_type, status, health_status, external_platform_name, external_platform_key_encrypted, external_key_last_rotated`,
       params,
     );
-    const arr = result.rows;
+    const arr = result.rows as Array<Record<string, unknown>>;
     if (!arr.length) { jsonResponse(res, 404, { error: 'not_found' }); return; }
-    jsonResponse(res, 200, { success: true, server: arr[0] });
+    const u = arr[0];
+    const encU = u.external_platform_key_encrypted ? String(u.external_platform_key_encrypted) : null;
+    let maskedU = '';
+    if (encU) { try { maskedU = maskExternalKey(decrypt(encU)); } catch { maskedU = '••••••••'; } }
+    jsonResponse(res, 200, {
+      success: true,
+      server: {
+        ...u,
+        externalPlatformName: u.external_platform_name || null,
+        hasExternalKey: !!encU,
+        externalKeyMasked: maskedU,
+        externalKeyLastRotated: u.external_key_last_rotated || null,
+      },
+    });
   } catch (err) {
     jsonResponse(res, 500, { error: 'update_failed', message: err instanceof Error ? err.message : 'unknown' });
   }
@@ -878,6 +950,84 @@ async function getMcpServerTools(req: http.IncomingMessage, res: http.ServerResp
 }
 
 // ═══════════════════════════════════════════════════════════════
+// R29-C: MCP 外部平台许可密钥 · 轮换 + 明文查看
+// ═══════════════════════════════════════════════════════════════
+
+// POST /api/mcp/servers/:id/rotate-key { externalPlatformKey: string }
+// 轮换外部平台许可密钥 → 更新 external_key_last_rotated = now()
+async function rotateMcpExternalKey(req: http.IncomingMessage, res: http.ServerResponse, ctx: { tenantId: string; userId: string | null; scopes: string[] }, id: string) {
+  const body = (await parseJsonBody(req)) as Record<string, any>;
+  const newKey = body.externalPlatformKey ?? body.newKey ?? body.apiKey;
+  if (typeof newKey !== 'string' || !newKey.trim()) {
+    jsonResponse(res, 400, { error: 'externalPlatformKey required' }); return;
+  }
+  try {
+    const enc = encrypt(newKey);
+    const result = await pool.query(
+      `UPDATE mcp_servers
+       SET external_platform_key_encrypted = $1, external_key_last_rotated = now(), updated_at = now()
+       WHERE id = $2 AND tenant_id = $3
+       RETURNING id, name, external_platform_name, external_key_last_rotated`,
+      [enc, id, ctx.tenantId],
+    );
+    const arr = result.rows as Array<Record<string, unknown>>;
+    if (!arr.length) { jsonResponse(res, 404, { error: 'not_found' }); return; }
+    // 审计
+    await db.execute(sql`
+      INSERT INTO audit_logs (tenant_id, user_id, action, resource_type, resource_id, details)
+      VALUES (${ctx.tenantId}, ${ctx.userId || null}, 'mcp.rotate_external_key', 'mcp_server', ${id},
+              ${JSON.stringify({ serverName: arr[0].name, externalPlatform: arr[0].external_platform_name || null })}::jsonb)
+    `);
+    let masked = '';
+    try { masked = maskExternalKey(newKey); } catch { masked = '••••••••'; }
+    jsonResponse(res, 200, {
+      success: true,
+      id: arr[0].id,
+      externalKeyMasked: masked,
+      externalKeyLastRotated: arr[0].external_key_last_rotated,
+    });
+  } catch (err) {
+    jsonResponse(res, 500, { error: 'rotate_failed', message: err instanceof Error ? err.message : 'unknown' });
+  }
+}
+
+// GET /api/mcp/servers/:id/reveal-key — admin only,返回明文外部许可密钥(记审计)
+async function revealMcpExternalKey(req: http.IncomingMessage, res: http.ServerResponse, ctx: { tenantId: string; userId: string | null; scopes: string[]; clientId: string }, id: string) {
+  // admin only:scopes 含 '*' 或 admin-jwt
+  const isAdmin = ctx.scopes.includes('*') || ctx.clientId === 'admin-jwt';
+  if (!isAdmin) {
+    jsonResponse(res, 403, { error: 'forbidden', message: '仅管理员可查看明文许可密钥' }); return;
+  }
+  try {
+    const result = await pool.query(
+      `SELECT name, external_platform_name, external_platform_key_encrypted
+       FROM mcp_servers WHERE id = $1 AND tenant_id = $2`,
+      [id, ctx.tenantId],
+    );
+    const arr = result.rows as Array<Record<string, unknown>>;
+    if (!arr.length) { jsonResponse(res, 404, { error: 'not_found' }); return; }
+    const enc = arr[0].external_platform_key_encrypted;
+    if (!enc) { jsonResponse(res, 404, { error: 'no_external_key', message: '该 MCP 未绑定外部平台许可密钥' }); return; }
+    let plain = '';
+    try { plain = decrypt(String(enc)); } catch { jsonResponse(res, 500, { error: 'decrypt_failed' }); return; }
+    // 审计:谁在何时查看了哪条密钥
+    await db.execute(sql`
+      INSERT INTO audit_logs (tenant_id, user_id, action, resource_type, resource_id, details)
+      VALUES (${ctx.tenantId}, ${ctx.userId || null}, 'mcp.reveal_external_key', 'mcp_server', ${id},
+              ${JSON.stringify({ serverName: arr[0].name, externalPlatform: arr[0].external_platform_name || null })}::jsonb)
+    `);
+    jsonResponse(res, 200, {
+      success: true,
+      id,
+      externalPlatformName: arr[0].external_platform_name || null,
+      externalKey: plain,
+    });
+  } catch (err) {
+    jsonResponse(res, 500, { error: 'reveal_failed', message: err instanceof Error ? err.message : 'unknown' });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // R13E: OAuth authorized (别人接我们) CRUD
 // ═══════════════════════════════════════════════════════════════
 async function createOAuthAuthorized(req: http.IncomingMessage, res: http.ServerResponse, ctx: { tenantId: string }) {
@@ -942,7 +1092,7 @@ function hashSecret(secret: string): string { return createHash('sha256').update
 
 async function createOAuthClientChannel(req: http.IncomingMessage, res: http.ServerResponse, ctx: { tenantId: string }) {
   const body = (await parseJsonBody(req)) as Record<string, any>;
-  const { name, type, redirectUris, scopes } = body;
+  const { name, type, redirectUris, scopes, businessSystem } = body;
   if (!name) { jsonResponse(res, 400, { error: 'name required' }); return; }
   const t = ['web', 'native', 'cli', 'mcp_server'].includes(String(type)) ? type : 'web';
   const clientId = genClientId();
@@ -950,10 +1100,10 @@ async function createOAuthClientChannel(req: http.IncomingMessage, res: http.Ser
   const clientSecretHash = hashSecret(clientSecret);
   try {
     const row = await db.execute(sql`
-      INSERT INTO oauth_clients (tenant_id, name, type, client_id, client_secret_hash, redirect_uris, scopes, status)
+      INSERT INTO oauth_clients (tenant_id, name, type, client_id, client_secret_hash, redirect_uris, scopes, status, business_system)
       VALUES (${ctx.tenantId}, ${name}, ${t}, ${clientId}, ${clientSecretHash},
-        ${JSON.stringify(redirectUris || [])}::jsonb, ${JSON.stringify(scopes || [])}::jsonb, 'active')
-      RETURNING id, name, type, client_id, redirect_uris, scopes, status, created_at
+        ${JSON.stringify(redirectUris || [])}::jsonb, ${JSON.stringify(scopes || [])}::jsonb, 'active', ${businessSystem || null})
+      RETURNING id, name, type, client_id, redirect_uris, scopes, status, created_at, business_system
     `);
     const arr = (Array.isArray(row) ? row : (row as { rows?: unknown[] }).rows || []) as Array<Record<string, unknown>>;
     // Return plaintext secret ONCE
@@ -969,13 +1119,14 @@ async function updateOAuthClientChannel(req: http.IncomingMessage, res: http.Ser
   const params: any[] = [];
   let idx = 1;
   if (body.name !== undefined) { sets.push(`name = $${idx++}`); params.push(body.name); }
+  if (body.businessSystem !== undefined) { sets.push(`business_system = $${idx++}`); params.push(body.businessSystem || null); }
   if (body.redirectUris !== undefined) { sets.push(`redirect_uris = $${idx++}`); params.push(JSON.stringify(body.redirectUris)); }
   if (body.scopes !== undefined) { sets.push(`scopes = $${idx++}`); params.push(JSON.stringify(body.scopes)); }
   if (body.status !== undefined) { sets.push(`status = $${idx++}`); params.push(body.status); }
   params.push(id); params.push(ctx.tenantId);
   try {
     const result = await pool.query(
-      `UPDATE oauth_clients SET ${sets.join(', ')} WHERE id = $${idx} AND tenant_id = $${idx + 1} RETURNING id, name, type, client_id, redirect_uris, scopes, status`,
+      `UPDATE oauth_clients SET ${sets.join(', ')} WHERE id = $${idx} AND tenant_id = $${idx + 1} RETURNING id, name, type, client_id, redirect_uris, scopes, status, business_system`,
       params,
     );
     const arr = result.rows;
@@ -1069,10 +1220,15 @@ export async function handleR9MockEndpoints(
 
   const parsed = new URL(url, 'http://localhost');
 
-  // 1. /api/mcp/servers — full CRUD
+  // 1. /api/mcp/servers — full CRUD + R29-C rotate-key/reveal-key
   const mcpIdMatch = url.match(/^\/api\/mcp\/servers\/([0-9a-f-]{36})$/);
   const mcpTestMatch = url.match(/^\/api\/mcp\/servers\/([0-9a-f-]{36})\/test$/);
   const mcpToolsMatch = url.match(/^\/api\/mcp\/servers\/([0-9a-f-]{36})\/tools$/);
+  const mcpRotateMatch = url.match(/^\/api\/mcp\/servers\/([0-9a-f-]{36})\/rotate-key$/);
+  const mcpRevealMatch = url.match(/^\/api\/mcp\/servers\/([0-9a-f-]{36})\/reveal-key$/);
+  // R29-C: 在 id 级匹配之前优先匹配动作路径
+  if (mcpRotateMatch && method === 'POST') { await rotateMcpExternalKey(req, res, ctx, mcpRotateMatch[1]); return true; }
+  if (mcpRevealMatch && method === 'GET') { await revealMcpExternalKey(req, res, ctx, mcpRevealMatch[1]); return true; }
   if (mcpTestMatch && method === 'POST') { await testMcpServer(req, res, ctx, mcpTestMatch[1]); return true; }
   if (mcpToolsMatch && method === 'GET') { await getMcpServerTools(req, res, ctx, mcpToolsMatch[1]); return true; }
   if (mcpIdMatch) {
