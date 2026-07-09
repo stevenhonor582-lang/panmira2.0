@@ -115,6 +115,7 @@ extra:
 
 nav:
   - Home: index.md
+  - Product (PRD v2): PRD-v2.md
   - Getting Started:
     - Installation: getting-started/installation.md
     - Quick Setup: getting-started/quick-setup.md
