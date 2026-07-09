@@ -4,13 +4,16 @@ import * as React from "react";
 import { useAgent, type Agent } from "../../_lib/data";
 import { api } from "@/lib/api";
 import { AvatarMark } from "../../_components/avatar-mark";
-import { Network, Bot, User2, Info } from "lucide-react";
+import { Network, Bot, User2, Info, Users } from "lucide-react";
 import {
   EditPane,
-  EditableSelect,
   agentToDraft,
   diffDraft,
 } from "./edit-mode";
+import {
+  ResourcePicker,
+  type ResourceItem,
+} from "@/components/resource-picker/resource-picker";
 
 interface Person {
   id: string;
@@ -26,6 +29,8 @@ export function TabCollab({ id }: { id: string }) {
   const [draft, setDraft] = React.useState<Record<string, unknown>>({});
   const [origDraft, setOrigDraft] = React.useState<Record<string, unknown>>({});
   const [people, setPeople] = React.useState<Person[]>([]);
+  // R27 规则 4: 归属人选择用 ResourcePicker
+  const [ownerPickerOpen, setOwnerPickerOpen] = React.useState(false);
 
   const loadPeople = React.useCallback(async () => {
     try {
@@ -57,10 +62,10 @@ export function TabCollab({ id }: { id: string }) {
   const ownerId = String(
     draft.owner_user_id ?? (agent.raw as any)?.owner_user_id ?? "",
   );
-  const ownerName =
-    people.find((p) => p.id === ownerId)?.name ??
-    agent.ownerName ??
-    "未指定";
+  const owner =
+    people.find((p) => p.id === ownerId) ??
+    null;
+  const ownerName = owner?.name ?? agent.ownerName ?? "未指定";
 
   const isDirty = Object.keys(diffDraft(origDraft, draft)).length > 0;
 
@@ -73,6 +78,13 @@ export function TabCollab({ id }: { id: string }) {
     const ok = await ctx.save(patch);
     if (!ok) setDraft(origDraft);
   };
+
+  // R27 规则 4: ResourcePicker items = 所有 active 真人
+  const ownerItems: ResourceItem[] = people.map((p) => ({
+    id: p.id,
+    label: p.name,
+    description: `${p.email.split("@")[0]} · ${p.role}`,
+  }));
 
   return (
     <EditPane id={id} label="collab" onSaved={reload} isDirty={isDirty} onSave={onSave}>
@@ -118,21 +130,46 @@ export function TabCollab({ id }: { id: string }) {
                   主理人 · Owner
                 </h3>
                 {ctx.editing ? (
-                  <EditableSelect
-                    label="主理人"
-                    field="owner_user_id"
-                    value={ownerName}
-                    editing
-                    draft={draft}
-                    setDraft={setDraft}
-                    options={[
-                      { value: "", label: "— 未指定 —" },
-                      ...people.map((p) => ({
-                        value: p.id,
-                        label: `${p.name} (${p.email.split("@")[0]})`,
-                      })),
-                    ]}
-                  />
+                  /* R27 规则 4: 改归属人用 ResourcePicker 选真人(单选) */
+                  <div className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => setOwnerPickerOpen(true)}
+                      className="flex w-full items-center justify-between rounded-2xl bg-card px-4 py-3 text-left ring-1 ring-border hover:ring-foreground/30"
+                      data-testid="owner-picker-trigger"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Users className="size-4 text-foreground/45" />
+                        <span className="text-[13.5px]">{ownerName}</span>
+                      </span>
+                      <span className="font-mono text-[11px] text-foreground/45">点击选择…</span>
+                    </button>
+                    <ResourcePicker
+                      open={ownerPickerOpen}
+                      onOpenChange={setOwnerPickerOpen}
+                      title="选择主理人(真人)"
+                      items={ownerItems}
+                      selectedIds={ownerId ? [ownerId] : []}
+                      multi={false}
+                      confirmText="确定归属人"
+                      onConfirm={(selected) => {
+                        if (selected.length > 0) {
+                          setDraft({ ...draft, owner_user_id: selected[0].id });
+                        } else {
+                          setDraft({ ...draft, owner_user_id: "" });
+                        }
+                      }}
+                    />
+                    {ownerId && (
+                      <button
+                        type="button"
+                        onClick={() => setDraft({ ...draft, owner_user_id: "" })}
+                        className="text-[11px] text-foreground/45 hover:text-foreground"
+                      >
+                        清空归属人
+                      </button>
+                    )}
+                  </div>
                 ) : (
                   <ul className="space-y-2">
                     <li className="flex items-center justify-between rounded-2xl bg-card px-4 py-3 ring-1 ring-border">
@@ -165,7 +202,7 @@ export function TabCollab({ id }: { id: string }) {
 
 /**
  * R15-A 字段区块:working_dir / channel_ids / visibility / temperature / is_template
- * 只读展示。
+ * R27 规则 1: 工作目录只读展示(英文拼音+随机生成,UI 不可手改)。
  */
 function R15AFields({ agent }: { agent: Agent }) {
   const raw = agent.raw as Record<string, unknown> | null;
@@ -185,9 +222,13 @@ function R15AFields({ agent }: { agent: Agent }) {
       </h3>
       <div className="space-y-2 rounded-2xl bg-card p-4 ring-1 ring-border">
         <Row label="工作目录 · working_dir">
-          <code className="font-mono text-[12.5px]">
-            {workingDir || <span className="text-foreground/40">未设置(默认 /workspace/agents/&lt;id&gt;)</span>}
-          </code>
+          <div className="inline-flex items-center gap-2">
+            <code className="font-mono text-[12.5px]">
+              {workingDir || <span className="text-foreground/40">未设置(默认 /workspace/agents/&lt;id&gt;)</span>}
+            </code>
+            {/* R27 规则 1: 工作目录只读,不可手改 */}
+            <span className="rounded bg-foreground/5 px-1.5 py-0.5 text-[10px] font-mono text-foreground/45">只读</span>
+          </div>
         </Row>
         <Row label="绑定频道 · channel_ids">
           {channelIds.length === 0 ? (
