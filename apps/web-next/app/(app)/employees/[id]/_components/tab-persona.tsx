@@ -44,41 +44,57 @@ export function TabPersona({ id }: { id: string }) {
   return (
     <EditPane id={id} label="persona" onSaved={reload} isDirty={isDirty} onSave={onSave}>
       {(ctx) => (
-        <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-          <section className="space-y-6">
-            <div>
-              <SectionHead icon={BrainCircuit}>人格短句</SectionHead>
-              <EditableTextarea
-                label="人格短句(60 字内)"
-                field="persona"
-                value={agent.persona || ""}
-                editing={ctx.editing}
-                draft={draft}
-                setDraft={setDraft}
-                rows={3}
-                placeholder="一句话写清这个员工的性格与态度"
-              />
+        <div className="space-y-4">
+          {/* 人格短句 卡片 */}
+          <div className="rounded-xl border border-border bg-card p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="flex items-center gap-2 text-sm font-semibold">
+                <BrainCircuit className="size-4 text-foreground/55" />
+                人格短句
+              </h3>
             </div>
+            <EditableTextarea
+              label="人格短句(60 字内)"
+              field="persona"
+              value={agent.persona || ""}
+              editing={ctx.editing}
+              draft={draft}
+              setDraft={setDraft}
+              rows={3}
+              placeholder="一句话写清这个员工的性格与态度"
+            />
+          </div>
 
-            <div>
-              <SectionHead icon={BrainCircuit}>系统提示词</SectionHead>
-              <EditableTextarea
-                label="系统提示词"
-                field="system_prompt"
-                value={agent.systemPrompt || ""}
-                editing={ctx.editing}
-                draft={draft}
-                setDraft={setDraft}
-                rows={14}
-                fullscreen
-                mono
-                placeholder="# 角色\n你是 …\n\n# 工作准则\n1. …"
-              />
+          {/* 系统提示词 卡片 */}
+          <div className="rounded-xl border border-border bg-card p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="flex items-center gap-2 text-sm font-semibold">
+                <BrainCircuit className="size-4 text-foreground/55" />
+                系统提示词
+              </h3>
             </div>
-          </section>
+            <EditableTextarea
+              label="系统提示词"
+              field="system_prompt"
+              value={agent.systemPrompt || ""}
+              editing={ctx.editing}
+              draft={draft}
+              setDraft={setDraft}
+              rows={14}
+              fullscreen
+              mono
+              placeholder="# 角色\n你是 …\n\n# 工作准则\n1. …"
+            />
+          </div>
 
-          <section>
-            <SectionHead icon={ShieldCheck}>铁律</SectionHead>
+          {/* 铁律 卡片 */}
+          <div className="rounded-xl border border-border bg-card p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="flex items-center gap-2 text-sm font-semibold">
+                <ShieldCheck className="size-4 text-foreground/55" />
+                铁律
+              </h3>
+            </div>
             <IronLawsEditor
               label="铁律"
               field="iron_laws"
@@ -87,24 +103,11 @@ export function TabPersona({ id }: { id: string }) {
               draft={draft}
               setDraft={setDraft}
             />
-          </section>
+          </div>
         </div>
       )}
     </EditPane>
   );
 }
 
-function SectionHead({
-  icon: Icon,
-  children,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  children: React.ReactNode;
-}) {
-  return (
-    <h3 className="mb-3 mt-1 flex items-center gap-2 text-[13px] font-medium tracking-tight text-foreground/65">
-      <Icon className="size-4 text-foreground/45" />
-      {children}
-    </h3>
-  );
-}
+
