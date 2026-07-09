@@ -71,14 +71,8 @@ export class MessageBridge {
    * 由 start() 时一次性预热,5 分钟过期,StreamProcessor 同步读
    */
   private contextWindowCache = new Map<string, number>();
-  private autoCompressConfigCache: { expiresAt: number; value: AutoCompressRuntimeConfig } | null = null;
 
   private async resolveAutoCompressConfig(): Promise<AutoCompressRuntimeConfig> {
-    const now = Date.now();
-    if (this.autoCompressConfigCache && this.autoCompressConfigCache.expiresAt > now) {
-      return this.autoCompressConfigCache.value;
-    }
-
     let value = DEFAULT_AUTO_COMPRESS_CONFIG;
     try {
       const agentId = this.config.agentId;
@@ -99,7 +93,6 @@ export class MessageBridge {
       this.logger.warn({ err: e?.message, botName: this.config.name }, 'resolveAutoCompressConfig failed; using defaults');
     }
 
-    this.autoCompressConfigCache = { expiresAt: now + 60_000, value };
     return value;
   }
 

@@ -43,6 +43,17 @@ describe('R36 tab-basics model binding helpers', () => {
     expect(patch).not.toHaveProperty('default_engine');
   });
 
+  it('builds a routing-only PATCH when no provider is matched', () => {
+    expect(
+      buildModelBindingPatch({
+        selectedProvider: null,
+        currentProvider: null,
+        useModelRouting: false,
+        orchestration: { useModelRouting: true },
+      }),
+    ).toEqual({ orchestration: { useModelRouting: false } });
+  });
+
   it('binds provider and routing state in one PATCH when the model changes', () => {
     const patch = buildModelBindingPatch({
       selectedProvider: providerB,
