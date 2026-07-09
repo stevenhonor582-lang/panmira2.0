@@ -6,7 +6,8 @@
  * - Subscribes to `usePipelineProgress(pipelineId)` (WS-driven) for live status.
  * - On mount, fetches historical runs from `/api/v2/admin/pipelines/{id}/runs`
  *   and merges them as an initial timeline.
- * - Renders a vertical timeline with status chips + ISO timestamps.
+ * - Renders a vertical timeline; each run entry can be expanded to show
+ *   per-node breakdown (R21) via NodeRunDetails (input/output/branch/...).
  */
 
 import * as React from "react";
@@ -17,6 +18,8 @@ import {
   Loader2,
   Radio,
   Play,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 
 import { usePipelineProgress } from "@/lib/use-pipeline-progress";
@@ -26,12 +29,14 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 
 import type { PipelineRun } from "./types";
+import { NodeRunDetails, type NodeRunState } from "./node-run-details";
 
 interface ExecutionLogPanelProps {
   pipelineId: string;
   onTrigger?: () => Promise<void> | void;
 }
 
+/** 一条 run 的时间线条目。携带完整 nodeStates 供展开用。 */
 interface TimelineEntry {
   id: string;
   ts: string;
@@ -39,6 +44,13 @@ interface TimelineEntry {
   message: string;
   source: "ws" | "history";
   error?: string;
+  /** 完成节点数(用于消息文案) */
+  completedNodes?: number;
+  /** 总节点数 */
+  totalNodes?: number;
+  /** R21: 每节点执行状态 — key = nodeId */
+  nodeStates?: Record<string, NodeRunState>;
+  /** R21: 用于把 nodeId 映射成人类可读 label(若后端给了) */
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -65,10 +77,16 @@ export function ExecutionLogPanel({
     (async () => {
       try {
         const res = (await api(`/api/v2/admin/pipelines/${pipelineId}/runs`)) as {
-          data?: { runs?: PipelineRun[] };
+          // backend may return either data: Run[] or data: { runs: Run[] }
+          data?:
+            | Array<PipelineRun & { nodeStates?: Record<string, NodeRunState> }>
+            | { runs?: Array<PipelineRun & { nodeStates?: Record<string, NodeRunState> }> };
         };
         if (cancelled) return;
-        const runs = res?.data?.runs ?? [];
+        const data = res?.data;
+        const runs = Array.isArray(data)
+          ? data
+          : (data?.runs ?? []);
         setHistory(
           runs.map<TimelineEntry>((r) => ({
             id: r.id ?? `${r.startedAt}-${r.status}`,
@@ -82,6 +100,7 @@ export function ExecutionLogPanel({
                   : `${STATUS_LABEL[r.status ?? "pending"] ?? "已记录"}`,
             source: "history",
             error: r.error ?? undefined,
+            nodeStates: r.nodeStates,
           })),
         );
       } catch {
@@ -111,6 +130,8 @@ export function ExecutionLogPanel({
               : `运行中 · ${state.completedNodes}/${state.totalNodes}`,
         source: "ws",
         error: state.error ?? undefined,
+        completedNodes: state.completedNodes,
+        totalNodes: state.totalNodes,
       }
     : null;
 
@@ -142,6 +163,7 @@ export function ExecutionLogPanel({
               )}
             />
             {wsConnected ? "WS 已连接 · 实时" : "WS 未连接 · 仅历史"}
+            <span className="ml-1">· 点击条目展开节点详情</span>
           </div>
         </div>
         {onTrigger && (
@@ -182,33 +204,90 @@ function TimelineRow({ entry }: { entry: TimelineEntry }) {
         : entry.status === "running"
           ? Loader2
           : Clock;
+
+  // R21: 展开 = 显示本次 run 的节点级明细
+  const [expanded, setExpanded] = React.useState(false);
+  const nodeEntries = React.useMemo(() => {
+    if (!entry.nodeStates) return [];
+    return Object.entries(entry.nodeStates);
+  }, [entry.nodeStates]);
+  const hasNodes = nodeEntries.length > 0;
+  const successCount = nodeEntries.filter(([, s]) => s?.status === "success").length;
+  const failedCount = nodeEntries.filter(([, s]) => s?.status === "failed").length;
+
   return (
-    <div className="flex gap-2 items-start group">
-      <div className="mt-0.5 shrink-0 grid place-items-center size-5 rounded-full ring-1 ring-foreground/10 bg-card">
-        <Icon
-          className={cn("size-3", tone.icon, entry.status === "running" && "animate-spin")}
-          strokeWidth={2}
-        />
-      </div>
-      <div className="flex-1 min-w-0 border-l border-foreground/5 pl-3 pb-2">
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", tone.badge)}>
-            {STATUS_LABEL[entry.status ?? ""] ?? entry.status}
-          </Badge>
-          {entry.source === "ws" && (
-            <span className="text-[10px] text-emerald-600 font-mono">LIVE</span>
-          )}
-          <span className="text-[10px] text-muted-foreground font-mono ml-auto">
-            {formatTs(entry.ts)}
-          </span>
-        </div>
-        <div className="text-xs mt-1 leading-snug">{entry.message}</div>
-        {entry.error && (
-          <div className="text-[10px] text-rose-600 mt-1 font-mono break-all">
-            {entry.error}
-          </div>
+    <div className="rounded-md ring-1 ring-foreground/5 bg-card overflow-hidden">
+      {/* 头部:状态 + 时间 + 展开按钮 */}
+      <button
+        type="button"
+        onClick={() => hasNodes && setExpanded((v) => !v)}
+        disabled={!hasNodes}
+        className={cn(
+          "w-full flex gap-2 items-start p-2 text-left",
+          hasNodes && "hover:bg-muted/40 transition-colors cursor-pointer",
         )}
-      </div>
+      >
+        <div className="mt-0.5 shrink-0 grid place-items-center size-5 rounded-full ring-1 ring-foreground/10 bg-background">
+          <Icon
+            className={cn("size-3", tone.icon, entry.status === "running" && "animate-spin")}
+            strokeWidth={2}
+          />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", tone.badge)}>
+              {STATUS_LABEL[entry.status ?? ""] ?? entry.status}
+            </Badge>
+            {entry.source === "ws" && (
+              <span className="text-[10px] text-emerald-600 font-mono">LIVE</span>
+            )}
+            {hasNodes && (
+              <span className="text-[10px] text-muted-foreground font-mono">
+                {successCount}/{nodeEntries.length} 节点
+                {failedCount > 0 && (
+                  <span className="text-rose-600 ml-1">· {failedCount} 失败</span>
+                )}
+              </span>
+            )}
+            <span className="text-[10px] text-muted-foreground font-mono ml-auto">
+              {formatTs(entry.ts)}
+            </span>
+            {hasNodes && (
+              <span className="text-muted-foreground shrink-0">
+                {expanded ? (
+                  <ChevronDown className="size-3.5" />
+                ) : (
+                  <ChevronRight className="size-3.5" />
+                )}
+              </span>
+            )}
+          </div>
+          <div className="text-xs mt-1 leading-snug">{entry.message}</div>
+          {entry.error && (
+            <div className="text-[10px] text-rose-600 mt-1 font-mono break-all">
+              {entry.error}
+            </div>
+          )}
+          {!hasNodes && (
+            <div className="text-[10px] text-muted-foreground/70 mt-0.5">
+              无节点明细(可能是早期 run 未保存 node_states)
+            </div>
+          )}
+        </div>
+      </button>
+      {/* 展开后:每个节点一个 NodeRunDetails */}
+      {expanded && hasNodes && (
+        <div className="px-3 pb-3 pt-1 border-t border-foreground/5 space-y-2 bg-muted/10">
+          {nodeEntries.map(([nodeId, st]) => (
+            <div key={nodeId} className="border-l-2 border-foreground/10 pl-2.5">
+              <div className="text-[10px] font-mono text-muted-foreground mb-1">
+                {nodeId}
+              </div>
+              <NodeRunDetails state={st} compact />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
