@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -120,19 +121,23 @@ export function Topbar({ onMenuClick }: TopbarProps = {}) {
             <span className="text-xs hidden sm:inline">{user?.name ?? "未登录"}</span>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel className="font-normal">
-              <div className="flex flex-col">
-                <span className="text-sm font-medium">{user?.name ?? "—"}</span>
-                <span className="text-xs text-muted-foreground">
-                  {user?.email ?? ""}
-                </span>
-              </div>
-            </DropdownMenuLabel>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="font-normal">
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium">{user?.name ?? "—"}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {user?.email ?? ""}
+                  </span>
+                </div>
+              </DropdownMenuLabel>
+            </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={goProfile}>
-              <User className="size-3.5" />
-              <span>个人资料</span>
-            </DropdownMenuItem>
+            <DropdownMenuGroup>
+              <DropdownMenuItem onClick={goProfile}>
+                <User className="size-3.5" />
+                <span>个人资料</span>
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onClick={() => logout()}>
               <LogOut className="size-3.5" />
