@@ -378,7 +378,48 @@ function buildGraph(rows: CollabRow[], duplicates: DuplicateItem[]): GraphBundle
     }
   });
 
-  const clusterHeight = clusterBlockHeight + 80;
+  // R32-C 改动 ⑪:孤立 agent 检测 — 任何节点若无连线,补边确保"每个节点都有连线"。
+  // 场景:某 agent 既无 bot 入口又无资源/任务,在画布上会变成孤点。
+  // 做法:若存在孤立 agent,加一个"_unassigned"伪簇节点(灰色 · "未配置资源"),
+  //       把每个孤立 agent 用 dashed 边连过去;伪簇只加一次。
+  const wiredIds = new Set<string>();
+  for (const e of edges) {
+    wiredIds.add(e.source);
+    wiredIds.add(e.target);
+  }
+  const orphanAgentIds: string[] = [];
+  for (const n of nodes) {
+    if (n.id.startsWith("agent-") && !wiredIds.has(n.id)) {
+      orphanAgentIds.push(n.id);
+    }
+  }
+  if (orphanAgentIds.length > 0) {
+    const orphanNodeId = "cluster-unassigned";
+    const orphanY = totalHeight + 40;
+    nodes.push({
+      id: orphanNodeId,
+      type: "relation",
+      position: { x: X_RESOURCE, y: orphanY },
+      data: {
+        kind: "resource",
+        size: "lg",
+        label: "未配置资源",
+        sublabel: `${orphanAgentIds.length} 个数字员工待配置`,
+        icon: "network",
+        badge: `×${orphanAgentIds.length}`,
+      } as RelationNodeData,
+    });
+    for (const aid of orphanAgentIds) {
+      edges.push({
+        id: `e-${aid}-${orphanNodeId}`,
+        source: aid,
+        target: orphanNodeId,
+        data: { style: "dashed" },
+      });
+    }
+  }
+
+  const clusterHeight = clusterBlockHeight + 80 + (orphanAgentIds.length > 0 ? 120 : 0);
   const height = Math.max(480, Math.max(totalHeight, clusterHeight));
   return { nodes, edges, height };
 }
