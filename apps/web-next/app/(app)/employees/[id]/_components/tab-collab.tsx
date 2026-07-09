@@ -98,6 +98,12 @@ interface BotInfo {
   engine?: string;
   paused?: boolean;
   updated_at?: string;
+  // R36-3: 入口绑定状态权威字段(由后端 /api/bots JOIN bot_configs.agent_id 提供)
+  // - agent_id = null  → 空闲(可绑)
+  // - agent_id === 当前 agent.id → 已绑(本实例)
+  // - agent_id !== 当前 agent.id → 占用(被其它实例)
+  agent_id?: string | null;
+  agent_name?: string | null;
 }
 
 interface RelatedAgent {
@@ -865,24 +871,35 @@ function EntryManagement({
 
   const richBots = bots;
 
-  // 已绑定(本 agent 占用)
-  const boundBots = richBots.filter((b) => {
+  // R36-3: 分类以 b.agent_id(后端 JOIN bot_configs.agent_id)为权威,
+  //        channelIds 仅作兜底(老数据 / agent_id 未 JOIN 的边界情况)
+  //   - agent_id === null/undefined → 空闲
+  //   - agent_id === agent.id      → 已绑(本实例)
+  //   - agent_id !== agent.id      → 被其他实例占用
+  function classify(b: BotInfo): "bound" | "free" | "occupied" {
+    const aid = (b as any).agent_id ?? null;
+    if (aid) {
+      return aid === agent.id ? "bound" : "occupied";
+    }
+    // 兜底:用 channelIds(老数据)
     const bid = getBotId(b);
-    return (bid && channelIds.includes(bid)) || b.agentId === agent.id;
-  });
+    if (bid && channelIds.includes(bid)) return "bound";
+    const occ = findOccupant(bid, agentRows, agent.id);
+    return occ ? "occupied" : "free";
+  }
+  const boundBots = richBots.filter((b) => classify(b) === "bound");
   const boundIdSet = new Set(boundBots.map((b) => getBotId(b)));
+  const freeBots = richBots.filter((b) => classify(b) === "free");
+  const occupiedBots = richBots.filter((b) => classify(b) === "occupied");
 
-  // R35-B: 分类 — 空闲 / 被其他实例占用
-  const freeBots = richBots.filter((b) => {
+  // R36-3: 占用方名字优先用后端注入的 agent_name,缺失再走 agentRows 兜底
+  function getOccupantLabel(b: BotInfo): string {
+    const aid = (b as any).agent_id ?? null;
+    if (aid && (b as any).agent_name) return (b as any).agent_name as string;
     const bid = getBotId(b);
-    if (!bid || boundIdSet.has(bid)) return false;
-    return !findOccupant(bid, agentRows, agent.id);
-  });
-  const occupiedBots = richBots.filter((b) => {
-    const bid = getBotId(b);
-    if (!bid || boundIdSet.has(bid)) return false;
-    return !!findOccupant(bid, agentRows, agent.id);
-  });
+    const occ = findOccupant(bid, agentRows, agent.id);
+    return occ?.displayName || occ?.name || aid || "未知实例";
+  }
 
   /** R35-B: 提取错误消息(优先 error.code,后端 409 bot_already_bound 给友好提示) */
   function friendlyBindError(err: unknown): string {
@@ -1116,7 +1133,8 @@ function EntryManagement({
               const bid = getBotId(b);
               const name = getBotDisplayName(b);
               const meta = platformMeta(b.platform);
-              const occupant = findOccupant(bid, agentRows, agent.id)!;
+              // R36-3: 优先用后端注入的 agent_id/agent_name,缺失再走 findOccupant 兜底
+              const occupantLabel = getOccupantLabel(b);
               const isBusy = operating === bid;
               return (
                 <li key={bid}>
@@ -1138,7 +1156,7 @@ function EntryManagement({
                         data-testid={`entry-occupied-badge-${bid.slice(0, 8)}`}
                       >
                         <Lock className="size-2.5" />
-                        占用 · {occupant.displayName || occupant.name}
+                        占用 · {occupantLabel}
                       </span>
                     </span>
                     <span className="flex items-center gap-1 shrink-0 text-[11px] text-foreground/55 group-hover:text-foreground/80">
