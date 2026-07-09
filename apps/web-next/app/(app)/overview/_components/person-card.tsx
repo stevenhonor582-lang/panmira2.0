@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Briefcase,
-  Crown,
+  Star,
   Mail,
   Phone,
   ShieldCheck,
@@ -69,7 +69,8 @@ const STATUS_STYLE: Record<EmployeeStatus, { dot: string; chip: string; label: s
   },
 };
 
-const FOUNDER_EMAIL = "20218181@qq.com";
+// 系统管理员: 唯一内置账号,禁止删除/停用/状态切换
+const SYSADMIN_EMAIL = "20218181@qq.com";
 
 interface Props {
   person: Person;
@@ -80,7 +81,7 @@ interface Props {
 export function PersonCard({ person, className, onChanged }: Props) {
   const router = useRouter();
   const me = typeof window !== "undefined" ? getUser() : null;
-  const isFounder = person.email === FOUNDER_EMAIL;
+  const isSysAdmin = person.email === SYSADMIN_EMAIL;
   const status: EmployeeStatus = person.employeeStatus ?? "active";
   const statusStyle = STATUS_STYLE[status];
 
@@ -120,12 +121,12 @@ export function PersonCard({ person, className, onChanged }: Props) {
   const canToggleActive =
     !isSelf && (myRole === "admin" || (myRole === "operator" && targetRole === "member"));
   // 雇佣状态切换 (高权限)
-  const canSetStatus = !isSelf && myRole === "admin" && !isFounder;
+  const canSetStatus = !isSelf && myRole === "admin" && !isSysAdmin;
   // 重置密码
   const canResetPwd =
     !isSelf && (myRole === "admin" || (myRole === "operator" && targetRole === "member"));
-  // 彻底删除: 仅 admin + 离职状态 + 非创始人 + 非自己
-  const canDelete = !isSelf && myRole === "admin" && status === "departed" && !isFounder;
+  // 彻底删除: 仅 admin + 离职状态 + 非系统管理员 + 非自己
+  const canDelete = !isSelf && myRole === "admin" && status === "departed" && !isSysAdmin;
 
   // 登录锁定状态
   const locked = person.lockedUntil && new Date(person.lockedUntil) > new Date();
@@ -238,7 +239,7 @@ export function PersonCard({ person, className, onChanged }: Props) {
           "hover:-translate-y-0.5 hover:shadow-[0_8px_24px_-8px_oklch(0.18_0.02_264_/_0.22)] hover:border-foreground/30",
           "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/40",
           status === "departed" && "opacity-70",
-          isFounder && "ring-1 ring-amber-500/20",
+          isSysAdmin && "ring-1 ring-amber-500/30",
           className,
         )}
       >
@@ -261,13 +262,13 @@ export function PersonCard({ person, className, onChanged }: Props) {
                 <h3 className="text-base font-semibold tracking-tight leading-tight text-foreground truncate">
                   {person.name}
                 </h3>
-                {isFounder && (
+                {isSysAdmin && (
                   <span
-                    className="inline-flex items-center gap-0.5 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400"
-                    title="创始人"
+                    className="inline-flex items-center gap-0.5 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400 ring-1 ring-amber-500/30"
+                    title="系统管理员 · 唯一内置账号"
                   >
-                    <Crown className="size-2.5" />
-                    <span>创始人</span>
+                    <Star className="size-2.5 fill-amber-500 text-amber-500" />
+                    <span>系统管理员</span>
                   </span>
                 )}
               </div>

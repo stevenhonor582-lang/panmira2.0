@@ -6,7 +6,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  ArrowLeft, Bot, Briefcase, Calendar, Clock, Cog, Crown, GitBranch,
+  ArrowLeft, Bot, Briefcase, Calendar, Clock, Cog, Star, GitBranch,
   Key, ListChecks, Mail, Network, Phone, ShieldCheck, Sparkles,
   Pencil, Power, PowerOff, Lock, CheckCircle2,
 } from "lucide-react";
@@ -28,7 +28,8 @@ import {
   CollaboratorsTab, ResourcesTab, ActivityTab,
 } from "./_components/person-tabs";
 
-const FOUNDER_EMAIL = "20218181@qq.com";
+// 系统管理员: 唯一内置账号
+const SYSADMIN_EMAIL = "20218181@qq.com";
 
 type TabKey =
   | "basic" | "employees" | "tasks" | "decisions"
@@ -108,7 +109,7 @@ export default function PersonDetailPage() {
     );
   }
 
-  const isFounder = person.email === FOUNDER_EMAIL;
+  const isSysAdmin = person.email === SYSADMIN_EMAIL;
   const status = classifyPerson(person);
   const employeeStatus: EmployeeStatus = person.employeeStatus ?? "active";
   const isSelf = me?.id === person.id;
@@ -142,7 +143,7 @@ export default function PersonDetailPage() {
             </div>
 
             <div className="min-w-0 flex-1">
-              {/* 第一行: 姓名 + SID + 创始人 badge */}
+              {/* 第一行: 姓名 + SID + 系统管理员 badge */}
               <div className="flex items-baseline gap-2 flex-wrap">
                 <h1 className="font-heading text-xl font-semibold tracking-tight">
                   {person.name}
@@ -152,10 +153,13 @@ export default function PersonDetailPage() {
                     {person.sid}
                   </code>
                 )}
-                {isFounder && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10.5px] font-medium text-amber-700 dark:text-amber-400">
-                    <Crown className="size-3" />
-                    <span>创始人</span>
+                {isSysAdmin && (
+                  <span
+                    className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10.5px] font-medium text-amber-700 dark:text-amber-400 ring-1 ring-amber-500/30"
+                    title="系统管理员 · 唯一内置账号"
+                  >
+                    <Star className="size-3 fill-amber-500 text-amber-500" />
+                    <span>系统管理员</span>
                   </span>
                 )}
                 <span
