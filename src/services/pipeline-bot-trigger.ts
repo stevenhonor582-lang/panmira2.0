@@ -124,7 +124,7 @@ async function runOnePipeline(
 ): Promise<PipelineTriggerResult | null> {
   // Per-run live state accumulator for accurate progress counts.
   // Only used when broadcastCtx is provided; populated on every node update.
-  const liveStates: Record<string, { status?: string }> = {};
+  const liveStates: Record<string, Record<string, unknown>> = {};
 
   let result: RunResult;
   try {
@@ -135,7 +135,7 @@ async function runOnePipeline(
       async (nodeId, state) => {
         if (!broadcastCtx) return;
         // Update accumulator; emit a per-node progress event.
-        liveStates[nodeId] = state as { status?: string };
+        liveStates[nodeId] = state as unknown as Record<string, unknown>;
         const totalNodes = pipeline.nodes.length;
         const { completedNodes, progress } = computeNodeProgress(
           liveStates as Record<string, { status?: string } | undefined>,
@@ -154,6 +154,7 @@ async function runOnePipeline(
           chatId: broadcastCtx.chatId,
           triggeredBy: 'bot',
           ts: new Date().toISOString(),
+          nodeStates: liveStates as Record<string, { status?: string }>,
         });
       },
       false, // useMockLlm
@@ -178,6 +179,7 @@ async function runOnePipeline(
         chatId: broadcastCtx.chatId,
         triggeredBy: 'bot',
         ts: new Date().toISOString(),
+        nodeStates: liveStates as Record<string, { status?: string }>,
       });
     }
     return null;
@@ -202,6 +204,7 @@ async function runOnePipeline(
       chatId: broadcastCtx.chatId,
       triggeredBy: 'bot',
       ts: new Date().toISOString(),
+      nodeStates: (result.nodeStates as Record<string, { status?: string }>) ?? {},
     });
   }
 

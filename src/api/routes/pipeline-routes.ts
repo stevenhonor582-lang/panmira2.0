@@ -347,7 +347,13 @@ function computeProgress(nodeStates: Record<string, unknown>, totalNodes: number
   return Math.min(100, Math.round((done / totalNodes) * 100));
 }
 
-/** Emit pipeline_progress event (best-effort, WS 失败不影响 pipeline) */
+/** Emit pipeline_progress event (best-effort, WS 失败不影响 pipeline)
+ *
+ * R22: pass `includeNodeStates=true` (default) so the client execution-log can
+ * render expanded node details (input/output/error) in real time without an
+ * extra GET /runs/:rid. The summary fields are still derived from nodeStates,
+ * so we already have the data in scope — just forward it.
+ */
 function emitPipelineProgress(
   runId: string,
   pipelineId: string,
@@ -370,6 +376,7 @@ function emitPipelineProgress(
     progress: computeProgress(nodeStates, totalNodes),
     error,
     ts: new Date().toISOString(),
+    nodeStates: nodeStates as PipelineProgressEvent["nodeStates"],
   });
 }
 

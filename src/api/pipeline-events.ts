@@ -38,6 +38,21 @@ export interface PipelineProgressEvent {
   triggeredBy?: 'user' | 'bot' | 'cron' | 'event' | 'api';
   /** ISO timestamp */
   ts: string;
+  // ---- R22: 每节点状态明细(可选) ----
+  /** 客户端 execution-log 展开节点详情时,无需再 GET /runs/:rid 实时拿 input/output */
+  nodeStates?: Record<string, {
+    status?: string;
+    input?: unknown;
+    output?: unknown;
+    error?: string;
+    startedAt?: string;
+    finishedAt?: string;
+    durationMs?: number;
+    tokensUsed?: number;
+    approval?: string;
+    note?: string;
+    decidedBy?: string;
+  }>;
 }
 
 /**
