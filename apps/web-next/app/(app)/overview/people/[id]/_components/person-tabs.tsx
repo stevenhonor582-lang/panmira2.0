@@ -27,6 +27,11 @@ import {
   EMPLOYEE_STATUS_LABEL,
   type Person, type PersonAgent, type DigitalEmployee, type Pipeline, type ActivityEvent,
 } from "../../../_components/data";
+import { api } from "@/lib/api";
+import {
+  ResourcePicker,
+  type ResourceItem,
+} from "@/components/resource-picker/resource-picker";
 import { InitialsAvatar } from "../../../_components/avatar";
 import { StatusDot } from "../../../_components/status-dot";
 import { deriveAgentStatus } from "../../../_components/data";
@@ -208,21 +213,41 @@ function ReadonlyField({ label, children }: { label: string; children: React.Rea
 
 // ────────────────────────────────────────────────────────────
 // employees tab — 关联数字员工,可增删
+// R27 规则 4: 添加 agent 用 ResourcePicker,过滤 owner_user_id IS NULL 或 = 当前真人
 // ────────────────────────────────────────────────────────────
+interface UnassignedAgent {
+  id: string;
+  name: string;
+  display_name: string | null;
+  description: string | null;
+  role_template: string | null;
+  owner_user_id: string | null;
+}
+
 export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?: () => void }) {
   const [bound, setBound] = React.useState<PersonAgent[]>([]);
-  const [allAgents, setAllAgents] = React.useState<DigitalEmployee[]>([]);
+  const [available, setAvailable] = React.useState<UnassignedAgent[]>([]);
   const [loading, setLoading] = React.useState(true);
-  const [showAdd, setShowAdd] = React.useState(false);
-  const [selected, setSelected] = React.useState<string[]>([]);
+  const [pickerOpen, setPickerOpen] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
 
   const load = React.useCallback(() => {
     setLoading(true);
-    Promise.all([fetchPersonAgents(person.id), fetchAgents()])
+    // R27 规则 4: 只拉未归属 OR 归属当前真人的 agent(filter=unassigned&owner=)
+    const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
+    const fp = (p: string) => (API_BASE ? API_BASE + p : p);
+    Promise.all([
+      fetchPersonAgents(person.id),
+      api<{ data?: UnassignedAgent[] } | UnassignedAgent[]>(
+        fp(`/api/v2/employees?filter=unassigned&owner=${person.id}&limit=200`),
+      ).then((r) => {
+        const arr = (r as any)?.data ?? r;
+        return Array.isArray(arr) ? arr : [];
+      }).catch(() => []),
+    ])
       .then(([b, a]) => {
         setBound(b);
-        setAllAgents(a);
+        setAvailable(a);
       })
       .finally(() => setLoading(false));
   }, [person.id]);
@@ -231,13 +256,12 @@ export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?
     load();
   }, [load]);
 
-  const handleAdd = async () => {
+  const handleAdd = async (selected: UnassignedAgent[]) => {
     if (selected.length === 0) return;
     setBusy(true);
     try {
-      await patchPersonAgents(person.id, selected, "add");
-      setSelected([]);
-      setShowAdd(false);
+      await patchPersonAgents(person.id, selected.map((s) => s.id), "add");
+      setPickerOpen(false);
       load();
       onChanged?.();
     } finally {
@@ -258,7 +282,15 @@ export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?
   };
 
   const boundIds = new Set(bound.map((b) => b.id));
-  const availableToAdd = allAgents.filter((a) => !boundIds.has(a.id));
+  // R27 规则 4: 排除已绑定的,剩余的喂给 ResourcePicker
+  const pickerItems: ResourceItem[] = available
+    .filter((a) => !boundIds.has(a.id))
+    .map((a) => ({
+      id: a.id,
+      label: a.display_name ?? a.name,
+      description: a.description ?? a.role_template ?? "general",
+    }));
+  const canAdd = pickerItems.length > 0;
 
   if (loading) {
     return <div className="h-48 rounded-2xl bg-muted/40 animate-pulse" />;
@@ -272,6 +304,9 @@ export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?
         <div>
           <p>该员工可调度 <strong className="text-foreground">{bound.length}</strong> 个数字员工。
             数字员工决定能力范围 — 解绑后该员工将无法再调用对应 bot。</p>
+          <p className="mt-1 text-[11px] text-muted-foreground/80">
+            添加时只显示<strong className="text-foreground">未归属</strong>或<strong className="text-foreground">已归属此真人</strong>的 agent(R27 规则 4)。
+          </p>
         </div>
       </div>
 
@@ -318,69 +353,26 @@ export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?
         </div>
       )}
 
-      {/* 添加按钮 */}
-      {!showAdd ? (
-        <div>
-          <button
-            onClick={() => setShowAdd(true)}
-            disabled={availableToAdd.length === 0}
-            className="inline-flex items-center gap-1 rounded-lg border border-dashed border-border px-3 py-2 text-[12px] text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors disabled:opacity-40"
-          >
-            <Plus className="size-3.5" /> 添加数字员工
-          </button>
-        </div>
-      ) : (
-        <div className="rounded-xl border border-border bg-card p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h4 className="text-[13px] font-medium">从库中选择数字员工</h4>
-            <button
-              onClick={() => { setShowAdd(false); setSelected([]); }}
-              className="text-[11px] text-muted-foreground hover:text-foreground"
-            >取消</button>
-          </div>
-          <div className="max-h-72 overflow-y-auto space-y-1">
-            {availableToAdd.length === 0 ? (
-              <p className="text-[12px] text-muted-foreground py-4 text-center">无可绑定的数字员工</p>
-            ) : availableToAdd.map((a) => {
-              const checked = selected.includes(a.id);
-              return (
-                <label
-                  key={a.id}
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors",
-                    checked ? "bg-foreground/5 ring-1 ring-foreground/20" : "hover:bg-muted/50",
-                  )}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={(e) => {
-                      if (e.target.checked) setSelected([...selected, a.id]);
-                      else setSelected(selected.filter((x) => x !== a.id));
-                    }}
-                    className="size-4"
-                  />
-                  <InitialsAvatar name={a.displayName ?? a.name} size="sm" seed={a.id} />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-medium truncate">{a.displayName ?? a.name}</div>
-                    <div className="text-[11px] text-muted-foreground font-mono">{a.roleTemplate ?? "general"}</div>
-                  </div>
-                </label>
-              );
-            })}
-          </div>
-          <div className="mt-3 flex items-center justify-between">
-            <span className="text-[11px] text-muted-foreground">已选 {selected.length} 个</span>
-            <button
-              onClick={handleAdd}
-              disabled={busy || selected.length === 0}
-              className="rounded-md bg-foreground text-background px-3 py-1.5 text-[12px] font-medium hover:opacity-90 disabled:opacity-50"
-            >
-              {busy ? "绑定中…" : `绑定 ${selected.length} 个`}
-            </button>
-          </div>
-        </div>
-      )}
+      {/* R27 规则 4: 添加按钮 → 弹 ResourcePicker(过滤未归属/已归属此真人) */}
+      <div>
+        <button
+          onClick={() => setPickerOpen(true)}
+          disabled={!canAdd || busy}
+          className="inline-flex items-center gap-1 rounded-lg border border-dashed border-border px-3 py-2 text-[12px] text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors disabled:opacity-40"
+          data-testid="add-employee-trigger"
+        >
+          <Plus className="size-3.5" /> {canAdd ? "添加数字员工" : "无可添加的数字员工(全部已归属他人)"}
+        </button>
+        <ResourcePicker
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          title="选择数字员工(未归属 或 已归属此真人)"
+          items={pickerItems}
+          selectedIds={[]}
+          confirmText={`绑定 ${busy ? "中…" : ""}`}
+          onConfirm={(sel) => void handleAdd(sel)}
+        />
+      </div>
     </div>
   );
 }
