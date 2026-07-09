@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import {
-  Bot, MessageSquare, Search, RefreshCcw, Pin, Filter, Clock, Zap, Loader2, AlertCircle,
+  Bot, MessageSquare, Search, RefreshCcw, Pin, Filter, Clock, Zap, Loader2, AlertCircle, Lock,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { mf } from "@/lib/foundation/api";
@@ -73,10 +73,22 @@ export default function L1Page() {
   const [detailOpen, setDetailOpen] = React.useState(false);
   const [addOpen, setAddOpen] = React.useState(false);
 
+  // ⑨ 锁定当前 Agent:从 URL ?botId= 读取,默认带 bot_id 过滤,不显示全局杂乱数据。
+  const [botId, setBotId] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const p = new URLSearchParams(window.location.search).get("botId");
+    setBotId(p);
+  }, []);
+
   const load = React.useCallback(() => {
     setLoading(true);
     setError(null);
-    const qs = query.trim() ? `?q=${encodeURIComponent(query.trim())}&limit=100` : "?limit=100";
+    const params = new URLSearchParams();
+    if (query.trim()) params.set("q", query.trim());
+    params.set("limit", "100");
+    if (botId) params.set("bot_id", botId);
+    const qs = `?${params.toString()}`;
     api<{ memories: MemoryItem[]; total: number; hasMore: boolean }>(`/api/v2/foundation/memory/l1${qs}`)
       .then((d) => {
         setItems(d.memories ?? []);
@@ -85,13 +97,13 @@ export default function L1Page() {
       })
       .catch((e: any) => setError(String(e?.message ?? e)))
       .finally(() => setLoading(false));
-  }, [query, minImportance]);
+  }, [query, minImportance, botId]);
 
   React.useEffect(() => {
     const t = setTimeout(load, query.trim() ? 300 : 0);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
+  }, [query, botId]);
 
   const active = items.find((i) => i.id === selected) ?? items[0];
 
@@ -130,6 +142,26 @@ export default function L1Page() {
           <Filter className="size-3" />
           来源
         </Button>
+        {botId ? (
+          <button
+            type="button"
+            onClick={() => {
+              setBotId(null);
+              if (typeof window !== "undefined" && window.history.replaceState) {
+                const url = new URL(window.location.href);
+                url.searchParams.delete("botId");
+                window.history.replaceState({}, "", url.toString());
+              }
+            }}
+            className="inline-flex h-7 items-center gap-1 rounded border border-amber-500/30 bg-amber-500/10 px-2 text-[11px] font-mono text-amber-700/80 hover:bg-amber-500/20 dark:text-amber-300/80"
+            title="已锁定当前 Agent,点击查看全部 Agent"
+            data-testid="memory-bot-lock"
+          >
+            <Lock className="size-3" />
+            已锁定 Agent
+            <span className="opacity-60">×</span>
+          </button>
+        ) : null}
         <div className="ml-auto flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">
           <Zap className="size-3" />
           {loading ? "加载中…" : `共 ${total} 条 · 显示 ${items.length} 条`}
