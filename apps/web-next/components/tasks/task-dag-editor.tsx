@@ -95,6 +95,7 @@ import {
 import { api } from "@/lib/api";
 import { usePipelineProgress, type NodeRunStateLike } from "@/lib/use-pipeline-progress";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/components/toast/toast-provider";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Props
@@ -156,6 +157,7 @@ interface DocState {
 function TaskDagEditorInner(props: TaskDagEditorProps) {
   const isViewer = props.variant === "viewer" || props.readOnly === true;
   const reactFlow = useReactFlow();
+  const toast = useToast();
 
   // ── Bootstrap: load + normalise initial doc ──────────────────────────────
   const initialDoc = React.useMemo<DocState>(() => {
@@ -331,7 +333,7 @@ function TaskDagEditorInner(props: TaskDagEditorProps) {
       const srcKind = (src.data as DagNodeMeta).kind;
       const tgtKind = (tgt.data as DagNodeMeta).kind;
       if (!isConnectionAllowed(srcKind, tgtKind)) {
-        window.alert(`不允许的连线: ${srcKind} → ${tgtKind}`);
+        toast.error(`不允许的连线: ${srcKind} → ${tgtKind}`);
         return;
       }
       // Duplicate edge?
@@ -348,7 +350,7 @@ function TaskDagEditorInner(props: TaskDagEditorProps) {
       }));
       const cycle = detectCycle(flatNodes, trial);
       if (cycle) {
-        window.alert(`连线会形成环: ${cycle.join(" → ")}`);
+        toast.error(`连线会形成环: ${cycle.join(" → ")}`);
         return;
       }
       pushHistory();
@@ -444,7 +446,7 @@ function TaskDagEditorInner(props: TaskDagEditorProps) {
 
   const handleTestRun = React.useCallback(async () => {
     if (!validationMsg.ok) {
-      window.alert(`DAG 校验未通过: ${validationMsg.text}`);
+      toast.error(`DAG 校验未通过: ${validationMsg.text}`);
       return;
     }
     setRunning(true);
@@ -456,7 +458,7 @@ function TaskDagEditorInner(props: TaskDagEditorProps) {
         pid = await props.onSaveDraft();
       }
       if (!pid) {
-        window.alert("请先保存任务后再测试运行");
+        toast.info("请先保存任务后再测试运行");
         return;
       }
       const r = await api<{
@@ -468,13 +470,13 @@ function TaskDagEditorInner(props: TaskDagEditorProps) {
         body: { triggeredBy: "user", initialInput: {} },
       });
       if (r?.error) {
-        window.alert(`触发失败: ${r.error}`);
+        toast.error(`触发失败: ${r.error}`);
       } else if (!props.pipelineId && pid) {
         // 第一次保存成功 → 提示用户草稿已落库(详情页将基于此 pid 渲染 WS)
-        window.alert(`已自动保存为草稿,任务 ID: ${pid}\n触发中,执行日志将实时刷新。`);
+        toast.success(`已自动保存为草稿,任务 ID: ${pid}。触发中,执行日志将实时刷新。`);
       }
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "触发失败");
+      toast.error(e instanceof Error ? e.message : "触发失败");
     } finally {
       setRunning(false);
     }

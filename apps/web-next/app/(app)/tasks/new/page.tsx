@@ -22,6 +22,7 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useToast } from "@/components/toast/toast-provider";
 
 const TaskDagEditor = dynamic(
   () =>
@@ -38,6 +39,7 @@ const TaskDagEditor = dynamic(
 );
 
 export default function NewTaskPage() {
+  const toast = useToast();
   const router = useRouter();
   const [name, setName] = React.useState("");
   const [description, setDescription] = React.useState("");
@@ -112,7 +114,7 @@ export default function NewTaskPage() {
     const id = await saveDraft();
     if (!id) {
       // saveDraft 已经把 error 写进 state;额外弹窗兜底
-      window.alert(`保存失败: ${error ?? "未知错误"}`);
+      toast.error(`保存失败: ${error ?? "未知错误"}`);
       return;
     }
     router.push(`/tasks/${id}/`);

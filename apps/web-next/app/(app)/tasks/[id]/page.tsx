@@ -27,6 +27,7 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/components/toast/toast-provider";
 
 import { ExecutionLogPanel } from "@/components/tasks/execution-log-panel";
 import { TaskBindingPanel } from "@/components/tasks/task-binding-panel";
@@ -71,6 +72,7 @@ interface RawPipeline {
 }
 
 export default function TaskDetailPage() {
+  const toast = useToast();
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const id = params?.id;
@@ -125,7 +127,7 @@ export default function TaskDetailPage() {
         },
       });
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "保存失败");
+      toast.error(e instanceof Error ? e.message : "保存失败");
     } finally {
       setSaving(false);
     }

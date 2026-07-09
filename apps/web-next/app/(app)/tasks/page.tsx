@@ -37,6 +37,7 @@ import {
 import { TaskCard, type TaskListItem, type ViewMode } from "@/components/tasks/task-card";
 import { PipelineRunsSection } from "@/components/r10/sections";
 import type { TaskStatus } from "@/components/tasks/types";
+import { useToast } from "@/components/toast/toast-provider";
 
 interface RawPipeline {
   id: string;
@@ -98,6 +99,7 @@ const STATUS_OPTIONS: Array<{ value: "all" | TaskStatus; label: string }> = [
 ];
 
 export default function TasksListPage() {
+  const toast = useToast();
   const [tasks, setTasks] = React.useState<TaskListItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -289,7 +291,7 @@ export default function TasksListPage() {
               setSelected(new Set());
               window.location.reload();
             } catch (e) {
-              window.alert(e instanceof Error ? e.message : "批量操作失败");
+              toast.error(e instanceof Error ? e.message : "批量操作失败");
             } finally {
               setBatchRunning(false);
             }

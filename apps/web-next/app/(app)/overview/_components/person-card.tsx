@@ -42,6 +42,7 @@ import {
 import { InitialsAvatar } from "./avatar";
 import { cn } from "@/lib/utils";
 import { getUser } from "@/lib/auth";
+import { useToast } from "@/components/toast/toast-provider";
 
 // ────────────────────────────────────────────────────────────
 // 状态颜色映射 (oklch 不刺眼)
@@ -79,6 +80,7 @@ interface Props {
 }
 
 export function PersonCard({ person, className, onChanged }: Props) {
+  const toast = useToast();
   const router = useRouter();
   const me = typeof window !== "undefined" ? getUser() : null;
   const isSysAdmin = person.email === SYSADMIN_EMAIL;
@@ -182,7 +184,7 @@ export function PersonCard({ person, className, onChanged }: Props) {
     try {
       const ok = await deletePerson(person.id);
       if (ok) onChanged?.();
-      else alert("删除失败:请先标记为离职");
+      else toast.error("删除失败:请先标记为离职");
     } finally {
       setBusy(false);
     }
@@ -602,7 +604,7 @@ function ResetPasswordModal({
     const ok = await resetPersonPassword(person.id, pwd);
     setBusy(false);
     if (ok) {
-      alert(`${person.name} 的密码已重置`);
+      toast.success(`${person.name} 的密码已重置`);
       onDone();
     } else {
       setErr("重置失败,请检查权限");
