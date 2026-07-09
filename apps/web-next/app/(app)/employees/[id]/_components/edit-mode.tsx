@@ -676,6 +676,12 @@ export function agentToDraft(agent: Agent, fields: string[]): Record<string, unk
       out[f] = agent.knowledgeFolders;
     } else if (f === "owner_user_id") {
       out[f] = (raw as any).owner_user_id ?? agent.ownerId ?? "";
+    } else if (f === "visibility") {
+      out[f] = agent.visibility ?? "team";
+    } else if (f === "channel_ids") {
+      out[f] = Array.isArray(agent.channelIds) ? agent.channelIds : [];
+    } else if (f === "working_dir") {
+      out[f] = agent.workingDir ?? null;
     }
   }
   return out;
