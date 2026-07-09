@@ -274,7 +274,7 @@ export function TabCollab({ id }: { id: string }) {
   return (
     <EditPane id={id} label="collab" onSaved={reload} isDirty={isDirty} onSave={onSave}>
       {(ctx) => (
-        <div className="space-y-5">
+        <div className="space-y-4">
           {/* === 协作关系图说明 === */}
           <div className="flex items-start gap-2 rounded-xl border border-foreground/15 bg-foreground/[0.03] p-4 text-[12.5px] text-foreground/80">
             <Info className="mt-0.5 size-3.5 shrink-0 text-foreground/70" />
@@ -296,7 +296,7 @@ export function TabCollab({ id }: { id: string }) {
             pipelines={pipelinesOfAgent}
           />
 
-          <div className="grid gap-5 lg:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-2">
             {/* === 主理人 === */}
             <section>
               <h3 className="mb-3 flex items-center gap-2 text-[13px] font-medium tracking-tight text-foreground/65">
@@ -308,7 +308,7 @@ export function TabCollab({ id }: { id: string }) {
                   <button
                     type="button"
                     onClick={() => setOwnerPickerOpen(true)}
-                    className="flex w-full items-center justify-between rounded-2xl bg-card px-4 py-3 text-left ring-1 ring-border hover:ring-foreground/30"
+                    className="flex w-full items-center justify-between rounded-xl border border-border bg-card p-5 text-left hover:border-foreground/30"
                     data-testid="owner-picker-trigger"
                   >
                     <span className="flex items-center gap-2">
@@ -345,7 +345,7 @@ export function TabCollab({ id }: { id: string }) {
                 </div>
               ) : (
                 <ul className="space-y-2">
-                  <li className="flex items-center justify-between rounded-2xl bg-card px-4 py-3 ring-1 ring-border">
+                  <li className="flex items-center justify-between rounded-xl border border-border bg-card p-5">
                     <span className="text-[13.5px]">{ownerName}</span>
                     <span className="font-mono text-[11px] text-foreground/45">业务所有者</span>
                   </li>
@@ -359,7 +359,7 @@ export function TabCollab({ id }: { id: string }) {
                 <Radio className="size-4 text-foreground/45" />
                 可见性 · Visibility
               </h3>
-              <div className="rounded-2xl bg-card p-4 ring-1 ring-border">
+              <div className="rounded-xl border border-border bg-card p-5">
                 <div className="space-y-2">
                   {VISIBILITY_OPTIONS.map((opt) => {
                     const selected = visibilityValue === opt.value;
@@ -622,6 +622,31 @@ function buildAgentGraph(
     );
   });
 
+  // R32-C 改动 ⑪:孤立检测 — 若 self 无任何连线(无入口/无资源/无关联),
+  // 返回空 nodes,让 RelationGraph 走 emptyHint 分支,避免画布上只剩一个孤点。
+  if (edges.length === 0) {
+    return { nodes: [], edges: [], height, resourceCount: 0 };
+  }
+
+  // R32-C 改动 ⑪:防御性 — 扫描所有节点,若仍有未连线节点(理论不应发生),
+  // 给它们补一条到 self 的 dashed 边,确保"每个节点都有连线"。
+  const wiredIds = new Set<string>();
+  for (const e of edges) {
+    wiredIds.add(e.source);
+    wiredIds.add(e.target);
+  }
+  for (const n of nodes) {
+    if (!wiredIds.has(n.id)) {
+      edges.push(
+        dashedEdge({
+          id: `e-self-orphan-${n.id}`,
+          source: "self",
+          target: n.id,
+        }),
+      );
+    }
+  }
+
   return { nodes, edges, height, resourceCount: totalResCount };
 }
 
@@ -644,7 +669,7 @@ function R15AFields({ agent }: { agent: Agent }) {
       <h3 className="mb-3 flex items-center gap-2 text-[13px] font-medium tracking-tight text-foreground/65">
         R15-A · 多 Bot 字段(只读)
       </h3>
-      <div className="space-y-2 rounded-2xl bg-card p-4 ring-1 ring-border">
+      <div className="space-y-2 rounded-xl border border-border bg-card p-5">
         <Row label="工作目录 · working_dir">
           <div className="inline-flex items-center gap-2">
             <code className="font-mono text-[12.5px]">
