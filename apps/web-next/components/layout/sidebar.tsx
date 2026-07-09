@@ -10,11 +10,9 @@ import {
   Users,
   Wallet,
   Stethoscope,
-  Sparkles,
   ScrollText,
   Bot,
   Library,
-  Workflow,
   Database,
   Brain,
   BookOpen,
@@ -28,7 +26,6 @@ import {
   Cable,
   Plug,
   KeyRound,
-  GitBranch,
   type LucideIcon,
 } from "lucide-react";
 
@@ -48,48 +45,49 @@ interface NavGroup {
   items: NavItem[];
 }
 
+// R29-A: 一级板块仅为分类标签,点击固定跳仪表盘(/overview/dashboard)。
+// 独立"路由"菜单删除(内置到大模型);"优化"已合并到诊断(R14-E)。
 const NAV_GROUPS: NavGroup[] = [
   {
     module: "overview",
-    title: "公司综阅",
+    title: "公司综业",
     defaultHref: "/overview/dashboard",
     icon: LayoutDashboard,
     items: [
       { label: "仪表盘", href: "/overview/dashboard", icon: LayoutDashboard },
       { label: "组织部", href: "/overview/people", icon: Users },
-      { label: "财务", href: "/overview/billing", icon: Wallet },
-      { label: "诊断", href: "/overview/diagnosis", icon: Stethoscope },
-      { label: "日志", href: "/overview/logs", icon: ScrollText },
+      { label: "财务室", href: "/overview/billing", icon: Wallet },
+      { label: "系统诊断", href: "/overview/diagnosis", icon: Stethoscope },
+      { label: "工作日志", href: "/overview/logs", icon: ScrollText },
     ],
   },
   {
     module: "employees",
-    title: "数字员工",
-    defaultHref: "/employees",
+    title: "智能体员工",
+    defaultHref: "/overview/dashboard",
     icon: Bot,
     items: [
-      // 只保留员工库入口;新建向导 / 模板在员工库页面内部已有按钮。
-      // 员工详情 [id] 是模板占位,不显示在导航里。
-      { label: "员工库", href: "/employees", icon: Library },
+      // 只保留"数字员工"入口;新建向导 / 模板在员工库页面内部已有按钮。
+      { label: "数字员工", href: "/employees", icon: Library },
     ],
   },
   {
     module: "foundation",
-    title: "记忆沉淀",
-    defaultHref: "/foundation/memory/l1",
+    title: "记忆知识",
+    defaultHref: "/overview/dashboard",
     icon: Database,
     items: [
-      // L1/L2/L3 由记忆页面内部 tab 切换,左侧只保留一个"记忆"入口(默认 L1)。
-      { label: "记忆", href: "/foundation/memory/l1", icon: Brain },
+      // L1/L2/L3 由记忆页面内部 tab 切换,左侧只保留一个入口(默认 L1)。
+      { label: "记忆沉淀", href: "/foundation/memory/l1", icon: Brain },
       { label: "知识库", href: "/foundation/knowledge", icon: BookOpen },
-      { label: "抽取", href: "/foundation/extraction", icon: FileSearch },
-      { label: "反馈", href: "/foundation/feedback", icon: MessageSquareWarning },
+      { label: "优化抽取", href: "/foundation/extraction", icon: FileSearch },
+      { label: "反馈迭代", href: "/foundation/feedback", icon: MessageSquareWarning },
     ],
   },
   {
     module: "tasks",
     title: "任务协作",
-    defaultHref: "/tasks",
+    defaultHref: "/overview/dashboard",
     icon: ClipboardList,
     items: [
       // 新建任务在任务列表页面内部已有按钮;任务详情 [id] 是模板占位。
@@ -100,15 +98,15 @@ const NAV_GROUPS: NavGroup[] = [
   {
     module: "channels",
     title: "资源频道",
-    defaultHref: "/channels/llm",
+    defaultHref: "/overview/dashboard",
     icon: Cable,
     items: [
-      { label: "LLM", href: "/channels/llm", icon: Cpu },
-      { label: "Skills", href: "/channels/skills", icon: Wrench },
-      { label: "MCP", href: "/channels/mcp", icon: Plug },
-      { label: "接入点", href: "/channels/endpoints", icon: Cable },
-      { label: "OAuth", href: "/channels/oauth", icon: KeyRound },
-      { label: "路由", href: "/channels/routing", icon: GitBranch },
+      // "路由" 已内置到大模型,不再单独列。
+      { label: "大模型", href: "/channels/llm", icon: Cpu },
+      { label: "技能地图", href: "/channels/skills", icon: Wrench },
+      { label: "外部互联", href: "/channels/mcp", icon: Plug },
+      { label: "访问入口", href: "/channels/endpoints", icon: Cable },
+      { label: "互联授权", href: "/channels/oauth", icon: KeyRound },
     ],
   },
 ];
@@ -133,9 +131,9 @@ export function Sidebar() {
             P
           </div>
           <div className="leading-tight">
-            <div className="text-sm font-semibold tracking-tight">Panmira</div>
+            <div className="text-sm font-semibold tracking-tight">PAMELA</div>
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              2.0
+              2.4
             </div>
           </div>
         </Link>
@@ -193,7 +191,8 @@ export function Sidebar() {
       </nav>
 
       <div className="p-3 border-t border-sidebar-border text-[10px] text-muted-foreground">
-        <div>Panmira 2.0</div>
+        <div>PAMELA 2.4</div>
+        <div className="text-[9px] opacity-60">by 海联智达</div>
       </div>
     </aside>
   );
