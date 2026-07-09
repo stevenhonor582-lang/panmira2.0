@@ -287,7 +287,13 @@ export function TabCollab({ id }: { id: string }) {
   }, [loadPeople]);
 
   React.useEffect(() => {
-    if (id) void loadRelationData();
+    if (id) {
+      setBots([]);
+      setRelated([]);
+      setPipelinesOfAgent([]);
+      setAgentRows([]);
+      void loadRelationData();
+    }
   }, [id, loadRelationData]);
 
   if (loading) return <div className="h-48 rounded-2xl bg-muted/40 animate-pulse" />;
@@ -340,7 +346,7 @@ export function TabCollab({ id }: { id: string }) {
           {/* === 协作关系图画布 === */}
           <AgentRelationCanvas
             agent={agent}
-            bots={bots.filter((b) => b.agentId === agent.id)}
+            bots={bots.filter((b) => (b as any).agent_id === agent.id)}
             related={related}
             pipelines={pipelinesOfAgent}
           />
