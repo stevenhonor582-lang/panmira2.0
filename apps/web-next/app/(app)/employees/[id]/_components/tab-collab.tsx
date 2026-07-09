@@ -480,9 +480,11 @@ function buildAgentGraph(
   related: RelatedAgent[],
   pipelines: { id: string; name: string }[],
 ): { nodes: RelationNode[]; edges: RelationEdge[]; height: number; resourceCount: number } {
+  // 三列布局:入口(左) → 本 Agent(中心高亮) → 资源簇(右)
+  // self 必须是视觉中心:大节点、紫色高亮、所有边汇聚于此。
   const X_ENTRY = 0;
-  const X_SELF = 280;
-  const X_RES = 600;
+  const X_SELF = 300;
+  const X_RES = 620;
 
   const nodes: RelationNode[] = [];
   const edges: RelationEdge[] = [];
@@ -499,26 +501,34 @@ function buildAgentGraph(
     : agent.mcpServers;
   const tasks = pipelines.map((p) => p.name);
 
-  type ResItem = { key: string; cat: ResCat };
-  const resItems: ResItem[] = [
-    ...kbs.map((k) => ({ key: k, cat: "kb" as const })),
-    ...tasks.map((k) => ({ key: k, cat: "task" as const })),
-    ...skills.map((k) => ({ key: k, cat: "skill" as const })),
-    ...tools.map((k) => ({ key: k, cat: "tool" as const })),
-    ...mcps.map((k) => ({ key: k, cat: "mcp" as const })),
-  ];
+  // 按类别聚合成 5 个簇(空类别不显示)
+  const clusters: Array<{ cat: ResCat; items: string[] }> = [
+    { cat: "kb", items: kbs },
+    { cat: "task", items: tasks },
+    { cat: "skill", items: skills },
+    { cat: "tool", items: tools },
+    { cat: "mcp", items: mcps },
+  ].filter((c) => c.items.length > 0);
 
-  // 计算总行数用于高度
-  const totalRows = Math.max(bots.length, related.length + 1, resItems.length);
-  const height = Math.max(420, totalRows * 80 + 80);
+  const totalResCount = clusters.reduce((n, c) => n + c.items.length, 0);
 
-  // 1) 入口节点(左列)
+  // 高度:取入口/关联/资源簇的最大行数,保证 self 居中且画布紧凑
+  const entryRows = Math.max(1, bots.length);
+  const relatedRows = Math.max(0, related.length);
+  const clusterRows = Math.max(1, clusters.length);
+  const maxRows = Math.max(entryRows, relatedRows, clusterRows);
+  const height = Math.max(440, maxRows * 110 + 100);
+
+  const centerY = height / 2 - 30;
+
+  // 1) 入口节点(左列):整体垂直居中对齐 self
+  const entryStartY = centerY - ((bots.length - 1) * 90) / 2;
   bots.forEach((b, i) => {
     const meta = platformMeta(b.platform);
     nodes.push({
       id: `entry-${b.id ?? b.name}`,
       type: "relation",
-      position: { x: X_ENTRY, y: 60 + i * 80 },
+      position: { x: X_ENTRY, y: entryStartY + i * 90 },
       data: {
         kind: "entry",
         label: b.name,
@@ -528,14 +538,14 @@ function buildAgentGraph(
     });
   });
 
-  // 2) 本 Agent(中心)
-  const selfY = height / 2 - 30;
+  // 2) 本 Agent(中心,大节点 + 紫色高亮)
   nodes.push({
     id: "self",
     type: "relation",
-    position: { x: X_SELF, y: selfY },
+    position: { x: X_SELF, y: centerY },
     data: {
       kind: "self",
+      size: "lg",
       label: agent.displayName || agent.name,
       sublabel: `${agent.role} · ${agent.model.split("-").slice(0, 2).join("-")}`,
       icon: "bot",
@@ -543,16 +553,14 @@ function buildAgentGraph(
     } as RelationNodeData,
   });
 
-  // 3) 关联 Agent(self 上下堆叠,虚线边)
-  const relSpacing = 110;
+  // 3) 关联 Agent:self 下方紧凑堆叠(不抢中心,虚线表示弱关联)
+  //    视觉上 self 在中心,related 在下方作为"同 pipeline 协作"的辅助信息。
+  const relatedStartY = centerY + 120;
   related.forEach((r, i) => {
-    const above = i % 2 === 0;
-    const offset = Math.ceil((i + 1) / 2) * relSpacing;
-    const y = above ? selfY - offset : selfY + offset;
     nodes.push({
       id: `related-${r.id}`,
       type: "relation",
-      position: { x: X_SELF, y },
+      position: { x: X_SELF, y: relatedStartY + i * 90 },
       data: {
         kind: "related",
         label: r.displayName || r.name,
@@ -572,22 +580,28 @@ function buildAgentGraph(
     );
   });
 
-  // 4) 资源节点(右列,按类别堆叠)
-  const resStartY = Math.max(40, height / 2 - (resItems.length * 70) / 2);
-  resItems.forEach((it, i) => {
-    const id = `res-${it.cat}-${it.key}`;
+  // 4) 资源簇节点(右列):同类合并为 1 个大节点,带数量 badge
+  const clusterStartY = centerY - ((clusters.length - 1) * 100) / 2;
+  clusters.forEach((c, i) => {
+    const id = `cluster-${c.cat}`;
+    const names = c.items;
+    const preview = names.slice(0, 2).join("、") + (names.length > 2 ? ` 等 ${names.length} 项` : names.length === 1 ? "" : "");
     nodes.push({
       id,
       type: "relation",
-      position: { x: X_RES, y: resStartY + i * 70 },
+      position: { x: X_RES, y: clusterStartY + i * 100 },
       data: {
         kind: "resource",
-        label: it.key,
-        sublabel: CATEGORY_LABEL[it.cat],
-        icon: CATEGORY_ICON[it.cat],
-        category: it.cat,
+        size: "lg",
+        label: `${CATEGORY_LABEL[c.cat]} · ${names.length} 项`,
+        sublabel: preview || "—",
+        icon: CATEGORY_ICON[c.cat],
+        category: c.cat,
+        badge: `×${names.length}`,
+        items: names,
       } as RelationNodeData,
     });
+    // 边:self → 簇(strong 紫色加粗,强调"本员工拥有这些资源")
     edges.push(
       strongEdge({
         id: `e-self-${id}`,
@@ -597,16 +611,18 @@ function buildAgentGraph(
     );
   });
 
-  // 5) 入口 → self
+  // 5) 入口 → self(strong 让入口汇聚感强)
   bots.forEach((b) => {
-    edges.push({
-      id: `e-entry-${b.id ?? b.name}-self`,
-      source: `entry-${b.id ?? b.name}`,
-      target: "self",
-    });
+    edges.push(
+      strongEdge({
+        id: `e-entry-${b.id ?? b.name}-self`,
+        source: `entry-${b.id ?? b.name}`,
+        target: "self",
+      }),
+    );
   });
 
-  return { nodes, edges, height, resourceCount: resItems.length };
+  return { nodes, edges, height, resourceCount: totalResCount };
 }
 
 // ────────────────────────────────────────────────────────────
