@@ -1,21 +1,42 @@
 // R20 (2026-07-09): AI 任务编排助手 — 浮动面板版(不遮罩,看得到画布变化)。
-// User describes a task in natural language; the backend
-// /api/v2/admin/pipelines/ai-generate endpoint calls the default LLM
-// and returns React Flow nodes/edges. Panel floats right so the canvas
-// stays visible — user watches nodes appear as AI generates.
+// R21 (2026-07-09): 生成过程展示
+//   - 生成中:分阶段动画(理解任务 → 拆解 → 选员工 → 连线 → 整理)
+//   - 生成后:展示 AI 思考(explanation + 每节点 reason)
+//   让用户看到 AI 怎么"想",而不只是一个 spinner。
 
 "use client";
 
 import * as React from "react";
-import { Loader2, Sparkles, Wand2, X, GripVertical } from "lucide-react";
+import {
+  Loader2,
+  Sparkles,
+  Wand2,
+  X,
+  GripVertical,
+  CheckCircle2,
+  RotateCcw,
+  Trash2,
+  Brain,
+} from "lucide-react";
 
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
+/** 节点最小结构(从 ai-generate 返回的 React Flow node 格式)。 */
+interface AiGeneratedNode {
+  id?: string;
+  data?: {
+    kind?: string;
+    label?: string;
+    refId?: string;
+    reason?: string;
+  };
+}
+
 /** Shape emitted by POST /api/v2/admin/pipelines/ai-generate. */
 interface AiGenerateResponse {
   success?: boolean;
-  nodes?: unknown[];
+  nodes?: AiGeneratedNode[];
   edges?: unknown[];
   explanation?: string;
   error?: string;
@@ -27,6 +48,8 @@ interface AiAssistantDialogProps {
   onOpenChange: (v: boolean) => void;
   /** Receives the generated graph (already in React Flow format). */
   onGenerate: (nodes: unknown[], edges: unknown[], explanation: string) => void;
+  /** 用户点"清空画布"时调用(由父组件实现)。 */
+  onClearCanvas?: () => void;
 }
 
 const EXAMPLES = [
@@ -38,13 +61,35 @@ const EXAMPLES = [
 const MIN_LEN = 5;
 const MAX_LEN = 2000;
 const PANEL_W = 384;
-const PANEL_H = 560;
+const PANEL_H = 620;
 
-export function AiAssistantDialog({ open, onOpenChange, onGenerate }: AiAssistantDialogProps) {
+/** 生成时的阶段文案 — 不是真流,是前端定时器推进,让用户看到 AI "在思考什么"。 */
+const STAGES = [
+  { emoji: "🧠", label: "理解任务目标" },
+  { emoji: "📋", label: "拆解执行步骤" },
+  { emoji: "🤖", label: "选择数字员工" },
+  { emoji: "🔗", label: "生成节点连线" },
+  { emoji: "✨", label: "整理编排结构" },
+] as const;
+
+const STAGE_INTERVAL_MS = 1500;
+
+export function AiAssistantDialog({
+  open,
+  onOpenChange,
+  onGenerate,
+  onClearCanvas,
+}: AiAssistantDialogProps) {
   const [description, setDescription] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [lastResult, setLastResult] = React.useState<string | null>(null);
+  const [stage, setStage] = React.useState(0);
+  /** 完整的最近一次生成结果 — 用于展示 explanation + 每节点 reason。 */
+  const [lastGenerated, setLastGenerated] = React.useState<{
+    explanation: string;
+    nodes: AiGeneratedNode[];
+    edgeCount: number;
+  } | null>(null);
 
   // 浮动位置(可拖动),默认右上角
   const [pos, setPos] = React.useState({ x: 0, y: 0 });
@@ -82,9 +127,18 @@ export function AiAssistantDialog({ open, onOpenChange, onGenerate }: AiAssistan
       setDescription("");
       setError(null);
       setLoading(false);
-      setLastResult(null);
+      setStage(0);
+      setLastGenerated(null);
     }
   }, [open]);
+
+  // 阶段推进定时器:生成中每 STAGE_INTERVAL_MS 推一格(最后一格停留)
+  React.useEffect(() => {
+    if (!loading) return;
+    if (stage >= STAGES.length - 1) return;
+    const t = setTimeout(() => setStage((s) => Math.min(STAGES.length - 1, s + 1)), STAGE_INTERVAL_MS);
+    return () => clearTimeout(t);
+  }, [loading, stage]);
 
   const generate = async () => {
     const text = description.trim();
@@ -94,7 +148,8 @@ export function AiAssistantDialog({ open, onOpenChange, onGenerate }: AiAssistan
     }
     setLoading(true);
     setError(null);
-    setLastResult(null);
+    setLastGenerated(null);
+    setStage(0);
     try {
       const r = await api<AiGenerateResponse>("/api/v2/admin/pipelines/ai-generate", {
         method: "POST",
@@ -104,8 +159,11 @@ export function AiAssistantDialog({ open, onOpenChange, onGenerate }: AiAssistan
         throw new Error(r.error || r.message || "AI 生成失败");
       }
       onGenerate(r.nodes, r.edges || [], r.explanation || "");
-      // 生成后保持面板开启 — 用户能看画布变化 + 重新生成。不自动关。
-      setLastResult(`✓ 已生成 ${r.nodes.length} 节点 / ${(r.edges || []).length} 连线`);
+      setLastGenerated({
+        explanation: r.explanation || "",
+        nodes: r.nodes,
+        edgeCount: (r.edges || []).length,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -193,10 +251,17 @@ export function AiAssistantDialog({ open, onOpenChange, onGenerate }: AiAssistan
           </div>
         )}
 
-        {lastResult && !loading && (
-          <div className="mt-3 text-xs text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-3 py-2 rounded-md">
-            {lastResult} — 可在画布微调,或修改描述后重新生成。
-          </div>
+        {/* 生成中:阶段进度 */}
+        {loading && <GenerationProgress stage={stage} />}
+
+        {/* 生成完:展示 AI 思考 */}
+        {!loading && lastGenerated && (
+          <GenerationResult
+            data={lastGenerated}
+            onRegenerate={generate}
+            onClearCanvas={onClearCanvas}
+            disabledShort={tooShort}
+          />
         )}
       </div>
 
@@ -211,8 +276,190 @@ export function AiAssistantDialog({ open, onOpenChange, onGenerate }: AiAssistan
           ) : (
             <Sparkles className="size-3.5 mr-1.5" />
           )}
-          {loading ? "生成中..." : "生成编排"}
+          {loading ? "生成中..." : lastGenerated ? "重新生成" : "生成编排"}
         </Button>
+      </div>
+    </div>
+  );
+}
+
+// ── 子组件:生成中的阶段进度 ────────────────────────────────────────────────
+
+function GenerationProgress({ stage }: { stage: number }) {
+  const total = STAGES.length;
+  const pct = Math.round(((stage + 1) / total) * 100);
+  return (
+    <div className="mt-3 rounded-md ring-1 ring-violet-200 bg-violet-50/50 dark:bg-violet-950/20 px-3 py-2.5 space-y-2">
+      {/* 进度条 */}
+      <div className="flex items-center gap-2">
+        <div className="flex-1 h-1.5 rounded-full bg-violet-100 dark:bg-violet-900/40 overflow-hidden">
+          <div
+            className="h-full bg-violet-500 transition-all duration-500 ease-out"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <span className="text-[10px] text-violet-700 dark:text-violet-300 font-mono">
+          {stage + 1}/{total}
+        </span>
+      </div>
+      {/* 当前阶段 */}
+      <div className="flex items-center gap-2 text-xs text-violet-900 dark:text-violet-100">
+        <Brain className="size-3.5 animate-pulse" />
+        <span className="font-medium">
+          {STAGES[stage].emoji} {STAGES[stage].label}
+          <AnimatedDots />
+        </span>
+      </div>
+      {/* 历史阶段(已完成打勾) */}
+      <ul className="space-y-0.5">
+        {STAGES.map((s, i) => {
+          const done = i < stage;
+          const active = i === stage;
+          return (
+            <li
+              key={i}
+              className={`flex items-center gap-1.5 text-[11px] ${
+                done
+                  ? "text-emerald-700 dark:text-emerald-400"
+                  : active
+                    ? "text-violet-900 dark:text-violet-100"
+                    : "text-muted-foreground/50"
+              }`}
+            >
+              {done ? (
+                <CheckCircle2 className="size-3" />
+              ) : active ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <span className="size-3 inline-block" />
+              )}
+              <span>
+                {s.emoji} {s.label}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/** 三点动画 — 不用 CSS keyframes 的话用 React state 推进。 */
+function AnimatedDots() {
+  const [n, setN] = React.useState(0);
+  React.useEffect(() => {
+    const t = setInterval(() => setN((x) => (x + 1) % 4), 500);
+    return () => clearInterval(t);
+  }, []);
+  return <span className="inline-block w-4 text-left">{".".repeat(n)}</span>;
+}
+
+// ── 子组件:生成完的思考展示 ────────────────────────────────────────────────
+
+const KIND_EMOJI: Record<string, string> = {
+  bot: "🤖",
+  human: "👤",
+  skill: "🔧",
+  tool: "⚙️",
+  conditional: "🔀",
+  parallel: "⚡",
+};
+
+function GenerationResult({
+  data,
+  onRegenerate,
+  onClearCanvas,
+  disabledShort,
+}: {
+  data: { explanation: string; nodes: AiGeneratedNode[]; edgeCount: number };
+  onRegenerate: () => void;
+  onClearCanvas?: () => void;
+  disabledShort: boolean;
+}) {
+  return (
+    <div className="mt-3 space-y-2.5">
+      {/* 完成条 */}
+      <div className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-3 py-2 rounded-md">
+        <CheckCircle2 className="size-3.5" />
+        <span className="font-medium">
+          生成完成 · {data.nodes.length} 节点 / {data.edgeCount} 连线
+        </span>
+      </div>
+
+      {/* 任务理解 */}
+      {data.explanation && (
+        <div className="rounded-md ring-1 ring-foreground/10 bg-muted/20 px-3 py-2">
+          <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground mb-1">
+            🎯 任务理解
+          </div>
+          <p className="text-xs leading-relaxed text-foreground/90">
+            {data.explanation}
+          </p>
+        </div>
+      )}
+
+      {/* 步骤拆解 */}
+      <div className="rounded-md ring-1 ring-foreground/10 bg-muted/20 px-3 py-2">
+        <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground mb-1.5">
+          📋 步骤拆解
+        </div>
+        <ol className="space-y-1.5">
+          {data.nodes.map((n, i) => {
+            const kind = n.data?.kind ?? "bot";
+            const emoji = KIND_EMOJI[kind] ?? "·";
+            return (
+              <li key={n.id ?? i} className="flex items-start gap-2 text-xs">
+                <span className="shrink-0 size-4 grid place-items-center rounded-full bg-foreground/5 text-[10px] font-mono text-muted-foreground mt-0.5">
+                  {i + 1}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1">
+                    <span>{emoji}</span>
+                    <span className="font-mono text-[10px] px-1 rounded bg-foreground/5 text-muted-foreground">
+                      {kind}
+                    </span>
+                    <span className="font-medium truncate">
+                      {n.data?.label || n.id || `节点 ${i + 1}`}
+                    </span>
+                  </div>
+                  {n.data?.reason && (
+                    <p className="text-[11px] text-muted-foreground leading-snug mt-0.5 pl-5">
+                      {n.data.reason}
+                    </p>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+
+      {/* 提示 + 操作 */}
+      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <span>🔗 已在画布渲染,可拖拽微调</span>
+      </div>
+      <div className="flex gap-1.5">
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-[11px] flex-1"
+          onClick={onRegenerate}
+          disabled={disabledShort}
+        >
+          <RotateCcw className="size-3 mr-1" />
+          重新生成
+        </Button>
+        {onClearCanvas && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-[11px] flex-1 hover:text-rose-600 hover:ring-rose-200"
+            onClick={onClearCanvas}
+          >
+            <Trash2 className="size-3 mr-1" />
+            清空画布
+          </Button>
+        )}
       </div>
     </div>
   );
