@@ -169,9 +169,14 @@ export const botConfigs = pgTable('bot_configs', {
   remark: text('remark').default(''),
   displayName: text('display_name'),
   agentTemplateId: uuid('agent_template_id').references(() => agents.id, { onDelete: 'set null' }),
+  // R34-A: 指向绑定的 agent 实例（非模板）。与 agentTemplateId 区别：
+  //   agentTemplateId = 此 bot 基于哪个模板创建 (is_template=true 的 agent)
+  //   agentId         = 此 bot 当前绑定的 agent 实例 (is_template=false 的 agent)
+  agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
 }, (t) => ({
   nameIdx: uniqueIndex('bot_configs_name_unique').on(t.name),
   templateIdx: index('bot_configs_template_idx').on(t.agentTemplateId),
+  agentIdx: index('bot_configs_agent_id_idx').on(t.agentId),
 }));
 
 // ── bot_secrets ──────────────────────────────────────────────────────────────
@@ -270,6 +275,8 @@ export const documents = pgTable('documents', {
   feedbackCount: integer('feedback_count'),
   fileUrl: text('file_url'),
   botId: uuid('bot_id').references(() => botConfigs.botId),
+  // R34-A: document 归属的 agent 实例（通过 bot_configs.agent_id 反查填充）
+  agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
   // ── plan-B2: KB 关联 + 权限 + 版本化 ──
   kbId: uuid('kb_id'),
   kbType: varchar('kb_type', { length: 30 }),
@@ -305,6 +312,8 @@ export const folders = pgTable('folders', {
   createdAt: varchar('created_at', { length: 100 }),
   updatedAt: varchar('updated_at', { length: 100 }),
   botId: uuid('bot_id').references(() => botConfigs.botId),
+  // R34-A: folder 归属的 agent 实例（通过 bot_configs.agent_id 反查填充）
+  agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
 });
 
 // ── sessions ─────────────────────────────────────────────────────────────────
