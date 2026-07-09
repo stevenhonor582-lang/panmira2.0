@@ -79,9 +79,9 @@ export async function handleBotRoutes(
         for (const bot of localBots) {
           const row = rowMap.get(bot.name);
           if (row) {
-            (bot as any).remark = (row.configJson as any)?.remark || '';
-            (bot as any).bot_id = (row as any).bot_id || '';
-            (bot as any).display_name = (row as any).display_name || ((bot as any).remark ? bot.name + '--' + (bot as any).remark : bot.name);
+            (bot as any).remark = (row.configJson as any)?.remark || row.remark || '';
+            (bot as any).bot_id = row.botId || '';
+            (bot as any).display_name = row.displayName || ((bot as any).remark ? bot.name + '--' + (bot as any).remark : bot.name);
           }
           // R36-3: 注入实例绑定状态(权威来源)
           const boundAgentId = agentBoundByName.get(bot.name) ?? null;
@@ -107,9 +107,9 @@ export async function handleBotRoutes(
               engine: 'paused',
               workingDirectory: (r.configJson as any).defaultWorkingDirectory || '',
               description: (r.configJson as any).description || '',
-              remark: (r.configJson as any).remark || '',
-              bot_id: (r as any).bot_id || '',
-              display_name: (r as any).display_name || ((r.configJson as any).remark ? r.name + '--' + (r.configJson as any).remark : r.name),
+              remark: (r.configJson as any).remark || r.remark || '',
+              bot_id: r.botId || '',
+              display_name: r.displayName || ((r.configJson as any).remark ? r.name + '--' + (r.configJson as any).remark : r.name),
               paused: true,
               // R36-3: 暂停的 bot 也要带绑定状态,前端才能正确分类
               agent_id: boundAgentId,
