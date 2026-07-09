@@ -21,6 +21,7 @@ import {
 import { StatusPill, toneForLLMStatus } from "@/components/channels/status-pill";
 import { ChannelsPageShell, PageMeta } from "@/components/channels/page-shell";
 import { DenseTable, MonoCell, KeyCell } from "@/components/channels/dense-table";
+import { ModelRoutingPanel } from "@/components/channels/model-routing-panel";
 import {
   Cpu,
   Gauge,
@@ -196,6 +197,13 @@ export default function LLMProvidersPage() {
     else flashToast("err", result.error ?? "删除失败");
   }
 
+  async function setDefault(id: string) {
+    const result = await apiPatch(`/api/providers/${encodeURIComponent(id)}`, { isDefault: true });
+    if (result.ok) flashToast("ok", "已设为默认模型");
+    else flashToast("err", result.error ?? "设置默认失败");
+    refresh();
+  }
+
   function onSaved(name: string, isNew: boolean) {
     setEditing(null);
     setShowCreate(false);
@@ -224,7 +232,7 @@ export default function LLMProvidersPage() {
         <>
           <div className="flex items-center gap-2">
             <Cpu className="size-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold tracking-tight">大语言模型池</h2>
+            <h2 className="text-sm font-semibold tracking-tight">大模型</h2>
             <span className="text-[11px] text-muted-foreground font-mono">
               {rows.length} 个
             </span>
@@ -248,6 +256,7 @@ export default function LLMProvidersPage() {
         </>
       }
     >
+      <ModelRoutingPanel providers={rows} onSetDefault={setDefault} />
       <DenseTable
         head={["服务商", "类型", "模型", "接口地址", "状态", "延迟", "上次测试", "操作"]}
         rows={rows.map((p) => ({
