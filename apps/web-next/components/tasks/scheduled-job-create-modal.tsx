@@ -33,7 +33,7 @@ const FREQUENCY_OPTIONS: Array<{ value: Frequency; label: string }> = [
 ];
 
 /** 根据频率 + 时间生成标准 5 段 cron 表达式 (分 时 日 月 周)。 */
-function buildCron(freq: Frequency, time: string, weekday: number): string {
+function buildCron(freq: Frequency, time: string, weekday: number, monthDay: number): string {
   const [h, m] = time.split(":").map((x) => Number(x) || 0);
   const hh = String(h).padStart(2, "0");
   const mm = String(m).padStart(2, "0");
@@ -43,8 +43,7 @@ function buildCron(freq: Frequency, time: string, weekday: number): string {
     case "weekly":
       return `${mm} ${hh} * * ${weekday}`;
     case "monthly":
-      // 每月 1 号
-      return `${mm} ${hh} 1 * *`;
+      return `${mm} ${hh} ${monthDay} * *`;
     case "custom":
     default:
       return "";
@@ -64,6 +63,7 @@ export function ScheduledJobCreateModal({ open, onClose, onCreated }: ScheduledJ
   const [frequency, setFrequency] = React.useState<Frequency>("daily");
   const [time, setTime] = React.useState("09:00");
   const [weekday, setWeekday] = React.useState(1);
+  const [monthDay, setMonthDay] = React.useState(1);
   const [customCron, setCustomCron] = React.useState("0 9 * * *");
   const [notifyOnSuccess, setNotifyOnSuccess] = React.useState(true);
   const [notifyOnFailure, setNotifyOnFailure] = React.useState(true);
@@ -80,6 +80,7 @@ export function ScheduledJobCreateModal({ open, onClose, onCreated }: ScheduledJ
     setJobDesc("");
     setFrequency("daily");
     setTime("09:00");
+    setMonthDay(1);
     setCustomCron("0 9 * * *");
     setLoadingPipelines(true);
     (async () => {
@@ -111,8 +112,8 @@ export function ScheduledJobCreateModal({ open, onClose, onCreated }: ScheduledJ
 
   const cronPreview = React.useMemo(() => {
     if (frequency === "custom") return customCron || "—";
-    return buildCron(frequency, time, weekday) || "—";
-  }, [frequency, time, weekday, customCron]);
+    return buildCron(frequency, time, weekday, monthDay) || "—";
+  }, [frequency, time, weekday, monthDay, customCron]);
 
   const nextRunPreview = React.useMemo(() => previewNextRun(cronPreview), [cronPreview]);
 
@@ -121,7 +122,7 @@ export function ScheduledJobCreateModal({ open, onClose, onCreated }: ScheduledJ
 
   const handleSubmit = React.useCallback(async () => {
     if (!selectedPipelineId || !jobName.trim()) return;
-    const cronExpr = frequency === "custom" ? customCron.trim() : buildCron(frequency, time, weekday);
+    const cronExpr = frequency === "custom" ? customCron.trim() : buildCron(frequency, time, weekday, monthDay);
     if (!cronExpr) {
       setError("请填写有效的 cron 表达式");
       return;
@@ -160,6 +161,7 @@ export function ScheduledJobCreateModal({ open, onClose, onCreated }: ScheduledJ
     customCron,
     time,
     weekday,
+    monthDay,
     notifyOnSuccess,
     notifyOnFailure,
     onCreated,
@@ -294,7 +296,7 @@ export function ScheduledJobCreateModal({ open, onClose, onCreated }: ScheduledJ
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium">执行频率</label>
+                <label className="text-xs font-medium">执行周期 · 多久运行一次</label>
                 <div className="flex flex-wrap gap-1.5">
                   {FREQUENCY_OPTIONS.map((o) => (
                     <button
@@ -314,38 +316,58 @@ export function ScheduledJobCreateModal({ open, onClose, onCreated }: ScheduledJ
                 </div>
               </div>
               {frequency !== "custom" && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium">执行时间</label>
-                    <Input
-                      type="time"
-                      value={time}
-                      onChange={(e) => setTime(e.target.value)}
-                      className="h-9 text-sm"
-                    />
-                  </div>
-                  {frequency === "weekly" && (
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium">星期</label>
-                      <div className="flex gap-0.5">
-                        {[1, 2, 3, 4, 5, 6, 0].map((d) => (
-                          <button
-                            key={d}
-                            type="button"
-                            onClick={() => setWeekday(d)}
-                            className={cn(
-                              "grid place-items-center size-8 rounded text-xs ring-1",
-                              weekday === d
-                                ? "bg-primary text-primary-foreground ring-primary"
-                                : "ring-foreground/15 hover:bg-muted",
-                            )}
-                          >
-                            {WEEKDAY_LABEL[d]}
-                          </button>
-                        ))}
-                      </div>
+                <div className="space-y-2 rounded-md ring-1 ring-foreground/10 bg-muted/20 px-3 py-2.5">
+                  <label className="text-xs font-medium block">执行时间点 · 具体几点跑</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-wide">时间</span>
+                      <Input
+                        type="time"
+                        value={time}
+                        onChange={(e) => setTime(e.target.value)}
+                        className="h-9 text-sm"
+                      />
                     </div>
-                  )}
+                    {frequency === "weekly" && (
+                      <div className="space-y-1">
+                        <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-wide">星期</span>
+                        <div className="flex gap-0.5">
+                          {[1, 2, 3, 4, 5, 6, 0].map((d) => (
+                            <button
+                              key={d}
+                              type="button"
+                              onClick={() => setWeekday(d)}
+                              className={cn(
+                                "grid place-items-center size-7 rounded text-xs ring-1",
+                                weekday === d
+                                  ? "bg-primary text-primary-foreground ring-primary"
+                                  : "ring-foreground/15 hover:bg-muted",
+                              )}
+                            >
+                              {WEEKDAY_LABEL[d]}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {frequency === "monthly" && (
+                      <div className="space-y-1">
+                        <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-wide">日期 (每月第几天)</span>
+                        <select
+                          value={monthDay}
+                          onChange={(e) => setMonthDay(Number(e.target.value))}
+                          className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                            <option key={d} value={d}>{d} 日</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-[10.5px] text-muted-foreground leading-snug border-t border-foreground/5 pt-1.5">
+                    <span className="font-mono">说明 ·</span> 执行周期决定<strong className="text-foreground/70">多久跑一次</strong>,时间点决定<strong className="text-foreground/70">具体几点跑</strong>。
+                  </p>
                 </div>
               )}
               {frequency === "custom" && (
