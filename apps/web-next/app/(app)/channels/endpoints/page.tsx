@@ -223,7 +223,7 @@ export default function EndpointsPage() {
         <>
           <div className="flex items-center gap-2">
             <Cable className="size-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold tracking-tight">接入点 · 双向</h2>
+            <h2 className="text-sm font-semibold tracking-tight">访问入口 · 双向</h2>
             <span className="text-[11px] text-muted-foreground font-mono">
               {outbound.length + inbound.length} 个
             </span>

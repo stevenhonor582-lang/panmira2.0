@@ -171,7 +171,7 @@ export default function SkillsPage() {
         <>
           <div className="flex items-center gap-2">
             <Wrench className="size-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold tracking-tight">技能清单</h2>
+            <h2 className="text-sm font-semibold tracking-tight">技能地图</h2>
             <span className="text-[11px] text-muted-foreground font-mono">
               {filtered.length}/{skills.length}
             </span>

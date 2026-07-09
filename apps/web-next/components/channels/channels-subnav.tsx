@@ -10,7 +10,6 @@ import {
   Plug,
   Cable,
   KeyRound,
-  GitBranch,
   type LucideIcon,
 } from "lucide-react";
 
@@ -21,34 +20,30 @@ interface SubnavItem {
   hint?: string;
 }
 
+// R29-B: 资源频道改名 + 路由内置到大模型页(取消独立菜单)
 const ITEMS: SubnavItem[] = [
-  { href: "/channels/llm", label: "LLM", icon: Cpu, hint: "provider" },
-  { href: "/channels/skills", label: "Skills", icon: Wrench, hint: "sandbox" },
-  { href: "/channels/mcp", label: "MCP", icon: Plug, hint: "stdio · http · sse" },
+  { href: "/channels/llm", label: "大模型", icon: Cpu, hint: "provider · 路由" },
+  { href: "/channels/skills", label: "技能地图", icon: Wrench, hint: "sandbox" },
+  { href: "/channels/mcp", label: "外部互联", icon: Plug, hint: "stdio · http · sse" },
   {
     href: "/channels/endpoints",
-    label: "Endpoints",
+    label: "访问入口",
     icon: Cable,
-    hint: "in / out",
+    hint: "入 / 出",
   },
   {
     href: "/channels/oauth",
-    label: "OAuth",
+    label: "互联授权",
     icon: KeyRound,
-    hint: "双向",
-  },
-  {
-    href: "/channels/routing",
-    label: "Routing",
-    icon: GitBranch,
-    hint: "fallback chain",
+    hint: "入站 Key",
   },
 ];
 
 /**
  * ChannelsSubnav — dense-config top tab strip used inside the Channels IA.
  * Sits below the global topbar so the user sees the module's inner taxonomy
- * (LLM / Skills / MCP / Endpoints / OAuth / Routing) without losing context.
+ * (大模型 / 技能地图 / 外部互联 / 访问入口 / 互联授权) without losing context.
+ * R29-B: 路由策略已内置到大模型页(模型路由面板), 取消独立菜单。
  */
 export function ChannelsSubnav({
   description,
