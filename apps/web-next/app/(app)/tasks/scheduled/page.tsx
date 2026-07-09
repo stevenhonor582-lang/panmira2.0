@@ -35,7 +35,7 @@ interface RawJob extends ScheduledJob {
 }
 
 const TRIGGER_LABEL: Record<string, string> = {
-  cron: "Cron",
+  cron: "定时",
   event: "事件",
   manual: "手动",
 };

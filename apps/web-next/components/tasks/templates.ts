@@ -112,7 +112,7 @@ export const DAG_TEMPLATES: DagTemplate[] = [
       { meta: { kind: "tool", label: "飞书推送" }, x: 1160, y: 80 },
       { meta: { kind: "tool", label: "邮件群发" }, x: 1160, y: 200 },
       { meta: { kind: "tool", label: "LinkedIn" }, x: 1160, y: 320 },
-      { meta: { kind: "human", label: "运营 review" }, x: 1480, y: 200 },
+      { meta: { kind: "human", label: "运营复核" }, x: 1480, y: 200 },
     ],
     edges: [
       { from: 0, to: 1 },
@@ -126,14 +126,14 @@ export const DAG_TEMPLATES: DagTemplate[] = [
   {
     id: "tpl-incident-triage",
     name: "事故分诊",
-    description: "玄鉴 · 异常检测 → 严重度 → oncall 派单",
+    description: "玄鉴 · 异常检测 → 严重度 → 值班派单",
     botId: "incident-triage",
     nodes: [
       { meta: { kind: "bot", label: "玄鉴 · 监测", refId: "incident-triage" }, x: 200, y: 200 },
       { meta: { kind: "tool", label: "日志采样" }, x: 520, y: 200 },
       { meta: { kind: "skill", label: "严重度评估" }, x: 840, y: 200 },
       { meta: { kind: "conditional", label: "P0/P1?" }, x: 1160, y: 200 },
-      { meta: { kind: "human", label: "史德飞 oncall" }, x: 1480, y: 80 },
+      { meta: { kind: "human", label: "史德飞值班" }, x: 1480, y: 80 },
       { meta: { kind: "bot", label: "墨言 · 自动通知", refId: "content-blast" }, x: 1480, y: 320 },
     ],
     edges: [

@@ -327,13 +327,13 @@ export default function PermissionsPage() {
 
         <DenseTable
           head={[
-            "Name",
-            "Email",
-            "Role",
-            "Phone",
-            "Status",
-            "Locked Until",
-            "Action",
+            "姓名",
+            "邮箱",
+            "角色",
+            "电话",
+            "状态",
+            "锁定至",
+            "操作",
           ]}
           empty={
             loading ? "加载中..." : "暂无用户(当前租户为空)"
@@ -352,7 +352,7 @@ export default function PermissionsPage() {
                     {u.name ?? "—"}
                     {isMe && (
                       <span className="ml-1.5 text-[10px] text-muted-foreground font-mono">
-                        (you)
+                        (本人)
                       </span>
                     )}
                   </span>
@@ -377,12 +377,12 @@ export default function PermissionsPage() {
                   className="flex items-center gap-1.5 flex-wrap"
                 >
                   {u.isActive ? (
-                    <StatusPill tone="ok" label="active" />
+                    <StatusPill tone="ok" label="活跃" />
                   ) : (
-                    <StatusPill tone="muted" label="inactive" />
+                    <StatusPill tone="muted" label="停用" />
                   )}
                   {locked && (
-                    <StatusPill tone="err" label="locked" />
+                    <StatusPill tone="err" label="已锁定" />
                   )}
                 </div>,
                 <MonoCell key="lockedUntil">

@@ -51,11 +51,11 @@ const KIND_ICON: Record<NodeKind, LucideIcon> = {
 
 const KIND_LABEL: Record<NodeKind, string> = {
   bot: "Bot",
-  human: "Human",
-  skill: "Skill",
-  tool: "Tool",
-  conditional: "If / Else",
-  parallel: "Parallel",
+  human: "人工",
+  skill: "技能",
+  tool: "工具",
+  conditional: "条件",
+  parallel: "并行",
 };
 
 const TONE: Record<NodeKind, string> = {

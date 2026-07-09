@@ -261,7 +261,7 @@ export default function VoicePage() {
         <div className="ring-1 ring-border rounded-sm bg-card/40">
           <div className="px-3 py-2 border-b border-border">
             <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-mono">
-              config · {persona}
+              配置 · {persona}
             </div>
           </div>
           <div className="p-3 grid gap-3">
@@ -362,7 +362,7 @@ export default function VoicePage() {
         <div className="ring-1 ring-border rounded-sm bg-card/40">
           <div className="px-3 py-2 border-b border-border flex items-center justify-between">
             <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-mono">
-              test
+              试听
             </div>
             <span className="text-[10px] font-mono text-muted-foreground">
               POST /api/tts
@@ -426,33 +426,33 @@ export default function VoicePage() {
             <div className="mt-1 grid grid-cols-3 gap-2 text-[10.5px] font-mono">
               <div className="rounded-sm ring-1 ring-border bg-card/60 px-2 py-1.5">
                 <div className="text-muted-foreground uppercase tracking-wide">
-                  status
+                  状态
                 </div>
                 <div className="mt-0.5 flex items-center gap-1">
                   {current.lastResult?.ok ? (
-                    <StatusPill tone="ok" label="ok" />
+                    <StatusPill tone="ok" label="正常" />
                   ) : current.lastResult && !current.lastResult.ok ? (
-                    <StatusPill tone="err" label="fail" />
+                    <StatusPill tone="err" label="失败" />
                   ) : (
-                    <StatusPill tone="muted" label="idle" />
+                    <StatusPill tone="muted" label="空闲" />
                   )}
                 </div>
               </div>
               <div className="rounded-sm ring-1 ring-border bg-card/60 px-2 py-1.5">
                 <div className="text-muted-foreground uppercase tracking-wide">
-                  saved
+                  保存
                 </div>
                 <div className="mt-0.5">
                   {current.saved ? (
-                    <StatusPill tone="ok" label="yes" />
+                    <StatusPill tone="ok" label="是" />
                   ) : (
-                    <StatusPill tone="warn" label="draft" />
+                    <StatusPill tone="warn" label="草稿" />
                   )}
                 </div>
               </div>
               <div className="rounded-sm ring-1 ring-border bg-card/60 px-2 py-1.5">
                 <div className="text-muted-foreground uppercase tracking-wide">
-                  persona
+                  人格
                 </div>
                 <div className="mt-0.5 font-mono">{persona}</div>
               </div>
@@ -464,7 +464,7 @@ export default function VoicePage() {
       <div className="mt-4 ring-1 ring-border rounded-sm bg-card/40">
         <div className="px-3 py-2 border-b border-border">
           <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-mono">
-            both surfaces · snapshot
+            双面 · 快照
           </div>
         </div>
         <div className="p-3 grid grid-cols-1 md:grid-cols-2 gap-3 text-[12px]">
@@ -479,26 +479,26 @@ export default function VoicePage() {
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="font-medium">{label}</span>
                   {s.saved ? (
-                    <StatusPill tone="ok" label="saved" />
+                    <StatusPill tone="ok" label="已保存" />
                   ) : (
-                    <StatusPill tone="warn" label="draft" />
+                    <StatusPill tone="warn" label="草稿" />
                   )}
                 </div>
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
                   <dt className="text-muted-foreground font-mono uppercase tracking-wide">
-                    provider
+                    服务商
                   </dt>
                   <dd className="font-mono">{s.config.provider}</dd>
                   <dt className="text-muted-foreground font-mono uppercase tracking-wide">
-                    voice_id
+                    音色 ID
                   </dt>
                   <dd className="font-mono truncate">{s.config.voiceId}</dd>
                   <dt className="text-muted-foreground font-mono uppercase tracking-wide">
-                    rate
+                    采样率
                   </dt>
                   <dd className="font-mono">{s.config.sampleRate / 1000} kHz</dd>
                   <dt className="text-muted-foreground font-mono uppercase tracking-wide">
-                    lang
+                    语言
                   </dt>
                   <dd className="font-mono">{s.config.language}</dd>
                 </dl>

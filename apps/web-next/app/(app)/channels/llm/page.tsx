@@ -144,7 +144,7 @@ export default function LLMProvidersPage() {
   }, [data, latency]);
 
   if (loading) return <LoadingShell />;
-  if (error?.code === "not_implemented") return <NotImplShell kind="LLM 服务商" />;
+  if (error?.code === "not_implemented") return <NotImplShell kind="大模型" />;
   if (error) return <ErrorShell msg={error.message} />;
 
   const connectedCount = rows.filter((r) => r.hasApiKey).length;

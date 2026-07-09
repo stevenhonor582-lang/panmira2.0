@@ -229,9 +229,9 @@ export default function AdvancedPage() {
             </div>
             <div className="flex items-center gap-2">
               {devMode ? (
-                <StatusPill tone="warn" label="DEV MODE" />
+                <StatusPill tone="warn" label="开发模式" />
               ) : (
-                <StatusPill tone="muted" label="PROD-LIKE" />
+                <StatusPill tone="muted" label="类生产" />
               )}
             </div>
           </>
@@ -242,7 +242,7 @@ export default function AdvancedPage() {
           <div className="ring-1 ring-border rounded-sm bg-card/40">
             <div className="px-3 py-2 border-b border-border">
               <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-mono">
-                toggles · local
+                开关 · 本地
               </div>
             </div>
             <div className="p-3 grid gap-3">
@@ -269,7 +269,7 @@ export default function AdvancedPage() {
             <div className="px-3 py-2 border-b border-rose-500/30 flex items-center gap-2">
               <ShieldAlert className="size-3.5 text-rose-600 dark:text-rose-300" />
               <div className="text-[10px] uppercase tracking-[0.18em] text-rose-700 dark:text-rose-300 font-mono">
-                danger zone
+                危险操作
               </div>
             </div>
             <div className="p-3 grid gap-3">
@@ -305,7 +305,7 @@ export default function AdvancedPage() {
         <div className="mt-4 ring-1 ring-border rounded-sm bg-card/40">
           <div className="px-3 py-2 border-b border-border">
             <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-mono">
-              system info
+              系统信息
             </div>
           </div>
           <div className="p-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-[12px]">
@@ -323,7 +323,7 @@ export default function AdvancedPage() {
               <div className="px-3 py-2 border-b border-amber-500/30 flex items-center gap-2">
                 <Eye className="size-3.5 text-amber-700 dark:text-amber-300" />
                 <div className="text-[10px] uppercase tracking-[0.18em] text-amber-700 dark:text-amber-300 font-mono">
-                  internal error log · verbose
+                  内部错误日志 · 详细
                 </div>
               </div>
               <div className="p-3">
@@ -345,7 +345,7 @@ export default function AdvancedPage() {
               <div className="px-3 py-2 border-b border-amber-500/30 flex items-center gap-2">
                 <Activity className="size-3.5 text-amber-700 dark:text-amber-300" />
                 <div className="text-[10px] uppercase tracking-[0.18em] text-amber-700 dark:text-amber-300 font-mono">
-                  ws events · last 50
+                  WS 事件 · 最近 50 条
                 </div>
               </div>
               <div className="p-3 max-h-72 overflow-auto">

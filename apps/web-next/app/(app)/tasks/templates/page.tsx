@@ -75,11 +75,11 @@ export default function TemplatesPage() {
         if (!tpl) throw new Error("模板不存在");
         // Synthesise a minimal pipeline body the backend's createPipeline accepts.
         // The backend's validatePipeline expects nodes with {id,label,agentTemplateId}.
-        // Bot nodes → refId as agentTemplateId; others → fall back to refId or 'mock'.
+        // Bot 节点用 refId 作 agentTemplateId; 其它节点回退到 refId,无则空串(后端会自己生成)。
         const nodes = tpl.nodes.map((n, i) => ({
           id: `n${i}`,
           label: n.meta.label ?? n.meta.kind,
-          agentTemplateId: n.meta.refId ?? "mock",
+          agentTemplateId: n.meta.refId ?? "",
         }));
         const edges = tpl.edges.map((e, i) => ({
           id: `e${i}`,

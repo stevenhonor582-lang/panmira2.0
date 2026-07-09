@@ -278,7 +278,7 @@ export function Step1({
             ))}
           </div>
           <div className="mt-4">
-            <Label inline>Hue</Label>
+            <Label inline>色调</Label>
             <div className="mt-2 flex flex-wrap gap-2">
               {HUES.map((h) => (
                 <button

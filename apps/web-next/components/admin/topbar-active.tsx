@@ -122,7 +122,7 @@ export function TopbarActiveStatus() {
             />
             <MiniStat
               icon={<Workflow className="size-3.5 text-amber-500" />}
-              label="Pipeline"
+              label="流水线"
               value={stats?.activePipelines ?? 0}
             />
           </div>
@@ -149,7 +149,7 @@ export function TopbarActiveStatus() {
           {(stats?.recentPipelines ?? []).length > 0 && (
             <div className="p-3">
               <p className="text-xs uppercase tracking-wider text-muted-foreground mb-2 font-medium">
-                最近 Pipeline
+                最近流水线
               </p>
               <ul className="space-y-1.5">
                 {stats!.recentPipelines.slice(0, 5).map((p) => (

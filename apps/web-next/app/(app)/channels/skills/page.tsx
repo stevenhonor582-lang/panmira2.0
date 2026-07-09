@@ -50,6 +50,7 @@ import type { Skill } from "@/lib/channels/types";
 import { useFetch } from "@/lib/channels/use-fetch";
 import { apiPost, apiDelete, mutate } from "@/lib/channels/api-mutations";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/components/toast/toast-provider";
 
 type SourceFilter = "all" | Skill["source"];
 
@@ -83,14 +84,14 @@ export default function SkillsPage() {
   const [page, setPage] = React.useState(1);
   const [showInstall, setShowInstall] = React.useState(false);
   const [activeSkill, setActiveSkill] = React.useState<string | null>(null);
-  const [toast, setToast] = React.useState<{ kind: "ok" | "err"; msg: string } | null>(null);
 
+  const toast = useToast();
   const skills: Skill[] = data?.skills ?? [];
   const sources: SourceFilter[] = ["all", "built-in", "github", "local", "custom"];
 
   function flashToast(kind: "ok" | "err", msg: string) {
-    setToast({ kind, msg });
-    setTimeout(() => setToast(null), 3500);
+    if (kind === "ok") toast.success(msg);
+    else toast.error(msg);
   }
 
   const filtered = React.useMemo(() => {
@@ -122,7 +123,7 @@ export default function SkillsPage() {
       </ChannelsPageShell>
     );
   }
-  if (error?.code === "not_implemented") return <EmptyShell kind="Skills" />;
+  if (error?.code === "not_implemented") return <EmptyShell kind="技能" />;
   if (error) {
     return (
       <ChannelsPageShell
@@ -273,8 +274,8 @@ export default function SkillsPage() {
           q.trim() || source !== "all"
             ? "没有匹配的技能,清空筛选试试。"
             : skills.length === 0
-              ? "后端未返回任何技能(空状态)。"
-              : "尚未安装任何技能。"
+              ? "后端未返回任何技能 · 请检查 skills 目录。"
+              : "尚未安装任何技能 · 通过上方 GitHub 仓库或 URL 同步开始。"
         }
       />
 
@@ -310,20 +311,6 @@ export default function SkillsPage() {
         <KeyCell>提示</KeyCell>
         <span>点击行或详情按钮打开抽屉 · 启用/禁用按 bot 维度管理</span>
       </div>
-
-      {toast && (
-        <div
-          className={cn(
-            "fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-lg border px-4 py-3 text-sm shadow-lg",
-            toast.kind === "ok"
-              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-              : "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300",
-          )}
-        >
-          {toast.kind === "ok" ? <CheckCircle2 className="size-4" /> : <AlertCircle className="size-4" />}
-          {toast.msg}
-        </div>
-      )}
 
       {showInstall && (
         <InstallSkillDialog

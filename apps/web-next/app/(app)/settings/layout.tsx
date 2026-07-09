@@ -11,7 +11,7 @@ import { SettingsSubnav } from "@/components/settings/settings-subnav";
 export default function SettingsLayout({ children }: { children: ReactNode }) {
   return (
     <div className="-m-6">
-      <SettingsSubnav description="permissions · voice · advanced" />
+      <SettingsSubnav description="权限 · 语音 · 高级" />
       <div>{children}</div>
     </div>
   );

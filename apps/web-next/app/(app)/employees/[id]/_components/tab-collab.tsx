@@ -670,7 +670,7 @@ function R15AFields({ agent }: { agent: Agent }) {
               isTemplate ? "bg-foreground text-background" : "bg-muted text-foreground/70",
             )}
           >
-            {isTemplate ? "TEMPLATE" : "INSTANCE"}
+            {isTemplate ? "模板" : "实例"}
           </span>
         </Row>
       </div>
