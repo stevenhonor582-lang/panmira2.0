@@ -47,19 +47,12 @@ import {
   UsersRound,
   Circle,
   AlertTriangle,
-  Plus,
-  X,
-  Check,
-  Loader2,
-  Cable,
 } from "lucide-react";
 import {
   EditPane,
   agentToDraft,
   diffDraft,
 } from "./edit-mode";
-import { Button } from "@/components/ui/button";
-import { useToast } from "@/components/toast/toast-provider";
 import {
   ResourcePicker,
   type ResourceItem,
@@ -308,7 +301,7 @@ export function TabCollab({ id }: { id: string }) {
             <section>
               <h3 className="mb-3 flex items-center gap-2 text-[13px] font-medium tracking-tight text-foreground/65">
                 <User2 className="size-4 text-foreground/45" />
-                主理人
+                主理人 · Owner
               </h3>
               {ctx.editing ? (
                 <div className="space-y-2">
@@ -364,7 +357,7 @@ export function TabCollab({ id }: { id: string }) {
             <section>
               <h3 className="mb-3 flex items-center gap-2 text-[13px] font-medium tracking-tight text-foreground/65">
                 <Radio className="size-4 text-foreground/45" />
-                可见性
+                可见性 · Visibility
               </h3>
               <div className="rounded-xl border border-border bg-card p-5">
                 <div className="space-y-2">
@@ -424,11 +417,8 @@ export function TabCollab({ id }: { id: string }) {
             </section>
           </div>
 
-          {/* === ⑫ 接入入口管理(绑定/解绑渠道)=== */}
-          <EntryManagement agent={agent} bots={bots} onSaved={reload} />
-
-          {/* === 运行时字段(只读)=== */}
-          <RuntimeFields agent={agent} />
+          {/* === R15-A 字段(只读展示)=== */}
+          <R15AFields agent={agent} />
         </div>
       )}
     </EditPane>
@@ -450,12 +440,15 @@ function AgentRelationCanvas({
   related: RelatedAgent[];
   pipelines: { id: string; name: string }[];
 }) {
-  const graph = React.useMemo(() => buildAgentGraph(agent, bots, related, pipelines), [
-    agent,
-    bots,
-    related,
-    pipelines,
-  ]);
+  // R33-B 自检重绘计数器 — edges=0 时 +1 触发 buildAgentGraph 重算
+  const [rebuildTick, setRebuildTick] = React.useState(0);
+  const rebuild = React.useCallback(() => setRebuildTick((t) => t + 1), []);
+
+  const graph = React.useMemo(
+    () => buildAgentGraph(agent, bots, related, pipelines),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [agent, bots, related, pipelines, rebuildTick],
+  );
 
   return (
     <div className="space-y-2">
@@ -464,7 +457,7 @@ function AgentRelationCanvas({
           <Network className="size-4 text-foreground/65" />
           协作关系图
           <span className="ml-2 font-mono text-[10.5px] font-normal text-foreground/50">
-            {bots.length} 入口 · {related.length} 关联员工 · {graph.resourceCount} 资源
+            中心 = {agent.displayName || agent.name} · {bots.length} 入口 · {related.length} 关联 · {graph.resourceCount} 资源
           </span>
         </h3>
         <div className="flex items-center gap-3 font-mono text-[10.5px] text-foreground/50">
@@ -479,6 +472,7 @@ function AgentRelationCanvas({
         edges={graph.edges}
         height={graph.height}
         emptyHint="该数字员工暂无入口与资源绑定"
+        onEmptyEdges={rebuild}
       />
     </div>
   );
@@ -490,11 +484,14 @@ function buildAgentGraph(
   related: RelatedAgent[],
   pipelines: { id: string; name: string }[],
 ): { nodes: RelationNode[]; edges: RelationEdge[]; height: number; resourceCount: number } {
-  // 三列布局:入口(左) → 本 Agent(中心高亮) → 资源簇(右)
-  // self 必须是视觉中心:大节点、紫色高亮、所有边汇聚于此。
+  // R33-B 四列布局(与真人协作图完全统一):
+  //   入口(0) → 本Agent(320 中心高亮) → 关联Agent(640) → 资源簇(940)
+  // self 永远是视觉中心:大节点、紫色高亮、所有边汇聚于此。
+  // R33-B 修复:不再因 edges=0 丢弃 self 节点(原 R32-C 反模式导致中心消失)。
   const X_ENTRY = 0;
-  const X_SELF = 300;
-  const X_RES = 620;
+  const X_SELF = 320;
+  const X_RELATED = 640;
+  const X_RES = 940;
 
   const nodes: RelationNode[] = [];
   const edges: RelationEdge[] = [];
@@ -511,7 +508,6 @@ function buildAgentGraph(
     : agent.mcpServers;
   const tasks = pipelines.map((p) => p.name);
 
-  // 按类别聚合成 5 个簇(空类别不显示)
   const clusters: Array<{ cat: ResCat; items: string[] }> = [
     { cat: "kb", items: kbs },
     { cat: "task", items: tasks },
@@ -527,7 +523,7 @@ function buildAgentGraph(
   const relatedRows = Math.max(0, related.length);
   const clusterRows = Math.max(1, clusters.length);
   const maxRows = Math.max(entryRows, relatedRows, clusterRows);
-  const height = Math.max(440, maxRows * 110 + 100);
+  const height = Math.max(460, maxRows * 110 + 120);
 
   const centerY = height / 2 - 30;
 
@@ -548,7 +544,7 @@ function buildAgentGraph(
     });
   });
 
-  // 2) 本 Agent(中心,大节点 + 紫色高亮)
+  // 2) 本 Agent(中心,大节点 + 紫色高亮)— R33-B:永不消失
   nodes.push({
     id: "self",
     type: "relation",
@@ -563,14 +559,13 @@ function buildAgentGraph(
     } as RelationNodeData,
   });
 
-  // 3) 关联 Agent:self 下方紧凑堆叠(不抢中心,虚线表示弱关联)
-  //    视觉上 self 在中心,related 在下方作为"同 pipeline 协作"的辅助信息。
-  const relatedStartY = centerY + 120;
+  // 3) 关联 Agent(独立列 X_RELATED)— R33-B 修正:不再占用 X_SELF 列,避免与 self 视觉打架
+  const relatedStartY = centerY - ((related.length - 1) * 90) / 2;
   related.forEach((r, i) => {
     nodes.push({
       id: `related-${r.id}`,
       type: "relation",
-      position: { x: X_SELF, y: relatedStartY + i * 90 },
+      position: { x: X_RELATED, y: relatedStartY + i * 90 },
       data: {
         kind: "related",
         label: r.displayName || r.name,
@@ -583,19 +578,23 @@ function buildAgentGraph(
         id: `e-self-related-${r.id}`,
         source: "self",
         target: `related-${r.id}`,
-        label: r.pipelines[0] ? `${r.pipelines[0]}${r.pipelines.length > 1 ? ` +${r.pipelines.length - 1}` : ""}` : "",
+        label: r.pipelines[0]
+          ? `${r.pipelines[0]}${r.pipelines.length > 1 ? ` +${r.pipelines.length - 1}` : ""}`
+          : "",
         labelStyle: { fontSize: 10, fill: "rgb(14 165 233 / 0.85)" },
         labelBgStyle: { fill: "rgb(255 255 255 / 0.85)" },
       }),
     );
   });
 
-  // 4) 资源簇节点(右列):同类合并为 1 个大节点,带数量 badge
+  // 4) 资源簇节点(最右列):同类合并为 1 个大节点
   const clusterStartY = centerY - ((clusters.length - 1) * 100) / 2;
   clusters.forEach((c, i) => {
     const id = `cluster-${c.cat}`;
     const names = c.items;
-    const preview = names.slice(0, 2).join("、") + (names.length > 2 ? ` 等 ${names.length} 项` : names.length === 1 ? "" : "");
+    const preview =
+      names.slice(0, 2).join("、") +
+      (names.length > 2 ? ` 等 ${names.length} 项` : names.length === 1 ? "" : "");
     nodes.push({
       id,
       type: "relation",
@@ -611,7 +610,6 @@ function buildAgentGraph(
         items: names,
       } as RelationNodeData,
     });
-    // 边:self → 簇(strong 紫色加粗,强调"本员工拥有这些资源")
     edges.push(
       strongEdge({
         id: `e-self-${id}`,
@@ -632,21 +630,48 @@ function buildAgentGraph(
     );
   });
 
-  // R32-C 改动 ⑪:孤立检测 — 若 self 无任何连线(无入口/无资源/无关联),
-  // 返回空 nodes,让 RelationGraph 走 emptyHint 分支,避免画布上只剩一个孤点。
+  // R33-B 修复(原 R32-C 反模式):
+  //   原代码 edges=0 时返回 `{ nodes: [], edges: [] }` → self 节点消失,中心空白。
+  //   违背用户原话"中心节点不消失"。改为保留 self 节点 + 让 RelationGraph 走 onEmptyEdges 自检。
+  // 不再 return 空。
+
+  // R33-B 终极兜底:若 edges 仍为 0(self 完全孤立 — 无入口/无资源/无关联),
+  // 补一个"未配置"空状态节点 + dashed 边,确保:
+  //   1. self 永远有连线(杜绝孤点漂浮,杜绝"连线不显示"顽固 bug 复现)
+  //   2. 避免触发 onEmptyEdges 无限重绘(有边了就不触发)
+  //   3. 给用户清晰的"需要配置"视觉提示
   if (edges.length === 0) {
-    return { nodes: [], edges: [], height, resourceCount: 0 };
+    const emptyId = "cluster-empty";
+    nodes.push({
+      id: emptyId,
+      type: "relation",
+      position: { x: X_RES, y: centerY },
+      data: {
+        kind: "resource",
+        size: "lg",
+        label: "未配置入口与资源",
+        sublabel: "点上方「编辑」开始配置",
+        icon: "bot",
+      } as RelationNodeData,
+    });
+    edges.push(
+      dashedEdge({
+        id: `e-self-${emptyId}`,
+        source: "self",
+        target: emptyId,
+      }),
+    );
   }
 
-  // R32-C 改动 ⑪:防御性 — 扫描所有节点,若仍有未连线节点(理论不应发生),
-  // 给它们补一条到 self 的 dashed 边,确保"每个节点都有连线"。
+  // 防御性:扫描所有节点,任何孤点(无连线)补一条到 self 的 dashed 边。
+  // 确保画布上"每个节点都有连线",杜绝孤点漂浮(self 自身除外)。
   const wiredIds = new Set<string>();
   for (const e of edges) {
     wiredIds.add(e.source);
     wiredIds.add(e.target);
   }
   for (const n of nodes) {
-    if (!wiredIds.has(n.id)) {
+    if (!wiredIds.has(n.id) && n.id !== "self") {
       edges.push(
         dashedEdge({
           id: `e-self-orphan-${n.id}`,
@@ -661,226 +686,15 @@ function buildAgentGraph(
 }
 
 // ────────────────────────────────────────────────────────────
-// ⑫⑬ 接入入口管理 — 可视化展示绑定渠道 + 绑定/解绑操作
+// R15-A 字段区块(只读展示,可见性已独立分区,此处不再展示)
 // ────────────────────────────────────────────────────────────
 
-/** 从 bot 对象取 bot_id(兼容 local/DB/paused 三种来源) */
-function getBotId(b: BotInfo & Record<string, unknown>): string {
-  return String(b.bot_id || b.id || b.name || "");
-}
-
-/** 从 bot 对象取显示名 */
-function getBotDisplayName(b: BotInfo & Record<string, unknown>): string {
-  return String(b.display_name || b.remark || b.name || "未命名");
-}
-
-function EntryManagement({
-  agent,
-  bots,
-  onSaved,
-}: {
-  agent: Agent;
-  bots: BotInfo[];
-  onSaved: () => void;
-}) {
-  const toast = useToast();
-  const [showPicker, setShowPicker] = React.useState(false);
-  const [operating, setOperating] = React.useState<string | null>(null);
-
-  const raw = agent.raw as Record<string, unknown> | null;
-  const channelIds: string[] = Array.isArray(raw?.channel_ids)
-    ? (raw?.channel_ids as string[])
-    : agent.channelIds;
-
-  const richBots = bots as (BotInfo & Record<string, unknown>)[];
-
-  // 已绑定的 bot:bot_id 在 channel_ids 里,或 agentId 指向本 agent
-  const boundBots = richBots.filter((b) => {
-    const bid = getBotId(b);
-    return (bid && channelIds.includes(bid)) || b.agentId === agent.id;
-  });
-
-  // 可绑定的 bot:未被任何 agent 占用(agentId 为空 且 bot_id 不在任何 channel_ids)
-  const boundIdSet = new Set(boundBots.map((b) => getBotId(b)));
-  const availableBots = richBots.filter((b) => {
-    const bid = getBotId(b);
-    return !boundIdSet.has(bid) && !b.agentId && bid;
-  });
-
-  async function bindBot(botId: string) {
-    setOperating(botId);
-    try {
-      const newChannelIds = [...channelIds, botId];
-      await updateAgent(agent.id, { channel_ids: newChannelIds });
-      toast.success("入口绑定成功");
-      onSaved();
-      setShowPicker(false);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      toast.error(`绑定失败:${msg}`);
-    } finally {
-      setOperating(null);
-    }
-  }
-
-  async function unbindBot(botId: string, botName: string) {
-    setOperating(botId);
-    try {
-      const newChannelIds = channelIds.filter((c) => c !== botId);
-      await updateAgent(agent.id, { channel_ids: newChannelIds });
-      toast.success(`已解绑「${botName}」`);
-      onSaved();
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      toast.error(`解绑失败:${msg}`);
-    } finally {
-      setOperating(null);
-    }
-  }
-
-  return (
-    <div className="rounded-xl border border-border bg-card p-5">
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="flex items-center gap-2 text-sm font-semibold">
-          <Cable className="size-4 text-emerald-500" />
-          接入入口管理
-        </h3>
-        <span className="font-mono text-[11px] text-foreground/45">
-          已绑定 {boundBots.length} 个
-        </span>
-      </div>
-
-      {/* 已绑定入口列表 */}
-      {boundBots.length === 0 ? (
-        <div className="mb-4 rounded-lg border border-dashed border-border px-4 py-6 text-center text-[12.5px] text-muted-foreground">
-          暂未绑定任何入口,点击下方按钮绑定飞书/钉钉等渠道机器人。
-        </div>
-      ) : (
-        <ul className="mb-4 space-y-2">
-          {boundBots.map((b) => {
-            const bid = getBotId(b);
-            const name = getBotDisplayName(b);
-            const platform = platformMeta(b.platform);
-            const isOnline = !b.paused && !String(b.engine || "").includes("paused");
-            const updatedAt = b.updated_at ? String(b.updated_at).slice(0, 10) : null;
-            return (
-              <li
-                key={bid || b.name}
-                className="flex items-center justify-between gap-3 rounded-lg ring-1 ring-border bg-background/40 px-3 py-2.5"
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span
-                    className={cn(
-                      "inline-block size-2 shrink-0 rounded-full",
-                      isOnline ? "bg-emerald-500" : "bg-foreground/30",
-                    )}
-                    title={isOnline ? "在线" : "离线"}
-                  />
-                  <span className="text-[13px] font-medium truncate">{name}</span>
-                  <span className="shrink-0 rounded bg-foreground/5 px-1.5 py-0.5 text-[10px] font-mono text-foreground/50">
-                    {platform.label}
-                  </span>
-                  {updatedAt && (
-                    <span className="shrink-0 font-mono text-[10.5px] text-foreground/40">
-                      绑定于 {updatedAt}
-                    </span>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => unbindBot(bid, name)}
-                  disabled={operating === bid}
-                  className="shrink-0 inline-flex items-center justify-center size-6 rounded text-foreground/40 hover:text-rose-600 hover:bg-rose-500/10 transition-colors disabled:opacity-40"
-                  title="解绑"
-                  aria-label={`解绑 ${name}`}
-                  data-testid={`unbind-entry-${bid.slice(0, 8)}`}
-                >
-                  {operating === bid ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <X className="size-3.5" />
-                  )}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      {/* 绑定新入口 */}
-      {showPicker ? (
-        <div className="rounded-lg ring-1 ring-border bg-background/40 p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-[11.5px] font-medium text-foreground/70">选择未占用的入口</span>
-            <button
-              type="button"
-              onClick={() => setShowPicker(false)}
-              className="text-[11px] text-foreground/45 hover:text-foreground"
-            >
-              取消
-            </button>
-          </div>
-          {availableBots.length === 0 ? (
-            <p className="py-3 text-center text-[12px] text-muted-foreground">
-              没有可绑定的入口,所有机器人已被占用或未配置。
-            </p>
-          ) : (
-            <ul className="space-y-1.5">
-              {availableBots.map((b) => {
-                const bid = getBotId(b);
-                const name = getBotDisplayName(b);
-                const platform = platformMeta(b.platform);
-                return (
-                  <li key={bid}>
-                    <button
-                      type="button"
-                      onClick={() => bindBot(bid)}
-                      disabled={operating === bid}
-                      className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left ring-1 ring-border hover:bg-muted/30 transition-colors disabled:opacity-50"
-                      data-testid={`bind-entry-${bid.slice(0, 8)}`}
-                    >
-                      <span className="flex items-center gap-2 min-w-0">
-                        <Plug className="size-3.5 shrink-0 text-foreground/45" />
-                        <span className="text-[12.5px] truncate">{name}</span>
-                        <span className="shrink-0 rounded bg-foreground/5 px-1.5 py-0.5 text-[10px] font-mono text-foreground/50">
-                          {platform.label}
-                        </span>
-                      </span>
-                      {operating === bid ? (
-                        <Loader2 className="size-3.5 animate-spin shrink-0" />
-                      ) : (
-                        <Check className="size-3.5 shrink-0 text-emerald-600" />
-                      )}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-      ) : (
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => setShowPicker(true)}
-          className="gap-1.5 text-[12px]"
-          data-testid="bind-entry-trigger"
-        >
-          <Plus className="size-3.5" />
-          绑定新入口
-        </Button>
-      )}
-    </div>
-  );
-}
-
-// ────────────────────────────────────────────────────────────
-// 运行时字段(只读:工作目录/温度/类型)
-// ────────────────────────────────────────────────────────────
-
-function RuntimeFields({ agent }: { agent: Agent }) {
+function R15AFields({ agent }: { agent: Agent }) {
   const raw = agent.raw as Record<string, unknown> | null;
   const workingDir = (raw?.working_dir as string) || agent.workingDir;
+  const channelIds = Array.isArray(raw?.channel_ids)
+    ? (raw?.channel_ids as string[])
+    : agent.channelIds;
   const temperature =
     typeof raw?.temperature === "number" ? (raw.temperature as number) : agent.temperature;
   const isTemplate = Boolean(raw?.is_template) || agent.isTemplate;
@@ -888,23 +702,44 @@ function RuntimeFields({ agent }: { agent: Agent }) {
   return (
     <div>
       <h3 className="mb-3 flex items-center gap-2 text-[13px] font-medium tracking-tight text-foreground/65">
-        运行时字段(只读)
+        R15-A · 多 Bot 字段(只读)
       </h3>
       <div className="space-y-2 rounded-xl border border-border bg-card p-5">
-        <Row label="工作目录">
-          <code className="font-mono text-[12.5px]">
-            {workingDir || (
-              <span className="text-foreground/40">未设置(默认 /workspace/agents/&lt;编号&gt;)</span>
-            )}
-          </code>
+        <Row label="工作目录 · working_dir">
+          <div className="inline-flex items-center gap-2">
+            <code className="font-mono text-[12.5px]">
+              {workingDir || (
+                <span className="text-foreground/40">未设置(默认 /workspace/agents/&lt;id&gt;)</span>
+              )}
+            </code>
+            <span className="rounded bg-foreground/5 px-1.5 py-0.5 text-[10px] font-mono text-foreground/45">
+              只读
+            </span>
+          </div>
         </Row>
-        <Row label="温度">
+        <Row label="绑定频道 · channel_ids">
+          {channelIds.length === 0 ? (
+            <span className="text-foreground/40 text-[12.5px]">未绑定</span>
+          ) : (
+            <div className="flex flex-wrap gap-1">
+              {channelIds.map((c) => (
+                <code
+                  key={c}
+                  className="rounded bg-foreground/10 px-1.5 py-0.5 font-mono text-[11px]"
+                >
+                  {c}
+                </code>
+              ))}
+            </div>
+          )}
+        </Row>
+        <Row label="温度 · temperature">
           <span className="font-mono text-[12.5px]">{temperature.toFixed(2)}</span>
           <span className="ml-2 text-[11px] text-foreground/45">
             {temperature < 0.3 ? "保守 · 偏确定" : temperature > 0.9 ? "发散 · 偏创造" : "均衡"}
           </span>
         </Row>
-        <Row label="类型">
+        <Row label="类型 · is_template">
           <span
             className={cn(
               "rounded px-1.5 py-0.5 text-[11px] font-mono",
