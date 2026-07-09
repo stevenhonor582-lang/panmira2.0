@@ -61,6 +61,7 @@ import {
   Trash2,
   Undo2,
   UserRound,
+  Wand2,
   Wrench,
   ZoomIn,
   ZoomOut,
@@ -83,6 +84,8 @@ import {
   NODE_KIND_MAP,
 } from "./types";
 import { ShapeConfigPanel } from "./shape-config-panel";
+// R20: AI DAG assistant
+import { AiAssistantDialog } from "./ai-assistant-dialog";
 import {
   detectCycle,
   isConnectionAllowed,
@@ -164,6 +167,7 @@ function TaskDagEditorInner(props: TaskDagEditorProps) {
   const [saving, setSaving] = React.useState(false);
   const [running, setRunning] = React.useState(false);
   const [dragKind, setDragKind] = React.useState<NodeKind | null>(null);
+  const [aiOpen, setAiOpen] = React.useState(false);
   const wrapperRef = React.useRef<HTMLDivElement | null>(null);
 
   // Undo/redo history — snapshot the whole graph on structural changes only.
@@ -218,6 +222,22 @@ function TaskDagEditorInner(props: TaskDagEditorProps) {
     setSelectedId(null);
     setHistoryVer((v) => v + 1);
   }, [setNodes, setEdges, snapshotCurrent]);
+
+  // R20: load an AI-generated DAG. Snapshot current graph first so the
+  // replacement is undoable (user can ⌘Z back to the empty canvas).
+  const handleAiGenerate = React.useCallback(
+    (rawNodes: unknown[], rawEdges: unknown[], _explanation: string) => {
+      pushHistory();
+      setNodes(rawNodes as DagRfNode[]);
+      setEdges(rawEdges as DagRfEdge[]);
+      setSelectedId(null);
+      // Fit the new graph into view on the next tick (RF needs the nodes mounted).
+      window.setTimeout(() => {
+        try { reactFlow.fitView({ padding: 0.2 }); } catch { /* noop */ }
+      }, 60);
+    },
+    [pushHistory, setNodes, setEdges, reactFlow],
+  );
 
   const canUndo = past.current.length > 0;
   const canRedo = future.current.length > 0;
@@ -584,6 +604,15 @@ function TaskDagEditorInner(props: TaskDagEditorProps) {
                 <>
                   <button
                     type="button"
+                    onClick={() => setAiOpen(true)}
+                    title="用自然语言生成编排"
+                    className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-xs bg-violet-50 text-violet-700 ring-1 ring-violet-200 hover:bg-violet-100 dark:bg-violet-950/40 dark:text-violet-300 dark:ring-violet-900"
+                  >
+                    <Wand2 className="size-3" />
+                    AI 助手
+                  </button>
+                  <button
+                    type="button"
                     onClick={handleSave}
                     disabled={saving}
                     className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-xs bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
@@ -697,6 +726,12 @@ function TaskDagEditorInner(props: TaskDagEditorProps) {
           )}
         </div>
       </div>
+      {/* R20: AI DAG assistant — fixed-position overlay */}
+      <AiAssistantDialog
+        open={aiOpen}
+        onOpenChange={setAiOpen}
+        onGenerate={handleAiGenerate}
+      />
     </div>
   );
 }
