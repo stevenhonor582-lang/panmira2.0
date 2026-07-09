@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import type { WizardForm, ChannelBotInfo, Visibility } from "./form";
-import { Info, FolderCog, Radio, Users, Eye } from "lucide-react";
+import { Info, FolderCog, Radio, Users, Eye, Lock } from "lucide-react";
 
 const VIS: { v: Visibility; label: string; hint: string }[] = [
   { v: "private", label: "私有", hint: "只有我能看到 / 调用 · 草稿态" },
@@ -78,23 +78,23 @@ export function Step6({
         />
       </section>
 
-      {/* 6c — Channel binding — THE CORE MISSING PIECE */}
+      {/* 6c — 入口绑定(原"频道绑定")— R34-B 改名 */}
       <section>
         <h3 className="mb-3 flex items-center gap-2 text-[12px] font-medium tracking-tight text-foreground/65">
           <Radio className="size-3.5 text-rose-600 dark:text-rose-400" />
-          频道绑定 · 一个员工可绑多个 bot · 来自 /api/bots
+          入口绑定 · 一个员工可绑多个入口 · 来自 /api/bots
         </h3>
         <div className="mb-3 flex items-start gap-1.5 rounded-xl bg-rose-500/10 p-3 text-[11.5px] leading-relaxed text-rose-700 dark:text-rose-300 ring-1 ring-rose-500/30">
           <Info className="mt-0.5 size-3 shrink-0" />
           <span>
-            一个员工可以同时绑定多个 bot (例:同一销售助手同时挂飞书 + 企微)。
-            绑定后,员工在任一频道被人调用都进入同一个工作目录 →
+            一个员工可以同时绑定多个入口(例:同一销售助手同时挂飞书 + 企微)。
+            绑定后,员工在任一入口被人调用都进入同一个工作目录 →
             <b>员工在飞书和微信里是同一个人,记忆一致</b>。
           </span>
         </div>
         {channels.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border p-4 text-center text-[12px] text-foreground/55">
-            还没有配置 bot。可以去 /channels 创建。
+            还没有配置入口。可以去 /channels/endpoints 创建。
           </div>
         ) : (
           <ul className="grid gap-2 sm:grid-cols-2">
@@ -139,28 +139,35 @@ export function Step6({
           </ul>
         )}
         <p className="mt-2 font-mono text-[11px] text-foreground/45">
-          已绑 {form.channelIds.length} 个频道
+          已绑 {form.channelIds.length} 个入口
         </p>
       </section>
 
-      {/* 6d — Working directory */}
+      {/* 6d — Working directory · R34-B 系统生成 + 锁定(关闭手动编辑) */}
       <section>
         <h3 className="mb-3 flex items-center gap-2 text-[12px] font-medium tracking-tight text-foreground/65">
-          <FolderCog className="size-3.5" /> 工作目录 · 多 bot 共享
+          <FolderCog className="size-3.5" /> 工作目录 · 系统生成 · 多入口共享
         </h3>
-        <input
-          type="text"
-          value={form.workingDir}
-          onChange={(e) => set("workingDir", e.target.value)}
-          placeholder="/workspace/agents/<员工名>"
-          className="w-full rounded-xl bg-background px-4 py-3 font-mono text-[13px] ring-1 ring-border focus:outline-none focus:ring-foreground/40"
-        />
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={form.workingDir}
+            readOnly
+            placeholder="/workspace/agents/<员工名>(保存时由系统生成)"
+            className="w-full rounded-xl bg-muted/40 px-4 py-3 font-mono text-[13px] ring-1 ring-border cursor-not-allowed text-foreground/70"
+            aria-label="工作目录(系统生成,只读)"
+          />
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-foreground/5 px-2 py-1.5 text-[10.5px] font-mono text-foreground/55">
+            <Lock className="size-3" />
+            锁定
+          </span>
+        </div>
         <div className="mt-2 flex items-start gap-1.5 text-[11.5px] leading-relaxed text-foreground/65">
           <Info className="mt-0.5 size-3 shrink-0 text-foreground/45" />
           <span>
-            员工的所有记录(对话/文件/记忆)都存在这一个目录。
-            多个 bot 绑同一个员工时,共享这个目录 → 跨频道体验一致。
-            默认值 <span className="font-mono">/workspace/agents/&lt;员工名&gt;</span>,可自定义。
+            员工的所有记录(对话/文件/记忆)都存在这一个目录,由系统按员工名自动生成,不可手动修改。
+            多个入口绑同一个员工时,共享这个目录 → 跨入口体验一致。
+            默认规则:<span className="font-mono">/workspace/agents/&lt;员工名&gt;</span>。
           </span>
         </div>
       </section>
