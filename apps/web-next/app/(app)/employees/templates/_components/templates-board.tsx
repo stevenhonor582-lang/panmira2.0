@@ -20,7 +20,7 @@ interface Person { id: string; name: string; email: string; }
 export function TemplatesBoard() {
   const [tab, setTab] = React.useState<"mine" | "public">("mine");
   const [mounted, setMounted] = React.useState(false);
-  const { templates, loading } = useTemplates();
+  const { templates: rawTemplates, loading } = useTemplates();
   const [modalTpl, setModalTpl] = React.useState<Agent | null>(null);
 
   React.useEffect(() => {
@@ -28,6 +28,8 @@ export function TemplatesBoard() {
     return () => clearTimeout(t);
   }, []);
 
+  // ⑦ 模板列表只显示 is_template=true 的空白模板,实例(is_template=false)不在此列
+  const templates = rawTemplates.filter((t) => t.isTemplate);
   const totalMine = templates.length;
   const totalPublic = TEMPLATE_PRESETS.length;
 
@@ -37,14 +39,14 @@ export function TemplatesBoard() {
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-[10.5px] font-mono uppercase tracking-[0.22em] text-foreground/45">
             <span className="inline-block size-1.5 rounded-full bg-foreground/40" />
-            模板库 · Templates · R15-A
+            模板库
           </div>
           <h1 className="text-5xl font-semibold tracking-tighter leading-[1.02] max-w-[14ch]">
             从模板起手,或自己造一个
           </h1>
           <p className="max-w-[60ch] text-[15px] leading-relaxed text-foreground/65">
-            模板是 agent 的复制基底。同一个销售模板可以派生 5 个独立 agent,配给不同员工,起不同名字。
-            <strong className="text-foreground/80"> 复制 = 深拷贝</strong>:persona / system_prompt / skills / iron_laws 全部独立。
+            模板是数字员工的复制基底。同一个销售模板可以派生 5 个独立数字员工,配给不同员工,起不同名字。
+            <strong className="text-foreground/80"> 复制 = 深拷贝</strong>:人格、系统提示词、技能、铁律全部独立。
           </p>
         </div>
         <Link

@@ -11,44 +11,32 @@ import {
   agentToDraft,
   diffDraft,
 } from "./edit-mode";
+// 注:EditableSelect 仍用于复杂度/状态(⑨⑩),引擎/模型下拉已删除(⑧)
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/toast/toast-provider";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-const ROLE_OPTIONS = [
-  { value: "general", label: "通用 · general" },
-  { value: "full-stack-engineer", label: "全栈工程师" },
-  { value: "copywriting-secretary", label: "文案秘书" },
-  { value: "ops-engineer", label: "运维部署" },
-  { value: "customer-support", label: "客服一线" },
-  { value: "research-analyst", label: "调研分析" },
-  { value: "base", label: "base · 派生基底" },
-];
-
-const ENGINE_OPTIONS = [
-  { value: "claude", label: "Claude (anthropic)" },
-  { value: "openai", label: "OpenAI" },
-  { value: "glm", label: "智谱 GLM" },
-  { value: "minimax", label: "MiniMax" },
-];
-
+// ⑨ 复杂度四档(中文,智能体运行参数,不受底层模型影响)
 const COMPLEXITY_OPTIONS = [
-  { value: "L1", label: "L1 · 轻量" },
-  { value: "L2", label: "L2 · 标准" },
-  { value: "L3", label: "L3 · 全栈" },
-  { value: "L4", label: "L4 · 自主" },
+  { value: "L1", label: "极速简答" },
+  { value: "L2", label: "均衡对话" },
+  { value: "L3", label: "深度推演" },
+  { value: "L4", label: "自主专家" },
 ];
 
+// ⑩ 状态三项(中文)
 const STATUS_OPTIONS = [
-  { value: "active", label: "启用 · active" },
-  { value: "paused", label: "暂停 · paused" },
-  { value: "deprecated", label: "弃用 · deprecated" },
+  { value: "active", label: "启用" },
+  { value: "paused", label: "暂停" },
+  { value: "deprecated", label: "弃用" },
 ];
 
+// ⑤ 角色模板仅在创建时选择,编辑页不可改;⑧ 引擎/模型由专属大模型卡片管理
+// 故 FIELDS 只保留可编辑字段:name / description / category / complexity_level / status
 const FIELDS = [
-  "name", "description", "role_template", "category",
-  "complexity_level", "default_engine", "default_model", "status",
+  "name", "description", "category",
+  "complexity_level", "status",
 ];
 
 // ── 大模型绑定区数据类型(对齐 /api/providers) ─────────────────
@@ -152,21 +140,10 @@ export function TabBasics({ id }: { id: string }) {
                 placeholder="给员工取个名字"
                 hint="display_name 跟随 name"
               />
-              {ctx.editing ? (
-                <EditableSelect
-                  label="角色模板"
-                  field="role_template"
-                  value={agent.role}
-                  editing
-                  draft={draft}
-                  setDraft={setDraft}
-                  options={ROLE_OPTIONS}
-                />
-              ) : (
-                <ReadonlyField label="角色模板" icon={Cpu}>
-                  <code className="font-mono text-[13px] tracking-tight">{agent.role}</code>
-                </ReadonlyField>
-              )}
+              {/* ⑤ 角色模板:创建时选定,实例独立,编辑页只读不可改 */}
+              <ReadonlyField label="角色类型" icon={Cpu}>
+                <code className="font-mono text-[13px] tracking-tight">{agent.role}</code>
+              </ReadonlyField>
               {ctx.editing ? (
                 <EditableText
                   label="分类"
@@ -197,31 +174,12 @@ export function TabBasics({ id }: { id: string }) {
             </div>
           </div>
 
-          {/* === 系统信息 / 引擎与模型 卡片 === */}
+          {/* === 运行参数 / 系统信息 卡片 === */}
           <div className="rounded-xl border border-border bg-card p-5">
             {ctx.editing ? (
               <>
-                <h3 className="text-sm font-semibold mb-4">引擎与模型</h3>
+                <h3 className="text-sm font-semibold mb-4">运行参数</h3>
                 <div className="grid gap-4 md:grid-cols-2">
-                  <EditableSelect
-                    label="引擎"
-                    field="default_engine"
-                    value={agent.defaultEngine}
-                    editing
-                    draft={draft}
-                    setDraft={setDraft}
-                    options={ENGINE_OPTIONS}
-                  />
-                  <EditableText
-                    label="模型"
-                    field="default_model"
-                    value={agent.defaultModel || "—"}
-                    editing
-                    draft={draft}
-                    setDraft={setDraft}
-                    placeholder="claude-sonnet-4.6 / glm-4.6 / ..."
-                    mono
-                  />
                   <EditableSelect
                     label="复杂度"
                     field="complexity_level"
@@ -241,12 +199,16 @@ export function TabBasics({ id }: { id: string }) {
                     options={STATUS_OPTIONS}
                   />
                 </div>
+                {/* ⑧ 引擎/模型已由专属大模型卡片管理,编辑页不再提供下拉 */}
+                <p className="mt-3 text-[11.5px] text-muted-foreground">
+                  引擎与大模型请在下方「专属大模型」卡片中绑定。
+                </p>
               </>
             ) : (
               <>
                 <h3 className="text-sm font-semibold mb-4">系统信息</h3>
                 <div className="grid gap-4 md:grid-cols-2">
-                  <ReadonlyField label="Agent ID" icon={Cpu}>
+                  <ReadonlyField label="编号" icon={Cpu}>
                     <code className="font-mono text-[12.5px]">{agent.id}</code>
                   </ReadonlyField>
                   <ReadonlyField label="工作目录" icon={GitBranch}>
@@ -254,18 +216,20 @@ export function TabBasics({ id }: { id: string }) {
                       {agent.workingDir || "—"}
                     </code>
                   </ReadonlyField>
-                  <ReadonlyField label="引擎 · 模型" icon={Cpu}>
+                  <ReadonlyField label="专属模型" icon={Cpu}>
                     <span className="font-mono text-[12.5px]">
-                      {agent.defaultEngine} · {agent.defaultModel || "默认"}
+                      {agent.defaultModel || "默认"}
                     </span>
                   </ReadonlyField>
                   <ReadonlyField label="复杂度" icon={Tag}>
-                    <span className="font-mono">{agent.complexityLevel}</span>
+                    <span>
+                      {COMPLEXITY_OPTIONS.find((o) => o.value === agent.complexityLevel)?.label ?? agent.complexityLevel}
+                    </span>
                   </ReadonlyField>
                   <ReadonlyField label="主理人" icon={User2}>
                     <span className="font-medium">{agent.ownerName}</span>
                   </ReadonlyField>
-                  <ReadonlyField label="模板来源" icon={GitBranch}>
+                  <ReadonlyField label="来源" icon={GitBranch}>
                     {agent.templateSource ? (
                       <span className="font-mono text-[12.5px]">
                         {String(agent.templateSource).slice(0, 8)}…
