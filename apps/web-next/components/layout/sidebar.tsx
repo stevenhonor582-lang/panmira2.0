@@ -155,17 +155,37 @@ export function Sidebar({ mobileOpen, setMobileOpen }: SidebarProps) {
         {NAV_GROUPS.map((group) => {
           const GroupIcon = group.icon;
           const moduleActive = pathname.startsWith(`/${group.module}`);
+          // R32-A 改动 6: 修复双高亮 bug — 在组内按 href 段数找最具体匹配,只那一项 active。
+          // 旧逻辑 startsWith(item.href) 会让 "/tasks" 在 "/tasks/scheduled" 时也 active,产生双高亮。
+          // 新逻辑:只有 pathSegs 与 itemSegs 在每个对应位置都相等才算候选,最长候选胜出。
+          const pathSegs = pathname.replace(/\/$/, "").split("/").filter(Boolean);
+          const itemSegsList = group.items.map((it) =>
+            it.href.replace(/\/$/, "").split("/").filter(Boolean),
+          );
+          const matchedItemIdx = itemSegsList
+            .map((segs, idx) => ({ segs, idx }))
+            .filter(({ segs }) =>
+              segs.length > 0 && segs.every((s, i) => pathSegs[i] === s),
+            )
+            .sort((a, b) => b.segs.length - a.segs.length)[0]?.idx;
           return (
             <div key={group.module} className="mb-4">
               <Link
                 href={group.defaultHref}
                 className={cn(
-                  "flex items-center gap-2 px-4 py-1.5 text-[11px] uppercase tracking-wider font-semibold transition-colors",
+                  "relative flex items-center gap-2 px-4 py-1.5 text-[11px] uppercase tracking-wider font-semibold transition-colors",
                   moduleActive
                     ? "text-foreground"
                     : "text-muted-foreground hover:text-foreground",
                 )}
               >
+                {/* R32-A 改动 3: 父级板块持续高亮 — 当任何子项选中时,父级标签左侧显示 accent 条 */}
+                {moduleActive && (
+                  <span
+                    aria-hidden
+                    className="absolute left-0 top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded-r bg-primary"
+                  />
+                )}
                 <GroupIcon className="size-3.5" />
                 <span>{group.title}</span>
                 {moduleActive && (
@@ -173,11 +193,8 @@ export function Sidebar({ mobileOpen, setMobileOpen }: SidebarProps) {
                 )}
               </Link>
               <ul className="mt-1 flex flex-col gap-0.5 px-2">
-                {group.items.map((item) => {
-                  const active =
-                    pathname === item.href ||
-                    (item.href !== group.defaultHref &&
-                      pathname.startsWith(item.href));
+                {group.items.map((item, itemIdx) => {
+                  const active = itemIdx === matchedItemIdx;
                   const Icon = item.icon;
                   return (
                     <li key={item.href}>
