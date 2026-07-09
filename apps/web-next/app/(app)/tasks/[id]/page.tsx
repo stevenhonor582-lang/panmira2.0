@@ -19,8 +19,10 @@ import {
   ChevronLeft,
   CircleAlert,
   Edit3,
+  FileText,
   Loader2,
   Save,
+  X,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -82,6 +84,9 @@ export default function TaskDetailPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [draftDoc, setDraftDoc] = React.useState<unknown>(null);
+  const [saveTplOpen, setSaveTplOpen] = React.useState(false);
+  const [saveTplName, setSaveTplName] = React.useState("");
+  const [savingTpl, setSavingTpl] = React.useState(false);
 
   React.useEffect(() => {
     if (!id) return;
@@ -132,6 +137,30 @@ export default function TaskDetailPage() {
       setSaving(false);
     }
   }, [id, draftDoc]);
+
+  const handleSaveAsTemplate = React.useCallback(async () => {
+    if (!id) return;
+    setSavingTpl(true);
+    try {
+      const baseName = pipeline?.name ?? "任务";
+      const res = (await api("/api/v2/tasks/templates", {
+        method: "POST",
+        body: {
+          sourcePipelineId: id,
+          name: saveTplName.trim() || `${baseName} · 模板`,
+          category: "user",
+        },
+      })) as { data?: { id?: string } };
+      toast.success("已另存为团队模板");
+      setSaveTplOpen(false);
+      setSaveTplName("");
+      if (res?.data?.id) router.push("/tasks/templates");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "保存模板失败");
+    } finally {
+      setSavingTpl(false);
+    }
+  }, [id, pipeline?.name, saveTplName, router, toast]);
 
   if (loading) {
     return (
@@ -214,8 +243,63 @@ export default function TaskDetailPage() {
             <Edit3 className="size-3.5" />
             编辑
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setSaveTplName((pipeline?.name ?? "") + " · 模板");
+              setSaveTplOpen(true);
+            }}
+          >
+            <FileText className="size-3.5" />
+            另存为模板
+          </Button>
         </div>
       </div>
+
+      {/* 另存为模板 modal */}
+      {saveTplOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/40 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-xl bg-card ring-1 ring-foreground/10 shadow-xl">
+            <header className="flex items-center justify-between px-5 py-3 border-b">
+              <h2 className="text-base font-semibold">另存为团队模板</h2>
+              <button
+                type="button"
+                onClick={() => setSaveTplOpen(false)}
+                className="grid place-items-center size-7 rounded-md hover:bg-muted text-muted-foreground"
+                aria-label="关闭"
+              >
+                <X className="size-4" />
+              </button>
+            </header>
+            <div className="px-5 py-4 space-y-3">
+              <p className="text-[11.5px] text-muted-foreground leading-relaxed">
+                将当前任务的编排流程(DAG)保存为团队公用模板,可在「任务模板 → 团队自定义」中管理,供全团队复用。
+              </p>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium">模板名称</label>
+                <input
+                  type="text"
+                  value={saveTplName}
+                  onChange={(e) => setSaveTplName(e.target.value)}
+                  placeholder="给模板起个名字"
+                  maxLength={120}
+                  className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </div>
+            </div>
+            <footer className="flex items-center justify-end gap-2 px-5 py-3 border-t bg-muted/10">
+              <Button variant="outline" size="sm" onClick={() => setSaveTplOpen(false)}>
+                取消
+              </Button>
+              <Button size="sm" onClick={handleSaveAsTemplate} disabled={savingTpl}>
+                {savingTpl ? <Loader2 className="size-3.5 animate-spin" /> : <FileText className="size-3.5" />}
+                保存模板
+              </Button>
+            </footer>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-1 min-h-0">
         <div className="flex-1 min-w-0 p-4">
