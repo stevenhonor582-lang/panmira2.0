@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { useAgent } from "../../_lib/data";
-import { Calendar, Tag, Cpu, GitBranch, User2 } from "lucide-react";
+import { useAgent, updateAgent, type Agent } from "../../_lib/data";
+import { Calendar, Tag, Cpu, GitBranch, User2, Sparkles, Check, Loader2, AlertCircle } from "lucide-react";
 import {
   EditPane,
   EditableText,
@@ -11,6 +11,10 @@ import {
   agentToDraft,
   diffDraft,
 } from "./edit-mode";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/toast/toast-provider";
+import { api } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 const ROLE_OPTIONS = [
   { value: "general", label: "通用 · general" },
@@ -47,9 +51,47 @@ const FIELDS = [
   "complexity_level", "default_engine", "default_model", "status",
 ];
 
+// ── 大模型绑定区数据类型(对齐 /api/providers) ─────────────────
+interface ProviderInfo {
+  id: string;
+  name: string;
+  model: string;
+  type: string;
+  baseUrl?: string;
+  contextWindow?: number | null;
+  isDefault?: boolean;
+  hasApiKey?: boolean;
+  apiKeyMasked?: string | null;
+}
+
+const TYPE_LABEL: Record<string, string> = {
+  openai: "OpenAI 兼容",
+  anthropic: "Anthropic",
+  google: "Google",
+  local: "本地",
+  deepseek: "DeepSeek",
+  embedding: "向量嵌入",
+  llm: "大语言模型",
+  glm: "智谱 GLM",
+  zhipu: "智谱 GLM",
+  minimax: "MiniMax",
+};
+
+/** provider.type/name → agent.default_engine(对齐 ENGINE_OPTIONS) */
+function engineFromProvider(p: ProviderInfo): string {
+  const t = (p.type || "").toLowerCase();
+  if (t === "anthropic" || /claude/i.test(p.name)) return "claude";
+  if (t === "openai") return "openai";
+  if (t === "glm" || t === "zhipu") return "glm";
+  if (t === "minimax") return "minimax";
+  if (t === "deepseek") return "deepseek";
+  return t || "openai";
+}
+
 // R28-A: Agent 基础信息卡片统一真人 BasicTab 卡片布局
 // - 基本信息 卡片(名称/描述/角色/分类)
 // - 系统信息 卡片(Agent ID/工作目录/引擎·模型/主理人/模板来源/版本/创建于)
+// - 专属大模型 绑定卡片(R31-C 新增,独立保存)
 // - 编辑模式: 第二卡片切换为"引擎与模型"编辑表单
 export function TabBasics({ id }: { id: string }) {
   const { agent, loading, reload } = useAgent(id);
@@ -234,9 +276,211 @@ export function TabBasics({ id }: { id: string }) {
               </>
             )}
           </div>
+
+          {/* === 专属大模型 绑定卡片 (R31-C) === */}
+          <ModelBindingCard agent={agent} onSaved={reload} />
         </div>
       )}
     </EditPane>
+  );
+}
+
+// ── 专属大模型 绑定卡片(R31-C 新增) ────────────────────────────
+// - 从 /api/providers 拉真实 LLM provider 列表(过滤 embedding)
+// - 单选 + 独立保存(不走 EditPane),PATCH /api/v2/employees/:id
+//   { default_engine, default_model }
+// - 用 Toast 通知,不用 alert
+function ModelBindingCard({ agent, onSaved }: { agent: Agent; onSaved: () => void }) {
+  const toast = useToast();
+  const [providers, setProviders] = React.useState<ProviderInfo[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [err, setErr] = React.useState<string | null>(null);
+  const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const [saving, setSaving] = React.useState(false);
+
+  // 拉取 providers 列表
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await api<{ providers: ProviderInfo[] } | ProviderInfo[]>("/api/providers");
+        if (!alive) return;
+        const list =
+          (res as { providers?: ProviderInfo[] })?.providers ??
+          (Array.isArray(res) ? (res as ProviderInfo[]) : []);
+        // 只显示 LLM(过滤 embedding)
+        const llm = list.filter((p) => (p.type || "").toLowerCase() !== "embedding");
+        setProviders(llm);
+        setErr(null);
+      } catch (e: unknown) {
+        setErr(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // 当前绑定的 provider(先按 model 精确匹配,再按 engine 模糊匹配)
+  const currentBinding = React.useMemo<ProviderInfo | null>(() => {
+    const curModel = (agent.defaultModel || "").toLowerCase();
+    const curEngine = (agent.defaultEngine || "").toLowerCase();
+    return (
+      providers.find((p) => (p.model || "").toLowerCase() === curModel) ??
+      providers.find((p) => engineFromProvider(p) === curEngine) ??
+      null
+    );
+  }, [providers, agent.defaultModel, agent.defaultEngine]);
+
+  // 初始化选中(默认指向当前绑定)
+  React.useEffect(() => {
+    if (currentBinding && selectedId === null) {
+      setSelectedId(currentBinding.id);
+    }
+  }, [currentBinding, selectedId]);
+
+  const isDirty = !!selectedId && selectedId !== currentBinding?.id;
+
+  async function save() {
+    if (!selectedId) return;
+    const p = providers.find((x) => x.id === selectedId);
+    if (!p) return;
+    setSaving(true);
+    try {
+      await updateAgent(agent.id, {
+        default_engine: engineFromProvider(p),
+        default_model: p.model,
+      });
+      toast.success(`已绑定 ${p.name} · ${p.model}`);
+      onSaved();
+    } catch (e: unknown) {
+      toast.error(`保存失败:${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="mb-1 flex items-center gap-2">
+        <Sparkles className="size-4 text-amber-500" />
+        <h3 className="text-sm font-semibold">专属大模型</h3>
+      </div>
+      <p className="mb-4 text-[11.5px] text-muted-foreground">
+        为这位员工绑定专属大模型,覆盖系统默认。数据来自 <code className="font-mono">/api/providers</code>,保存即时生效。
+      </p>
+
+      {/* 当前绑定 */}
+      <div className="mb-4 rounded-lg ring-1 ring-border bg-background/40 px-3 py-2.5 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/45">
+            当前绑定
+          </div>
+          <div className="text-sm mt-0.5 truncate">
+            {currentBinding ? (
+              <>
+                <span className="font-medium">{currentBinding.name}</span>
+                <span className="font-mono text-[12px] text-foreground/65">
+                  {" "}&middot; {currentBinding.model}
+                </span>
+              </>
+            ) : (
+              <span className="text-muted-foreground">
+                <span className="font-mono">{agent.defaultEngine}</span>
+                {" "}&middot; {agent.defaultModel || "默认(未绑定专属)"}
+              </span>
+            )}
+          </div>
+        </div>
+        {currentBinding?.isDefault ? (
+          <span className="shrink-0 text-[10px] font-mono uppercase tracking-wide bg-amber-500/15 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded">
+            系统默认
+          </span>
+        ) : null}
+      </div>
+
+      {/* 加载 / 错误 / 列表 */}
+      {loading ? (
+        <div className="h-32 rounded-lg bg-muted/30 animate-pulse" />
+      ) : err ? (
+        <div className="flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-xs text-rose-700 dark:text-rose-300">
+          <AlertCircle className="size-3.5 mt-0.5 shrink-0" />
+          <span>加载大模型列表失败:{err}</span>
+        </div>
+      ) : providers.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border px-3 py-4 text-xs text-muted-foreground">
+          暂无可用大模型,请先到「渠道 → 大模型」配置服务商。
+        </div>
+      ) : (
+        <ul className="space-y-1.5" role="radiogroup" aria-label="选择专属大模型">
+          {providers.map((p) => {
+            const checked = selectedId === p.id;
+            const typeLabel = TYPE_LABEL[(p.type || "").toLowerCase()] ?? p.type ?? "LLM";
+            return (
+              <li key={p.id}>
+                <label
+                  className={cn(
+                    "flex items-start gap-3 rounded-lg px-3 py-2.5 cursor-pointer ring-1 transition-colors",
+                    checked
+                      ? "ring-amber-500/40 bg-amber-500/[0.06]"
+                      : "ring-border hover:bg-muted/30",
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="model-binding"
+                    value={p.id}
+                    checked={checked}
+                    onChange={() => setSelectedId(p.id)}
+                    className="mt-1 size-3.5 accent-amber-500"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[13px] font-medium">{p.name}</span>
+                      <span className="text-[10px] font-mono uppercase tracking-wide bg-muted text-muted-foreground px-1.5 py-0.5 rounded">
+                        {typeLabel}
+                      </span>
+                      {p.isDefault ? (
+                        <span className="text-[10px] font-mono uppercase tracking-wide bg-amber-500/15 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded">
+                          默认
+                        </span>
+                      ) : null}
+                      {p.hasApiKey === false ? (
+                        <span className="text-[10px] font-mono uppercase tracking-wide bg-rose-500/15 text-rose-700 dark:text-rose-300 px-1.5 py-0.5 rounded">
+                          未配置 Key
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="mt-0.5 text-[11.5px] font-mono text-foreground/65 truncate">
+                      {p.model || "—"}
+                      {p.baseUrl ? (
+                        <span className="text-foreground/35">{" "}&middot; {p.baseUrl}</span>
+                      ) : null}
+                    </div>
+                  </div>
+                </label>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {/* 保存按钮 */}
+      <div className="mt-4 flex items-center justify-end gap-2">
+        <Button
+          size="sm"
+          onClick={save}
+          disabled={!isDirty || saving || loading || !!err}
+          className="gap-1.5"
+          data-testid="save-model-binding"
+        >
+          {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+          {saving ? "保存中…" : "保存绑定"}
+        </Button>
+      </div>
+    </div>
   );
 }
 
