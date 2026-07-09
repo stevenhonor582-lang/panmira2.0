@@ -151,7 +151,15 @@ export async function callLlm(opts: LlmCallOptions): Promise<LlmCallResult> {
   }
 
 const data = await response.json() as any;
-  const text = data.content?.find((c: any) => c.type === 'text')?.text || '';
+  // R20: 容错多 provider 响应格式(标准 Anthropic / DeepSeek anthropic / OpenAI 兼容)
+  const text =
+    data.content?.find((c: any) => c.type === 'text')?.text  // 标准 Anthropic
+    || data.content?.find((c: any) => typeof c === 'string')  // content 数组直接是字符串
+    || (typeof data.content === 'string' ? data.content : '')  // content 本身是字符串
+    || data.completion  // 部分 provider
+    || data.text
+    || data.choices?.[0]?.message?.content  // OpenAI 兼容
+    || '';
   const toolUses: LlmToolUse[] = (data.content || [])
     .filter((c: any) => c.type === 'tool_use')
     .map((c: any) => ({ id: c.id, name: c.name, input: c.input }));
