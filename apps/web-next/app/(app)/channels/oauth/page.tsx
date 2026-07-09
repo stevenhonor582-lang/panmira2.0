@@ -23,6 +23,7 @@ import { ChannelsPageShell, PageMeta } from "@/components/channels/page-shell";
 import { DenseTable, MonoCell, KeyCell } from "@/components/channels/dense-table";
 import { StatusPill } from "@/components/channels/status-pill";
 import { OAuthSecretModal } from "@/components/channels/oauth-secret-modal";
+import { useToast } from "@/components/toast/toast-provider";
 import {
   Eye,
   KeyRound,
@@ -40,6 +41,12 @@ import { mutate } from "@/lib/channels/api-mutations";
  *
  * R29-B 简化: 只保留入站(外部系统接入我方 API 的 client)。
  * 出站(我们接别人的密钥)移到「外部互联」(MCP) 页。
+ *
+ * R31-C 优化:
+ *  - 「轮换 Secret」按钮 → 改名「查看密钥」
+ *  - 所有 window.confirm 替换为统一 Dialog(base-ui)
+ *  - 固定提示文案:密钥已加密存储,无法直接查看,点击会生成全新密钥,旧密钥自动失效
+ *  - 用 ToastProvider 通知,不再用本地 toast
  *
  * 安全规则:
  *  - client_secret 创建/轮换时明文返回一次
@@ -116,17 +123,12 @@ function getSecret(id: string): VaultEntry | null {
   return readVault()[id] ?? null;
 }
 
-function forgetSecret(id: string) {
-  const v = readVault();
-  delete v[id];
-  writeVault(v);
-}
-
 /* ------------------------------------------------------------------ */
 /* Page                                                               */
 /* ------------------------------------------------------------------ */
 
 export default function OAuthPage() {
+  const toast = useToast();
   const {
     data: clientData,
     loading: clientLoading,
@@ -139,13 +141,10 @@ export default function OAuthPage() {
   const [reveal, setReveal] = React.useState<OAuthClientWithSecret | null>(null);
   const [creating, setCreating] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
-  const [toast, setToast] = React.useState<string | null>(null);
   const [, forceTick] = React.useReducer((n: number) => n + 1, 0);
-
-  function notify(msg: string) {
-    setToast(msg);
-    setTimeout(() => setToast(null), 3500);
-  }
+  // R31-C: 用统一 Dialog 替代浏览器 confirm
+  const [viewKeyTarget, setViewKeyTarget] = React.useState<OAuthClient | null>(null);
+  const [revokeTarget, setRevokeTarget] = React.useState<OAuthClient | null>(null);
 
   const clients: OAuthClient[] = React.useMemo(() => {
     const raw = clientData?.clients ?? [];
@@ -188,19 +187,23 @@ export default function OAuthPage() {
   const withBusinessSystem = clients.filter((c) => c.businessSystem).length;
   const vaultCount = Object.keys(readVault()).length;
 
-  async function revokeClient(c: OAuthClient) {
-    if (!confirm(`禁用 client "${c.name}"?已禁用的 client 不能再换 secret。`)) return;
+  // R31-C: 禁用 client — 统一 Dialog 确认,不再用 window.confirm
+  async function doRevoke(c: OAuthClient) {
     setBusy(true);
     const r = await mutate("PATCH", `/api/v2/channels/oauth/clients/${c.id}`, {
       body: { status: "revoked" },
       refresh: refreshClients,
     });
     setBusy(false);
-    notify(r.ok ? `✓ 已禁用 ${c.name}` : `✗ ${r.error}`);
+    setRevokeTarget(null);
+    if (r.ok) toast.success(`已禁用 ${c.name}`);
+    else toast.error(r.error || "禁用失败");
   }
 
-  async function rotateSecret(c: OAuthClient) {
-    if (!confirm(`轮换 client "${c.name}" 的 secret?旧 secret 立即失效。`)) return;
+  // R31-C: 查看密钥 — 实际是"生成新密钥"
+  // 因为后端只存 hash 无法还原明文,"查看"等价于"轮换/重新生成"
+  // 用户在 ConfirmDialog 内确认后,真正调用 rotate,新明文通过 OAuthSecretModal 只显一次
+  async function doRotate(c: OAuthClient) {
     setBusy(true);
     const r = await mutate<any>(
       "POST",
@@ -208,25 +211,26 @@ export default function OAuthPage() {
       { refresh: refreshClients },
     );
     setBusy(false);
+    setViewKeyTarget(null);
     if (r.ok) {
       const newSecret = r.data?.clientSecret ?? r.data?.data?.clientSecret;
       const updated: OAuthClientWithSecret = { ...c, clientSecret: newSecret };
       if (newSecret) {
         saveSecret(updated);
         setReveal(updated);
-        notify(`✓ ${c.name} secret 已轮换(已存入本机保管)`);
+        toast.success(`${c.name} 新密钥已生成(只显示一次,请立即保存)`);
       } else {
-        notify(`✓ ${c.name} secret 已轮换(响应未包含明文)`);
+        toast.info(`${c.name} 密钥已轮换(响应未包含明文)`);
       }
     } else {
-      notify(`✗ ${r.error}`);
+      toast.error(r.error || "生成新密钥失败");
     }
   }
 
   function viewSecret(c: OAuthClient) {
     const entry = getSecret(c.id);
     if (!entry) {
-      notify(`⚠ ${c.name}: 本机未保管该密钥(可能在别处创建)。轮换以重新生成。`);
+      toast.info(`${c.name}: 本机未保管该密钥(可能在别处创建)。点「查看密钥」重新生成。`);
       return;
     }
     setReveal({ ...c, clientSecret: entry.clientSecret });
@@ -319,28 +323,30 @@ export default function OAuthPage() {
                 size="icon-xs"
                 variant="ghost"
                 onClick={() => viewSecret(c)}
-                aria-label="查看密钥"
-                title="查看密钥(本机保管)"
+                aria-label="查看本机密钥"
+                title="查看本机已保管密钥(不生成新密钥)"
                 className="hover:text-sky-600"
                 disabled={busy || c.status !== "active"}
               >
                 <Eye className="size-3.5" />
               </Button>
+              {/* R31-C: 原「轮换 Secret」改名「查看密钥」(实际是生成新密钥,因为后端只存 hash) */}
               <Button
-                size="icon-xs"
+                size="sm"
                 variant="ghost"
-                onClick={() => rotateSecret(c)}
-                aria-label="轮换 Secret"
-                title="轮换 Secret"
-                className="hover:text-amber-600"
+                onClick={() => setViewKeyTarget(c)}
+                aria-label="查看密钥"
+                title="查看密钥(生成全新密钥,旧密钥自动失效)"
+                className="gap-1 text-[11px] hover:text-amber-600"
                 disabled={busy || c.status !== "active"}
               >
                 <RotateCw className="size-3.5" />
+                查看密钥
               </Button>
               <Button
                 size="icon-xs"
                 variant="ghost"
-                onClick={() => revokeClient(c)}
+                onClick={() => setRevokeTarget(c)}
                 aria-label="禁用"
                 title="禁用"
                 className="hover:text-rose-600"
@@ -357,7 +363,7 @@ export default function OAuthPage() {
       <div className="mt-3 flex items-center gap-3 text-[10.5px] text-muted-foreground font-mono">
         <KeyCell>安全</KeyCell>
         <span>
-          密钥本机保管(localStorage), 可「查看」随时读出;跨设备不可见, 需轮换重新生成。
+          密钥本机保管(localStorage), Eye 图标可读出本机已保管密钥;「查看密钥」按钮会生成新密钥(旧密钥失效)。
         </span>
       </div>
 
@@ -415,12 +421,6 @@ export default function OAuthPage() {
         </ol>
       </section>
 
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-50 rounded-lg bg-foreground text-background px-3.5 py-2 text-xs shadow-lg">
-          {toast}
-        </div>
-      )}
-
       <CreateClientDialog
         open={creating}
         onClose={() => setCreating(false)}
@@ -441,7 +441,99 @@ export default function OAuthPage() {
         onClose={() => setReveal(null)}
         onAcknowledge={() => setReveal(null)}
       />
+
+      {/* R31-C: 查看密钥确认弹窗(替代 window.confirm) */}
+      <ConfirmDialog
+        open={!!viewKeyTarget}
+        title="查看密钥"
+        confirmText="确认生成新密钥"
+        cancelText="取消"
+        tone="warning"
+        busy={busy}
+        onConfirm={() => viewKeyTarget && doRotate(viewKeyTarget)}
+        onClose={() => setViewKeyTarget(null)}
+      >
+        <div className="rounded-md ring-1 ring-amber-500/40 bg-amber-500/[0.06] px-3 py-2.5 text-[12px] leading-relaxed text-amber-800 dark:text-amber-200">
+          <div className="font-medium">密钥已加密存储,无法直接查看。</div>
+          <div className="mt-0.5">点击会生成全新密钥,旧密钥自动失效。</div>
+          <div className="mt-0.5">请妥善保存。</div>
+          {viewKeyTarget ? (
+            <div className="mt-2 pt-2 border-t border-amber-500/30 text-foreground/75">
+              目标 Client:<span className="font-medium">{viewKeyTarget.name}</span>
+            </div>
+          ) : null}
+        </div>
+      </ConfirmDialog>
+
+      {/* R31-C: 禁用确认弹窗(替代 window.confirm) */}
+      <ConfirmDialog
+        open={!!revokeTarget}
+        title="禁用 Client"
+        confirmText="确认禁用"
+        cancelText="取消"
+        tone="danger"
+        busy={busy}
+        onConfirm={() => revokeTarget && doRevoke(revokeTarget)}
+        onClose={() => setRevokeTarget(null)}
+      >
+        <div className="text-[12px] leading-relaxed text-foreground/85">
+          禁用 Client <strong>{revokeTarget?.name}</strong>?
+          <div className="mt-1 text-muted-foreground">已禁用的 Client 不能再换 secret。</div>
+        </div>
+      </ConfirmDialog>
     </ChannelsPageShell>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* ConfirmDialog — R31-C 统一确认弹窗(替代浏览器原生 confirm)        */
+/* ------------------------------------------------------------------ */
+
+function ConfirmDialog({
+  open,
+  title,
+  confirmText = "确认",
+  cancelText = "取消",
+  tone = "default",
+  busy = false,
+  onConfirm,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  title: string;
+  confirmText?: string;
+  cancelText?: string;
+  tone?: "default" | "danger" | "warning";
+  busy?: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+  children?: React.ReactNode;
+}) {
+  const confirmCls =
+    tone === "danger"
+      ? "bg-rose-600 hover:bg-rose-700 text-white"
+      : tone === "warning"
+        ? "bg-amber-600 hover:bg-amber-700 text-white"
+        : "";
+  return (
+    <Dialog open={open} onOpenChange={(n) => !n && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-base">{title}</DialogTitle>
+        </DialogHeader>
+        <div className="text-xs">{children}</div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={onClose} disabled={busy}>
+            {cancelText}
+          </Button>
+          <Button size="sm" onClick={onConfirm} disabled={busy} className={confirmCls}>
+            {busy ? <Loader2 className="size-3.5 animate-spin mr-1.5" /> : null}
+            {confirmText}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
