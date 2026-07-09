@@ -439,6 +439,38 @@ export async function handleEmployeesRoutes(
         jsonResponse(res, 400, fail('no_fields', '请求体未包含任何可更新字段'));
         return true;
       }
+      // R35: channel_ids 独占校验(入口一对一)
+      if ('channelIds' in updates) {
+        const newCids = Array.isArray(updates.channelIds) ? updates.channelIds.filter((x) => typeof x === 'string') : [];
+        // R35: PATCH channelIds 时同步解绑原 agent(解绑时清空 bot_configs.agent_id)
+        const newSet = new Set(newCids);
+        await pool.query(
+          `UPDATE bot_configs SET agent_id = NULL
+           WHERE agent_id::text = $1 AND NOT (bot_id::text = ANY($2))`,
+          [id, Array.from(newSet)]
+        );
+
+        // 找已被其他 agent 占用的 bot_id
+        const conflict = await pool.query(
+          `SELECT bot_id, agent_id FROM bot_configs
+           WHERE bot_id::text = ANY($1) AND agent_id IS NOT NULL AND agent_id::text != $2`,
+          [newCids, id]
+        );
+        if (conflict.rows.length > 0) {
+          const occupied = conflict.rows.map((r: { bot_id: string }) => r.bot_id);
+          // 找出占用方 agent 名字
+          const owners = await pool.query(
+            `SELECT id, name FROM agents WHERE id::text = ANY($1)`,
+            [conflict.rows.map(r => r.agent_id)]
+          );
+          const ownerMap = Object.fromEntries(owners.rows.map((r: { id: string; name: string }) => [r.id, r.name]));
+          const detail = conflict.rows
+            .map((r: { bot_id: string; agent_id: string }) => `${r.bot_id}(已占用 · ${ownerMap[r.agent_id] || r.agent_id})`)
+            .join('; ');
+          jsonResponse(res, 409, fail('bot_already_bound', `入口已被其他实例占用: ${detail}`));
+          return true;
+        }
+      }
       let agent;
       try {
         agent = await agentStore.update(id, updates);
