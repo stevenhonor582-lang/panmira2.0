@@ -459,7 +459,7 @@ web-next (Next 16 + React 19, port 3200)
 ### 5.5 前端已识别的债务
 
 - ❌ **无 i18n**：zh-CN 硬编码，多语言需从零搭（next-intl + 路由重排）
-- ⚠️ **路由冗余/灰层**：`channels.bak.p3.5/`、`sidebar.tsx.bak.r17-1`、`chain-editor` 已 redirect 未清理
+- ✅ ~~路由冗余~~ **已清理**（2026-07-09）：删除 `channels.bak.p3.5/` + `sidebar/topbar.tsx.bak.r17-1`（备份在 `~/panmira-N1-backups/`）；`chain-editor` 是 redirect 源（→ /agents/pipelines），**保留**
 - ⚠️ **旧 v1 API 仍在用**（`/api/bots`、`/api/agents/`、`/api/skills`），需定迁移路线
 
 > 注：(admin) / (app) 双壳是**有意的「系统管理 vs 业务运营」双视角分工**，非债务。
@@ -694,7 +694,7 @@ document ──< document_chunk (pgvector embedding)
 
 | 优先级 | 内容 | 出处 |
 |--------|------|------|
-| **P0** | 路由冗余清理（全删 .bak / 死路由）| 10.4.3 |
+| **P0** ✅ | ~~路由冗余清理~~（已完成 2026-07-09，见 5.5）| 10.4.3 |
 | **P0** | 本 PRD 落地 `docs/`（产品叙事对齐）| 10.1 |
 | **P1** | 人机协同数据补全（users 绑定字段 / 新表）| 6.3 |
 | **P1** | 多语言第 1 批：中英俄（界面 + agent 内容）| 10.4.1 |
