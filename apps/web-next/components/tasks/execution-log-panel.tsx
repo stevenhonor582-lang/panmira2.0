@@ -132,6 +132,9 @@ export function ExecutionLogPanel({
         error: state.error ?? undefined,
         completedNodes: state.completedNodes,
         totalNodes: state.totalNodes,
+        // R22: WS 直接推 nodeStates(后端 emitPipelineProgress 把 merged 一起广播),
+        // 展开节点详情时无需再 GET /runs/:rid,实时刷新。
+        nodeStates: state.nodeStates,
       }
     : null;
 

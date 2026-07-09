@@ -31,6 +31,27 @@ export interface PipelineProgressState {
   botId: string | null;
   /** L10: Chat / conversation ID where the run was triggered. */
   chatId: string | null;
+  /**
+   * R22: 每节点的最新执行状态(WS payload 直接推)。
+   * 后端 emitPipelineProgress 在每步 onNodeUpdate 时把 merged nodeStates 一起广播,
+   * 客户端 execution-log / shape-config 可以零额外 REST 直接显示 input/output。
+   */
+  nodeStates?: Record<string, NodeRunStateLike>;
+}
+
+/** 与后端 NodeState jsonb + node-run-details.ts NodeRunState 对齐。 */
+export interface NodeRunStateLike {
+  status?: string;
+  input?: unknown;
+  output?: unknown;
+  error?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  durationMs?: number;
+  tokensUsed?: number;
+  approval?: string;
+  note?: string;
+  decidedBy?: string;
 }
 
 export interface UsePipelineProgressOptions {
@@ -57,6 +78,7 @@ const INITIAL: PipelineProgressState = {
   lastUpdate: null,
   botId: null,
   chatId: null,
+  nodeStates: undefined,
 };
 
 function deriveWsUrl(): string | null {
@@ -122,6 +144,11 @@ export function usePipelineProgress(
               lastUpdate: msg.ts ?? new Date().toISOString(),
               botId: (msg.botId ?? null) as string | null,
               chatId: (msg.chatId ?? null) as string | null,
+              // R22: 后端 R22 起把 merged nodeStates 一起广播(每节点 onNodeUpdate 时)。
+              nodeStates:
+                msg.nodeStates && typeof msg.nodeStates === "object"
+                  ? (msg.nodeStates as Record<string, NodeRunStateLike>)
+                  : undefined,
             });
           } catch {
             // ignore malformed messages
