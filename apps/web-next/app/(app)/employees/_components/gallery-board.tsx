@@ -187,7 +187,7 @@ function Header({
       <div className="space-y-3">
         <div className="flex items-center gap-2 text-[10.5px] font-mono uppercase tracking-[0.22em] text-foreground/45">
           <span className="inline-block size-1.5 rounded-full bg-foreground/40" />
-          数字员工 · IA v6 · R15-A
+          数字员工
         </div>
         <h1 className="text-5xl font-semibold tracking-tighter leading-[1.02] max-w-[14ch]">
           {boardTab === "templates" ? "模板库" : "你的数字员工矩阵"}
@@ -300,7 +300,7 @@ function RoleLegend({
       >
         <div className="flex items-center gap-2">
           <span className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-foreground/45">角色分工 · 几大类</span>
-          <span className="text-[12px] text-foreground/60">从哪定义? — <code className="font-mono text-[11px] text-foreground/75">agents.role_template</code></span>
+          <span className="text-[12px] text-foreground/60">定义来源:创建时选择的角色类型</span>
         </div>
         <span className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-foreground/45">
           {open ? "收起 −" : "展开 +"}

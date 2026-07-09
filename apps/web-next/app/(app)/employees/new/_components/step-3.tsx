@@ -42,8 +42,8 @@ export function Step3({
         </div>
         <ul className="space-y-1 font-mono text-[11.5px]">
           <li><b className="text-foreground/85">persona</b> · 简短描述(60 字内) · 决定第一印象</li>
-          <li><b className="text-foreground/85">system_prompt</b> · 完整系统提示词 · 决定具体行为</li>
-          <li><b className="text-foreground/85">iron_laws</b> · 铁律 · 绝对不能违反的规则</li>
+          <li><b className="text-foreground/85">系统提示词</b> · 完整提示词 · 决定具体行为</li>
+          <li><b className="text-foreground/85">铁律</b> · 绝对不能违反的规则</li>
         </ul>
         <div className="mt-2 flex items-start gap-1.5 text-[11px] text-foreground/55">
           <Info className="mt-0.5 size-3 shrink-0" />

@@ -258,7 +258,7 @@ export function Step1({
 
       <section className="grid gap-6 lg:grid-cols-[1fr_1.4fr]">
         <div>
-          <Label>头像 · Glyph & Hue</Label>
+          <Label>头像样式</Label>
           <div className="mt-3 flex flex-wrap gap-1.5">
             {GLYPHS.map((g) => (
               <button

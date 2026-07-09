@@ -138,7 +138,7 @@ export function TabBasics({ id }: { id: string }) {
                 draft={draft}
                 setDraft={setDraft}
                 placeholder="给员工取个名字"
-                hint="display_name 跟随 name"
+                hint="显示名跟随名称"
               />
               {/* ⑤ 角色模板:创建时选定,实例独立,编辑页只读不可改 */}
               <ReadonlyField label="角色类型" icon={Cpu}>

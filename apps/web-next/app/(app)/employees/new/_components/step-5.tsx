@@ -39,7 +39,7 @@ export function Step5({
         <div className="grid gap-2 sm:grid-cols-3">
           <LayerCard level="L1" label="短期记忆" desc="24h 上下文窗口,自动维护,无需选" disabled />
           <LayerCard level="L2" label="长期事实" desc="下方勾选 KB / 文件夹 → 注入此层" />
-          <LayerCard level="L3" label="永久原则" desc="Step 3 设置的 iron_laws 自动入此层" disabled />
+          <LayerCard level="L3" label="永久原则" desc="第三步设置的铁律自动进入此层" disabled />
         </div>
       </div>
 

@@ -137,7 +137,7 @@ export function TabTasks({ id }: { id: string }) {
         <div>
           <h3 className="flex items-center gap-2 text-[13px] font-medium tracking-tight text-foreground/65">
             <ListChecks className="size-4 text-foreground/45" />
-            任务绑定 · Pipelines
+            任务绑定
           </h3>
           <p className="mt-1 text-[13px] text-foreground/55 max-w-[60ch]">
             这位员工被哪些 pipeline 雇佣。点"添加任务"从库里搜索后批量绑定。

@@ -308,7 +308,7 @@ function FromTemplateModal({
           <DialogTitle>从模板创建实例</DialogTitle>
           <DialogDescription>
             深拷贝 <strong className="text-foreground/80">{template.displayName || template.name}</strong> 的全部配置
-            (persona / system_prompt / skills / iron_laws),分配新 id + 新 owner。
+            (人格、系统提示词、技能、铁律),分配新 id + 新 owner。
           </DialogDescription>
         </DialogHeader>
 
