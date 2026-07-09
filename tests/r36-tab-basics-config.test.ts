@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { normalizeAutoCompressDraft } from '../apps/web-next/app/(app)/employees/new/_components/form.js';
 import {
   CONTEXT_PRESETS,
   buildModelBindingPatch,
@@ -61,5 +62,26 @@ describe('R36 tab-basics model binding helpers', () => {
 describe('R36 tab-basics context presets', () => {
   it('offers 512K as a first-class context window preset', () => {
     expect(CONTEXT_PRESETS.map((preset) => preset.value)).toContain(512000);
+  });
+});
+
+
+describe('R36 auto-compress form normalization', () => {
+  it('keeps warn < compress <= reset before values are saved', () => {
+    expect(
+      normalizeAutoCompressDraft({
+        enabled: true,
+        warnThresholdPct: 90,
+        thresholdPct: 70,
+        resetThresholdPct: 80,
+        ratioPct: 50,
+      }),
+    ).toEqual({
+      enabled: true,
+      warnThresholdPct: 90,
+      thresholdPct: 91,
+      resetThresholdPct: 91,
+      ratioPct: 50,
+    });
   });
 });

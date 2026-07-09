@@ -21,7 +21,7 @@ import { metrics } from '../utils/metrics.js';
 import type { SessionRegistry } from '../session/session-registry.js';
 import type { ChatSessionStore } from '../db/chat-session-store.js';
 import { SkillRouter } from '../skills/skill-router.js';
-import { CONTEXT_USAGE_THRESHOLD } from './context-manager.js';
+import { DEFAULT_AUTO_COMPRESS_CONFIG, normalizeAutoCompressConfig, resolveContextUsageAction, summaryCharLimitFromRetainRatio, type AutoCompressRuntimeConfig } from './context-manager.js';
 import { MemoryWriter } from './memory-writer.js';
 import { SubjectNormalizer } from './subject-normalizer.js';
 import { MemoryExtractor } from './memory-extractor.js';
@@ -71,6 +71,38 @@ export class MessageBridge {
    * 由 start() 时一次性预热,5 分钟过期,StreamProcessor 同步读
    */
   private contextWindowCache = new Map<string, number>();
+  private autoCompressConfigCache: { expiresAt: number; value: AutoCompressRuntimeConfig } | null = null;
+
+  private async resolveAutoCompressConfig(): Promise<AutoCompressRuntimeConfig> {
+    const now = Date.now();
+    if (this.autoCompressConfigCache && this.autoCompressConfigCache.expiresAt > now) {
+      return this.autoCompressConfigCache.value;
+    }
+
+    let value = DEFAULT_AUTO_COMPRESS_CONFIG;
+    try {
+      const agentId = this.config.agentId;
+      const result = agentId
+        ? await pool.query('SELECT orchestration FROM agents WHERE id = $1 LIMIT 1', [agentId])
+        : await pool.query(
+            `SELECT a.orchestration
+               FROM bot_configs bc
+               LEFT JOIN agents a ON a.id = bc.agent_id
+              WHERE bc.name = $1
+              LIMIT 1`,
+            [this.config.name],
+          );
+      const raw = result.rows[0]?.orchestration;
+      const orchestration = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      value = normalizeAutoCompressConfig((orchestration as Record<string, unknown> | null | undefined)?.autoCompress);
+    } catch (e: any) {
+      this.logger.warn({ err: e?.message, botName: this.config.name }, 'resolveAutoCompressConfig failed; using defaults');
+    }
+
+    this.autoCompressConfigCache = { expiresAt: now + 60_000, value };
+    return value;
+  }
+
   public async refreshContextWindowCache(): Promise<void> {
     try {
       const r = await pool.query(`SELECT name, context_window FROM provider_configs WHERE context_window IS NOT NULL`);
@@ -1508,7 +1540,7 @@ export class MessageBridge {
       // Auto-retry with fresh session on context overflow (e.g. third-party models without compaction)
       if (lastState.status === 'error' && isContextOverflowError(lastState.errorMessage) && session.sessionId) {
         this.logger.info(
-          { chatId, threshold: CONTEXT_USAGE_THRESHOLD },
+          { chatId, threshold: DEFAULT_AUTO_COMPRESS_CONFIG.compressThreshold },
           'Context overflow detected, retrying with continuation prompt',
         );
         const _summary = this.buildProactiveSummary(lastState); this.sessionManager.resetSession(chatId, _summary);
@@ -1711,18 +1743,25 @@ export class MessageBridge {
         } catch (e) { this.logger.warn({ err: e, chatId }, 'sendCompletionNotice failed'); }
 
       this.logger.info({ chatId, status: lastState.status, totalTokens: lastState.totalTokens, contextWindow: lastState.contextWindow, hasSessionId: !!session.sessionId, model: lastState.model }, 'Context usage check');
-      // Proactive session reset: if context usage is high, reset so next message starts fresh
-      // instead of waiting for an overflow error on the next call
+      // Proactive session reset follows agent.orchestration.autoCompress, not a hard-coded threshold.
       if (lastState.status === 'complete' && lastState.totalTokens && lastState.contextWindow && session.sessionId) {
+        const autoCompress = await this.resolveAutoCompressConfig();
+        const action = resolveContextUsageAction(lastState.totalTokens, lastState.contextWindow, autoCompress);
         const usagePct = lastState.totalTokens / lastState.contextWindow;
-        if (usagePct >= CONTEXT_USAGE_THRESHOLD) {
+        if (action === 'warn') {
           this.logger.info(
-            { chatId, usagePct: Math.round(usagePct * 100), sessionId: session.sessionId },
-            'Proactive session reset: context usage above threshold',
+            { chatId, usagePct: Math.round(usagePct * 100), warnThreshold: autoCompress.warnThreshold },
+            'Context usage above warning threshold',
+          );
+        }
+        if (action === 'compress' || action === 'reset') {
+          this.logger.info(
+            { chatId, usagePct: Math.round(usagePct * 100), sessionId: session.sessionId, action, compressThreshold: autoCompress.compressThreshold, resetThreshold: autoCompress.resetThreshold },
+            'Proactive session reset: context usage above configured threshold',
           );
           try {
             await this.handlePreResetContext(chatId, prompt, lastState, msg.chatType);
-            const _summary = this.buildProactiveSummary(lastState); this.sessionManager.resetSession(chatId, _summary);
+            const _summary = this.buildProactiveSummary(lastState, autoCompress); this.sessionManager.resetSession(chatId, _summary);
           } catch (e) { this.logger.warn({ err: e, chatId }, 'handlePreResetContext failed'); }
         }
       }
@@ -2301,16 +2340,24 @@ export class MessageBridge {
         durationMs,
       );
 
-      // Proactive session reset for API tasks too
+      // Proactive session reset for API tasks too; follows agent.orchestration.autoCompress.
       if (lastState.status === 'complete' && lastState.totalTokens && lastState.contextWindow && session.sessionId) {
+        const autoCompress = await this.resolveAutoCompressConfig();
+        const action = resolveContextUsageAction(lastState.totalTokens, lastState.contextWindow, autoCompress);
         const usagePct = lastState.totalTokens / lastState.contextWindow;
-        if (usagePct >= CONTEXT_USAGE_THRESHOLD) {
+        if (action === 'warn') {
           this.logger.info(
-            { chatId, usagePct: Math.round(usagePct * 100), sessionId: session.sessionId },
-            'API task: proactive session reset (context usage above threshold)',
+            { chatId, usagePct: Math.round(usagePct * 100), warnThreshold: autoCompress.warnThreshold },
+            'API task: context usage above warning threshold',
+          );
+        }
+        if (action === 'compress' || action === 'reset') {
+          this.logger.info(
+            { chatId, usagePct: Math.round(usagePct * 100), sessionId: session.sessionId, action, compressThreshold: autoCompress.compressThreshold, resetThreshold: autoCompress.resetThreshold },
+            'API task: proactive session reset (context usage above configured threshold)',
           );
           await this.handlePreResetContext(chatId, prompt, lastState, options.chatType);
-          const _summary = this.buildProactiveSummary(lastState); this.sessionManager.resetSession(chatId, _summary);
+          const _summary = this.buildProactiveSummary(lastState, autoCompress); this.sessionManager.resetSession(chatId, _summary);
         }
       }
 
@@ -2828,11 +2875,14 @@ export class MessageBridge {
   }
 
   private async executeWithOrchestrator(..._args: any[]): Promise<any> { return null; }
-  private buildProactiveSummary(state: { responseText?: string; toolCalls?: Array<{ name: string; detail: string }> }): string | undefined {
+  private buildProactiveSummary(
+    state: { responseText?: string; toolCalls?: Array<{ name: string; detail: string }> },
+    autoCompress: AutoCompressRuntimeConfig = DEFAULT_AUTO_COMPRESS_CONFIG,
+  ): string | undefined {
     const parts: string[] = [];
     if (state.responseText) {
       parts.push("## 最近回复");
-      parts.push(state.responseText.slice(0, 2000));
+      parts.push(state.responseText.slice(0, summaryCharLimitFromRetainRatio(2000, autoCompress)));
     }
     if (state.toolCalls && state.toolCalls.length > 0) {
       parts.push("## 最近的工具调用");

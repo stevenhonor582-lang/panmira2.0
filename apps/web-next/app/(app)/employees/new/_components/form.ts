@@ -18,8 +18,10 @@ export interface ProviderInfo {
 // R34-B: 上下文自动压缩配置(存 agent.orchestration.autoCompress jsonb)。
 export interface AutoCompressConfig {
   enabled: boolean;       // 是否启用自动压缩
-  thresholdPct: number;   // 触发阈值(上下文用到 N% 时触发),默认 80
-  ratioPct: number;       // 压缩比例(压缩到原来的 N%),默认 50
+  warnThresholdPct: number; // 警告阈值(上下文用到 N% 时提示),默认 50
+  thresholdPct: number;     // 触发阈值(上下文用到 N% 时压缩),默认 70
+  resetThresholdPct: number; // 强制重置阈值(上下文用到 N% 时开新会话),默认 85
+  ratioPct: number;         // 保留比例(压缩后保留原来的 N%),默认 50
 }
 
 export interface SkillInfo {
@@ -115,6 +117,25 @@ export interface WizardForm {
   workingDir: string;
 }
 
+function clampPercent(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, Math.floor(Number(value) || min)));
+}
+
+export function normalizeAutoCompressDraft(config: AutoCompressConfig): AutoCompressConfig {
+  const warnThresholdPct = clampPercent(config.warnThresholdPct, 10, 95);
+  const thresholdPct = clampPercent(Math.max(config.thresholdPct, warnThresholdPct + 1), 10, 99);
+  const resetThresholdPct = clampPercent(Math.max(config.resetThresholdPct, thresholdPct), 10, 99);
+  const ratioPct = clampPercent(config.ratioPct, 10, 90);
+
+  return {
+    ...config,
+    warnThresholdPct,
+    thresholdPct,
+    resetThresholdPct,
+    ratioPct,
+  };
+}
+
 export const EMPTY_FORM: WizardForm = {
   name: "",
   description: "",
@@ -126,7 +147,7 @@ export const EMPTY_FORM: WizardForm = {
   providerName: "",
   contextWindow: 200000,
   temperature: 0.5,
-  autoCompress: { enabled: true, thresholdPct: 80, ratioPct: 50 },
+  autoCompress: { enabled: true, warnThresholdPct: 50, thresholdPct: 70, resetThresholdPct: 85, ratioPct: 50 },
   personaPreset: "",
   persona: "",
   systemPrompt: "",

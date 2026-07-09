@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/toast/toast-provider";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { normalizeAutoCompressDraft } from "../../new/_components/form";
 import { CONTEXT_PRESETS, buildModelBindingPatch, engineFromProvider, readUseModelRouting } from "./tab-basics-config";
 
 // ⑨ 复杂度四档(中文,智能体运行参数,不受底层模型影响)
@@ -262,7 +263,9 @@ export function TabBasics({ id }: { id: string }) {
 
 interface AutoCompressConfig {
   enabled: boolean;
+  warnThresholdPct: number;
   thresholdPct: number;
+  resetThresholdPct: number;
   ratioPct: number;
 }
 
@@ -273,11 +276,13 @@ function readAutoCompress(agent: Agent): AutoCompressConfig {
   const orch =
     typeof orchRaw === "string" ? safeParse(orchRaw) : (orchRaw as Record<string, unknown> | null);
   const ac = (orch?.autoCompress ?? {}) as Record<string, unknown>;
-  return {
+  return normalizeAutoCompressDraft({
     enabled: typeof ac.enabled === "boolean" ? (ac.enabled as boolean) : true,
-    thresholdPct: typeof ac.thresholdPct === "number" ? (ac.thresholdPct as number) : 80,
+    warnThresholdPct: typeof ac.warnThresholdPct === "number" ? (ac.warnThresholdPct as number) : 50,
+    thresholdPct: typeof ac.thresholdPct === "number" ? (ac.thresholdPct as number) : 70,
+    resetThresholdPct: typeof ac.resetThresholdPct === "number" ? (ac.resetThresholdPct as number) : 85,
     ratioPct: typeof ac.ratioPct === "number" ? (ac.ratioPct as number) : 50,
-  };
+  });
 }
 
 function ContextWindowCard({ agent, onSaved }: { agent: Agent; onSaved: () => void }) {
@@ -330,12 +335,14 @@ function ContextWindowCard({ agent, onSaved }: { agent: Agent; onSaved: () => vo
   const dirtyCtx = ctxDraft !== origCtx;
   const dirtyAc =
     ac.enabled !== origAc.enabled ||
+    ac.warnThresholdPct !== origAc.warnThresholdPct ||
     ac.thresholdPct !== origAc.thresholdPct ||
+    ac.resetThresholdPct !== origAc.resetThresholdPct ||
     ac.ratioPct !== origAc.ratioPct;
   const isDirty = dirtyCtx || dirtyAc;
   const exceedsMax = providerMax !== null && ctxDraft > providerMax;
 
-  const presetValues = CONTEXT_PRESETS.map((p) => p.value);
+  const presetValues: number[] = CONTEXT_PRESETS.map((p) => p.value);
   const isCustom = !presetValues.includes(ctxDraft);
 
   async function save() {
@@ -346,8 +353,10 @@ function ContextWindowCard({ agent, onSaved }: { agent: Agent; onSaved: () => vo
       const orchRaw = raw?.orchestration;
       const baseOrch =
         (typeof orchRaw === "string" ? safeParse(orchRaw) : (orchRaw as Record<string, unknown> | null)) ?? {};
+      const normalizedAc = normalizeAutoCompressDraft(ac);
+      setAc(normalizedAc);
       const patch: Record<string, unknown> = {
-        orchestration: { ...baseOrch, autoCompress: ac },
+        orchestration: { ...baseOrch, autoCompress: normalizedAc },
       };
       if (dirtyCtx) patch.default_context_window = ctxDraft;
       await updateAgent(agent.id, patch);
@@ -445,24 +454,42 @@ function ContextWindowCard({ agent, onSaved }: { agent: Agent; onSaved: () => vo
         </div>
       </label>
       {ac.enabled && (
-        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <CompactNumberField
+            label="警告阈值"
+            suffix="%"
+            min={10}
+            max={95}
+            value={ac.warnThresholdPct}
+            onChange={(n) => setAc(normalizeAutoCompressDraft({ ...ac, warnThresholdPct: n }))}
+            hint={`用到 ${ac.warnThresholdPct}% 时提示`}
+          />
           <CompactNumberField
             label="压缩触发阈值"
             suffix="%"
             min={10}
-            max={95}
+            max={99}
             value={ac.thresholdPct}
-            onChange={(n) => setAc({ ...ac, thresholdPct: n })}
-            hint={`用到 ${ac.thresholdPct}% 时触发`}
+            onChange={(n) => setAc(normalizeAutoCompressDraft({ ...ac, thresholdPct: n }))}
+            hint={`用到 ${ac.thresholdPct}% 时压缩`}
           />
           <CompactNumberField
-            label="压缩比例"
+            label="强制重置阈值"
+            suffix="%"
+            min={10}
+            max={99}
+            value={ac.resetThresholdPct}
+            onChange={(n) => setAc(normalizeAutoCompressDraft({ ...ac, resetThresholdPct: n }))}
+            hint={`用到 ${ac.resetThresholdPct}% 时开新会话`}
+          />
+          <CompactNumberField
+            label="压缩后保留比例"
             suffix="%"
             min={10}
             max={90}
             value={ac.ratioPct}
-            onChange={(n) => setAc({ ...ac, ratioPct: n })}
-            hint={`压缩到原来的 ${ac.ratioPct}%`}
+            onChange={(n) => setAc(normalizeAutoCompressDraft({ ...ac, ratioPct: n }))}
+            hint={`保留约 ${ac.ratioPct}%`}
           />
         </div>
       )}

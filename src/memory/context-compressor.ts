@@ -1,12 +1,14 @@
+import { DEFAULT_AUTO_COMPRESS_CONFIG } from '../bridge/context-manager.js';
+
 type AnyPool = { query: (...args: any[]) => Promise<any> };
 
 /**
  * 工单 8 v2 / 8.4 (2026-07-06): 自动 context 压缩
  *
  * 触发条件(基于 usage 比例):
- * - < 80%   → 不压缩
- * - 80-95%  → 触发压缩(写入 memory,reset session)
- * - > 95%   → 强制压缩(同 warn,优先压缩)
+ * - < 70%   → 不压缩
+ * - 70-85%  → 触发压缩(写入 memory,reset session)
+ * - > 85%   → 强制压缩(同 warn,优先压缩)
  *
  * 设计意图:
  * - contextWindow 由 stream-processor.inferContextWindow 按模型动态绑定
@@ -38,9 +40,9 @@ export interface CompressorDeps {
   contextWindow: number;
   chatId: string;
   botName: string;
-  /** 触发压缩阈值(默认 0.8) */
+  /** 触发压缩阈值(默认 0.7,来自 DEFAULT_AUTO_COMPRESS_CONFIG) */
   threshold?: number;
-  /** 强制阈值(默认 0.95) */
+  /** 强制阈值(默认 0.85,来自 DEFAULT_AUTO_COMPRESS_CONFIG) */
   forceThreshold?: number;
 }
 
@@ -54,8 +56,8 @@ export class ContextCompressor {
 
   urgency(): CompressionUrgency {
     const ratio = this.usageRatio();
-    if (ratio >= (this.deps.forceThreshold ?? 0.95)) return 'force';
-    if (ratio >= (this.deps.threshold ?? 0.8)) return 'warn';
+    if (ratio >= (this.deps.forceThreshold ?? DEFAULT_AUTO_COMPRESS_CONFIG.resetThreshold)) return 'force';
+    if (ratio >= (this.deps.threshold ?? DEFAULT_AUTO_COMPRESS_CONFIG.compressThreshold)) return 'warn';
     return 'none';
   }
 

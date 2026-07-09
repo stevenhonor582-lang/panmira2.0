@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import type { WizardForm, ProviderInfo } from "./form";
+import { normalizeAutoCompressDraft, type WizardForm, type ProviderInfo } from "./form";
 import { Dropdown } from "./dropdown";
 import { Info } from "lucide-react";
 
@@ -161,7 +161,7 @@ export function Step2({
   // R34-B: 自动压缩配置辅助
   const ac = form.autoCompress;
   const setAutoCompress = (patch: Partial<typeof ac>) =>
-    set("autoCompress", { ...ac, ...patch });
+    set("autoCompress", normalizeAutoCompressDraft({ ...ac, ...patch }));
 
   return (
     <div className="space-y-6">
@@ -365,30 +365,48 @@ export function Step2({
           </div>
         </label>
         {ac.enabled && (
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <NumberField
+              label="警告阈值"
+              suffix="%"
+              min={10}
+              max={95}
+              value={ac.warnThresholdPct}
+              onChange={(n) => setAutoCompress({ warnThresholdPct: n })}
+              hint={`上下文用到 ${ac.warnThresholdPct}% 时提示`}
+            />
             <NumberField
               label="压缩触发阈值"
               suffix="%"
               min={10}
-              max={95}
+              max={99}
               value={ac.thresholdPct}
               onChange={(n) => setAutoCompress({ thresholdPct: n })}
-              hint={`上下文用到 ${ac.thresholdPct}% 时触发压缩`}
+              hint={`上下文用到 ${ac.thresholdPct}% 时压缩`}
             />
             <NumberField
-              label="压缩比例"
+              label="强制重置阈值"
+              suffix="%"
+              min={10}
+              max={99}
+              value={ac.resetThresholdPct}
+              onChange={(n) => setAutoCompress({ resetThresholdPct: n })}
+              hint={`上下文用到 ${ac.resetThresholdPct}% 时开新会话`}
+            />
+            <NumberField
+              label="压缩后保留比例"
               suffix="%"
               min={10}
               max={90}
               value={ac.ratioPct}
               onChange={(n) => setAutoCompress({ ratioPct: n })}
-              hint={`压缩到原来的 ${ac.ratioPct}%(保留近期,摘要早期)`}
+              hint={`压缩后保留约 ${ac.ratioPct}%`}
             />
           </div>
         )}
         <Explanation>
           压缩配置跟随智能体保存到 <code className="font-mono">orchestration.autoCompress</code>,
-          运行时由引擎读取执行。默认阈值 80%、压缩到 50%,适合大多数长对话场景。
+          运行时由引擎读取执行。默认 50% 警告、70% 触发压缩、85% 强制开新会话、压缩后保留 50%,适合大多数长对话场景。
         </Explanation>
       </Section>
     </div>
