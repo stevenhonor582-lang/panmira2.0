@@ -54,6 +54,10 @@ export interface RelationNodeData {
   badge?: string;
   /** 资源类型(仅 resource/shared 节点用),用于色块分组 */
   category?: "kb" | "skill" | "tool" | "mcp" | "task";
+  /** 节点尺寸:self/cluster 用 lg(更大、更突出) */
+  size?: "default" | "lg";
+  /** 簇节点明细(同类资源聚合时,前几项预览 + hover title 看全部) */
+  items?: string[];
   [key: string]: unknown;
 }
 
@@ -156,17 +160,22 @@ function RelationNodeView({ data, selected }: NodeProps) {
   return (
     <div
       className={[
-        "group relative flex w-[180px] items-center gap-2.5 rounded-xl px-3 py-2.5 ring-1 transition-all",
+        "group relative flex items-center gap-2.5 rounded-xl px-3 py-2.5 ring-1 transition-all",
+        d.size === "lg" ? "w-[224px] px-3.5 py-3 ring-1.5" : "w-[180px]",
         s.bg,
         s.ring,
         selected ? "ring-2 ring-offset-1 ring-offset-background ring-foreground/60" : "",
       ].join(" ")}
+      title={d.items && d.items.length > 0 ? d.items.join("、") : undefined}
     >
       <span className={["shrink-0 rounded-lg p-1.5", s.iconWrap].join(" ")}>
         <Icon className={["size-4", iconColor].join(" ")} />
       </span>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[12.5px] font-medium leading-tight text-foreground/90">
+        <div className={[
+          "truncate font-medium leading-tight text-foreground/90",
+          d.size === "lg" ? "text-[13.5px]" : "text-[12.5px]",
+        ].join(" ")}>
           {d.label}
         </div>
         {d.sublabel && (
@@ -202,15 +211,15 @@ const NODE_TYPES = {
 function edgeStyle(edge: RelationEdge): React.CSSProperties {
   const styleKind = (edge.data as { style?: string } | undefined)?.style;
   if (styleKind === "dashed") {
-    return { stroke: "rgb(14 165 233 / 0.55)", strokeDasharray: "6 4", strokeWidth: 1.4 };
+    return { stroke: "rgb(14 165 233 / 0.75)", strokeDasharray: "6 4", strokeWidth: 1.7 };
   }
   if (styleKind === "danger") {
-    return { stroke: "rgb(244 63 94 / 0.75)", strokeWidth: 1.8 };
+    return { stroke: "rgb(244 63 94 / 0.85)", strokeWidth: 2 };
   }
   if (styleKind === "strong") {
-    return { stroke: "rgb(139 92 246 / 0.75)", strokeWidth: 2 };
+    return { stroke: "rgb(139 92 246 / 0.9)", strokeWidth: 2.2 };
   }
-  return { stroke: "rgb(120 120 130 / 0.45)", strokeWidth: 1.2 };
+  return { stroke: "rgb(120 120 130 / 0.75)", strokeWidth: 1.6 };
 }
 
 // ────────────────────────────────────────────────────────────
@@ -247,7 +256,9 @@ function GraphInner({ nodes, edges, height = 480, emptyHint, showMiniMap = true 
         nodes={nodes}
         edges={edges}
         nodeTypes={NODE_TYPES}
-        defaultEdgeOptions={{ style: { stroke: "rgb(120 120 130 / 0.45)", strokeWidth: 1.2 } }}
+        defaultEdgeOptions={{
+          style: { stroke: "rgb(120 120 130 / 0.75)", strokeWidth: 1.6 },
+        }}
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={true}
@@ -258,7 +269,8 @@ function GraphInner({ nodes, edges, height = 480, emptyHint, showMiniMap = true 
         edgesFocusable={false}
         proOptions={{ hideAttribution: true }}
         fitView
-        fitViewOptions={{ padding: 0.18, minZoom: 0.4, maxZoom: 1.1 }}
+        fitViewOptions={{ padding: 0.22, minZoom: 0.45, maxZoom: 1.3 }}
+        fitViewPropagation
         minZoom={0.3}
         maxZoom={1.5}
       >

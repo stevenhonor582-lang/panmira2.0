@@ -44,6 +44,7 @@ import { cn } from "@/lib/utils";
 import {
   RelationGraph,
   dangerEdge,
+  strongEdge,
   type RelationNode,
   type RelationEdge,
   type RelationNodeData,
@@ -288,8 +289,10 @@ function buildGraph(rows: CollabRow[], duplicates: DuplicateItem[]): GraphBundle
     }
   });
 
-  // 3) 资源节点:去重后按类别分组纵向堆叠;共享资源单独红色
+  // 3) 资源节点:按类别簇状聚合(同类资源合并为 1 个簇节点,带数量 badge)
+  //    簇节点 hover title 看清单;不再逐个平铺,避免画布被拉长。
   const dupeKeySet = new Set(duplicates.map((d) => `${d.category}::${d.resource}`));
+  void dupeKeySet;
 
   type ResItem = { key: string; category: "kb" | "skill" | "tool" | "mcp" | "task"; fromAgents: string[] };
   const resMap = new Map<string, ResItem>();
@@ -308,60 +311,75 @@ function buildGraph(rows: CollabRow[], duplicates: DuplicateItem[]): GraphBundle
     for (const p of r.pipelines) pushRes({ key: p.name, category: "task" }, r.agent.id);
   });
 
-  // 按类别固定顺序
+  // 按类别聚合:每类 1 个簇节点
   const categoryOrder: ResItem["category"][] = ["kb", "task", "skill", "tool", "mcp"];
-  const allItems = [...resMap.values()].sort((a, b) => {
-    const ca = categoryOrder.indexOf(a.category);
-    const cb = categoryOrder.indexOf(b.category);
-    if (ca !== cb) return ca - cb;
-    return a.key.localeCompare(b.key);
-  });
+  const clustersByCat = new Map<ResItem["category"], { items: ResItem[]; agents: Set<string> }>();
+  for (const cat of categoryOrder) clustersByCat.set(cat, { items: [], agents: new Set() });
+  for (const it of resMap.values()) {
+    clustersByCat.get(it.category)!.items.push(it);
+    for (const a of it.fromAgents) clustersByCat.get(it.category)!.agents.add(a);
+  }
 
-  const RESOURCE_GAP = 70;
-  // 资源列起始 y:与 agent 中部对齐
-  const totalResHeight = allItems.length * RESOURCE_GAP;
-  const agentMidY = totalHeight / 2;
-  const resStartY = Math.max(0, agentMidY - totalResHeight / 2);
+  const CLUSTER_GAP = 100;
+  const activeClusters = categoryOrder
+    .map((cat) => ({ cat, data: clustersByCat.get(cat)! }))
+    .filter((c) => c.data.items.length > 0);
 
-  allItems.forEach((it, i) => {
-    const id = `res-${it.category}-${it.key}`;
-    const isShared = it.fromAgents.length > 1;
+  // 簇节点 y:以画布中部为中心向上下展开
+  const clusterBlockHeight = activeClusters.length * CLUSTER_GAP;
+  const centerY = totalHeight / 2;
+  const clusterStartY = Math.max(20, centerY - clusterBlockHeight / 2);
+
+  activeClusters.forEach((c, i) => {
+    const id = `cluster-${c.cat}`;
+    const count = c.data.items.length;
+    const sharedCount = c.data.items.filter((it) => it.fromAgents.length > 1).length;
+    const isAllShared = count > 0 && sharedCount === count;
+    const names = c.data.items.map((it) => it.key);
+    const preview = names.slice(0, 2).join("、") + (names.length > 2 ? ` 等 ${names.length} 项` : "");
+
     nodes.push({
       id,
       type: "relation",
-      position: { x: X_RESOURCE, y: resStartY + i * RESOURCE_GAP },
+      position: { x: X_RESOURCE, y: clusterStartY + i * CLUSTER_GAP },
       data: {
-        kind: isShared ? "shared" : "resource",
-        label: it.key,
-        sublabel: `${CATEGORY_LABEL[it.category]}${isShared ? ` · 共享 ×${it.fromAgents.length}` : ""}`,
-        icon: CATEGORY_ICON[it.category],
-        category: it.category,
-        badge: isShared ? `×${it.fromAgents.length}` : undefined,
+        kind: isAllShared ? "shared" : "resource",
+        size: "lg",
+        label: `${CATEGORY_LABEL[c.cat]} · ${count} 项`,
+        sublabel: preview || "—",
+        icon: CATEGORY_ICON[c.cat],
+        category: c.cat,
+        badge: sharedCount > 0 ? `共享 ${sharedCount}/${count}` : `×${count}`,
+        items: names,
       } as RelationNodeData,
     });
 
-    // 边:agent → 资源(共享时用 danger 边)
-    for (const aId of it.fromAgents) {
-      edges.push(
-        isShared
-          ? dangerEdge({
-              id: `e-agent-${aId}-${id}`,
-              source: `agent-${aId}`,
-              target: id,
-            })
-          : {
-              id: `e-agent-${aId}-${id}`,
-              source: `agent-${aId}`,
-              target: id,
-            },
-      );
+    // 边:每条 = 簇内任一 agent → 簇节点(去重)
+    const connectedAgents = new Set<string>();
+    for (const it of c.data.items) {
+      for (const aId of it.fromAgents) {
+        if (connectedAgents.has(aId)) continue;
+        connectedAgents.add(aId);
+        const hasShared = c.data.items.some((x) => x.fromAgents.includes(aId) && x.fromAgents.length > 1);
+        edges.push(
+          hasShared
+            ? dangerEdge({
+                id: `e-agent-${aId}-${id}`,
+                source: `agent-${aId}`,
+                target: id,
+              })
+            : strongEdge({
+                id: `e-agent-${aId}-${id}`,
+                source: `agent-${aId}`,
+                target: id,
+              }),
+        );
+      }
     }
   });
 
-  // 隐藏 dupeKeySet 的 lint 警告(用于后续拓展;目前 isShared 已直接判定)
-  void dupeKeySet;
-
-  const height = Math.max(480, Math.max(totalHeight, totalResHeight + 80));
+  const clusterHeight = clusterBlockHeight + 80;
+  const height = Math.max(480, Math.max(totalHeight, clusterHeight));
   return { nodes, edges, height };
 }
 
