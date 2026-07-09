@@ -68,9 +68,9 @@ test.describe('R15-A · employees + templates', () => {
     expect(realErrors, realErrors.join('\n')).toHaveLength(0);
   });
 
-  test('L6 Test Agent 详情页打开 (persona null 防御)', async ({ page }) => {
+  test('不盈--全栈开发 详情页打开 (详情页打开)', async ({ page }) => {
     const errors = await captureErrors(page);
-    await page.goto('http://localhost:3200/employees/a0e05f20-62ee-49b9-ad12-6818d8c701b7/');
+    await page.goto('http://localhost:3200/employees/c5bf8d20-90f4-4780-95cc-ed866651b3c8/');
     await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2500);
     // 关键:不能因为 persona null 而 throw
@@ -133,14 +133,14 @@ test.describe('R15-A · employees + templates', () => {
   });
 
   test('API: L6 详情返回完整字段(含 R15-A 新字段)', async ({ request }) => {
-    const res = await request.get('http://localhost:9100/api/v2/employees/a0e05f20-62ee-49b9-ad12-6818d8c701b7', {
+    const res = await request.get('http://localhost:9100/api/v2/employees/c5bf8d20-90f4-4780-95cc-ed866651b3c8', {
       headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
     });
     expect(res.status()).toBe(200);
     const body = await res.json();
     const data = body?.data ?? {};
-    expect(data.name).toBe('L6 Test Agent');
-    expect(data.persona).toBeNull();
+    expect(data.name).toBe('不盈--全栈开发');
+    expect(data.persona).toBeTruthy(); // 不盈有 persona
     expect(data.isTemplate).toBe(false);
     expect(data.workingDir).toMatch(/\/workspace\/agents\//);
     expect(data.temperature).toBe(0.7);
