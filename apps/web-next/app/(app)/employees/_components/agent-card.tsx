@@ -131,7 +131,8 @@ export function AgentCard({
           hover ? "opacity-100" : "opacity-0",
         )}
         style={{
-          background: `radial-gradient(180px circle at ${pos.x}% ${pos.y}%, rgba(255,255,255,0.55), transparent 60%)`,
+          // R32-A: hover 光晕亮度从 0.55 降到 0.22,避免遮挡卡片内容
+          background: `radial-gradient(180px circle at ${pos.x}% ${pos.y}%, rgba(255,255,255,0.22), transparent 60%)`,
         }}
       />
       <div
@@ -140,7 +141,7 @@ export function AgentCard({
       />
 
       {showManageActions && (
-        <div className="absolute right-3 top-3 z-10" onClick={(e) => e.preventDefault()}>
+        <div className="absolute right-3 bottom-3 z-10" onClick={(e) => e.preventDefault()}>
           <DropdownMenu>
             <DropdownMenuTrigger
               className="inline-flex items-center gap-1 rounded-lg bg-background/80 px-2 py-1 text-[11px] text-foreground/70 ring-1 ring-border backdrop-blur-sm hover:bg-background hover:text-foreground disabled:opacity-50"
@@ -280,11 +281,8 @@ export function AgentCard({
           </div>
 
           <div className="flex items-center justify-between border-t border-foreground/[0.06] pt-2.5 text-[11px] text-foreground/50 font-mono">
-            <span className="truncate" title={`主理人: ${agent.ownerName}`}>
+            <span className="truncate pr-8" title={`主理人: ${agent.ownerName}`}>
               主理人 · {agent.ownerName}
-            </span>
-            <span className={cn("transition-opacity shrink-0", hover ? "opacity-100" : "opacity-0")}>
-              详情 →
             </span>
           </div>
         </div>

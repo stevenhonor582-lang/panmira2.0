@@ -190,7 +190,7 @@ function Header({
           数字员工 · IA v6 · R15-A
         </div>
         <h1 className="text-5xl font-semibold tracking-tighter leading-[1.02] max-w-[14ch]">
-          {boardTab === "templates" ? "模板库" : "你的数字员工画廊"}
+          {boardTab === "templates" ? "模板库" : "你的数字员工矩阵"}
         </h1>
         <p className="max-w-[60ch] text-[15px] leading-relaxed text-foreground/65">
           {boardTab === "templates"
@@ -205,13 +205,6 @@ function Header({
             </>
           )}
         </p>
-      </div>
-      <div className="hidden lg:flex shrink-0 flex-col items-end gap-2 text-right">
-        <span className="text-[10.5px] font-mono uppercase tracking-[0.22em] text-foreground/40">数据源</span>
-        <span className="text-sm text-foreground/80">agents 表 · 真实数据</span>
-        <span className="font-mono text-[11px] text-foreground/40">
-          GET /api/v2/employees?filter=all
-        </span>
       </div>
     </header>
   );
@@ -296,7 +289,7 @@ function RoleLegend({
   activeRole: string | null;
   onPickRole: (r: string) => void;
 }) {
-  const [open, setOpen] = React.useState(true);
+  const [open, setOpen] = React.useState(false);
   return (
     <section className="rounded-2xl border border-border bg-card/40 backdrop-blur-sm">
       <button
@@ -316,25 +309,6 @@ function RoleLegend({
       {open && (
         <div className="border-t border-border px-4 py-3">
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            <button
-              type="button"
-              onClick={() => onPickRole("all")}
-              className={
-                "group flex items-start gap-2.5 rounded-xl px-2.5 py-2 text-left text-[12px] ring-1 transition-all " +
-                (activeRole === null
-                  ? "bg-foreground/[0.06] ring-foreground/40"
-                  : "bg-background/40 ring-border hover:ring-foreground/20")
-              }
-            >
-              <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold bg-foreground/10 text-foreground/70">
-                全
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block font-medium text-foreground/85">全部角色</span>
-                <span className="block truncate font-mono text-[10.5px] text-foreground/45">all</span>
-                <span className="mt-0.5 block text-[11px] leading-snug text-foreground/65">显示所有员工,不按角色筛选</span>
-              </span>
-            </button>
             {ROLE_GROUPS.map((r) => {
               const on = activeRole === r.key;
               return (
