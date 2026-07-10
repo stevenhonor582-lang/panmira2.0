@@ -266,3 +266,311 @@ describe('QueryRunner.createDefault', () => {
     ).rejects.toBeInstanceOf(BotNotFoundError);
   });
 });
+
+// === R49-D Step 1: buildOptions must inject hooks/canUseTool/agents ===
+// Verifies the SDK Core dependencies are actually wired through to query(),
+// not just constructed and ignored. (RED before R49-D fix; GREEN after.)
+describe('QueryRunner.buildOptions injection (R49-D step 1)', () => {
+  it('6. passes hookRegistry callbacks as options.hooks to query()', async () => {
+    // Arrange — pre-populate hookRegistry.all so buildOptions has something
+    // to pass through.
+    const stubs = makeStubs();
+    const fakeMatcher = { hooks: [vi.fn().mockResolvedValue({ continue: true })] };
+    (stubs.hookRegistry as { all: unknown }).all = { PreToolUse: [fakeMatcher] };
+    setQueryStream(STREAM_WITH_SESSION);
+
+    const runner = new QueryRunner(
+      stubs.sessionManager,
+      stubs.systemPromptInjector,
+      stubs.agentDefinitionBuilder,
+      stubs.hookRegistry,
+      stubs.canUseToolDecider,
+      undefined,
+      undefined,
+    );
+
+    // Act
+    await runner.runQuery({ botName: '得一', prompt: 'hi' });
+
+    // Assert — query() received options.hooks matching hookRegistry.all.
+    const callArgs = queryMock.mock.calls[0] as unknown as [{ options: Record<string, unknown> }];
+    const options = callArgs[0].options;
+    expect(options.hooks).toBeDefined();
+    expect(options.hooks).toMatchObject({ PreToolUse: [fakeMatcher] });
+  });
+
+  it('7. passes canUseToolDecider.decide as options.canUseTool to query()', async () => {
+    // Arrange
+    const stubs = makeStubs();
+    setQueryStream(STREAM_WITH_SESSION);
+
+    const runner = new QueryRunner(
+      stubs.sessionManager,
+      stubs.systemPromptInjector,
+      stubs.agentDefinitionBuilder,
+      stubs.hookRegistry,
+      stubs.canUseToolDecider,
+      undefined,
+      undefined,
+    );
+
+    // Act
+    await runner.runQuery({ botName: '得一', prompt: 'hi' });
+
+    // Assert — canUseTool is the decider.decide reference (not undefined).
+    const callArgs = queryMock.mock.calls[0] as unknown as [{ options: Record<string, unknown> }];
+    const options = callArgs[0].options;
+    expect(options.canUseTool).toBe(stubs.canUseToolDecider.decide);
+  });
+
+  it('8. passes agents map from agentDefinitionBuilder as options.agents to query()', async () => {
+    // Arrange — simulate 2 business experts in DB
+    const stubs = makeStubs();
+    const fakeExperts = {
+      deyi_expert: { description: 'd', prompt: 'p', tools: ['Read'] },
+      xuanjian_expert: { description: 'x', prompt: 'p', tools: ['Read'] },
+    };
+    (stubs.agentDefinitionBuilder as { buildBusinessExperts: ReturnType<typeof vi.fn> }).buildBusinessExperts =
+      vi.fn().mockResolvedValue(fakeExperts);
+    setQueryStream(STREAM_WITH_SESSION);
+
+    const runner = new QueryRunner(
+      stubs.sessionManager,
+      stubs.systemPromptInjector,
+      stubs.agentDefinitionBuilder,
+      stubs.hookRegistry,
+      stubs.canUseToolDecider,
+      undefined,
+      undefined,
+    );
+
+    // Act
+    await runner.runQuery({ botName: '得一', prompt: 'hi' });
+
+    // Assert — agents map passed through AND buildBusinessExperts was called
+    const callArgs = queryMock.mock.calls[0] as unknown as [{ options: Record<string, unknown> }];
+    const options = callArgs[0].options;
+    expect(options.agents).toBe(fakeExperts);
+    expect(stubs.agentDefinitionBuilder.buildBusinessExperts).toHaveBeenCalledTimes(1);
+  });
+
+  it('9. sets enableFileCheckpointing=true so Query.rewindFiles() works (R49-D step 4)', async () => {
+    // Arrange
+    const stubs = makeStubs();
+    setQueryStream(STREAM_WITH_SESSION);
+
+    const runner = new QueryRunner(
+      stubs.sessionManager,
+      stubs.systemPromptInjector,
+      stubs.agentDefinitionBuilder,
+      stubs.hookRegistry,
+      stubs.canUseToolDecider,
+      undefined,
+      undefined,
+    );
+
+    // Act
+    await runner.runQuery({ botName: '得一', prompt: 'hi' });
+
+    // Assert
+    const callArgs = queryMock.mock.calls[0] as unknown as [{ options: Record<string, unknown> }];
+    const options = callArgs[0].options;
+    expect(options.enableFileCheckpointing).toBe(true);
+  });
+});
+
+// === R49-D Step 2: extras override + base defaults preserved ===
+describe('QueryRunner.buildOptions extras (R49-D step 2)', () => {
+  it('10. merges extras.mcpServers into options envelope', async () => {
+    // Arrange — bridge injects feishu mcpServer via extras
+    const stubs = makeStubs();
+    const fakeMcp = { feishu: { command: 'fake-feishu-mcp', args: [] } };
+    setQueryStream(STREAM_WITH_SESSION);
+
+    const runner = new QueryRunner(
+      stubs.sessionManager,
+      stubs.systemPromptInjector,
+      stubs.agentDefinitionBuilder,
+      stubs.hookRegistry,
+      stubs.canUseToolDecider,
+      undefined,
+      undefined,
+    );
+
+    // Act
+    await runner.runQuery({
+      botName: '得一',
+      prompt: 'hi',
+      extras: { mcpServers: fakeMcp },
+    });
+
+    // Assert — mcpServers from extras is in options
+    const callArgs = queryMock.mock.calls[0] as unknown as [{ options: Record<string, unknown> }];
+    const options = callArgs[0].options;
+    expect(options.mcpServers).toBe(fakeMcp);
+    // Base defaults preserved (e.g. hooks still injected)
+    expect(options.hooks).toBeDefined();
+    expect(options.canUseTool).toBe(stubs.canUseToolDecider.decide);
+    expect(options.enableFileCheckpointing).toBe(true);
+  });
+
+  it('11. extras.override wins over base default (e.g. permissionMode)', async () => {
+    // Arrange — bridge explicitly sets permissionMode='default' instead of bypassPermissions
+    const stubs = makeStubs();
+    setQueryStream(STREAM_WITH_SESSION);
+
+    const runner = new QueryRunner(
+      stubs.sessionManager,
+      stubs.systemPromptInjector,
+      stubs.agentDefinitionBuilder,
+      stubs.hookRegistry,
+      stubs.canUseToolDecider,
+      undefined,
+      undefined,
+    );
+
+    // Act
+    await runner.runQuery({
+      botName: '得一',
+      prompt: 'hi',
+      extras: { permissionMode: 'default' },
+    });
+
+    // Assert — extras.permissionMode wins
+    const callArgs = queryMock.mock.calls[0] as unknown as [{ options: Record<string, unknown> }];
+    const options = callArgs[0].options;
+    expect(options.permissionMode).toBe('default');
+  });
+
+  it('12. without extras, base defaults are untouched', async () => {
+    // Arrange — no extras; verify default permissionMode is preserved
+    const stubs = makeStubs();
+    setQueryStream(STREAM_WITH_SESSION);
+
+    const runner = new QueryRunner(
+      stubs.sessionManager,
+      stubs.systemPromptInjector,
+      stubs.agentDefinitionBuilder,
+      stubs.hookRegistry,
+      stubs.canUseToolDecider,
+      undefined,
+      undefined,
+    );
+
+    // Act
+    await runner.runQuery({ botName: '得一', prompt: 'hi' });
+
+    // Assert — defaults unchanged
+    const callArgs = queryMock.mock.calls[0] as unknown as [{ options: Record<string, unknown> }];
+    const options = callArgs[0].options;
+    expect(options.permissionMode).toBe('bypassPermissions');
+    expect(options.allowDangerouslySkipPermissions).toBe(true);
+  });
+});
+
+// === R49-D Step 3: SDKResultMessage.modelUsage -> task_metrics ===
+describe('QueryRunner token usage tracking (R49-D step 3)', () => {
+  it('13. writes task_metrics row with modelUsage when SDKResultMessage received', async () => {
+    // Arrange — SDKResultMessage with modelUsage + usage
+    const stubs = makeStubs();
+    const modelUsage = {
+      'claude-sonnet-4-5': {
+        inputTokens: 1234,
+        outputTokens: 567,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+        webSearchRequests: 0,
+        costUSD: 0.0123,
+        contextWindow: 200000,
+        maxOutputTokens: 8192,
+      },
+    };
+    const resultMessage = {
+      type: 'result',
+      subtype: 'success',
+      duration_ms: 5000,
+      duration_api_ms: 4500,
+      is_error: false,
+      num_turns: 3,
+      total_cost_usd: 0.0123,
+      usage: { input_tokens: 1234, output_tokens: 567 },
+      modelUsage,
+      session_id: 'sess-abc-123',
+      result: 'hello',
+    };
+    setQueryStream([
+      { session_id: 'sess-abc-123', type: 'system' },
+      { type: 'assistant', content: [{ type: 'text', text: 'hi' }] },
+      resultMessage,
+    ]);
+
+    const runner = new QueryRunner(
+      stubs.sessionManager,
+      stubs.systemPromptInjector,
+      stubs.agentDefinitionBuilder,
+      stubs.hookRegistry,
+      stubs.canUseToolDecider,
+      undefined,
+      undefined,
+    );
+
+    // Act
+    const result = await runner.runQuery({ botName: '得一', prompt: 'hi' });
+
+    // Assert — modelUsage was written to task_metrics via mocked pool
+    expect(pool.query).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO task_metrics'),
+      expect.arrayContaining(['sdk_usage']),
+    );
+    // Verify tags contain modelUsage + session_id
+    // c[1] is the args array passed to pool.query(); first element is metric_name
+    const insertCall = (pool.query as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c: unknown[]) =>
+        typeof c[0] === 'string' &&
+        c[0].includes('INSERT INTO task_metrics') &&
+        Array.isArray(c[1]) &&
+        c[1][0] === 'sdk_usage',
+    );
+    expect(insertCall).toBeDefined();
+    const tags = JSON.parse((insertCall![1] as unknown[])[2] as string);
+    expect(tags.session_id).toBe('sess-abc-123');
+    expect(tags.bot_name).toBe('得一');
+    expect(tags.modelUsage).toEqual(modelUsage);
+    expect(tags.total_cost_usd).toBe(0.0123);
+    expect(tags.num_turns).toBe(3);
+  });
+
+  it('14. does NOT write task_metrics row when stream has no SDKResultMessage', async () => {
+    // Arrange — stream ends before reaching result
+    const stubs = makeStubs();
+    setQueryStream([
+      { session_id: 'sess-abc-123', type: 'system' },
+      { type: 'assistant', content: [{ type: 'text', text: 'hi' }] },
+    ]);
+    (pool.query as ReturnType<typeof vi.fn>).mockClear();
+
+    const runner = new QueryRunner(
+      stubs.sessionManager,
+      stubs.systemPromptInjector,
+      stubs.agentDefinitionBuilder,
+      stubs.hookRegistry,
+      stubs.canUseToolDecider,
+      undefined,
+      undefined,
+    );
+
+    // Act — succeeds because stream had a session_id
+    const result = await runner.runQuery({ botName: '得一', prompt: 'hi' });
+    expect(result.sessionId).toBe('sess-abc-123');
+
+    // Assert — NO sdk_usage row was written (no result message in stream)
+    const insertCalls = (pool.query as ReturnType<typeof vi.fn>).mock.calls.filter(
+      (c: unknown[]) =>
+        typeof c[0] === 'string' &&
+        c[0].includes('INSERT INTO task_metrics') &&
+        Array.isArray(c[1]) &&
+        c[1][0] === 'sdk_usage',
+    );
+    expect(insertCalls).toHaveLength(0);
+  });
+});
