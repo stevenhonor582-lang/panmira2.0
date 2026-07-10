@@ -29,3 +29,5 @@ export { handleEmbeddingJobsRoutes } from './embedding-jobs-routes.js';
 export { handleReportsExportRoutes } from './reports-export-routes.js';
 export { jsonResponse, readBody, parseJsonBody } from './helpers.js';
 export type { RouteContext, RouteHandler } from './types.js';
+// R49-B: v3 health (unified envelope + DB/Redis/MCP/CC-SDK checks)
+export { handleV3HealthRoutes } from './v3-health-routes.js';

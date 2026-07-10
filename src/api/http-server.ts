@@ -58,6 +58,7 @@ import { handleMonitoringRoutes } from './routes/monitoring-routes.js';
 import { handleOverviewRoutes } from './routes/overview-routes.js';
 import { handlePeopleRoutes } from './routes/people-routes.js';
 import { handleEmployeesRoutes } from './routes/employees-routes.js';
+import { handleV3HealthRoutes } from './routes/v3-health-routes.js'; // R49-B
 import { handleTasksRoutes } from './routes/tasks-routes.js';
 import { handleFoundationRoutes } from './routes/foundation-routes.js';
 import { handleFoundationMemoryRoutes } from './routes/foundation-memory-routes.js';
@@ -302,7 +303,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     }
 
     // Rate limiting (by IP, exempt health/metrics)
-    if (url !== '/api/health' && url !== '/metrics' && !url.startsWith('/memory/')) {
+    if (url !== '/api/health' && url !== '/api/v3/health' && url !== '/metrics' && !url.startsWith('/memory/')) {
       const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
         || req.socket.remoteAddress
         || 'unknown';
@@ -323,6 +324,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
       !url.startsWith('/api/admin') &&
       !url.startsWith('/api/auth') &&
       !url.startsWith('/api/v1/memory') &&
+      url !== '/api/v3/health' &&
       !url.startsWith('/oauth') &&
       url !== '/.well-known/oauth-authorization-server' &&
       !url.startsWith('/api/reports') &&
@@ -355,6 +357,9 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     }
 
     try {
+      // R49-B: GET /api/v3/health — unified envelope + DB/Redis/MCP/CC-SDK checks
+      if (await handleV3HealthRoutes(req, res, method, url)) return;
+
       // GET /api/health — enhanced health check with dependency status
       if (method === 'GET' && url === '/api/health') {
         const checks: Record<string, { status: string; message?: string }> = {};
