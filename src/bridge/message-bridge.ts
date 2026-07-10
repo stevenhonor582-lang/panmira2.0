@@ -51,6 +51,7 @@ import type { PendingBatch, RunningTask, ApiTaskOptions, ApiTaskResult, Activity
 import { sendFinalCard, sendPlanContent, sendCompletionNotice } from './card-renderer.js';
 // buildCompletionCard 现已挪到 cardkit-renderer.ts,sendFinalCard 内部已带按钮
 import type { CardRendererDeps } from './card-renderer.js';
+import { BridgeObserver } from './bridge-observer.js';
 import { TaskManager } from '../task/task-manager.js';
 import { useSDKCore } from '../sdk-core/feature-flag.js';
 import { buildCompletionCard } from '../feishu/cardkit-renderer.js';
@@ -126,6 +127,7 @@ export class MessageBridge {
   readonly costTracker: CostTracker;
   private memoryClient: MemoryClient;
   private sessionRegistry?: SessionRegistry;
+  private observer!: BridgeObserver;
   private senderOverrides = new Map<string, IMessageSender>();
   private runningTasks = new Map<string, RunningTask>(); // keyed by chatId
   private messageQueues = new Map<string, IncomingMessage[]>(); // per-chatId message queue
@@ -176,6 +178,13 @@ export class MessageBridge {
       (chatId) => this.runningTasks.get(chatId),
       (chatId) => this.stopTask(chatId),
     );
+    this.observer = new BridgeObserver({
+      config: this.config,
+      logger: this.logger,
+      getSessionRegistry: () => this.sessionRegistry,
+      sessionManager: this.sessionManager,
+      getOnActivityEvent: () => this.onActivityEvent,
+    });
 
     this.outputHandler = new OutputHandler(logger, sender, this.outputsManager);
 
@@ -183,15 +192,6 @@ export class MessageBridge {
     this.skillRouter = new SkillRouter(isFeishu ? 'feishu' : 'all');
     this.skillRouter.setLogger(this.logger);
 
-  }
-
-  /** Emit an activity event if a listener is registered. */
-  private emitActivity(event: ActivityEventData): void {
-    try {
-      this.onActivityEvent?.(event);
-    } catch (err: any) {
-      this.logger.debug({ err: err?.message }, 'Activity event emission failed');
-    }
   }
 
   /** Detect pure chat / non-technical messages that don't need skill deployment. */
@@ -252,22 +252,6 @@ export class MessageBridge {
 
   private taskManager = new TaskManager();
 
-
-  private async _recordSession(
-    chatId: string, prompt: string, responseText: string | undefined,
-    claudeSessionId: string | undefined, costUsd: number | undefined, durationMs: number | undefined,
-  ): Promise<void> {
-    if (!this.sessionRegistry) return;
-    try {
-      await this.sessionRegistry.createOrUpdate({
-        chatId, botName: this.config.name, claudeSessionId,
-        workingDirectory: this.sessionManager.getSession(chatId).workingDirectory,
-        prompt, responseText, costUsd, durationMs,
-      });
-    } catch (err: any) {
-      this.logger.warn({ err: err.message, chatId }, 'recordSession failed');
-    }
-  }
 
   private async sendTaskList(chatId: string): Promise<void> {
     try {
@@ -1334,7 +1318,7 @@ export class MessageBridge {
     this.persistTaskSnapshot();
 
     this.audit.log({ event: 'task_start', botName: this.config.name, chatId, userId, prompt: text });
-    this.emitActivity({
+    this.observer.emit({
       type: 'task_started',
       botName: this.config.name,
       chatId,
@@ -1492,7 +1476,7 @@ export class MessageBridge {
       // Auto-retry with fresh session when Claude can't find the conversation
       if (lastState.status === 'error' && isStaleSessionError(lastState.errorMessage) && session.sessionId) {
         this.logger.info({ chatId }, 'Stale session detected, retrying with fresh session');
-        const _summary = this.buildProactiveSummary(lastState); this.sessionManager.resetSession(chatId, _summary);
+        const _summary = this.observer.buildSummary(lastState); this.sessionManager.resetSession(chatId, _summary);
         lastState = { ...lastState, status: 'running', errorMessage: undefined };
         await this.getSender(chatId).updateCard(messageId, {
           ...lastState,
@@ -1536,7 +1520,7 @@ export class MessageBridge {
           { chatId, threshold: DEFAULT_AUTO_COMPRESS_CONFIG.compressThreshold },
           'Context overflow detected, retrying with continuation prompt',
         );
-        const _summary = this.buildProactiveSummary(lastState); this.sessionManager.resetSession(chatId, _summary);
+        const _summary = this.observer.buildSummary(lastState); this.sessionManager.resetSession(chatId, _summary);
         lastState = { ...lastState, status: 'running', errorMessage: undefined };
         await this.getSender(chatId).updateCard(messageId, {
           ...lastState,
@@ -1660,7 +1644,7 @@ export class MessageBridge {
           });
         }
       }
-      this.emitActivity({
+      this.observer.emit({
         type: lastState.status === 'complete' ? 'task_completed' : 'task_failed',
         botName: this.config.name,
         chatId,
@@ -1721,7 +1705,7 @@ export class MessageBridge {
       // Post-processing: fire-and-forget to avoid blocking task cleanup
       const postProcessPromise = (async () => {
         try {
-          await this._recordSession(
+          await this.observer.recordSession(
             chatId,
             displayPrompt,
             lastState.responseText,
@@ -1754,7 +1738,7 @@ export class MessageBridge {
           );
           try {
             await this.handlePreResetContext(chatId, prompt, lastState, msg.chatType);
-            const _summary = this.buildProactiveSummary(lastState, autoCompress); this.sessionManager.resetSession(chatId, _summary);
+            const _summary = this.observer.buildSummary(lastState, autoCompress); this.sessionManager.resetSession(chatId, _summary);
           } catch (e) { this.logger.warn({ err: e, chatId }, 'handlePreResetContext failed'); }
         }
       }
@@ -1777,7 +1761,7 @@ export class MessageBridge {
             ? 'Context overflow in catch, retrying with continuation prompt'
             : 'Stale session detected in catch, retrying with fresh session',
         );
-        const _summary = this.buildProactiveSummary(lastState); this.sessionManager.resetSession(chatId, _summary);
+        const _summary = this.observer.buildSummary(lastState); this.sessionManager.resetSession(chatId, _summary);
         const retryMsg = isOverflow ? '_对话内容过长，正在压缩上下文并继续..._' : '_Session expired, retrying..._';
         await this.getSender(chatId).updateCard(messageId, { ...lastState, status: 'running', responseText: retryMsg });
 
@@ -1824,7 +1808,7 @@ export class MessageBridge {
             costUsd: lastState.costUsd,
             error: lastState.errorMessage,
           });
-          this.emitActivity({
+          this.observer.emit({
             type: lastState.status === 'complete' ? 'task_completed' : 'task_failed',
             botName: this.config.name,
             chatId,
@@ -1855,7 +1839,7 @@ export class MessageBridge {
           metrics.incCounter('panmira_tasks_total');
           metrics.incCounter('panmira_tasks_by_status', lastState.status === 'complete' ? 'success' : 'error');
 
-          await this._recordSession(
+          await this.observer.recordSession(
             chatId,
             displayPrompt,
             lastState.responseText,
@@ -1882,7 +1866,7 @@ export class MessageBridge {
         durationMs,
         error: err.message || 'Unknown error',
       });
-      this.emitActivity({
+      this.observer.emit({
         type: 'task_failed',
         botName: this.config.name,
         chatId,
@@ -2066,7 +2050,7 @@ export class MessageBridge {
     this.persistTaskSnapshot();
 
     this.audit.log({ event: 'api_task_start', botName: this.config.name, chatId, userId, prompt });
-    this.emitActivity({
+    this.observer.emit({
       type: 'task_started',
       botName: this.config.name,
       chatId,
@@ -2197,7 +2181,7 @@ export class MessageBridge {
             ? 'API task: context overflow, retrying with continuation prompt'
             : 'API task: stale session detected, retrying with fresh session',
         );
-        const _summary = this.buildProactiveSummary(lastState); this.sessionManager.resetSession(chatId, _summary);
+        const _summary = this.observer.buildSummary(lastState); this.sessionManager.resetSession(chatId, _summary);
         const retryMsg = isOverflow ? '_对话内容过长，正在压缩上下文并继续..._' : '_Session expired, retrying..._';
         if (sendCards && messageId) {
           await this.getSender(chatId).updateCard(messageId, {
@@ -2267,7 +2251,7 @@ export class MessageBridge {
         costUsd: lastState.costUsd,
         error: lastState.errorMessage,
       });
-      this.emitActivity({
+      this.observer.emit({
         type: lastState.status === 'complete' ? 'task_completed' : 'task_failed',
         botName: this.config.name,
         chatId,
@@ -2324,7 +2308,7 @@ export class MessageBridge {
       }
 
       // Record in cross-platform session registry
-      await this._recordSession(
+      await this.observer.recordSession(
         chatId,
         prompt,
         lastState.responseText,
@@ -2350,7 +2334,7 @@ export class MessageBridge {
             'API task: proactive session reset (context usage above configured threshold)',
           );
           await this.handlePreResetContext(chatId, prompt, lastState, options.chatType);
-          const _summary = this.buildProactiveSummary(lastState, autoCompress); this.sessionManager.resetSession(chatId, _summary);
+          const _summary = this.observer.buildSummary(lastState, autoCompress); this.sessionManager.resetSession(chatId, _summary);
         }
       }
 
@@ -2382,7 +2366,7 @@ export class MessageBridge {
             ? 'API task: context overflow in catch, retrying with continuation prompt'
             : 'API task: stale session in catch, retrying with fresh session',
         );
-        const _summary = this.buildProactiveSummary(lastState); this.sessionManager.resetSession(chatId, _summary);
+        const _summary = this.observer.buildSummary(lastState); this.sessionManager.resetSession(chatId, _summary);
         const retryMsg = isOverflow ? '_对话内容过长，正在压缩上下文并继续..._' : '_Session expired, retrying..._';
         if (sendCards && messageId) {
           await this.getSender(chatId).updateCard(messageId, {
@@ -2478,7 +2462,7 @@ export class MessageBridge {
       };
       options.onUpdate?.(catchErrorState, effectiveMessageId, true);
 
-      this.emitActivity({
+      this.observer.emit({
         type: 'task_failed',
         botName: this.config.name,
         chatId,
@@ -2602,7 +2586,7 @@ export class MessageBridge {
     costUsd: number | undefined,
     durationMs: number | undefined,
   ): Promise<void> {
-    return this._recordSession(chatId, prompt, responseText, claudeSessionId, costUsd, durationMs);
+    return this.observer.recordSession(chatId, prompt, responseText, claudeSessionId, costUsd, durationMs);
   }
 
   private async sendCompletionNotice(chatId: string, state: CardState, durationMs: number): Promise<void> {
@@ -2868,23 +2852,6 @@ export class MessageBridge {
   }
 
   private async executeWithOrchestrator(..._args: any[]): Promise<any> { return null; }
-  private buildProactiveSummary(
-    state: { responseText?: string; toolCalls?: Array<{ name: string; detail: string }> },
-    autoCompress: AutoCompressRuntimeConfig = DEFAULT_AUTO_COMPRESS_CONFIG,
-  ): string | undefined {
-    const parts: string[] = [];
-    if (state.responseText) {
-      parts.push("## 最近回复");
-      parts.push(state.responseText.slice(0, summaryCharLimitFromRetainRatio(2000, autoCompress)));
-    }
-    if (state.toolCalls && state.toolCalls.length > 0) {
-      parts.push("## 最近的工具调用");
-      const lines = state.toolCalls.slice(-10).map(t => "- " + t.name + ": " + t.detail.slice(0, 200));
-      parts.push(lines.join(String.fromCharCode(10)));
-    }
-    return parts.length > 0 ? parts.join(String.fromCharCode(10) + String.fromCharCode(10)) : undefined;
-  }
-
   destroy(): void {
     // Persist active tasks FIRST so they survive the restart.
     // Tag with 'restart' so the recovery card can show the real reason
