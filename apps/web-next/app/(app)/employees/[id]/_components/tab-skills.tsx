@@ -159,6 +159,8 @@ export function TabSkills({ id }: { id: string }) {
   React.useEffect(() => {
     let alive = true;
     setPickerLoading(true);
+    // R38-C5 4.3: skills endpoint 已 agent-agnostic(/api/skills),无需按 bot/agent 过滤。
+    // TODO(R38-C5): 后端 /api/v2/admin/agents/:id/skills 上线后,切到专属路径以支持 agent 级技能可见性。
     Promise.all([
       api<{ skills: { id: string; name: string; description?: string }[] } | { id: string; name: string; description?: string }[]>("/api/skills").catch(() => null),
       api<{ folders: RawFolder[] } | RawFolder[]>("/api/knowledge/folders").catch(() => null),

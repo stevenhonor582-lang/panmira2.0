@@ -83,7 +83,7 @@ function safeParse(raw: string): Record<string, unknown> {
 // - 专属大模型 绑定卡片(R31-C 新增,独立保存)
 // - 编辑模式: 第二卡片切换为"引擎与模型"编辑表单
 export function TabBasics({ id }: { id: string }) {
-  const { agent, loading, reload } = useAgent(id);
+  const { agent, loading, reload, setAgent } = useAgent(id);
   const [draft, setDraft] = React.useState<Record<string, unknown>>({});
   const [origDraft, setOrigDraft] = React.useState<Record<string, unknown>>({});
 
@@ -243,10 +243,10 @@ export function TabBasics({ id }: { id: string }) {
           </div>
 
           {/* === 专属大模型 绑定卡片 (R31-C) === */}
-          <ModelBindingCard agent={agent} onSaved={reload} />
+          <ModelBindingCard agent={agent} onSaved={reload} setAgent={setAgent} />
 
           {/* === R34-B: 上下文窗口 + 自动压缩 === */}
-          <ContextWindowCard agent={agent} onSaved={reload} />
+          <ContextWindowCard agent={agent} onSaved={reload} setAgent={setAgent} />
         </div>
       )}
     </EditPane>
@@ -285,7 +285,7 @@ function readAutoCompress(agent: Agent): AutoCompressConfig {
   });
 }
 
-function ContextWindowCard({ agent, onSaved }: { agent: Agent; onSaved: () => void }) {
+function ContextWindowCard({ agent, onSaved, setAgent }: { agent: Agent; onSaved: () => void; setAgent: (next: Agent | null) => void }) {
   const toast = useToast();
   const [providers, setProviders] = React.useState<ProviderInfo[]>([]);
   const [ctxDraft, setCtxDraft] = React.useState<number>(agent.defaultContextWindow || 200000);
@@ -359,7 +359,8 @@ function ContextWindowCard({ agent, onSaved }: { agent: Agent; onSaved: () => vo
         orchestration: { ...baseOrch, autoCompress: normalizedAc },
       };
       if (dirtyCtx) patch.default_context_window = ctxDraft;
-      await updateAgent(agent.id, patch);
+      const updated = await updateAgent(agent.id, patch);
+      if (updated) setAgent(updated);
       toast.success("上下文与压缩配置已保存");
       onSaved();
     } catch (e: unknown) {
@@ -550,7 +551,7 @@ function CompactNumberField({
 // - 单选 + 独立保存(不走 EditPane),PATCH /api/v2/employees/:id
 //   { default_engine, default_model }
 // - 用 Toast 通知,不用 alert
-function ModelBindingCard({ agent, onSaved }: { agent: Agent; onSaved: () => void }) {
+function ModelBindingCard({ agent, onSaved, setAgent }: { agent: Agent; onSaved: () => void; setAgent: (next: Agent | null) => void }) {
   const toast = useToast();
   const [providers, setProviders] = React.useState<ProviderInfo[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -641,7 +642,12 @@ function ModelBindingCard({ agent, onSaved }: { agent: Agent; onSaved: () => voi
         useModelRouting: useRouting,
         orchestration: orchObj,
       });
-      await updateAgent(agent.id, patch);
+      // R38-C5 4.4: 写 modelId 到 body,让后端联级更新 agents.model_id FK
+      if (selectedProvider && selectedProvider.id !== currentBinding?.id) {
+        (patch as Record<string, unknown>).modelId = selectedProvider.id;
+      }
+      const updated = await updateAgent(agent.id, patch);
+      if (updated) setAgent(updated);
       toast.success(
         `已${modelDirty && selectedProvider ? `绑定 ${selectedProvider.name} · ${selectedProvider.model}` : "更新模型路由"}${useRouting ? "(遵循全局路由)" : "(固定模型)"}`,
       );
