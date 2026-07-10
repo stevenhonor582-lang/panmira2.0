@@ -13,23 +13,24 @@ import {
   ShieldCheck,
   Bot,
   CheckCircle2,
-  AlertTriangle,
   CircleDot,
   Lock,
-  BarChart3,
-  PowerOff,
   Power,
+  PowerOff,
   RefreshCw,
   Pencil,
   Trash2,
   LogOut,
   PauseCircle,
   Eye,
+  UserCheck,
+  Wifi,
 } from "lucide-react";
 import {
   EMPLOYEE_STATUS_LABEL,
   ROLE_LABEL,
   fetchPersonActivity,
+  fetchPersonAgents,
   fetchPersonStats,
   patchPerson,
   resetPersonPassword,
@@ -89,6 +90,7 @@ export function PersonCard({ person, className, onChanged }: Props) {
 
   const [activity, setActivity] = React.useState<PersonActivity | null>(null);
   const [stats, setStats] = React.useState<PersonStats | null>(null);
+  const [agentCount, setAgentCount] = React.useState<number | null>(null);
   const [resetModal, setResetModal] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
 
@@ -99,6 +101,10 @@ export function PersonCard({ person, className, onChanged }: Props) {
     });
     fetchPersonStats(person.id).then((s) => {
       if (!cancelled) setStats(s);
+    });
+    // R41-E: 对接 R41-C 路由 /api/v2/people/:userId/agents 数组长度
+    fetchPersonAgents(person.id).then((list) => {
+      if (!cancelled) setAgentCount(Array.isArray(list) ? list.length : 0);
     });
     return () => {
       cancelled = true;
@@ -135,6 +141,21 @@ export function PersonCard({ person, className, onChanged }: Props) {
   const lockedMinutes = locked
     ? Math.ceil((new Date(person.lockedUntil!).getTime() - Date.now()) / 60000)
     : 0;
+
+  // R41-E: 今日异常判定 - 异常时卡片底色变红/黄
+  const todayErrors = stats?.todayErrors ?? 0;
+  const todayDone = stats?.todayDone ?? 0;
+  const hasError = todayErrors > 0;
+  const hasWarning = stats !== null && todayDone === 0 && todayErrors === 0;
+
+  // R41-E: 本周 token 数值化 (K/M 缩写)
+  const weekTokens = stats?.weekTokens ?? 0;
+  const weekTokensDisplay =
+    weekTokens >= 1_000_000
+      ? `${(weekTokens / 1_000_000).toFixed(1)}M`
+      : weekTokens >= 10_000
+      ? `${(weekTokens / 1000).toFixed(1)}K`
+      : weekTokens.toLocaleString();
 
   // ────────────────────────────────────────────────────────
   // 整卡点击 → 进入查看模式
@@ -242,17 +263,20 @@ export function PersonCard({ person, className, onChanged }: Props) {
           "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/40",
           status === "departed" && "opacity-70",
           isSysAdmin && "ring-1 ring-amber-500/30",
+          // R41-E: 异常时变更卡片底色
+          hasError && "bg-rose-50/60 dark:bg-rose-950/20 border-rose-500/40",
+          hasWarning && !hasError && "bg-amber-50/40 dark:bg-amber-950/10 border-amber-500/30",
           className,
         )}
       >
-        {/* === 顶部: 身份信息 === */}
-        <div className="p-4 pb-3">
-          <div className="flex items-start gap-3">
+        {/* === 顶部: 身份信息 (R41-E 紧凑) === */}
+        <div className="p-3 pb-2.5">
+          <div className="flex items-start gap-2.5">
             <div className="relative shrink-0">
-              <InitialsAvatar name={person.name} size="lg" seed={person.sid ?? person.email} />
+              <InitialsAvatar name={person.name} size="md" seed={person.sid ?? person.email} />
               <span
                 className={cn(
-                  "absolute -bottom-0.5 -right-0.5 size-3 rounded-full ring-2 ring-card",
+                  "absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-card",
                   statusStyle.dot,
                 )}
                 aria-label={statusStyle.label}
@@ -261,7 +285,7 @@ export function PersonCard({ person, className, onChanged }: Props) {
 
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline gap-2 flex-wrap pr-8">
-                <h3 className="text-base font-semibold tracking-tight leading-tight text-foreground truncate">
+                <h3 className="text-sm font-semibold tracking-tight leading-tight text-foreground truncate">
                   {person.name}
                 </h3>
                 {isSysAdmin && (
@@ -275,9 +299,9 @@ export function PersonCard({ person, className, onChanged }: Props) {
                 )}
               </div>
 
-              <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground flex-wrap">
+              <div className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-muted-foreground flex-wrap">
                 {person.sid && (
-                  <code className="font-mono text-[10px] uppercase tracking-wider rounded bg-muted px-1.5 py-0.5">
+                  <code className="font-mono text-[10px] uppercase tracking-wider rounded bg-muted px-1 py-px">
                     {person.sid}
                   </code>
                 )}
@@ -290,9 +314,7 @@ export function PersonCard({ person, className, onChanged }: Props) {
                     </span>
                   </>
                 )}
-              </div>
-
-              <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground flex-wrap">
+                <span className="text-border">·</span>
                 <span className="inline-flex items-center gap-0.5">
                   <ShieldCheck className="size-2.5" />
                   {ROLE_LABEL[person.role]}
@@ -301,95 +323,109 @@ export function PersonCard({ person, className, onChanged }: Props) {
             </div>
           </div>
 
-          {/* 联系方式 */}
-          <div className="mt-3 grid gap-1 text-xs text-muted-foreground">
+          {/* R41-E: 联系方式 - 横排 flex row */}
+          <div className="mt-2 flex items-center gap-3 text-[11px] text-muted-foreground min-w-0">
             {person.email && (
-              <div className="flex items-center gap-1.5 min-w-0">
+              <span className="inline-flex items-center gap-1 min-w-0 flex-1">
                 <Mail className="size-3 shrink-0 opacity-60" />
                 <span className="truncate font-mono">{person.email}</span>
-              </div>
+              </span>
             )}
             {person.phone && (
-              <div className="flex items-center gap-1.5">
+              <span className="inline-flex items-center gap-1 shrink-0">
                 <Phone className="size-3 shrink-0 opacity-60" />
                 <span className="font-mono">{maskPhone(person.phone)}</span>
-              </div>
+              </span>
             )}
           </div>
         </div>
 
-        {/* === 中部: 今日完成 / 异常 / 当前状态 === */}
-        <div className="px-4 py-2 border-t border-border bg-muted/20 grid grid-cols-3 gap-1 text-center">
-          <DataCell
-            icon={CheckCircle2}
-            value={stats?.todayDone ?? 0}
-            label="今日完成"
-            ok={!!stats && stats.todayDone > 0}
-          />
-          <DataCell
-            icon={AlertTriangle}
-            value={stats?.todayErrors ?? 0}
-            label="今日异常"
-            danger={!!stats && stats.todayErrors > 0}
-          />
-          <DataCell
-            icon={CircleDot}
-            value={statusLabel(stats?.status)}
-            label="当前状态"
-            textual
-          />
-        </div>
-
-        {/* === 本周 token 进度条 === */}
-        <div className="px-4 py-1.5 border-t border-border bg-muted/10 flex items-center gap-2 text-[10.5px] text-muted-foreground">
-          <BarChart3 className="size-3" />
-          <span className="font-mono">本周 token</span>
-          <div className="flex-1 h-1 rounded-full bg-border overflow-hidden">
-            <div
-              className="h-full bg-foreground/70"
-              style={{ width: `${stats?.weekPct ?? 0}%` }}
-            />
-          </div>
-          <span className="font-mono tabular-nums">
-            {(stats?.weekTokens ?? 0).toLocaleString()} / {(stats?.weekCap ?? 0).toLocaleString()}
-          </span>
-        </div>
-
-        {/* === 状态 chip 行 === */}
-        <div className="px-4 py-2 border-t border-border flex items-center gap-1.5 flex-wrap">
-          <span
-            className={cn(
-              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
-              statusStyle.chip,
-            )}
-          >
-            <span className={cn("size-1.5 rounded-full", statusStyle.dot)} />
-            {statusStyle.label}
-          </span>
-
-          {locked ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2 py-0.5 text-[10px] font-medium text-rose-700 dark:text-rose-400 ring-1 ring-rose-500/20">
-              <Lock className="size-2.5" />
-              登录锁定 {lockedMinutes}min
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
-              <CheckCircle2 className="size-2.5" />
-              登录正常
-            </span>
+        {/* === R41-E: 数据条 - 4 列(今日完成/今日异常/名下数字员工/本周token) === */}
+        <div
+          className={cn(
+            "px-3 py-2 border-t border-border grid grid-cols-4 gap-1 text-center items-center",
+            hasError ? "bg-rose-100/40 dark:bg-rose-950/30" : "bg-muted/20",
           )}
+        >
+          {/* 今日完成 - 纯数字标识 */}
+          <div className="flex flex-col items-center">
+            <span
+              className={cn(
+                "text-base font-bold tabular-nums leading-none",
+                hasError ? "text-rose-700 dark:text-rose-300" : "text-foreground",
+              )}
+            >
+              {todayDone}
+            </span>
+          </div>
+          {/* 今日异常 - 仅符号 ✓/✗ */}
+          <div className="flex flex-col items-center">
+            <span
+              className={cn(
+                "text-lg leading-none",
+                hasError ? "text-rose-500" : "text-emerald-500",
+              )}
+              title={hasError ? `今日异常 ${todayErrors}` : "今日无异常"}
+            >
+              {hasError ? "✗" : "✓"}
+            </span>
+          </div>
+          {/* 名下数字员工 - 数组长度 */}
+          <div className="flex flex-col items-center">
+            <span className="text-base font-bold tabular-nums leading-none text-foreground">
+              {agentCount ?? "—"}
+            </span>
+            <span className="text-[9px] text-muted-foreground leading-none mt-0.5">
+              名下数字员工
+            </span>
+          </div>
+          {/* 本周 token - 直接数值 */}
+          <div className="flex flex-col items-center">
+            <span className="text-base font-bold tabular-nums leading-none text-foreground">
+              {weekTokensDisplay}
+            </span>
+            <span className="text-[9px] text-muted-foreground leading-none mt-0.5">
+              本周 token
+            </span>
+          </div>
+        </div>
 
-          <span
-            className={cn(
-              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1",
-              person.isActive
-                ? "bg-sky-500/10 text-sky-700 dark:text-sky-400 ring-sky-500/20"
-                : "bg-zinc-500/10 text-zinc-600 dark:text-zinc-400 ring-zinc-500/20",
-            )}
+        {/* === R41-E: 当前状态 - 统一图标区域(在职/登录/账号启用/Agent状态) === */}
+        <div className="px-3 py-1.5 border-t border-border flex items-center justify-center gap-4 bg-card">
+          {/* 雇佣状态:在职/停用/离职 */}
+          <StatusIcon
+            title={statusStyle.label}
+            tone={status === "active" ? "ok" : status === "paused" ? "warn" : "muted"}
           >
-            {person.isActive ? <Power className="size-2.5" /> : <PowerOff className="size-2.5" />}
-            {person.isActive ? "账号启用" : "账号禁用"}
-          </span>
+            <UserCheck className="size-3.5" />
+          </StatusIcon>
+          {/* 登录状态:在线/锁定 */}
+          <StatusIcon
+            title={locked ? `登录锁定 ${lockedMinutes}min` : "登录正常"}
+            tone={locked ? "danger" : "ok"}
+          >
+            {locked ? <Lock className="size-3.5" /> : <Wifi className="size-3.5" />}
+          </StatusIcon>
+          {/* 账号启用/禁用 */}
+          <StatusIcon
+            title={person.isActive ? "账号启用" : "账号禁用"}
+            tone={person.isActive ? "ok" : "muted"}
+          >
+            <Power className="size-3.5" />
+          </StatusIcon>
+          {/* Agent 状态:忙碌/空闲/离线 */}
+          <StatusIcon
+            title={`Agent 状态:${statusLabel(stats?.status)}`}
+            tone={
+              stats?.status === "busy"
+                ? "warn"
+                : stats?.status === "idle"
+                ? "ok"
+                : "muted"
+            }
+          >
+            <CircleDot className="size-3.5" />
+          </StatusIcon>
         </div>
 
         {/* === 图标行 (替代三点菜单) === */}
@@ -468,6 +504,52 @@ export function PersonCard({ person, className, onChanged }: Props) {
 }
 
 // ────────────────────────────────────────────────────────────
+// StatusIcon: 状态图标 + tooltip (CSS hover) - R41-E 统一状态区
+// ────────────────────────────────────────────────────────────
+function StatusIcon({
+  title,
+  tone,
+  children,
+}: {
+  title: string;
+  tone: "ok" | "warn" | "danger" | "muted";
+  children: React.ReactNode;
+}) {
+  const toneClass =
+    tone === "ok"
+      ? "text-emerald-600 dark:text-emerald-400"
+      : tone === "warn"
+      ? "text-amber-600 dark:text-amber-400"
+      : tone === "danger"
+      ? "text-rose-600 dark:text-rose-400"
+      : "text-zinc-400 dark:text-zinc-500";
+  return (
+    <span
+      className={cn(
+        "relative inline-flex items-center justify-center p-0.5 rounded-md cursor-default",
+        "group/status",
+        toneClass,
+      )}
+      title={title}
+    >
+      {children}
+      <span
+        role="tooltip"
+        className={cn(
+          "pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1",
+          "px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap",
+          "bg-foreground text-background shadow-md",
+          "opacity-0 scale-95 transition-opacity transition-transform duration-150",
+          "group-hover/status:opacity-100 group-hover/status:scale-100",
+        )}
+      >
+        {title}
+      </span>
+    </span>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
 // IconAction: 图标按钮 + tooltip (CSS hover,无依赖)
 // ────────────────────────────────────────────────────────────
 function IconAction({
@@ -531,43 +613,6 @@ function IconAction({
 // 子组件
 // ────────────────────────────────────────────────────────────
 
-function DataCell({
-  icon: Icon,
-  value,
-  label,
-  danger = false,
-  ok = false,
-  textual = false,
-}: {
-  icon: typeof Bot;
-  value: number | string;
-  label: string;
-  danger?: boolean;
-  ok?: boolean;
-  textual?: boolean;
-}) {
-  const valueClass = textual
-    ? "text-[12px] font-medium leading-none"
-    : "text-sm font-semibold tabular-nums leading-none";
-  const colorClass = danger
-    ? "text-rose-600 dark:text-rose-400"
-    : ok
-    ? "text-emerald-600 dark:text-emerald-400"
-    : "text-foreground";
-  const iconClass = danger
-    ? "text-rose-500"
-    : ok
-    ? "text-emerald-500"
-    : "text-muted-foreground";
-  return (
-    <div className="flex flex-col items-center gap-0.5">
-      <Icon className={cn("size-3", iconClass)} />
-      <span className={cn(valueClass, colorClass)}>{value}</span>
-      <span className="text-[10px] text-muted-foreground leading-none">{label}</span>
-    </div>
-  );
-}
-
 // 把后端 status 映射成中文短词
 function statusLabel(s: "busy" | "idle" | "offline" | undefined): string {
   if (s === "busy") return "忙碌";
@@ -589,6 +634,7 @@ function ResetPasswordModal({
   const [confirmPwd, setConfirmPwd] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState<string | null>(null);
+  const toast = useToast();
 
   const handleSave = async () => {
     if (pwd.length < 6) {
