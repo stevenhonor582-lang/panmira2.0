@@ -34,6 +34,8 @@ test('R15-B wizard: full publish → agent created with all R15-A fields', async
   // Step 1
   await page.getByPlaceholder('例:不盈 / 墨言 / 守静 / 销售助手-A').fill(unique);
   await page.getByPlaceholder('例:工业品跨境售前咨询,客户问答 + 报价初判').fill('R15-B 端到端测试');
+  // R50-3: persona 按钮在 step-3 "人格定义" 而非 step-1 — 先跳过去再点
+  await jumpTo(page, '人格定义');
   await page.locator('button', { hasText: '一线销售' }).click();
 
   // Step 6 — channel binding (the core missing feature)
@@ -61,8 +63,9 @@ test('R15-B wizard: full publish → agent created with all R15-A fields', async
   const agent = body.agent;
   expect(agent.name).toBe(unique);
   expect(agent.visibility).toBe('private');
-  expect(agent.isTemplate).toBe(false);
+  // R50-3: 后端 POST /api/agents 响应不再返回 isTemplate(已合并进 templateType),改判 templateType
   expect(agent.templateType).toBe('custom');
+  expect(agent.isTemplate).toBeFalsy(); // 允许 undefined / false,保持 "非模板" 语义
   expect(agent.avatarGlyph).toBeTruthy();
   expect(agent.avatarHue).toBeTruthy();
   expect(agent.channelIds).toBeInstanceOf(Array);
