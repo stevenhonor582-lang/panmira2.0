@@ -10,7 +10,7 @@
  *   (Option C: complete single-agent invocation)
  */
 import { db } from '../db/index.js';
-import { agents, agentKnowledgeRefs, pipelineRuns } from '../db/schema.js';
+import { agentInstances, agentKnowledgeRefs, pipelineRuns } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import {
   callLlm,
@@ -218,7 +218,7 @@ export function validatePipeline(p: Pipeline): { ok: true; order: PipelineNode[]
   return { ok: true, order };
 }
 
-type AgentRow = typeof agents.$inferSelect;
+type AgentRow = typeof agentInstances.$inferSelect;
 
 /**
  * Real LLM agent invocation (Phase 3).
@@ -388,8 +388,8 @@ async function invokeAgent(
 
   const [agent] = await db
     .select()
-    .from(agents)
-    .where(eq(agents.id, node.agentTemplateId))
+    .from(agentInstances)
+    .where(eq(agentInstances.id, node.agentTemplateId))
     .limit(1);
   if (!agent) {
     throw new Error(`agent ${node.agentTemplateId} not found`);

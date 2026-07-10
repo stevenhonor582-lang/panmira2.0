@@ -28,7 +28,7 @@ export class AgentNotFoundError extends Error {
 
 // === Types ===
 
-/** Result row from agents.system_prompt lookup. */
+/** Result row from agentInstances.system_prompt lookup. */
 interface AgentPromptRow {
   system_prompt: string | null;
 }
@@ -85,7 +85,7 @@ export class SystemPromptInjector {
 
   private async queryPrompt(agentId: string): Promise<string | null> {
     const { rows } = await pool.query(
-      `SELECT system_prompt FROM agents WHERE id = $1::uuid`,
+      `SELECT system_prompt FROM agent_instances WHERE id = $1::uuid`,
       [agentId],
     );
     return rows[0]?.system_prompt ?? null;

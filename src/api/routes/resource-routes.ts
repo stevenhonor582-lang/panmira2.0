@@ -9,7 +9,7 @@
 import type http from 'node:http';
 import { eq, and, desc } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { embeddingProviders, mcpServers, agentSkillRefs, skills, agents } from '../../db/schema.js';
+import { embeddingProviders, mcpServers, agentSkillRefs, skills, agentInstances } from '../../db/schema.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import { requireBearer, requireScopes } from '../oauth-middleware.js';
 import { checkMcpHealth } from '../../services/mcp-health.js';
@@ -104,7 +104,7 @@ async function createAgentSkillRef(req: http.IncomingMessage, res: http.ServerRe
   const [skill] = await db.select().from(skills).where(eq(skills.id, String(skillId))).limit(1);
   if (!skill) { jsonResponse(res, 404, { error: 'skill not found' }); return; }
   // verify agent exists
-  const [agent] = await db.select().from(agents).where(eq(agents.id, agentId)).limit(1);
+  const [agent] = await db.select().from(agentInstances).where(eq(agentInstances.id, agentId)).limit(1);
   if (!agent) { jsonResponse(res, 404, { error: 'agent not found' }); return; }
   const [row] = await db.insert(agentSkillRefs).values({
     agentId, skillId: String(skillId),

@@ -47,7 +47,7 @@ export async function handlePipelineAiGenerate(
     //    the R15B / 失败测试 / L6 Test junk that pollutes the catalogue.
     const agentsResult = await pool.query(
       `SELECT id, name, display_name, role_template, description
-         FROM agents
+         FROM agent_instances
         WHERE tenant_id = $1
           AND status = 'active'
           AND is_template = false

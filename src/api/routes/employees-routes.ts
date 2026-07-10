@@ -24,7 +24,7 @@ export async function handleEmployeesRoutes(
   url: string,
 ): Promise<boolean> {
   const u = new URL(url, 'http://localhost');
-  if (!u.pathname.startsWith('/api/v2/employees')) return false;
+  if (!u.pathname.startsWith('/api/v2/employees') && !u.pathname.startsWith('/api/v2/agent-templates') && !u.pathname.startsWith('/api/v2/agent-instances')) return false;
 
   const ctx = await requireBearer(req, res);
   if (!ctx) return true;
@@ -40,6 +40,62 @@ export async function handleEmployeesRoutes(
     try {
       const templates = await agentStore.listTemplates();
       jsonResponse(res, 200, paginated(templates, templates.length, 1, templates.length));
+      return true;
+    } catch (e) {
+      jsonResponse(res, 500, fail('internal_error', String(e)));
+      return true;
+    }
+  }
+
+  // R42-ROUTES: GET /api/v2/agent-templates — 模板列表(新表 / 硬切)
+  if (method === 'GET' && u.pathname === '/api/v2/agent-templates') {
+    if (!requireAnyScope(ctx, ['agent:read', 'agent:admin', '*'])) {
+      jsonResponse(res, 403, fail('forbidden', '需要 agent:read 或 agent:admin'));
+      return true;
+    }
+    try {
+      const templates = await agentStore.listTemplates();
+      jsonResponse(res, 200, paginated(templates, templates.length, 1, templates.length));
+      return true;
+    } catch (e) {
+      jsonResponse(res, 500, fail('internal_error', String(e)));
+      return true;
+    }
+  }
+
+  // R42-ROUTES: GET /api/v2/agent-instances — 实例列表(新表 / 硬切)
+  if (method === 'GET' && u.pathname === '/api/v2/agent-instances') {
+    if (!requireAnyScope(ctx, ['agent:read', 'agent:admin', '*'])) {
+      jsonResponse(res, 403, fail('forbidden', '需要 agent:read 或 agent:admin'));
+      return true;
+    }
+    try {
+      const limit = Math.min(parseInt(u.searchParams.get('limit') || '100', 10), 200);
+      const offset = parseInt(u.searchParams.get('offset') || '0', 10);
+      const status = u.searchParams.get('status');
+      const params: unknown[] = [tenantId];
+      let where = 'tenant_id = $1 AND status != \'deprecated\'';
+      if (status === 'active' || status === 'paused' || status === 'deprecated') {
+        params.push(status);
+        where += ` AND status = $${params.length}`;
+      }
+      params.push(limit); params.push(offset);
+      const SELECT_COLS = `id, name, display_name, role_template, description,
+            capabilities, tools, deployment_type, is_active,
+            status, model_id, owner_user_id, source_template_id,
+            working_dir, channel_ids, visibility, temperature,
+            persona, complexity_level, default_engine, default_model,
+            created_at, updated_at`;
+      const ORDER_AND_PAG = `ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
+      const result = await pool.query(
+        `SELECT ${SELECT_COLS} FROM agent_instances WHERE ${where} ${ORDER_AND_PAG}`,
+        params,
+      );
+      const countResult = await pool.query(
+        `SELECT count(*)::int AS c FROM agent_instances WHERE ${where}`,
+        params.slice(0, params.length - 2),
+      );
+      jsonResponse(res, 200, paginated(result.rows, countResult.rows[0].c, Math.floor(offset / limit) + 1, limit));
       return true;
     } catch (e) {
       jsonResponse(res, 500, fail('internal_error', String(e)));
@@ -69,35 +125,35 @@ export async function handleEmployeesRoutes(
       const params: unknown[] = [tenantId];
       let where = 'tenant_id = $1';
       if (filter === 'template') {
-        where += ` AND is_template = true AND ${statusExcludeDeprecated}`;
+        where += ` AND ${statusExcludeDeprecated}`;
       } else if (filter === 'unassigned') {
         // R41-C: 'unassigned' means 'not bound to ANY user'. Source of truth is
         // user_agent_bindings (m:n). owner_user_id is a denormalized cache so we
         // also exclude agents whose owner_user_id is set to someone else (in case
-        // backfill from agents.owner_user_id has not yet created the binding row).
-        where += ` AND is_template = false AND ${statusExcludeDeprecated}`;
+        // backfill from agentInstances.owner_user_id has not yet created the binding row).
+        where += ` AND ${statusExcludeDeprecated}`;
         if (owner) {
           params.push(owner);
           // Show: NOT bound to anyone else, but bound to OR owned by this user
           where += ` AND NOT EXISTS (
             SELECT 1 FROM user_agent_bindings uab
-             WHERE uab.agent_id = agents.id
+             WHERE uab.agent_id = agentInstances.id
                AND uab.user_id IS DISTINCT FROM $${params.length}::uuid
           )`;
         } else {
           where += ` AND NOT EXISTS (
             SELECT 1 FROM user_agent_bindings uab
-             WHERE uab.agent_id = agents.id
+             WHERE uab.agent_id = agentInstances.id
           )`;
-          // 兜底:如果 agents.owner_user_id 有值(旧数据/未回填),也排除
+          // 兜底:如果 agentInstances.owner_user_id 有值(旧数据/未回填),也排除
           where += ' AND owner_user_id IS NULL';
         }
       } else if (filter === 'all') {
         // filter=all → UNION ALL(instance + template,排除 deprecated)
-        where += ` AND is_template = false AND ${statusExcludeDeprecated}`;
+        where += ` AND ${statusExcludeDeprecated}`;
       } else {
         // instance (默认)
-        where += ` AND is_template = false AND ${statusExcludeDeprecated}`;
+        where += ` AND ${statusExcludeDeprecated}`;
       }
       if (status === 'active' || status === 'paused' || status === 'deprecated') {
         params.push(status);
@@ -107,35 +163,104 @@ export async function handleEmployeesRoutes(
       params.push(limit); params.push(offset);
       const SELECT_COLS = `id, name, display_name, role_template, description,
             capabilities, tools, deployment_type, is_active,
-            version, status, model_id, owner_user_id, source_template_id,
-            is_template, working_dir, channel_ids, visibility, temperature,
+            status, model_id, owner_user_id, source_template_id,
+            working_dir, channel_ids, visibility, temperature,
             persona, complexity_level, default_engine, default_model,
             created_at, updated_at`;
-      const ORDER_AND_PAG = `ORDER BY is_template DESC, created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
+      const ORDER_AND_PAG = `ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
       let result;
+      if (filter === 'template') {
+        // R42: filter=template → 查 agent_templates 表(蓝图字段)
+        // agent_templates 没有 display_name / deployment_type / status / model_id / owner_user_id
+        //   / source_template_id / working_dir / channel_ids / visibility / temperature
+        //   / complexity_level / default_engine / default_model
+        // 这些字段用 NULL 填充,前端不会用到(模板库 UI 只看蓝图)
+        const TPL_SELECT_COLS = `id, name, NULL::text AS display_name, role_template, description,
+            capabilities, tools, 'bot'::varchar AS deployment_type, is_active,
+            'active'::varchar AS status, NULL::text AS model_id, NULL::uuid AS owner_user_id,
+            NULL::uuid AS source_template_id, NULL::text AS working_dir, '[]'::jsonb AS channel_ids,
+            'team'::varchar AS visibility, 0.7::float8 AS temperature,
+            persona, 'L1'::varchar AS complexity_level, NULL::varchar AS default_engine,
+            NULL::varchar AS default_model,
+            created_at, updated_at, 'template'::text AS target_type`;
+        const tplWhere = `tenant_id = $1`;
+        const cntTpl = await pool.query(
+          `SELECT count(*)::int AS c FROM agent_templates WHERE ${tplWhere}`,
+          params.slice(0, 1),
+        );
+        result = await pool.query(
+          `SELECT ${TPL_SELECT_COLS} FROM agent_templates WHERE ${tplWhere} ${ORDER_AND_PAG}`,
+          params,
+        );
+        jsonResponse(res, 200, paginated(result.rows, cntTpl.rows[0].c, Math.floor(offset / limit) + 1, limit));
+        return true;
+      }
       if (filter === 'all') {
         // UNION ALL(instance + template 都排除 deprecated)
-        const tmplWhere = `tenant_id = $1 AND is_template = true AND ${statusExcludeDeprecated}`;
-        const sqlAll = `(SELECT ${SELECT_COLS} FROM agents WHERE ${where} ${ORDER_AND_PAG})
+        // R42: 两表结构不同,只能 UNION 公共列(蓝图字段)
+        //   公共:id, name, role_template, description, capabilities, tools,
+        //         category, template_type, orchestration, boundary, iron_laws,
+        //         persona, is_active, created_at, updated_at
+        //   instance 独有:display_name, deployment_type, status, model_id,
+        //                 owner_user_id, source_template_id, working_dir,
+        //                 channel_ids, visibility, temperature, complexity_level,
+        //                 default_engine, default_model
+        //   模板不需要这些,UNION 用公共子集
+        const COMMON_COLS = `id, name, role_template, description, capabilities, tools,
+              category, template_type, orchestration, boundary, iron_laws, persona,
+              is_active, created_at, updated_at,
+              NULL::text AS display_name,
+              'bot'::varchar AS deployment_type,
+              'active'::varchar AS status,
+              NULL::text AS model_id,
+              NULL::uuid AS owner_user_id,
+              NULL::uuid AS source_template_id,
+              NULL::text AS working_dir,
+              '[]'::jsonb AS channel_ids,
+              'team'::varchar AS visibility,
+              0.7::float8 AS temperature,
+              'L1'::varchar AS complexity_level,
+              NULL::varchar AS default_engine,
+              NULL::varchar AS default_model,
+              'instance'::text AS target_type`;
+        const TEMPLATE_COLS = `id, name, role_template, description, capabilities, tools,
+              category, template_type, orchestration, boundary, iron_laws, persona,
+              is_active, created_at, updated_at,
+              NULL::text AS display_name,
+              'bot'::varchar AS deployment_type,
+              'active'::varchar AS status,
+              NULL::text AS model_id,
+              NULL::uuid AS owner_user_id,
+              NULL::uuid AS source_template_id,
+              NULL::text AS working_dir,
+              '[]'::jsonb AS channel_ids,
+              'team'::varchar AS visibility,
+              0.7::float8 AS temperature,
+              'L1'::varchar AS complexity_level,
+              NULL::varchar AS default_engine,
+              NULL::varchar AS default_model,
+              'template'::text AS target_type`;
+        const tmplWhere = `tenant_id = $1`;
+        const sqlAll = `(SELECT ${COMMON_COLS} FROM agent_instances WHERE ${where} ${ORDER_AND_PAG})
                         UNION ALL
-                        (SELECT ${SELECT_COLS} FROM agents WHERE ${tmplWhere} ${ORDER_AND_PAG})`;
+                        (SELECT ${TEMPLATE_COLS} FROM agent_templates WHERE ${tmplWhere} ${ORDER_AND_PAG})`;
         result = await pool.query(sqlAll, params);
         const cntSql = `SELECT
-            (SELECT count(*) FROM agents WHERE ${where})
-          + (SELECT count(*) FROM agents WHERE ${tmplWhere}) AS c`;
+            (SELECT count(*) FROM agent_instances WHERE ${where})
+          + (SELECT count(*) FROM agent_templates WHERE ${tmplWhere}) AS c`;
         const cntResult = await pool.query(cntSql, params.slice(0, params.length - 2));
         jsonResponse(res, 200, paginated(result.rows, parseInt(cntResult.rows[0].c, 10), Math.floor(offset / limit) + 1, limit));
         return true;
       }
       result = await pool.query(
         `SELECT ${SELECT_COLS}
-           FROM agents
+           FROM agent_instances
           WHERE ${where}
           ${ORDER_AND_PAG}`,
         params,
       );
       const countResult = await pool.query(
-        `SELECT count(*) AS c FROM agents WHERE ${where}`,
+        `SELECT count(*) AS c FROM agent_instances WHERE ${where}`,
         params.slice(0, params.length - 2),
       );
       jsonResponse(res, 200, paginated(result.rows, parseInt(countResult.rows[0].c, 10), Math.floor(offset / limit) + 1, limit));
@@ -174,15 +299,15 @@ export async function handleEmployeesRoutes(
     try {
       const result = await pool.query(
         `SELECT
-           count(*)::int AS total,
-           count(*) FILTER (WHERE status = 'active')::int AS active,
-           count(*) FILTER (WHERE status = 'paused')::int AS paused,
-           count(*) FILTER (WHERE status = 'deprecated')::int AS deprecated,
-           count(*) FILTER (WHERE is_template)::int AS templates,
-           count(*) FILTER (WHERE deployment_type = 'bot')::int AS bots,
-           count(*) FILTER (WHERE deployment_type = 'job')::int AS jobs,
-           count(*) FILTER (WHERE deployment_type = 'api')::int AS apis
-         FROM agents WHERE tenant_id = $1`,
+           (SELECT count(*)::int FROM agent_instances WHERE tenant_id = $1) AS total,
+           (SELECT count(*) FILTER (WHERE status = 'active')::int FROM agent_instances WHERE tenant_id = $1) AS active,
+           (SELECT count(*) FILTER (WHERE status = 'paused')::int FROM agent_instances WHERE tenant_id = $1) AS paused,
+           (SELECT count(*) FILTER (WHERE status = 'deprecated')::int FROM agent_instances WHERE tenant_id = $1) AS deprecated,
+           (SELECT count(*)::int FROM agent_templates WHERE tenant_id = $1) AS templates,
+           (SELECT count(*) FILTER (WHERE deployment_type = 'bot')::int FROM agent_instances WHERE tenant_id = $1) AS bots,
+           (SELECT count(*) FILTER (WHERE deployment_type = 'job')::int FROM agent_instances WHERE tenant_id = $1) AS jobs,
+           (SELECT count(*) FILTER (WHERE deployment_type = 'api')::int FROM agent_instances WHERE tenant_id = $1) AS apis
+        `,
         [tenantId],
       );
       jsonResponse(res, 200, ok(result.rows[0]));
@@ -339,7 +464,7 @@ export async function handleEmployeesRoutes(
         try {
           const r = await pool.query(
             `SELECT a.id, a.name, a.status, b.id AS bot_id, b.platform, b.is_active
-             FROM agents a
+             FROM agent_instances a
              LEFT JOIN bot_configs b ON b.bot_id::text = a.id::text
              WHERE a.id::text = $1`,
             [cid],
@@ -404,7 +529,7 @@ export async function handleEmployeesRoutes(
       try {
         created = await agentStore.createInstanceFromTemplate(templateId, {
           name: name.trim(),
-          ownerId,
+          ownerUserId: ownerId,
         });
       } catch (e: any) {
         const msg = String(e?.message || e);
@@ -460,8 +585,7 @@ export async function handleEmployeesRoutes(
         status: 'status',
         owner_user_id: 'ownerId',
         is_active: 'isActive',
-        // R15-A new
-        is_template: 'isTemplate',
+        // R42: is_template 字段彻底删除
         working_dir: 'workingDir',
         channel_ids: 'channelIds',
         visibility: 'visibility',
@@ -480,7 +604,7 @@ export async function handleEmployeesRoutes(
       // R35+R38-C3: channel_ids 独占校验 + 双向同步
       //  - 解绑:旧 channelIds 中不再出现的 bot_id → bot_configs.agent_id = NULL
       //  - 新增:新 channelIds 中的 bot_id → bot_configs.agent_id = $id(独占校验后)
-      // 根因:R34-A 只填了 agents.channel_ids,没回填 bot_configs.agent_id → 3/5 bot 缺失
+      // 根因:R34-A 只填了 agentInstances.channel_ids,没回填 bot_configs.agent_id → 3/5 bot 缺失
       if ('channelIds' in updates) {
         const newCids = Array.isArray(updates.channelIds) ? updates.channelIds.filter((x) => typeof x === 'string') : [];
         const newSet = new Set(newCids);
@@ -501,8 +625,8 @@ export async function handleEmployeesRoutes(
           const occupied = conflict.rows.map((r: { bot_id: string }) => r.bot_id);
           // 找出占用方 agent 名字
           const owners = await pool.query(
-            `SELECT id, name FROM agents WHERE id::text = ANY($1)`,
-            [conflict.rows.map(r => r.agent_id)]
+            `SELECT id, name FROM agent_instances WHERE id::text = ANY($1)`,
+            [conflict.rows.map((r: { agent_id: string }) => r.agent_id)]
           );
           const ownerMap = Object.fromEntries(owners.rows.map((r: { id: string; name: string }) => [r.id, r.name]));
           const detail = conflict.rows
@@ -572,7 +696,7 @@ export async function handleEmployeesRoutes(
                 resolvedEngine = pc.rows[0].type as string;
                 resolvedModel = pc.rows[0].model as string;
                 await pool.query(
-                  `UPDATE agents SET default_engine = $1, default_model = $2 WHERE id::text = $3`,
+                  `UPDATE agent_instances SET default_engine = $1, default_model = $2 WHERE id::text = $3`,
                   [resolvedEngine, resolvedModel, id],
                 );
               }
@@ -583,15 +707,15 @@ export async function handleEmployeesRoutes(
             }
           }
 
-          // 同时给了 modelId → 写 agents.model_id FK
+          // 同时给了 modelId → 写 agentInstances.model_id FK
           if (hasModelId && resolvedModelId && typeof resolvedModelId === 'string') {
             await pool.query(
-              `UPDATE agents SET model_id = $1 WHERE id::text = $2`,
+              `UPDATE agent_instances SET model_id = $1 WHERE id::text = $2`,
               [resolvedModelId, id],
             );
           } else if (hasModelId && (resolvedModelId === null || resolvedModelId === '')) {
             await pool.query(
-              `UPDATE agents SET model_id = NULL WHERE id::text = $1`,
+              `UPDATE agent_instances SET model_id = NULL WHERE id::text = $1`,
               [id],
             );
           }

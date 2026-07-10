@@ -12,7 +12,7 @@
 import type http from 'node:http';
 import { eq, and } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { agents, agentKnowledgeRefs } from '../../db/schema.js';
+import { agentInstances, agentKnowledgeRefs } from '../../db/schema.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import { requireBearer, requireScopes, requireAnyScope } from '../oauth-middleware.js';
 import { buildRagContext, type RagResult } from '../../services/rag-service.js';
@@ -27,7 +27,7 @@ async function runAgent(req: http.IncomingMessage, res: http.ServerResponse, age
     jsonResponse(res, 403, { error: 'insufficient_scope', required: 'agent:edit OR agent:admin' }); return;
   }
 
-  const [agent] = await db.select().from(agents).where(eq(agents.id, agentId)).limit(1);
+  const [agent] = await db.select().from(agentInstances).where(eq(agentInstances.id, agentId)).limit(1);
   if (!agent) { jsonResponse(res, 404, { error: 'agent not found' }); return; }
 
   // R33-A: 模型路由锁定(与 pipeline-engine.invokeRealAgent 同逻辑)。

@@ -596,7 +596,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
             return;
           }
           try {
-            const agent = await agentStore.create({
+            const agent = await agentStore.createInstance({
               name: body.name,
               roleTemplate: body.roleTemplate,
               description: body.description,
@@ -606,18 +606,14 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
               category: body.category,
               templateType: body.templateType,
               sourceTemplateId: body.sourceTemplateId,
-              knowledgeFolders: body.knowledgeFolders,
-              skills: body.skills,
               ironLaws: body.ironLaws,
               boundary: body.boundary,
               orchestration: body.orchestration,
               // R15-B wizard fields (forwarded if present)
-              isTemplate: body.isTemplate,
               workingDir: body.workingDir,
               channelIds: body.channelIds,
               visibility: body.visibility,
               temperature: body.temperature,
-              ownerId: body.ownerId,
               persona: body.persona,
               defaultEngine: body.defaultEngine,
               defaultModel: body.defaultModel,
@@ -685,7 +681,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
           const created: any[] = [];
           for (const t of templates) {
             if (!t.name || !t.systemPrompt) continue;
-            const agent = await agentStore.create({
+            const agent = await agentStore.createInstance({
               name: t.name,
               roleTemplate: t.roleTemplate,
               description: t.description,
@@ -947,6 +943,12 @@ ${content}
         jsonResponse(res, 404, { error: 'People route not found' });
         return;
       }
+      // R42-ROUTES: /api/v2/agent-templates / /api/v2/agent-instances 走同一个 employees handler
+      if (url.startsWith('/api/v2/agent-templates') || url.startsWith('/api/v2/agent-instances')) {
+        if (await handleEmployeesRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Agent route not found' });
+        return;
+      }
       if (url.startsWith('/api/v2/employees')) {
         if (await handleEmployeesRoutes(req, res, method, url)) return;
         jsonResponse(res, 404, { error: 'Employee route not found' });
@@ -1014,6 +1016,12 @@ ${content}
       }
 
       // Plan B-1: Agent resource routes (skill-refs etc.)
+      // R42-ROUTES: /api/v2/admin/agent-templates + /api/v2/admin/agent-instances 走 handleAgentsCrudRoutes
+      if (url.startsWith('/api/v2/admin/agent-templates') || url.startsWith('/api/v2/admin/agent-instances')) {
+        if (await handleAgentsCrudRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Agent admin route not found' });
+        return;
+      }
       if (url.startsWith('/api/v2/admin/agents/')) {
         if (await handleResourceRoutes(req, res, method, url)) return;
         jsonResponse(res, 404, { error: 'Resource route not found' });

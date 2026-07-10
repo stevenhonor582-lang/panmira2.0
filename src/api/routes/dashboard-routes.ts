@@ -31,7 +31,7 @@ export async function handleDashboardRoutes(
           (SELECT count(*) FROM embedding_providers WHERE status != 'disabled') AS embedding,
           (SELECT count(*) FROM mcp_servers WHERE status != 'disabled') AS mcp,
           (SELECT count(*) FROM knowledge_bases) AS knowledge_bases,
-          (SELECT count(*) FROM agents) AS agents,
+          (SELECT count(*) FROM agent_instances) AS agents,
           (SELECT count(*) FROM oauth_clients) AS oauth_clients,
           (SELECT count(*) FROM skills) AS skills
       `);

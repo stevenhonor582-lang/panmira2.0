@@ -29,7 +29,7 @@ export async function handleMonitoringRoutes(
           (SELECT count(*) FROM embedding_providers) AS embedding,
           (SELECT count(*) FROM mcp_servers) AS mcp,
           (SELECT count(*) FROM knowledge_bases) AS kb,
-          (SELECT count(*) FROM agents) AS agent,
+          (SELECT count(*) FROM agent_instances) AS agent,
           (SELECT count(*) FROM oauth_clients) AS oauth
       `);
       const usageRes = await pool.query(`

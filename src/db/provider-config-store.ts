@@ -200,7 +200,7 @@ export class ProviderConfigStore {
    */
   async countAgentsUsing(id: string): Promise<number> {
     await this.init();
-    const { rows } = await pool.query('SELECT count(*)::int AS n FROM agents WHERE model_id = $1', [id]);
+    const { rows } = await pool.query('SELECT count(*)::int AS n FROM agent_instances WHERE model_id = $1', [id]);
     return Number(rows[0]?.n ?? 0);
   }
 

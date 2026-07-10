@@ -227,7 +227,7 @@ async function listKnowledgeFolders(req: http.IncomingMessage, res: http.ServerR
         const botRows = await db.execute(sql`
           SELECT bc.bot_id::text AS bot_id, bc.name AS bot_name
             FROM bot_configs bc
-           WHERE bc.agent_id IN (SELECT id FROM agents WHERE owner_user_id::text = ${userId})
+           WHERE bc.agent_id IN (SELECT id FROM agent_instances WHERE owner_user_id::text = ${userId})
         `);
         const botNames = (Array.isArray(botRows) ? botRows : (botRows as { rows?: unknown[] }).rows || []) as Array<Record<string, unknown>>;
         const nameList = botNames.map((r) => String(r.bot_name ?? '')).filter(Boolean);
@@ -243,7 +243,7 @@ async function listKnowledgeFolders(req: http.IncomingMessage, res: http.ServerR
       } catch { /* best-effort */ }
       // 2) 该 user 拥有的 agent_id 集合(数字员工区可访问)
       try {
-        const agRows = await db.execute(sql`SELECT id::text AS id FROM agents WHERE owner_user_id::text = ${userId}`);
+        const agRows = await db.execute(sql`SELECT id::text AS id FROM agent_instances WHERE owner_user_id::text = ${userId}`);
         for (const r of (Array.isArray(agRows) ? agRows : (agRows as { rows?: unknown[] }).rows || []) as Array<Record<string, unknown>>) {
           const aid = String(r.id ?? '');
           if (aid) allowedAgentIds.add(aid);

@@ -60,27 +60,28 @@ async function backfillEmbedDocuments(embedder: any, logger: Logger): Promise<vo
 }
 
 async function seedDefaultAgents(logger: Logger): Promise<void> {
-  const { rows } = await pool.query('SELECT count(*)::int as cnt FROM agents');
+  const { rows } = await pool.query('SELECT count(*)::int as cnt FROM agent_instances');
   if (rows[0]?.cnt > 0) return;
 
   const seedPath = path.join(process.cwd(), 'config', 'default-agents.json');
   if (!fs.existsSync(seedPath)) {
-    logger.warn('No default-agents.json found, skipping seed');
+    logger.warn('No default-agentInstances.json found, skipping seed');
     return;
   }
 
   try {
-    const agents = JSON.parse(fs.readFileSync(seedPath, 'utf-8'));
+    const seedAgents = JSON.parse(fs.readFileSync(seedPath, 'utf-8'));
 
-    // Map knowledge_folders names → folder UUIDs (agents.knowledge_folders must be UUIDs).
+    // Map knowledge_folders names → folder UUIDs (agentInstances.knowledge_folders must be UUIDs).
     // Falls back to the original name string if the folder is not yet created.
+    // Note: this seed inserts INTO agent_instances directly (it's only meant to bootstrap).
     const { rows: folderRows } = await pool.query(
       "SELECT id, name FROM folders WHERE visibility = 'shared'",
     );
     const nameToId = new Map<string, string>();
     for (const f of folderRows) nameToId.set(f.name, f.id);
 
-    for (const agent of agents) {
+    for (const agent of seedAgents) {
       const folderIds: string[] = [];
       for (const name of agent.knowledge_folders || []) {
         const id = nameToId.get(name);
@@ -89,7 +90,7 @@ async function seedDefaultAgents(logger: Logger): Promise<void> {
       }
 
       await pool.query(
-        `INSERT INTO agents (name, description, role_template, system_prompt, skills, knowledge_folders)
+        `INSERT INTO agent_instances (name, description, role_template, system_prompt, skills, knowledge_folders)
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [
           agent.name,
@@ -101,7 +102,7 @@ async function seedDefaultAgents(logger: Logger): Promise<void> {
         ],
       );
     }
-    logger.info({ count: agents.length }, 'Default agent templates seeded');
+    logger.info({ count: seedAgents.length }, 'Default agent templates seeded');
   } catch (err: any) {
     logger.warn({ err: err.message }, 'Failed to seed default agents (non-critical)');
   }
@@ -393,7 +394,7 @@ async function main() {
       const agentId = botInfo?.config.agentId;
       const knowledgeFolders = botInfo?.config.knowledgeFolders;
       if (!agentId || !knowledgeFolders || knowledgeFolders.length === 0) continue;
-      await pool.query('UPDATE agents SET knowledge_folders = $1 WHERE id = $2', [
+      await pool.query('UPDATE agent_instances SET knowledge_folders = $1 WHERE id = $2', [
         JSON.stringify(knowledgeFolders),
         agentId,
       ]);

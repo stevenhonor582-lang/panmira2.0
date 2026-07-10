@@ -167,7 +167,7 @@ export async function handleBillingAggregateRoutes(
           SELECT a.id AS agent_id,
                  a.name AS agent_name,
                  a.owner_user_id AS owner_user_id
-          FROM agents a
+          FROM agent_instances a
           WHERE a.status = 'active'
         ),
         agent_tokens AS (
@@ -199,7 +199,7 @@ export async function handleBillingAggregateRoutes(
         SELECT a.id, a.name, a.avatar_url,
                coalesce(sum(ae.input_tokens + ae.output_tokens), 0)::bigint AS tokens,
                round(coalesce(sum(ae.cost_usd), 0)::numeric, 4)::float AS cost
-        FROM agents a
+        FROM agent_instances a
         LEFT JOIN activity_events ae
           ON (a.name = ae.bot_name OR a.name LIKE (ae.bot_name || '--%'))
           AND to_timestamp(ae.timestamp / 1000.0) > now() - interval '30 days'

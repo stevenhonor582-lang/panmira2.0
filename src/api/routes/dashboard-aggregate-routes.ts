@@ -255,7 +255,7 @@ export async function handleDashboardAggregateRoutes(
       db.execute(sql`
         SELECT count(*)::int AS total,
                count(*) FILTER (WHERE is_active)::int AS active
-        FROM agents
+        FROM agent_instances
       `),
       db.execute(sql`
         SELECT count(*)::int AS total,
@@ -317,7 +317,7 @@ export async function handleDashboardAggregateRoutes(
       db.execute(sql`
         SELECT a.id, a.name, a.display_name,
                count(ae.id)::int AS calls
-        FROM agents a
+        FROM agent_instances a
         LEFT JOIN activity_events ae
           ON ae.bot_id = a.id
           AND to_timestamp(ae.timestamp / 1000) > now() - interval '24 hours'

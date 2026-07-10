@@ -267,7 +267,7 @@ export async function handleTasksRoutes(
         }
         if (botIds.size) {
           const ag = await pool.query(
-            `SELECT id, name, status FROM agents WHERE id = ANY($1::text[])`,
+            `SELECT id, name, status FROM agent_instances WHERE id = ANY($1::text[])`,
             [Array.from(botIds)],
           );
           bots.push(...ag.rows);

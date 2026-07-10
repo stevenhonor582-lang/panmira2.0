@@ -345,7 +345,7 @@ export async function handleSkillHubRoutes(
         SELECT skill::text AS skill, count(DISTINCT a.id)::int AS bot_count,
           bool_and(a.status = 'active') AS all_active,
           array_agg(DISTINCT a.name) AS bots
-        FROM agents a, jsonb_array_elements_text(a.skills) AS skill
+        FROM agent_instances a, jsonb_array_elements_text(a.skills) AS skill
         WHERE a.skills IS NOT NULL AND a.skills != '[]'::jsonb
         GROUP BY skill
         ORDER BY skill

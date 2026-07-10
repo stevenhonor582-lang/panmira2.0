@@ -112,7 +112,7 @@ export async function loadLlmProviderByModel(
     const fkResult = await pool.query(
       `SELECT pc.name, pc.base_url, pc.api_key_encrypted, pc.model
        FROM provider_configs pc
-       JOIN agents a ON a.model_id::text = pc.id::text
+       JOIN agent_instances a ON a.model_id::text = pc.id::text
        WHERE a.id::text = $1
        LIMIT 1`,
       [agentId],

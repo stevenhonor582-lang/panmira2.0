@@ -56,31 +56,33 @@ export function generateWorkingDir(name: string): string {
 
 /**
  * R27 规则 2: bot 绑定一对一校验。
- * 检查某个 bot 是否已被其他 agent 绑定(在 channel_ids jsonb 数组里)。
- * 返回冲突 agent 的 name,无冲突返回 null。
+ * 检查某个 bot 是否已被其他 instance 绑定(在 channel_ids jsonb 数组里)。
+ * 返回冲突 instance 的 name,无冲突返回 null。
+ *
+ * R42-SCHEMA: agent_templates 没有 channel_ids(模板不绑 bot),
+ * 所以只查 agent_instances 即可。
  */
 export async function findBotBindingConflict(
   botId: string,
   currentAgentId: string,
 ): Promise<string | null> {
   const result = await pool.query(
-    `SELECT a.name FROM agents a
+    `SELECT a.name FROM agent_instances a
      WHERE a.channel_ids @> $1::jsonb
-       AND a.id::text != $2
-       AND a.is_template = false`,
+       AND a.id::text != $2`,
     [JSON.stringify([botId]), currentAgentId],
   );
   return result.rows.length > 0 ? (result.rows[0].name as string) : null;
 }
 
 /**
- * R27 规则 1: 实例间重名检查。模板可以同名,实例之间不重名。
+ * R27 规则 1 (R42 适配): 实例间重名检查。
+ * 模板允许重名;实例之间不重名 — 只查 agent_instances 表。
  * 抛 Error(中文消息)如果实例重名。
  */
-async function assertInstanceNameUnique(name: string, isTemplate: boolean, excludeId?: string): Promise<void> {
-  if (isTemplate) return; // 模板允许重名
+async function assertInstanceNameUnique(name: string, excludeId?: string): Promise<void> {
   const params: unknown[] = [name];
-  let sql = `SELECT id FROM agents WHERE name = $1 AND is_template = false`;
+  let sql = `SELECT id FROM agent_instances WHERE name = $1`;
   if (excludeId) {
     params.push(excludeId);
     sql += ` AND id::text != $2`;
@@ -92,7 +94,7 @@ async function assertInstanceNameUnique(name: string, isTemplate: boolean, exclu
 }
 
 
-export interface AgentTemplate {
+export interface AgentRecord {
   id: string;
   tenantId: string;
   name: string;
@@ -108,8 +110,6 @@ export interface AgentTemplate {
   orchestration: any;
   boundary: any;
   ironLaws: string[];
-  knowledgeFolders: string[];
-  skills: string[];
   defaultEngine: string | null;
   defaultModel: string | null;
   defaultContextWindow: number;
@@ -117,68 +117,126 @@ export interface AgentTemplate {
   complexityLevel: string;
   status: 'active' | 'paused' | 'deprecated';
   persona: string | null;
-  engine: string | null;
   displayName: string | null;
-  ownerId: string | null;
+  ownerUserId: string | null;
   modelId: string | null;
   avatarUrl: string | null;
   avatarGlyph: string | null;
   avatarHue: string | null;
   deploymentType: string;
-  // R15-A new fields
-  isTemplate: boolean;
   workingDir: string | null;
   channelIds: string[];
   visibility: 'public' | 'private' | 'team';
   temperature: number;
   createdAt: Date;
   updatedAt: Date;
+  /** 'template' or 'instance' — R42-SCHEMA 区分表 */
+  targetType: 'template' | 'instance';
+}
+
+/**
+ * instance 独有字段别名(对外保持稳定):
+ *  - ownerId → ownerUserId
+ *  - knowledgeFolders / skills → instance 不再用旧字段(由 *_refs 多态表承担)
+ *  - engine / displayName / persona 等保持原意
+ */
+export interface AgentInstance extends AgentRecord {
+  targetType: 'instance';
+}
+
+export interface AgentTemplate extends AgentRecord {
+  targetType: 'template';
 }
 
 export class AgentStore {
-  async list(): Promise<AgentTemplate[]> {
-    const result = await pool.query('SELECT * FROM agents ORDER BY created_at DESC');
-    return result.rows.map((r: any) => this.mapRow(r));
-  }
+  // ===========================================================================
+  // READ
+  // ===========================================================================
 
-  /**
-   * R15-A: 仅返回 agent 实例(is_template=false)。
-   * 含 deprecated,管理员要能看见。
-   */
-  async listInstances(): Promise<AgentTemplate[]> {
+  /** R42: 列出全部 instance(供前端默认列表用) */
+  async listInstances(): Promise<AgentInstance[]> {
     const result = await pool.query(
-      'SELECT * FROM agents WHERE is_template = false ORDER BY created_at DESC',
+      'SELECT * FROM agent_instances ORDER BY created_at DESC',
     );
-    return result.rows.map((r: any) => this.mapRow(r));
+    return result.rows.map((r: any) => this.mapRow(r, 'instance'));
   }
 
-  /**
-   * R15-A: 仅返回模板(is_template=true)。
-   * R41-B: 排除 deprecated 与 /api/v2/employees?filter=template 对齐(单一基准)。
-   * 复制接口仍可指定 deprecated 模板 id(R34+ `from-template` 接受任何模板)。
-   */
+  /** R42: 列出全部 template(供模板库使用) */
   async listTemplates(): Promise<AgentTemplate[]> {
+    // R42: agent_templates 表无 status 字段(蓝图无状态机);按 created_at DESC 排
     const result = await pool.query(
-      `SELECT * FROM agents
-        WHERE is_template = true AND status != 'deprecated'
-        ORDER BY created_at DESC`,
+      `SELECT * FROM agent_templates ORDER BY created_at DESC`,
     );
-    return result.rows.map((r: any) => this.mapRow(r));
+    return result.rows.map((r: any) => this.mapRow(r, 'template'));
   }
 
-  async listSummary(): Promise<AgentTemplate[]> {
-    const result = await pool.query(
-      'SELECT id, tenant_id, name, role_template, description, capabilities, tools, is_active, category, template_type, source_template_id, knowledge_folders, skills, default_engine, default_model, default_context_window, default_max_turns, complexity_level, status, persona, owner_user_id, model_id, is_template, working_dir, channel_ids, visibility, temperature, created_at, updated_at FROM agents ORDER BY created_at DESC',
-    );
-    return result.rows.map((r: any) => this.mapRow(r));
+  /**
+   * Backward compat: 列出全部(union template + instance)。
+   * 真实业务已不需要,但 http-server.ts 的 /api/agents list 还在用。
+   */
+  async list(): Promise<AgentRecord[]> {
+    const result = await pool.query(`
+      SELECT *, 'template'::text AS target_type FROM agent_templates
+      UNION ALL
+      SELECT *, 'instance'::text AS target_type FROM agent_instances
+      ORDER BY created_at DESC
+    `);
+    return result.rows.map((r: any) => this.mapRow(r, r.target_type));
   }
 
-  async findById(id: string): Promise<AgentTemplate | null> {
-    const result = await pool.query('SELECT * FROM agents WHERE id = $1', [id]);
-    return result.rows.length > 0 ? this.mapRow(result.rows[0]) : null;
+  /** listSummary: 与 list 同形,只取常用字段,不做 union(用于 /api/agents GET 列表) */
+  async listSummary(): Promise<AgentRecord[]> {
+    const result = await pool.query(`
+      SELECT
+        id, tenant_id, name, role_template, description, capabilities, tools,
+        is_active, category, template_type, source_template_id,
+        default_engine, default_model, default_context_window, default_max_turns,
+        complexity_level, status, persona, owner_user_id, model_id,
+        working_dir, channel_ids, visibility, temperature,
+        created_at, updated_at,
+        'template'::text AS target_type
+      FROM agent_templates
+      UNION ALL
+      SELECT
+        id, tenant_id, name, role_template, description, capabilities, tools,
+        is_active, category, template_type, source_template_id,
+        default_engine, default_model, default_context_window, default_max_turns,
+        complexity_level, status, persona, owner_user_id, model_id,
+        working_dir, channel_ids, visibility, temperature,
+        created_at, updated_at,
+        'instance'::text AS target_type
+      FROM agent_instances
+      ORDER BY created_at DESC
+    `);
+    return result.rows.map((r: any) => this.mapRow(r, r.target_type));
   }
 
-  async create(data: {
+  /**
+   * R42: 通用 find — 先查 instance,再查 template。
+   * 旧 /api/v2/employees/:id 没有 /template 或 /instance 后缀,保留向后兼容。
+   * 返回的 record 包含 targetType 字段,调用方据此 dispatch。
+   */
+  async findById(id: string): Promise<AgentRecord | null> {
+    const inst = await this.findInstanceById(id);
+    if (inst) return inst;
+    return await this.findTemplateById(id);
+  }
+
+  async findInstanceById(id: string): Promise<AgentInstance | null> {
+    const result = await pool.query('SELECT * FROM agent_instances WHERE id = $1', [id]);
+    return result.rows.length > 0 ? (this.mapRow(result.rows[0], 'instance') as AgentInstance) : null;
+  }
+
+  async findTemplateById(id: string): Promise<AgentTemplate | null> {
+    const result = await pool.query('SELECT * FROM agent_templates WHERE id = $1', [id]);
+    return result.rows.length > 0 ? (this.mapRow(result.rows[0], 'template') as AgentTemplate) : null;
+  }
+
+  // ===========================================================================
+  // CREATE — instance
+  // ===========================================================================
+
+  async createInstance(data: {
     name: string;
     roleTemplate?: string;
     description?: string;
@@ -188,18 +246,14 @@ export class AgentStore {
     category?: string;
     templateType?: 'standard' | 'custom';
     sourceTemplateId?: string;
-    knowledgeFolders?: string[];
-    skills?: string[];
     ironLaws?: string[];
     boundary?: any;
     orchestration?: any;
-    isTemplate?: boolean;
     workingDir?: string;
     channelIds?: string[];
     visibility?: 'public' | 'private' | 'team';
     temperature?: number;
-    ownerId?: string;
-    // R15-B wizard extras
+    ownerUserId?: string;
     persona?: string;
     defaultEngine?: string;
     defaultModel?: string;
@@ -207,27 +261,32 @@ export class AgentStore {
     avatarGlyph?: string;
     avatarHue?: string;
     modelId?: string;
-  }): Promise<AgentTemplate> {
+    deploymentType?: string;
+    status?: 'active' | 'paused' | 'deprecated';
+    displayName?: string;
+    avatarUrl?: string;
+  }): Promise<AgentInstance> {
     const tenantResult = await pool.query('SELECT id FROM tenants LIMIT 1');
     if (tenantResult.rows.length === 0) throw new Error('No tenant found');
     const tenantId = tenantResult.rows[0].id;
 
-    // R27 规则 1: 实例间重名检查(模板允许重名)
-    await assertInstanceNameUnique(data.name, data.isTemplate ?? false);
-    // R27 规则 1: 自动生成英文工作目录(如果调用方没传)
+    await assertInstanceNameUnique(data.name);
     const workingDir = data.workingDir || generateWorkingDir(data.name);
 
     const result = await pool.query(
-      `INSERT INTO agents (
-          tenant_id, name, role_template, description, system_prompt,
+      `INSERT INTO agent_instances (
+          id, tenant_id, name, role_template, description, system_prompt,
           capabilities, tools, category, template_type, source_template_id,
-          knowledge_folders, skills, orchestration, boundary, iron_laws,
-          is_template, working_dir, channel_ids, visibility, temperature, owner_user_id,
+          orchestration, boundary, iron_laws,
+          working_dir, channel_ids, visibility, temperature, owner_user_id,
           persona, default_engine, default_model, default_context_window,
-          avatar_glyph, avatar_hue, model_id
+          avatar_glyph, avatar_hue, model_id, deployment_type, status,
+          display_name, avatar_url
         )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21,
-               $22, $23, $24, $25, $26, $27, $28)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+               $11, $12, $13, $14, $15, $16, $17, $18,
+               $19, $20, $21, $22, $23, $24, $25, $26, $27,
+               $28, $29)
        RETURNING *`,
       [
         tenantId,
@@ -240,17 +299,14 @@ export class AgentStore {
         data.category || 'general',
         data.templateType || 'custom',
         data.sourceTemplateId || null,
-        JSON.stringify(data.knowledgeFolders || []),
-        JSON.stringify(data.skills || []),
         JSON.stringify(data.orchestration || {}),
         JSON.stringify(data.boundary || {}),
         JSON.stringify(data.ironLaws || []),
-        data.isTemplate ?? false,
         workingDir,
         JSON.stringify(data.channelIds || []),
         data.visibility || 'team',
         data.temperature ?? 0.7,
-        data.ownerId || null,
+        data.ownerUserId || null,
         data.persona ?? null,
         data.defaultEngine ?? null,
         data.defaultModel ?? null,
@@ -258,43 +314,102 @@ export class AgentStore {
         data.avatarGlyph ?? null,
         data.avatarHue ?? null,
         data.modelId ?? null,
+        data.deploymentType ?? 'bot',
+        data.status ?? 'active',
+        data.displayName ?? null,
+        data.avatarUrl ?? null,
       ],
     );
-    return this.mapRow(result.rows[0]);
+    return this.mapRow(result.rows[0], 'instance') as AgentInstance;
   }
 
   /**
-   * R15-A: 从模板复制创建独立 agent 实例。
-   * 深拷贝 persona/system_prompt/skills/iron_laws 等所有配置字段,
-   * 但分配新 id + 新 owner + is_template=false + source_template_id 指向模板。
+   * R42: createTemplate — 蓝图字段。
+   * 模板允许重名(同业务下多个同名模板共享蓝图)。
+   */
+  async createTemplate(data: {
+    name: string;
+    roleTemplate?: string;
+    description?: string;
+    systemPrompt?: string;
+    capabilities?: any[];
+    tools?: any[];
+    category?: string;
+    templateType?: 'standard' | 'custom';
+    ironLaws?: string[];
+    boundary?: any;
+    orchestration?: any;
+    persona?: string;
+    isActive?: boolean;
+    createdBy?: string;
+  }): Promise<AgentTemplate> {
+    const tenantResult = await pool.query('SELECT id FROM tenants LIMIT 1');
+    if (tenantResult.rows.length === 0) throw new Error('No tenant found');
+    const tenantId = tenantResult.rows[0].id;
+
+    const result = await pool.query(
+      `INSERT INTO agent_templates (
+          id, tenant_id, name, role_template, description, system_prompt,
+          capabilities, tools, category, template_type,
+          orchestration, boundary, iron_laws, persona, is_active, created_by
+        )
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9,
+               $10, $11, $12, $13, $14, $15)
+       RETURNING *`,
+      [
+        tenantId,
+        data.name,
+        data.roleTemplate || null,
+        data.description || null,
+        data.systemPrompt || null,
+        JSON.stringify(data.capabilities || []),
+        JSON.stringify(data.tools || []),
+        data.category || 'general',
+        data.templateType || 'custom',
+        JSON.stringify(data.orchestration || {}),
+        JSON.stringify(data.boundary || {}),
+        JSON.stringify(data.ironLaws || []),
+        data.persona ?? null,
+        data.isActive ?? true,
+        data.createdBy ?? null,
+      ],
+    );
+    return this.mapRow(result.rows[0], 'template') as AgentTemplate;
+  }
+
+  /**
+   * R42: 从 template 复制创建 instance(替代 promote/demote/copy-as-template)。
+   * 读 agent_templates.蓝图 → INSERT INTO agent_instances + 新 owner + 新 working_dir。
+   * 同步克隆 refs 关联(skill/kb/mcp 多态表;target_type='instance')。
    */
   async createInstanceFromTemplate(
     templateId: string,
-    overrides: { name: string; ownerId?: string | null },
-  ): Promise<AgentTemplate> {
-    const tplResult = await pool.query('SELECT * FROM agents WHERE id = $1', [templateId]);
-    if (tplResult.rows.length === 0) return null as unknown as AgentTemplate;
+    overrides: { name: string; ownerUserId?: string | null },
+  ): Promise<AgentInstance | null> {
+    const tplResult = await pool.query('SELECT * FROM agent_templates WHERE id = $1', [templateId]);
+    if (tplResult.rows.length === 0) return null;
     const tpl = tplResult.rows[0];
 
     const tenantResult = await pool.query('SELECT id FROM tenants LIMIT 1');
     if (tenantResult.rows.length === 0) throw new Error('No tenant found');
     const tenantId = tenantResult.rows[0].id;
 
-    // R27 规则 1 + 规则 5: 复制 = 独立实例,实例间重名检查 + 新工作目录(不复用模板的)
-    await assertInstanceNameUnique(overrides.name, false);
+    await assertInstanceNameUnique(overrides.name);
 
     const result = await pool.query(
-      `INSERT INTO agents (
-          tenant_id, name, role_template, description, system_prompt,
+      `INSERT INTO agent_instances (
+          id, tenant_id, name, role_template, description, system_prompt,
           capabilities, tools, category, template_type, source_template_id,
-          knowledge_folders, skills, orchestration, boundary, iron_laws,
+          orchestration, boundary, iron_laws,
           default_engine, default_model, default_context_window, default_max_turns,
-          complexity_level, persona, engine, deployment_type,
-          is_template, working_dir, channel_ids, visibility, temperature, owner_user_id
+          complexity_level, persona, deployment_type,
+          working_dir, channel_ids, visibility, temperature, owner_user_id
         )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-               $16, $17, $18, $19, $20, $21, $22, $23,
-               false, $24, $25, $26, $27, $28)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, 'custom', $9,
+               $10, $11, $12,
+               $13, $14, $15, $16,
+               $17, $18, 'bot',
+               $19, '[]'::jsonb, 'team', $20, $21)
        RETURNING *`,
       [
         tenantId,
@@ -305,62 +420,66 @@ export class AgentStore {
         JSON.stringify(tpl.capabilities ?? []),
         JSON.stringify(tpl.tools ?? []),
         tpl.category ?? 'general',
-        'custom',
         templateId,
-        JSON.stringify(tpl.knowledge_folders ?? []),
-        JSON.stringify(tpl.skills ?? []),
         JSON.stringify(tpl.orchestration ?? {}),
         JSON.stringify(tpl.boundary ?? {}),
         JSON.stringify(tpl.iron_laws ?? []),
         tpl.default_engine ?? 'claude',
         tpl.default_model,
-        tpl.default_context_window ?? 200000,
+        200000,
         tpl.default_max_turns,
         tpl.complexity_level ?? 'L1',
         tpl.persona,
-        tpl.engine ?? 'anthropic-opus-4-7',
-        tpl.deployment_type ?? 'bot',
-        // working_dir 默认 /workspace/agents/<new_id> — 用 RETURNING 后再 UPDATE
-        null,
-        JSON.stringify([]),
-        'team',
+        null, // working_dir — RETURNING 后再 UPDATE
         tpl.temperature ?? 0.7,
-        overrides.ownerId ?? null,
+        overrides.ownerUserId ?? null,
       ],
     );
     const created = result.rows[0];
 
-    // 补 working_dir — R27 规则 5: 用拼音首字母生成新目录(不复用模板的)
+    // R27 规则 5: 用拼音首字母生成新目录(不复用模板的)
     await pool.query(
-      `UPDATE agents SET working_dir = $1 WHERE id = $2`,
+      `UPDATE agent_instances SET working_dir = $1 WHERE id = $2`,
       [generateWorkingDir(overrides.name), created.id],
     );
-    const refreshed = await pool.query('SELECT * FROM agents WHERE id = $1', [created.id]);
-    const instance = this.mapRow(refreshed.rows[0]);
+    const refreshed = await pool.query('SELECT * FROM agent_instances WHERE id = $1', [created.id]);
+    const instance = this.mapRow(refreshed.rows[0], 'instance') as AgentInstance;
 
-    // R38-C4 阶段 3.5: 深拷贝 refs 关联(模板实例化时同步克隆)
-    // - agent_skill_refs (skill_id + skill_version + params)
-    // - agent_knowledge_refs (kb_id + topK + minScore)
-    // - agent_mcp_refs (mcp_server_id + params)
+    // R38-C4 阶段 3.5 (R42 适配): 克隆 refs 时必须显式带 target_type='instance' + 重新指向新 id
+    // 模板的 refs 是 target_type='template',克隆后必须改成 'instance'
     await pool.query(
-      `INSERT INTO agent_skill_refs (agent_id, skill_id, skill_version, params)
-        SELECT $1, skill_id, skill_version, params FROM agent_skill_refs WHERE agent_id = $2`,
+      `INSERT INTO agent_skill_refs (agent_id, target_type, skill_id, skill_version, params)
+        SELECT $1, 'instance'::target_type, skill_id, skill_version, params
+          FROM agent_skill_refs
+         WHERE agent_id = $2 AND target_type = 'template'`,
       [instance.id, templateId],
     );
     await pool.query(
-      `INSERT INTO agent_knowledge_refs (agent_id, kb_id, top_k, min_score)
-        SELECT $1, kb_id, top_k, min_score FROM agent_knowledge_refs WHERE agent_id = $2`,
+      `INSERT INTO agent_knowledge_refs (agent_id, target_type, kb_id, top_k, min_score)
+        SELECT $1, 'instance'::target_type, kb_id, top_k, min_score
+          FROM agent_knowledge_refs
+         WHERE agent_id = $2 AND target_type = 'template'`,
       [instance.id, templateId],
     );
     await pool.query(
-      `INSERT INTO agent_mcp_refs (agent_id, mcp_server_id, params)
-        SELECT $1, mcp_server_id, params FROM agent_mcp_refs WHERE agent_id = $2`,
+      `INSERT INTO agent_mcp_refs (agent_id, target_type, mcp_server_id, params)
+        SELECT $1, 'instance'::target_type, mcp_server_id, params
+          FROM agent_mcp_refs
+         WHERE agent_id = $2 AND target_type = 'template'`,
       [instance.id, templateId],
     );
 
     return instance;
   }
 
+  // ===========================================================================
+  // UPDATE — 自动 dispatch
+  // ===========================================================================
+
+  /**
+   * R42: 通用 update — 先 findById 决定 template / instance,再分表更新。
+   * 旧 /api/v2/employees/:id PATCH 走这里。
+   */
   async update(
     id: string,
     data: {
@@ -373,8 +492,6 @@ export class AgentStore {
       isActive?: boolean;
       category?: string;
       templateType?: 'standard' | 'custom';
-      knowledgeFolders?: string[];
-      skills?: string[];
       ironLaws?: string[];
       boundary?: any;
       orchestration?: any;
@@ -384,11 +501,8 @@ export class AgentStore {
       defaultContextWindow?: number;
       defaultMaxTurns?: number;
       complexityLevel?: string;
-      engine?: string;
       status?: 'active' | 'paused' | 'deprecated';
-      ownerId?: string;
-      // R15-A new
-      isTemplate?: boolean;
+      ownerUserId?: string;
       workingDir?: string;
       channelIds?: string[];
       visibility?: 'public' | 'private' | 'team';
@@ -396,15 +510,23 @@ export class AgentStore {
       avatarGlyph?: string;
       avatarHue?: string;
       modelId?: string;
+      displayName?: string;
+      avatarUrl?: string;
+      deploymentType?: string;
     },
-  ): Promise<AgentTemplate | null> {
-    // R27 规则 1: 改名时实例间重名检查(排除自己)
-    if (data.name !== undefined) {
-      const isTemplate = data.isTemplate ?? (await this.findById(id))?.isTemplate ?? false;
-      await assertInstanceNameUnique(data.name, isTemplate, id);
+  ): Promise<AgentRecord | null> {
+    // 决定哪张表
+    const isInstance = (await this.findInstanceById(id)) !== null;
+    const isTemplate = !isInstance && (await this.findTemplateById(id)) !== null;
+    if (!isInstance && !isTemplate) return null;
+
+    // R27 规则 1: 改名时实例间重名检查(模板允许重名)
+    if (data.name !== undefined && isInstance) {
+      await assertInstanceNameUnique(data.name, id);
     }
-    // R27 规则 2: bot 绑定一对一 — 新增绑定前检查每个 bot 是否已被其他 agent 占用
-    if (data.channelIds !== undefined && Array.isArray(data.channelIds)) {
+
+    // R27 规则 2: bot 绑定一对一 — channelIds 仅 instance 校验
+    if (isInstance && data.channelIds !== undefined && Array.isArray(data.channelIds)) {
       for (const botId of data.channelIds) {
         if (typeof botId !== 'string' || botId.length === 0) continue;
         const conflict = await findBotBindingConflict(botId, id);
@@ -416,58 +538,81 @@ export class AgentStore {
         }
       }
     }
+
     const sets: string[] = [];
     const values: any[] = [];
     let idx = 1;
 
-    if (data.name !== undefined) { sets.push(`name = $${idx++}`); values.push(data.name); }
-    if (data.roleTemplate !== undefined) { sets.push(`role_template = $${idx++}`); values.push(data.roleTemplate); }
-    if (data.description !== undefined) { sets.push(`description = $${idx++}`); values.push(data.description); }
-    if (data.systemPrompt !== undefined) { sets.push(`system_prompt = $${idx++}`); values.push(data.systemPrompt); }
-    if (data.capabilities !== undefined) { sets.push(`capabilities = $${idx++}`); values.push(JSON.stringify(data.capabilities)); }
-    if (data.tools !== undefined) { sets.push(`tools = $${idx++}`); values.push(JSON.stringify(data.tools)); }
-    if (data.isActive !== undefined) { sets.push(`is_active = $${idx++}`); values.push(data.isActive); }
-    if (data.category !== undefined) { sets.push(`category = $${idx++}`); values.push(data.category); }
-    if (data.templateType !== undefined) { sets.push(`template_type = $${idx++}`); values.push(data.templateType); }
-    if (data.knowledgeFolders !== undefined) { sets.push(`knowledge_folders = $${idx++}`); values.push(JSON.stringify(data.knowledgeFolders)); }
-    if (data.skills !== undefined) { sets.push(`skills = $${idx++}`); values.push(JSON.stringify(data.skills)); }
-    if (data.ironLaws !== undefined) { sets.push(`iron_laws = $${idx++}`); values.push(JSON.stringify(data.ironLaws)); }
-    if (data.boundary !== undefined) { sets.push(`boundary = $${idx++}`); values.push(JSON.stringify(data.boundary)); }
-    if (data.orchestration !== undefined) { sets.push(`orchestration = $${idx++}`); values.push(JSON.stringify(data.orchestration)); }
-    if (data.persona !== undefined) { sets.push(`persona = $${idx++}`); values.push(data.persona); }
-    if (data.defaultEngine !== undefined) { sets.push(`default_engine = $${idx++}`); values.push(data.defaultEngine); }
-    if (data.defaultModel !== undefined) { sets.push(`default_model = $${idx++}`); values.push(data.defaultModel); }
-    if (data.defaultContextWindow !== undefined) { sets.push(`default_context_window = $${idx++}`); values.push(data.defaultContextWindow); }
-    if (data.defaultMaxTurns !== undefined) { sets.push(`default_max_turns = $${idx++}`); values.push(data.defaultMaxTurns); }
-    if (data.complexityLevel !== undefined) { sets.push(`complexity_level = $${idx++}`); values.push(data.complexityLevel); }
-    if (data.engine !== undefined) { sets.push(`engine = $${idx++}`); values.push(data.engine); }
-    if (data.status !== undefined) { sets.push(`status = $${idx++}`); values.push(data.status); }
-    if (data.ownerId !== undefined) { sets.push(`owner_user_id = $${idx++}`); values.push(data.ownerId); }
-    if (data.isTemplate !== undefined) { sets.push(`is_template = $${idx++}`); values.push(data.isTemplate); }
-    if (data.workingDir !== undefined) { sets.push(`working_dir = $${idx++}`); values.push(data.workingDir); }
-    if (data.channelIds !== undefined) { sets.push(`channel_ids = $${idx++}`); values.push(JSON.stringify(data.channelIds)); }
-    if (data.visibility !== undefined) { sets.push(`visibility = $${idx++}`); values.push(data.visibility); }
-    if (data.temperature !== undefined) { sets.push(`temperature = $${idx++}`); values.push(data.temperature); }
-    if (data.avatarGlyph !== undefined) { sets.push(`avatar_glyph = $${idx++}`); values.push(data.avatarGlyph); }
-    if (data.avatarHue !== undefined) { sets.push(`avatar_hue = $${idx++}`); values.push(data.avatarHue); }
-    if (data.modelId !== undefined) { sets.push(`model_id = $${idx++}`); values.push(data.modelId); }
+    const set = (col: string, val: unknown) => {
+      sets.push(`${col} = $${idx++}`);
+      values.push(val);
+    };
+
+    // 蓝图字段(两表都有)
+    if (data.name !== undefined) set('name', data.name);
+    if (data.roleTemplate !== undefined) set('role_template', data.roleTemplate);
+    if (data.description !== undefined) set('description', data.description);
+    if (data.systemPrompt !== undefined) set('system_prompt', data.systemPrompt);
+    if (data.capabilities !== undefined) set('capabilities', JSON.stringify(data.capabilities));
+    if (data.tools !== undefined) set('tools', JSON.stringify(data.tools));
+    if (data.isActive !== undefined) set('is_active', data.isActive);
+    if (data.category !== undefined) set('category', data.category);
+    if (data.templateType !== undefined) set('template_type', data.templateType);
+    if (data.ironLaws !== undefined) set('iron_laws', JSON.stringify(data.ironLaws));
+    if (data.boundary !== undefined) set('boundary', JSON.stringify(data.boundary));
+    if (data.orchestration !== undefined) set('orchestration', JSON.stringify(data.orchestration));
+    if (data.persona !== undefined) set('persona', data.persona);
+    if (data.defaultEngine !== undefined) set('default_engine', data.defaultEngine);
+    if (data.defaultModel !== undefined) set('default_model', data.defaultModel);
+    if (data.defaultContextWindow !== undefined) set('default_context_window', data.defaultContextWindow);
+    if (data.defaultMaxTurns !== undefined) set('default_max_turns', data.defaultMaxTurns);
+    if (data.complexityLevel !== undefined) set('complexity_level', data.complexityLevel);
+    if (data.status !== undefined) set('status', data.status);
+    if (data.temperature !== undefined) set('temperature', data.temperature);
+
+    // instance 独有字段
+    if (isInstance) {
+      if (data.ownerUserId !== undefined) set('owner_user_id', data.ownerUserId);
+      if (data.workingDir !== undefined) set('working_dir', data.workingDir);
+      if (data.channelIds !== undefined) set('channel_ids', JSON.stringify(data.channelIds));
+      if (data.visibility !== undefined) set('visibility', data.visibility);
+      if (data.avatarGlyph !== undefined) set('avatar_glyph', data.avatarGlyph);
+      if (data.avatarHue !== undefined) set('avatar_hue', data.avatarHue);
+      if (data.modelId !== undefined) set('model_id', data.modelId);
+      if (data.displayName !== undefined) set('display_name', data.displayName);
+      if (data.avatarUrl !== undefined) set('avatar_url', data.avatarUrl);
+      if (data.deploymentType !== undefined) set('deployment_type', data.deploymentType);
+    }
 
     if (sets.length === 0) return this.findById(id);
 
     sets.push(`updated_at = now()`);
     values.push(id);
 
-    const result = await pool.query(`UPDATE agents SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`, values);
-    return result.rows.length > 0 ? this.mapRow(result.rows[0]) : null;
+    const table = isInstance ? 'agent_instances' : 'agent_templates';
+    const sql = `UPDATE ${table} SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`;
+    const result = await pool.query(sql, values);
+    return result.rows.length > 0 ? (this.mapRow(result.rows[0], isInstance ? 'instance' : 'template') as AgentRecord) : null;
   }
+
+  // ===========================================================================
+  // DELETE
+  // ===========================================================================
 
   async delete(id: string): Promise<boolean> {
-    const result = await pool.query('DELETE FROM agents WHERE id = $1', [id]);
-    return (result.rowCount ?? 0) > 0;
+    // 先尝试 instance,再 template
+    const inst = await pool.query('DELETE FROM agent_instances WHERE id = $1', [id]);
+    if ((inst.rowCount ?? 0) > 0) return true;
+    const tpl = await pool.query('DELETE FROM agent_templates WHERE id = $1', [id]);
+    return (tpl.rowCount ?? 0) > 0;
   }
 
-  private mapRow(row: any): AgentTemplate {
-    return {
+  // ===========================================================================
+  // MAPPER
+  // ===========================================================================
+
+  private mapRow(row: any, targetType: 'template' | 'instance'): AgentRecord {
+    const rec: AgentRecord = {
       id: row.id,
       tenantId: row.tenant_id,
       name: row.name,
@@ -480,9 +625,6 @@ export class AgentStore {
       category: row.category || 'general',
       templateType: row.template_type || 'custom',
       sourceTemplateId: row.source_template_id,
-      knowledgeFolders:
-        typeof row.knowledge_folders === 'string' ? JSON.parse(row.knowledge_folders) : row.knowledge_folders || [],
-      skills: typeof row.skills === 'string' ? JSON.parse(row.skills) : row.skills || [],
       orchestration: typeof row.orchestration === 'string' ? JSON.parse(row.orchestration) : row.orchestration || {},
       boundary: typeof row.boundary === 'string' ? JSON.parse(row.boundary) : row.boundary || {},
       ironLaws: typeof row.iron_laws === 'string' ? JSON.parse(row.iron_laws) : row.iron_laws || [],
@@ -493,15 +635,13 @@ export class AgentStore {
       complexityLevel: row.complexity_level || 'L1',
       status: row.status || 'active',
       persona: row.persona || null,
-      engine: row.engine || null,
       displayName: row.display_name || null,
-      ownerId: row.owner_user_id || null,
+      ownerUserId: row.owner_user_id || null,
       modelId: row.model_id || null,
       avatarUrl: row.avatar_url || null,
       avatarGlyph: row.avatar_glyph || null,
       avatarHue: row.avatar_hue || null,
       deploymentType: row.deployment_type || 'bot',
-      isTemplate: row.is_template ?? false,
       workingDir: row.working_dir || null,
       channelIds:
         typeof row.channel_ids === 'string' ? JSON.parse(row.channel_ids) : row.channel_ids || [],
@@ -509,6 +649,8 @@ export class AgentStore {
       temperature: row.temperature ?? 0.7,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+      targetType,
     };
+    return rec;
   }
 }

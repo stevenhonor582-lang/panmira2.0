@@ -28,7 +28,7 @@ export class EngineConfig {
     const r = await deps.pool.query(
       `SELECT a.engine FROM bot_configs bc
        JOIN bot_agent_history bah ON bah.bot_id = bc.bot_id
-       JOIN agents a ON bah.agent_id = a.id
+       JOIN agent_instances a ON bah.agent_id = a.id
        WHERE bc.name = $1
        ORDER BY bah.bound_at DESC LIMIT 1`,
       [botName],

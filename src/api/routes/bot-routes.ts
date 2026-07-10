@@ -60,7 +60,7 @@ export async function handleBotRoutes(
         const result = await pool.query(
           `SELECT bc.name AS bot_name, bc.agent_id::text AS agent_id, a.name AS agent_name
              FROM bot_configs bc
-             LEFT JOIN agents a ON a.id::text = bc.agent_id::text`
+             LEFT JOIN agent_instances a ON a.id::text = bc.agent_id::text`
         );
         for (const r of result.rows) {
           agentBoundByName.set(r.bot_name, r.agent_id ?? null);

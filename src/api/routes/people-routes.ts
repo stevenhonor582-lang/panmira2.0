@@ -253,7 +253,7 @@ export async function handlePeopleRoutes(
         `SELECT COALESCE(ap.name, '未绑定流水线') AS task,
                 COALESCE(sum(COALESCE(ae.input_tokens,0) + COALESCE(ae.output_tokens,0)),0)::bigint AS tokens
            FROM activity_events ae
-           LEFT JOIN agents a ON a.id = ae.bot_id
+           LEFT JOIN agent_instances a ON a.id = ae.bot_id
            LEFT JOIN agent_pipelines ap ON ap.id::text = COALESCE(NULLIF(ae.response_preview, ''), NULL)
           WHERE ae.user_id = $1 AND ae.timestamp > $2
           GROUP BY task
@@ -298,7 +298,7 @@ export async function handlePeopleRoutes(
       const result = await pool.query(
         `SELECT id, name, display_name, role_template, description, is_active,
                 deployment_type, created_at, updated_at
-           FROM agents
+           FROM agent_instances
           WHERE owner_user_id = $1
           ORDER BY created_at DESC`,
         [userId],
@@ -329,13 +329,13 @@ export async function handlePeopleRoutes(
         // bindings) would still show agents that were 'bound' via the legacy PATCH.
         if (action === 'add') {
           await pool.query(
-            'UPDATE agents SET owner_user_id = $1 WHERE id = ANY($2::uuid[])',
+            'UPDATE agent_instances SET owner_user_id = $1 WHERE id = ANY($2::uuid[])',
             [userId, agentIds],
           );
           await pool.query(
             `INSERT INTO user_agent_bindings (tenant_id, user_id, agent_id, role)
                SELECT a.tenant_id, $1::uuid, a.id, 'owner'
-                 FROM agents a
+                 FROM agent_instances a
                 WHERE a.id = ANY($2::uuid[])
                ON CONFLICT (tenant_id, user_id, agent_id, role) DO UPDATE
                  SET updated_at = now()`,
@@ -343,7 +343,7 @@ export async function handlePeopleRoutes(
           );
         } else if (action === 'remove') {
           await pool.query(
-            'UPDATE agents SET owner_user_id = NULL WHERE owner_user_id = $1 AND id = ANY($2::uuid[])',
+            'UPDATE agent_instances SET owner_user_id = NULL WHERE owner_user_id = $1 AND id = ANY($2::uuid[])',
             [userId, agentIds],
           );
           await pool.query(
@@ -353,17 +353,17 @@ export async function handlePeopleRoutes(
           );
         } else {
           // set: 先解绑所有,再绑定传入的
-          await pool.query('UPDATE agents SET owner_user_id = NULL WHERE owner_user_id = $1', [userId]);
+          await pool.query('UPDATE agent_instances SET owner_user_id = NULL WHERE owner_user_id = $1', [userId]);
           await pool.query('DELETE FROM user_agent_bindings WHERE user_id = $1', [userId]);
           if (agentIds.length > 0) {
             await pool.query(
-              'UPDATE agents SET owner_user_id = $1 WHERE id = ANY($2::uuid[])',
+              'UPDATE agent_instances SET owner_user_id = $1 WHERE id = ANY($2::uuid[])',
               [userId, agentIds],
             );
             await pool.query(
               `INSERT INTO user_agent_bindings (tenant_id, user_id, agent_id, role)
                  SELECT a.tenant_id, $1::uuid, a.id, 'owner'
-                   FROM agents a
+                   FROM agent_instances a
                   WHERE a.id = ANY($2::uuid[])
                  ON CONFLICT (tenant_id, user_id, agent_id, role) DO UPDATE
                    SET updated_at = now()`,
@@ -373,7 +373,7 @@ export async function handlePeopleRoutes(
         }
 
         const result = await pool.query(
-          `SELECT id FROM agents WHERE owner_user_id = $1`,
+          `SELECT id FROM agent_instances WHERE owner_user_id = $1`,
           [userId],
         );
         jsonResponse(res, 200, ok({ bound: result.rows.map((r: { id: string }) => r.id) }));

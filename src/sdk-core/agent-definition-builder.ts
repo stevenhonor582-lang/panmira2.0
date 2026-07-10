@@ -94,8 +94,8 @@ export class AgentDefinitionBuilder {
   }
 
   /**
-   * Batch-build all active business expert subagents.
-   * Returns map keyed by agent name for SDK Options.agents.
+   * Batch-build all active business expert subagentInstances.
+   * Returns map keyed by agent name for SDK Options.agentInstances.
    *
    * Selection: active agents with non-null system_prompt.
    * (is_subagent column not present in current schema — using
@@ -124,7 +124,7 @@ export class AgentDefinitionBuilder {
   private async queryAgentById(agentId: string): Promise<AgentRow> {
     const { rows } = await pool.query(
       `SELECT id, name, description, system_prompt, tools, skills, knowledge_folders
-       FROM agents
+       FROM agent_instances
        WHERE id = $1::uuid AND is_active = true`,
       [agentId],
     );
@@ -139,7 +139,7 @@ export class AgentDefinitionBuilder {
   private async queryBusinessExperts(): Promise<readonly AgentRow[]> {
     const { rows } = await pool.query(
       `SELECT id, name, description, system_prompt, tools, skills, knowledge_folders
-       FROM agents
+       FROM agent_instances
        WHERE is_active = true AND system_prompt IS NOT NULL`,
     );
     return rows as readonly AgentRow[];

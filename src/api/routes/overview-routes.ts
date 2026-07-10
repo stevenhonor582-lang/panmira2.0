@@ -31,7 +31,7 @@ export async function handleOverviewRoutes(
       const stats = await pool.query(`
         SELECT
           (SELECT count(*) FROM people WHERE tenant_id = $1 AND is_active)::int AS people_active,
-          (SELECT count(*) FROM digital_employees WHERE tenant_id = $1 AND is_active)::int AS employees_active,
+          (SELECT count(*) FROM agent_instances WHERE tenant_id = $1 AND is_active)::int AS employees_active,
           (SELECT count(*) FROM agent_pipelines WHERE enabled)::int AS pipelines_active,
           (SELECT count(*) FROM scheduled_jobs WHERE enabled)::int AS scheduled_active,
           (SELECT count(*) FROM endpoints WHERE is_active)::int AS endpoints_active,

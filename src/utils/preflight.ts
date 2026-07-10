@@ -183,7 +183,7 @@ export async function validateBotConsistency(
     const agentId = botInfo.config.agentId;
     if (agentId) {
       try {
-        const { rows } = await pool.query('SELECT id, knowledge_folders FROM agents WHERE id = $1', [agentId]);
+        const { rows } = await pool.query('SELECT id, knowledge_folders FROM agent_instances WHERE id = $1', [agentId]);
         if (rows.length === 0) {
           logger.warn({ botName, agentId }, 'Bot references non-existent agent — check agent template');
           warnings++;
@@ -198,11 +198,11 @@ export async function validateBotConsistency(
     const knowledgeFolders = botInfo.config.knowledgeFolders;
     if (agentId && knowledgeFolders && knowledgeFolders.length > 0) {
       try {
-        const { rows } = await pool.query('SELECT knowledge_folders FROM agents WHERE id = $1', [agentId]);
+        const { rows } = await pool.query('SELECT knowledge_folders FROM agent_instances WHERE id = $1', [agentId]);
         const current = rows[0]?.knowledge_folders;
         const needsUpdate = !current || JSON.stringify(current) !== JSON.stringify(knowledgeFolders);
         if (needsUpdate) {
-          await pool.query('UPDATE agents SET knowledge_folders = $1 WHERE id = $2', [
+          await pool.query('UPDATE agent_instances SET knowledge_folders = $1 WHERE id = $2', [
             JSON.stringify(knowledgeFolders),
             agentId,
           ]);

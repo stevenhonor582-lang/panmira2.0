@@ -337,7 +337,7 @@ export class UserStore {
   async assignAgents(userId: string, agentIds: string[]): Promise<void> {
     if (agentIds.length === 0) return;
     await pool.query(
-      'UPDATE agents SET owner_user_id = $1 WHERE id = ANY($2::uuid[]) AND owner_user_id IS NULL',
+      'UPDATE agent_instances SET owner_user_id = $1 WHERE id = ANY($2::uuid[]) AND owner_user_id IS NULL',
       [userId, agentIds],
     );
   }
@@ -351,7 +351,7 @@ export class UserStore {
   }
 
   async countAgents(userId: string): Promise<number> {
-    const r = await pool.query('SELECT count(*)::int AS n FROM agents WHERE owner_user_id = $1', [userId]);
+    const r = await pool.query('SELECT count(*)::int AS n FROM agent_instances WHERE owner_user_id = $1', [userId]);
     return r.rows[0]?.n ?? 0;
   }
 
