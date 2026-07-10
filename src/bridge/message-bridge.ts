@@ -51,6 +51,8 @@ import type { PendingBatch, RunningTask, ApiTaskOptions, ApiTaskResult, Activity
 import { BridgeCard } from './bridge-card.js';
 import { BridgeExecutor } from './bridge-executor.js';
 import { BridgeStream, buildContinuationPrompt as _buildContinuationPrompt } from './bridge-stream.js';
+import { BridgeCore } from './bridge-core.js';
+import type { BridgeCoreDelegates } from './bridge-core-delegates.js';
 import { BridgeObserver } from './bridge-observer.js';
 import { TaskManager } from '../task/task-manager.js';
 import { buildCompletionCard } from '../feishu/cardkit-renderer.js';
@@ -123,6 +125,7 @@ export class MessageBridge {
   private card!: BridgeCard;
   private executor2!: BridgeExecutor;
   private stream!: BridgeStream;
+  private core!: BridgeCore;
   private senderOverrides = new Map<string, IMessageSender>();
   private runningTasks = new Map<string, RunningTask>(); // keyed by chatId
   private messageQueues = new Map<string, IncomingMessage[]>(); // per-chatId message queue
@@ -199,6 +202,15 @@ export class MessageBridge {
       logger: this.logger,
       sessionManager: this.sessionManager,
       getSender: (chatId) => this.getSender(chatId),
+    });
+    this.core = new BridgeCore({
+      config: this.config,
+      logger: this.logger,
+      defaultSender: sender,
+      sessionManager: this.sessionManager,
+      senderOverrides: this.senderOverrides,
+      runningTasks: this.runningTasks,
+      delegates: this.buildCoreDelegates(),
     });
 
     this.outputHandler = new OutputHandler(logger, sender, this.outputsManager);
@@ -288,53 +300,16 @@ export class MessageBridge {
     return this.executor2.prepareSessionForExecution(chatId);
   }
 
-  /** Inject the doc sync service for /sync commands. */
-  setDocSync(docSync: DocSync): void {
-    this.commandHandler.setDocSync(docSync);
-  }
-
-  /** Inject the session registry for cross-platform session sync. */
-  setSessionRegistry(registry: SessionRegistry): void {
-    this.sessionRegistry = registry;
-  }
-
-  /** Override the sender for a specific chatId (used by proxy_message). */
-  setSenderOverride(chatId: string, sender: IMessageSender): void {
-    this.senderOverrides.set(chatId, sender);
-  }
-
-  /** Remove a sender override after proxy task completes. */
-  clearSenderOverride(chatId: string): void {
-    this.senderOverrides.delete(chatId);
-  }
-
-  /** Get the effective sender for a chatId (override or default). */
-  private getSender(chatId?: string): IMessageSender {
-    if (!chatId) return this.sender;
-    return this.senderOverrides.get(chatId) ?? this.sender;
-  }
-
-  /** Expose the default sender for ProxySender (needs original for downloads). */
-  getDefaultSender(): IMessageSender {
-    return this.sender;
-  }
-
-  /** Expose session manager for cross-platform session linking. */
-  getSessionManager(): SessionManager {
-    return this.sessionManager;
-  }
-
-  isBusy(chatId: string): boolean {
-    return this.runningTasks.has(chatId);
-  }
-
-  /** Return info about all currently running tasks (for team status display). */
-  getRunningTasksInfo(): Array<{ chatId: string; startTime: number }> {
-    return Array.from(this.runningTasks.entries()).map(([chatId, task]) => ({
-      chatId,
-      startTime: task.startTime,
-    }));
-  }
+  /** Facade — 转发到 this.core (R49-C1 step 5 抽出 BridgeCore) */
+  setDocSync(docSync: DocSync): void { this.core.setDocSync(docSync); }
+  setSessionRegistry(registry: SessionRegistry): void { this.core.setSessionRegistry(registry); }
+  setSenderOverride(chatId: string, sender: IMessageSender): void { this.core.setSenderOverride(chatId, sender); }
+  clearSenderOverride(chatId: string): void { this.core.clearSenderOverride(chatId); }
+  getDefaultSender(): IMessageSender { return this.core.getDefaultSender(); }
+  getSessionManager(): SessionManager { return this.core.getSessionManager(); }
+  private getSender(chatId?: string): IMessageSender { return this.core.getSender(chatId); }
+  isBusy(chatId: string): boolean { return this.core.isBusy(chatId); }
+  getRunningTasksInfo(): Array<{ chatId: string; startTime: number }> { return this.core.getRunningTasksInfo(); }
 
   /** Collect current running tasks in a persistable format.
    *  Includes AskUserQuestion state so cards from interrupted sessions can be
@@ -2419,15 +2394,8 @@ export class MessageBridge {
    * Only sends for tasks that took longer than 10 seconds.
    */
   /** Get the OutputArchiver for external wiring (e.g. GroupCoordinator). */
-  getOutputArchiver(): OutputArchiver {
-    return this.outputArchiver;
-  }
-
-  /** Inject WorkspaceManager for proper document routing. */
-  setWorkspaceManager(wm: import('../memory/workspace-manager.js').WorkspaceManager): void {
-    this.workspaceManager = wm;
-    this.memoryWriter.setWorkspaceManager(wm);
-  }
+  getOutputArchiver(): OutputArchiver { return this.core.getOutputArchiver(); }
+  setWorkspaceManager(wm: import('../memory/workspace-manager.js').WorkspaceManager): void { this.core.setWorkspaceManager(wm); }
 
   /** Record session and messages in the cross-platform registry. */
   private async recordSession(
@@ -2443,6 +2411,21 @@ export class MessageBridge {
 
   private async sendCompletionNotice(chatId: string, state: CardState, durationMs: number): Promise<void> {
     return this.card.sendCompletionNotice(chatId, state, durationMs);
+  }
+
+  /** BridgeCore cross-wiring: core delegates back to MessageBridge for state changes. */
+  private buildCoreDelegates(): BridgeCoreDelegates {
+    return {
+      setCommandHandlerDocSync: (docSync) => this.commandHandler.setDocSync(docSync),
+      setSessionRegistry: (registry) => { this.sessionRegistry = registry; },
+      setWorkspaceManager: (wm) => {
+        this.workspaceManager = wm;
+        this.memoryWriter.setWorkspaceManager(wm);
+      },
+      getOutputArchiver: () => this.outputArchiver,
+      handleMessage: (msg) => this.handleMessage(msg),
+      updateConfig: (newConfig) => this.updateConfig(newConfig),
+    };
   }
 
   updateConfig(newConfig: BotConfigBase): void {
