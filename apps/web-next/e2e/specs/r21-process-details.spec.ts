@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
+import * as fs from "fs";
 
 // R21: AI 生成过程展示 + 节点执行详情
+const ADMIN_TOKEN = (fs.existsSync("/tmp/admin_token.txt") ? fs.readFileSync("/tmp/admin_token.txt", "utf8") : "").replace("TOKEN=", "").trim();
 // 这个测试不真正调 AI(慢 + 不可控),只验证 UI 结构:
 //   1. AI 面板打开后,有 textarea + "生成编排" 按钮
 //   2. 录一段 stub 通过 window 状态(无法直接 stub,改为只验证基础渲染)
@@ -37,13 +39,22 @@ test.describe("R21 · 任务编排过程展示", () => {
     await expect(page.getByText(/\/2000/)).toBeVisible();
   });
 
-  test("pipeline 详情页:执行日志 + 节点配置面板都在", async ({ page }) => {
-    // 触发一次 run 后的 pipeline
-    await page.goto("/tasks/89b79f8e-2cd1-4fa7-84fe-65771e0a6ba7");
-    await page.waitForLoadState("networkidle");
+  test("R49-E pipeline 详情页:执行日志面板 + 节点配置", async ({ page, request }) => {
+    // R49-E fix: 不再 hardcode pipeline id(原 89b79... 已删),从 /api/v2/admin/pipelines 拉第一个真实 id。
+    const headers = { Authorization: `Bearer ${ADMIN_TOKEN}` };
+    const res = await request.get("http://localhost:9100/api/v2/admin/pipelines?limit=1", { headers });
+    expect(res.ok()).toBeTruthy();
+    const body = (await res.json()) as { data?: Array<{ id?: string }> };
+    const pid = body.data?.[0]?.id;
+    expect(pid, "应能从 API 拿到一条 pipeline").toBeTruthy();
+    if (!pid) return;
 
-    // 执行日志或运行历史 面板存在
-    const logPanel = page.getByText(/执行日志|运行历史|触发一次/);
+    await page.goto(`/tasks/${pid}`);
+    await page.waitForLoadState("networkidle");
+    await page.waitForTimeout(800);
+
+    // 执行日志 或 运行历史 面板存在(任一即可,因为不同 pipeline 状态会展示不同 panel)
+    const logPanel = page.getByText(/执行日志|运行历史/);
     await expect(logPanel.first()).toBeVisible({ timeout: 15000 });
   });
 });

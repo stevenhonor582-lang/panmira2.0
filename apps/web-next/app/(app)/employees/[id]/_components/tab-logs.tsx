@@ -154,7 +154,13 @@ export function TabLogs({ id }: { id: string }) {
         const res = await api<{ events?: ActivityEvent[] } | ActivityEvent[]>(url);
         if (!alive) return;
         const items = (res as any)?.events ?? (Array.isArray(res) ? res : []);
-        setEvents(items);
+        // R49-E fix: 后端 timestamp 是 bigint,JSON 序列化后是 string。统一转 number,
+        // 避免 new Date("1783...") 返回 Invalid Date 导致 "NaN月NaN日"。
+        const normalized = items.map((e: ActivityEvent) => ({
+          ...e,
+          timestamp: typeof e.timestamp === 'string' ? Number(e.timestamp) : e.timestamp,
+        }));
+        setEvents(normalized);
       } catch (e) {
         if (alive) {
           setEvents([]);

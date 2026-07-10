@@ -45,12 +45,15 @@ test("R13-B basics: 编辑按钮存在", async ({ page }) => {
   await expect(page.getByTestId("edit-basics")).toBeVisible({ timeout: 8000 });
 });
 
-test("R13-B logs: 导出 CSV 按钮存在(只在有数据时)", async ({ page }) => {
+test("R49-E logs: 活动日志渲染 + 日期无 NaN + 导出 CSV", async ({ page }) => {
   await login(page);
   await page.goto(`${BASE}/employees/${EMP_ID}?tab=logs`);
   await page.waitForLoadState("domcontentloaded");
   await page.waitForTimeout(2000);
-  // logs 当前 fetchLogSeries 返回空,EmptyState 渲染,CSV 按钮不显示 — 这是预期行为
   const bodyText = await page.locator("body").textContent();
-  expect(bodyText).toContain("暂无日志数据");
+  // R49-E fix: 后端 timestamp 是 string(bigint),FE 必须 coerce 成 number 再 new Date,
+  // 否则 Invalid Date 渲染成 "NaN月NaN日"。
+  expect(bodyText, "日期不能渲染成 NaN").not.toMatch(/NaN月NaN日/);
+  // 标题应当出现(有数据时)
+  expect(bodyText).toContain("活动日志");
 });

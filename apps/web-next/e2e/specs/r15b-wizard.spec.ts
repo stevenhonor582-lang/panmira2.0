@@ -94,7 +94,7 @@ test('R15-B wizard: step 5 KB three-layer + real folders', async ({ page }) => {
   await expect(page.getByText('创建新的数字员工')).toBeVisible({ timeout: 10000 });
   await jumpTo(page, '知识注入');
   await expect(page.getByText(/知识三层结构 · 公共记忆/)).toBeVisible({ timeout: 5000 });
-  await expect(page.getByText(/文件夹 · 来自 \/api\/knowledge\/folders/)).toBeVisible();
+  await expect(page.getByText(/文件夹 · 三层权限视图/)).toBeVisible();
   // The three layer chips
   await expect(page.getByText('短期记忆')).toBeVisible();
   await expect(page.getByText('长期事实')).toBeVisible();
