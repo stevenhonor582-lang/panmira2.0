@@ -174,11 +174,14 @@ test.describe("R42-FRONTEND · templates / instantiate", () => {
       let createdId: string | null = null;
       const expectedUrlFragment = `/api/v2/admin/agent-templates/${tplId}/instantiate`;
       const submit = page.getByRole("button", { name: /创建并跳到详情/ }).click();
+      // R50-3: Next.js next.config 开启 trailingSlash:true,POST /instantiate 会先收到 308
+      // 重定向到 /instantiate/。原 spec 用 res.status() < 400 命中 308 中间响应,改用
+      // 严格 [200, 201] 过滤,等最终业务响应。
       const createResp = await page.waitForResponse(
         (res) =>
           res.request().method() === "POST" &&
           res.url().includes(expectedUrlFragment) &&
-          res.status() < 400,
+          [200, 201].includes(res.status()),
         { timeout: 10_000 },
       );
       createStatus = createResp.status();
