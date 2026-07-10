@@ -28,6 +28,7 @@ import {
   ArrowUpFromLine,
   Cable,
   Inbox,
+  Link2,
   MessageSquare,
   Pencil,
   Plus,
@@ -108,6 +109,14 @@ interface Endpoint {
   lastHealthCheckAt?: string;
 }
 
+// R51-D2 + D3: 入口绑定状态(从 /api/bots JOIN bot_configs.agent_id 拉)
+// - boundAgentName: null = 未绑,string = 已绑,值是 agent 的 display name
+interface BotBinding {
+  botName: string;
+  boundAgentId: string | null;
+  boundAgentName: string | null;
+}
+
 export default function EndpointsPage() {
   const [tab, setTab] = React.useState<"outbound" | "inbound">("outbound");
 
@@ -130,6 +139,27 @@ export default function EndpointsPage() {
 
   const outbound = obData?.data?.items ?? [];
   const inbound = ibData?.data?.items ?? [];
+
+  // R51-D2: 拉 /api/bots 拿每个 bot 的绑定状态(已绑 agent / 未绑)
+  //   /api/v2/channels/endpoints 不返回 agent_id,只能从权威来源 /api/bots 拿
+  const { data: botsData } = useFetch<{ bots?: Array<{ name: string; agent_id?: string | null; agent_name?: string | null }> }>(
+    "/api/bots",
+  );
+  const bindingByBotName = React.useMemo(() => {
+    const m = new Map<string, BotBinding>();
+    for (const b of botsData?.bots ?? []) {
+      m.set(b.name, {
+        botName: b.name,
+        boundAgentId: b.agent_id ?? null,
+        boundAgentName: b.agent_name ?? null,
+      });
+    }
+    return m;
+  }, [botsData]);
+
+  function bindingFor(e: Endpoint): BotBinding | null {
+    return bindingByBotName.get(e.name) ?? null;
+  }
 
   const [busy, setBusy] = React.useState(false);
   const [toast, setToast] = React.useState<string | null>(null);
@@ -269,23 +299,55 @@ export default function EndpointsPage() {
 
         <TabsContent value="outbound" className="mt-4">
           <DenseTable
-            head={["频道", "Bot 名称", "Webhook", "备注", "状态", ""]}
-            rows={outbound.map((e) => ({
-              cells: [
+            head={["频道", "Bot 名称", "输入来源", "绑定状态", "Webhook", "备注", "状态", ""]}
+            rows={outbound.map((e) => {
+              const channelLabel = PLATFORM_LABEL[e.platform as Platform] ?? e.platform;
+              const botLabel = e.displayName ?? e.name;
+              const bind = bindingFor(e);
+              return {
+                cells: [
                 <span
                   key="ch"
                   className="font-mono text-[11px] uppercase tracking-wide bg-muted text-muted-foreground px-1.5 py-0.5 rounded-sm"
                 >
-                  {PLATFORM_LABEL[e.platform as Platform] ?? e.platform}
+                  {channelLabel}
                 </span>,
                 <div key="b" className="leading-tight">
-                  <div className="text-[13px] font-medium">{e.displayName ?? e.name}</div>
+                  <div className="text-[13px] font-medium">{botLabel}</div>
                   {e.botId ? (
                     <div className="text-[10px] text-muted-foreground font-mono">
                       {e.botId.slice(0, 8)}
                     </div>
                   ) : null}
                 </div>,
+                <span
+                  key="src"
+                  className="font-mono text-[10.5px] text-foreground/70"
+                  title={`输入来源 = ${channelLabel} · ${botLabel}`}
+                  data-testid={`endpoint-source-${e.id.slice(0, 8)}`}
+                >
+                  {channelLabel} · {botLabel}
+                </span>,
+                bind?.boundAgentId ? (
+                  <span
+                    key="bd"
+                    className="shrink-0 inline-flex items-center gap-1 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-mono text-emerald-700 dark:text-emerald-300 w-fit"
+                    data-testid={`endpoint-bound-${e.id.slice(0, 8)}`}
+                    title={`已绑定到数字员工 ${bind.boundAgentName ?? bind.boundAgentId.slice(0, 8)}`}
+                  >
+                    <Link2 className="size-2.5" />
+                    已绑 · {bind.boundAgentName ?? bind.boundAgentId.slice(0, 8)}
+                  </span>
+                ) : (
+                  <span
+                    key="bd"
+                    className="shrink-0 inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground w-fit"
+                    data-testid={`endpoint-free-${e.id.slice(0, 8)}`}
+                    title="该入口尚未绑定到任何数字员工"
+                  >
+                    未绑
+                  </span>
+                ),
                 <MonoCell
                   key="u"
                   className="text-muted-foreground max-w-[20rem] truncate inline-block"
@@ -335,7 +397,8 @@ export default function EndpointsPage() {
                   </Button>
                 </div>,
               ],
-            }))}
+              };
+            })}
             empty={
               outbound.length === 0
                 ? "暂无出站接入点 · 点击「新增接入点」开始添加飞书/微信/WhatsApp bot"
@@ -346,13 +409,55 @@ export default function EndpointsPage() {
 
         <TabsContent value="inbound" className="mt-4">
           <DenseTable
-            head={["名称", "回调 URL", "方法", "状态", ""]}
-            rows={inbound.map((e) => ({
-              cells: [
-                <div key="n" className="flex items-center gap-2">
-                  <ArrowDownToLine className="size-3.5 text-muted-foreground" />
-                  <span className="text-[13px] font-medium">{e.name}</span>
+            head={["频道", "Bot 名称", "输入来源", "绑定状态", "回调 URL", "方法", "状态", ""]}
+            rows={inbound.map((e) => {
+              const channelLabel = PLATFORM_LABEL[e.platform as Platform] ?? e.platform;
+              const botLabel = e.displayName ?? e.name;
+              const bind = bindingFor(e);
+              return {
+                cells: [
+                <span
+                  key="ch"
+                  className="font-mono text-[11px] uppercase tracking-wide bg-muted text-muted-foreground px-1.5 py-0.5 rounded-sm"
+                >
+                  {channelLabel}
+                </span>,
+                <div key="n" className="leading-tight">
+                  <div className="text-[13px] font-medium">{botLabel}</div>
+                  {e.botId ? (
+                    <div className="text-[10px] text-muted-foreground font-mono">
+                      {e.botId.slice(0, 8)}
+                    </div>
+                  ) : null}
                 </div>,
+                <span
+                  key="src"
+                  className="font-mono text-[10.5px] text-foreground/70"
+                  title={`输入来源 = ${channelLabel} · ${botLabel}`}
+                  data-testid={`endpoint-source-in-${e.id.slice(0, 8)}`}
+                >
+                  {channelLabel} · {botLabel}
+                </span>,
+                bind?.boundAgentId ? (
+                  <span
+                    key="bd"
+                    className="shrink-0 inline-flex items-center gap-1 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-mono text-emerald-700 dark:text-emerald-300 w-fit"
+                    data-testid={`endpoint-bound-in-${e.id.slice(0, 8)}`}
+                    title={`已绑定到数字员工 ${bind.boundAgentName ?? bind.boundAgentId.slice(0, 8)}`}
+                  >
+                    <Link2 className="size-2.5" />
+                    已绑 · {bind.boundAgentName ?? bind.boundAgentId.slice(0, 8)}
+                  </span>
+                ) : (
+                  <span
+                    key="bd"
+                    className="shrink-0 inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground w-fit"
+                    data-testid={`endpoint-free-in-${e.id.slice(0, 8)}`}
+                    title="该入口尚未绑定到任何数字员工"
+                  >
+                    未绑
+                  </span>
+                ),
                 <MonoCell
                   key="u"
                   className="text-muted-foreground max-w-[24rem] truncate inline-block"
@@ -401,7 +506,8 @@ export default function EndpointsPage() {
                   </Button>
                 </div>,
               ],
-            }))}
+              };
+            })}
             empty={inbound.length === 0 ? "暂无入站接入点 · 点击「新增接入点」添加 Webhook" : "没有匹配的接入点"}
           />
         </TabsContent>

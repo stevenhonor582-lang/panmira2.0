@@ -368,13 +368,18 @@ export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?
   };
 
   const boundIds = new Set(bound.map((b) => b.id));
+  // R51-D2: 区分"已归属此真人"vs"未归属" — picker 列表显示状态徽章
   // R27 规则 4: 排除已绑定的,剩余的喂给 ResourcePicker
+  // 注:available 已经按 filter=unassigned&owner={person.id} 过滤,
+  //    所以这里的项分为两类:已归属此真人(可用,继续添加)+ 未归属(可被此真人领走)
   const pickerItems: ResourceItem[] = available
     .filter((a) => !boundIds.has(a.id))
     .map((a) => ({
       id: a.id,
       label: a.display_name ?? a.name,
       description: a.description ?? a.role_template ?? "general",
+      // R51-D2: 标"未绑"(可分配),让用户知道选的是空闲 agent
+      badge: { text: "未绑", tone: "free" as const },
     }));
   const canAdd = pickerItems.length > 0;
 
@@ -391,7 +396,7 @@ export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?
           <p>该员工可调度 <strong className="text-foreground">{bound.length}</strong> 个数字员工。
             数字员工决定能力范围 — 解绑后该员工将无法再调用对应 bot。</p>
           <p className="mt-1 text-[11px] text-muted-foreground/80">
-            添加时只显示<strong className="text-foreground">未归属</strong>或<strong className="text-foreground">已归属此真人</strong>的 agent(R27 规则 4)。
+            列表标记:已绑(绿色)= 该员工当前可调度的 agent · 未绑(灰色)= 可添加的空闲 agent。
           </p>
         </div>
       </div>
@@ -410,13 +415,21 @@ export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?
               <div className="flex items-center gap-3">
                 <InitialsAvatar name={a.display_name ?? a.name} size="md" seed={a.id} />
                 <div className="min-w-0 flex-1">
-                  <Link
-                    href={`/employees/${a.id}`}
-                    className="text-sm font-medium hover:underline truncate block"
-                    data-testid={`person-agent-link-${a.id.slice(0, 8)}`}
-                  >
-                    {a.display_name ?? a.name}
-                  </Link>
+                  <div className="flex items-center gap-2">
+                    <Link
+                      href={`/employees/${a.id}`}
+                      className="text-sm font-medium hover:underline truncate"
+                      data-testid={`person-agent-link-${a.id.slice(0, 8)}`}
+                    >
+                      {a.display_name ?? a.name}
+                    </Link>
+                    <span
+                      className="shrink-0 inline-flex items-center gap-0.5 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-mono text-emerald-700 dark:text-emerald-300"
+                      data-testid={`person-agent-bound-badge-${a.id.slice(0, 8)}`}
+                    >
+                      已绑
+                    </span>
+                  </div>
                   <div className="text-[11px] text-muted-foreground font-mono flex items-center gap-1.5">
                     <span>{a.role_template ?? "general"}</span>
                     {a.deployment_type && (

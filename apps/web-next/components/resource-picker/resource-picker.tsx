@@ -15,6 +15,7 @@
 
 import * as React from "react";
 import { Search, Check, X, Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
 export interface ResourceItem {
@@ -24,6 +25,12 @@ export interface ResourceItem {
   description?: string;
   /** 额外信息(头像/状态/分组等),供自定义渲染时使用 */
   meta?: Record<string, unknown>;
+  /**
+   * R51-D2: 可选 badge — 用于标注"已绑/未绑"等状态
+   *   - text: 文案(如"已绑 · 张三")
+   *   - tone: "bound" 绿色(emerald) / "free" 灰色(muted) / "occupied" 琥珀色(amber)
+   */
+  badge?: { text: string; tone?: "bound" | "free" | "occupied" };
 }
 
 export interface ResourcePickerProps {
@@ -180,7 +187,22 @@ export function ResourcePicker({
                     {isPicked && <Check className="size-2.5 text-primary-foreground" />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate">{item.label}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium truncate">{item.label}</span>
+                      {item.badge && (
+                        <span
+                          className={cn(
+                            "shrink-0 inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-mono",
+                            item.badge.tone === "bound" && "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+                            item.badge.tone === "occupied" && "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+                            (!item.badge.tone || item.badge.tone === "free") && "bg-muted text-muted-foreground",
+                          )}
+                          data-testid={`resource-picker-badge-${item.badge.tone ?? "free"}-${item.id.slice(0, 8)}`}
+                        >
+                          {item.badge.text}
+                        </span>
+                      )}
+                    </div>
                     {item.description && (
                       <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
                         {item.description}
