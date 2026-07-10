@@ -5,9 +5,10 @@ import { Folder, FileText, ChevronRight, ChevronDown, Database, Info, Lock } fro
 
 /**
  * Step 5 — 记忆注入
- * R51-B4:
- *   - L1 / L2 / L3 三层不可选(自动),UI 上标"自动注入"
- *   - 公共知识库文案说清含义:组织内全员共享的资料库
+ * R51-B5: 文件夹视图 — 只保留组织公共区(扁平化)
+ *   - 群协作区段去掉(用户原话:'群协作区不要重复')
+ *   - 数字员工区段去掉(用户原话:'数字员工 / 海联智达子目录全去掉')
+ *   - 整棵树扁平化,只显示组织公共区内容
  */
 export function Step5({
   form,
@@ -37,7 +38,7 @@ export function Step5({
 
   return (
     <div className="space-y-7">
-      {/* R51-B4: 三层结构明确为"自动注入",不可勾选 */}
+      {/* 三层结构 - 自动注入(B4 保留) */}
       <div className="rounded-2xl bg-muted/40 p-4 text-[12px] leading-relaxed text-foreground/70 ring-1 ring-border">
         <div className="mb-2 font-mono text-[10.5px] uppercase tracking-[0.18em] text-foreground/45">
           知识三层结构 · 自动注入
@@ -53,7 +54,7 @@ export function Step5({
         </div>
       </div>
 
-      {/* KB level */}
+      {/* 公共知识库 */}
       <section>
         <div className="mb-2 flex items-baseline justify-between">
           <h3 className="flex items-center gap-1.5 text-[12.5px] font-semibold text-foreground/85">
@@ -65,7 +66,6 @@ export function Step5({
             {form.knowledgeBaseIds.length} / {knowledgeBases.length}
           </span>
         </div>
-        {/* R51-B4: 公共知识库文案说清含义 */}
         <div className="mb-3 rounded-xl bg-muted/30 p-3 text-[11.5px] leading-relaxed text-foreground/70 ring-1 ring-border">
           <div className="flex items-start gap-1.5">
             <Lock className="mt-0.5 size-3 shrink-0 text-foreground/45" />
@@ -116,65 +116,22 @@ export function Step5({
         )}
       </section>
 
-      {/* 文件夹视图(原状,R51-B5 在下一个 commit 改) */}
+      {/* R51-B5: 文件夹视图 — 只保留组织公共区(扁平化) */}
       <section className="space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="flex items-center gap-2 text-[12px] font-medium tracking-tight text-foreground/65">
+          <h3 className="flex items-center gap-1.5 text-[12.5px] font-semibold text-foreground/85">
             <Folder className="size-3.5" />
-            文件夹 · 三层权限视图({folders.length} 个真实节点)
+            文件夹 · 组织公共区
           </h3>
           <span className="font-mono text-[10.5px] text-foreground/45">
-            公开 {countByTier(folders, "organization")} · 群 {countByTier(folders, "group")} · 员工 {countByTier(folders, "agent")}
+            {countOrgTier(folders)} 个真实节点
           </span>
         </div>
         <p className="text-[11px] leading-relaxed text-foreground/55">
-          不同层级的文件夹对你可见性不同:组织公共区全员可见;群协作区仅参与者可见;
-          数字员工区仅参与者可见。后端已按你的身份过滤,无权访问的文件夹不会返回。
+          数字员工个人库、群组协作库、他人私人库不在这里出现 — 已按权限自动隔离。
         </p>
 
-        {/* 组织公共区 */}
-        {renderTierBlock({
-          tier: "organization",
-          icon: <Folder className="size-3.5 text-emerald-600/80 dark:text-emerald-400/80" />,
-          title: "组织公共区",
-          desc: "全员可见 · 制度 / 模板 / 公告",
-          accentRing: "ring-emerald-500/25",
-          folders: folders,
-          selected: form.kbFolderIds,
-          onToggle: toggleFolder,
-        })}
-
-        {/* 群协作区 */}
-        {renderTierBlock({
-          tier: "group",
-          icon: <Folder className="size-3.5 text-sky-600/80 dark:text-sky-400/80" />,
-          title: "群协作区",
-          desc: "仅参与者可见 · 群组文档 / 协同纪要",
-          accentRing: "ring-sky-500/25",
-          folders: folders,
-          selected: form.kbFolderIds,
-          onToggle: toggleFolder,
-        })}
-
-        {/* 数字员工 */}
-        {renderTierBlock({
-          tier: "agent",
-          icon: <Folder className="size-3.5 text-amber-600/80 dark:text-amber-400/80" />,
-          title: "数字员工",
-          desc: "仅参与者可见 · 个人 / 实例私有文档",
-          accentRing: "ring-amber-500/25",
-          folders: folders,
-          selected: form.kbFolderIds,
-          onToggle: toggleFolder,
-        })}
-
-        {/* 其它未分段(防御性,理论上不会有) */}
-        {renderTierBlock({
-          tier: "other",
-          icon: <Folder className="size-3.5 text-foreground/45" />,
-          title: "其它",
-          desc: "未归类的根节点(默认公共)",
-          accentRing: "ring-border",
+        {renderOrgBlock({
           folders: folders,
           selected: form.kbFolderIds,
           onToggle: toggleFolder,
@@ -232,46 +189,43 @@ function LayerCard({
   );
 }
 
-// 保留原函数(R51-B5 之前)
-function countByTier(folders: KbFolderInfo[], tier: "organization" | "group" | "agent" | "other"): number {
-  return folders.filter((f) => (f.accessTier ?? "other") === tier).length;
+// R51-B5: 只统计组织公共区
+function countOrgTier(folders: KbFolderInfo[]): number {
+  return folders.filter((f) => (f.accessTier ?? "other") === "organization").length;
 }
 
-function renderTierBlock({
-  tier,
-  icon,
-  title,
-  desc,
-  accentRing,
+// R51-B5: 扁平化渲染 — 只显示"组织公共区"
+function renderOrgBlock({
   folders,
   selected,
   onToggle,
 }: {
-  tier: "organization" | "group" | "agent" | "other";
-  icon: React.ReactNode;
-  title: string;
-  desc: string;
-  accentRing: string;
   folders: KbFolderInfo[];
   selected: string[];
   onToggle: (id: string) => void;
 }) {
-  const tierFolders = folders.filter((f) => (f.accessTier ?? "other") === tier);
-  if (tierFolders.length === 0) return null;
+  const orgFolders = folders.filter((f) => (f.accessTier ?? "other") === "organization");
+  if (orgFolders.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-border p-4 text-center text-[12px] text-foreground/55">
+        组织公共区还没有任何文件夹。
+      </div>
+    );
+  }
   return (
-    <div className={"rounded-2xl bg-card p-3 ring-1 " + accentRing}>
+    <div className="rounded-2xl bg-card p-3 ring-1 ring-emerald-500/25">
       <div className="mb-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          {icon}
-          <span className="text-[12.5px] font-semibold">{title}</span>
+          <Folder className="size-3.5 text-emerald-600/80 dark:text-emerald-400/80" />
+          <span className="text-[12.5px] font-semibold">组织公共区</span>
           <span className="rounded bg-foreground/5 px-1.5 py-0.5 font-mono text-[10px] text-foreground/55">
-            {tierFolders.length}
+            {orgFolders.length}
           </span>
         </div>
-        <span className="text-[10.5px] text-foreground/50">{desc}</span>
+        <span className="text-[10.5px] text-foreground/50">全员可见 · 制度 / 模板 / 公告</span>
       </div>
       <FolderTree
-        folders={tierFolders}
+        folders={orgFolders}
         selected={selected}
         onToggle={onToggle}
       />
