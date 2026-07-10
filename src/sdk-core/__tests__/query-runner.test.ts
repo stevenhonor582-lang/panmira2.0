@@ -574,3 +574,96 @@ describe('QueryRunner token usage tracking (R49-D step 3)', () => {
     expect(insertCalls).toHaveLength(0);
   });
 });
+
+
+// === R49-D Step 4: expose Query.rewindFiles() for checkpoint recovery ===
+describe('QueryRunner.rewindFiles (R49-D step 4)', () => {
+  it('15. opens Query via resume and calls Query.rewindFiles with userMessageId', async () => {
+    const stubs = makeStubs();
+    const fakeRewindResult = {
+      canRewind: true,
+      filesChanged: ['src/sdk-core/foo.ts'],
+      insertions: 5,
+      deletions: 2,
+    };
+    const queryHandle = {
+      rewindFiles: vi.fn().mockResolvedValue(fakeRewindResult),
+      [Symbol.asyncIterator]: async function* () { /* no messages */ },
+      return: vi.fn().mockResolvedValue({ value: undefined, done: true }),
+      throw: vi.fn().mockResolvedValue({ value: undefined, done: true }),
+    };
+    queryMock.mockImplementation(() => queryHandle);
+
+    const runner = new QueryRunner(
+      stubs.sessionManager,
+      stubs.systemPromptInjector,
+      stubs.agentDefinitionBuilder,
+      stubs.hookRegistry,
+      stubs.canUseToolDecider,
+      undefined,
+      undefined,
+    );
+
+    const result = await runner.rewindFiles({
+      botName: '得一',
+      sessionId: 'sess-abc-123',
+      userMessageId: 'msg-uuid-xyz',
+    });
+
+    expect(result).toBe(fakeRewindResult);
+    const callArgs = queryMock.mock.calls[0] as unknown as [{ options: Record<string, unknown> }];
+    const options = callArgs[0].options;
+    expect(options.resume).toBe('sess-abc-123');
+    expect(options.enableFileCheckpointing).toBe(true);
+    expect(queryHandle.rewindFiles).toHaveBeenCalledWith('msg-uuid-xyz', { dryRun: undefined });
+  });
+
+  it('16. passes dryRun=true when caller requests a preview', async () => {
+    const stubs = makeStubs();
+    const queryHandle = {
+      rewindFiles: vi.fn().mockResolvedValue({ canRewind: true, filesChanged: [], insertions: 0, deletions: 0 }),
+      [Symbol.asyncIterator]: async function* () {},
+      return: vi.fn().mockResolvedValue({ value: undefined, done: true }),
+      throw: vi.fn().mockResolvedValue({ value: undefined, done: true }),
+    };
+    queryMock.mockImplementation(() => queryHandle);
+
+    const runner = new QueryRunner(
+      stubs.sessionManager,
+      stubs.systemPromptInjector,
+      stubs.agentDefinitionBuilder,
+      stubs.hookRegistry,
+      stubs.canUseToolDecider,
+      undefined,
+      undefined,
+    );
+
+    await runner.rewindFiles({ botName: '得一', sessionId: 'sess-1', userMessageId: 'msg-1', dryRun: true });
+    expect(queryHandle.rewindFiles).toHaveBeenCalledWith('msg-1', { dryRun: true });
+  });
+
+  it('17. throws QueryExecutionError when rewindFiles returns canRewind=false', async () => {
+    const stubs = makeStubs();
+    const queryHandle = {
+      rewindFiles: vi.fn().mockResolvedValue({ canRewind: false, error: 'Checkpoint not found' }),
+      [Symbol.asyncIterator]: async function* () {},
+      return: vi.fn().mockResolvedValue({ value: undefined, done: true }),
+      throw: vi.fn().mockResolvedValue({ value: undefined, done: true }),
+    };
+    queryMock.mockImplementation(() => queryHandle);
+
+    const runner = new QueryRunner(
+      stubs.sessionManager,
+      stubs.systemPromptInjector,
+      stubs.agentDefinitionBuilder,
+      stubs.hookRegistry,
+      stubs.canUseToolDecider,
+      undefined,
+      undefined,
+    );
+
+    await expect(
+      runner.rewindFiles({ botName: '得一', sessionId: 'sess-1', userMessageId: 'msg-bad' }),
+    ).rejects.toThrow(/Checkpoint not found/);
+  });
+});

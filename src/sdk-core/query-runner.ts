@@ -9,7 +9,7 @@
  * @module sdk-core/query-runner
  */
 
-import { query, type SDKMessage, type Options, type SpawnOptions, type SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
+import { query, type Query, type SDKMessage, type Options, type SpawnOptions, type SpawnedProcess, type RewindFilesResult } from "@anthropic-ai/claude-agent-sdk";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -89,6 +89,24 @@ export interface QueryRunnerOptions {
    * default build path. R49-D step 2.
    */
   readonly extras?: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * R49-D step 4: rewind a previous session to a user message checkpoint.
+ *
+ * Opens the session via SDK query() with options.resume, then calls
+ * Query.rewindFiles() with the target userMessageId. Requires
+ * enableFileCheckpointing: true (already set by buildOptions).
+ */
+export interface RewindFilesRequest {
+  /** Bot Chinese name (same bot context as the original session). */
+  readonly botName: string;
+  /** SDK session id returned from runQuery(). */
+  readonly sessionId: string;
+  /** UUID of the user message to rewind to. */
+  readonly userMessageId: string;
+  /** If true, returns a preview of changes without modifying files. */
+  readonly dryRun?: boolean;
 }
 
 export interface QueryResult {
@@ -207,6 +225,69 @@ export class QueryRunner {
     }
 
     LOG.info({ bot_name: bot.name }, 'Query stream completed');
+  }
+
+  /**
+   * R49-D step 4: rewind a session to a previous user message checkpoint.
+   *
+   * Opens the session via SDK query({options: { resume: sessionId,
+   * enableFileCheckpointing: true }}) and calls Query.rewindFiles().
+   * The Query handles both message streaming and the control call; we
+   * iterate the stream to completion so the SDK releases session resources
+   * before returning.
+   *
+   * Frontend can invoke this via the bridge to expose an "undo to
+   * checkpoint" affordance in card-rendered UIs.
+   *
+   * @param req - rewind request (botName, sessionId, userMessageId, dryRun?)
+   * @returns RewindFilesResult from the SDK
+   * @throws {QueryExecutionError} if canRewind=false or SDK query fails
+   */
+  async rewindFiles(req: RewindFilesRequest): Promise<RewindFilesResult> {
+    const bot = await this.sessionManager.resolveBot(req.botName);
+
+    const handle = query({
+      prompt: '',
+      options: {
+        cwd: this.sessionManager.buildSessionConfig(bot, false).cwd,
+        resume: req.sessionId,
+        enableFileCheckpointing: true,
+        settingSources: this.baseUrl ? ['project'] : ['user', 'project'],
+        spawnClaudeCodeProcess: createSpawnFn(this.apiKey, this.baseUrl),
+        executable: CLAUDE_EXECUTABLE,
+        pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE,
+      } as Options,
+    }) as unknown as Query & { rewindFiles: (id: string, opts?: { dryRun?: boolean }) => Promise<RewindFilesResult> };
+
+    // Drain the stream so the SDK finishes rewind bookkeeping. We don't
+    // surface messages - this call is a control request, not a chat turn.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      for await (const _msg of handle as unknown as AsyncIterable<SDKMessage>) { /* noop */ }
+    } catch {
+      // rewindFiles() is what returns the verdict; drain errors do not block it.
+    }
+
+    let result: RewindFilesResult;
+    try {
+      result = await handle.rewindFiles(req.userMessageId, { dryRun: req.dryRun });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new QueryExecutionError(`rewindFiles failed: ${msg}`, bot.name, err);
+    }
+
+    LOG.info(
+      { bot_name: bot.name, session_id: req.sessionId, user_message_id: req.userMessageId, can_rewind: result.canRewind, dry_run: req.dryRun },
+      'rewindFiles completed',
+    );
+
+    if (!result.canRewind) {
+      throw new QueryExecutionError(
+        `rewindFiles rejected: ${result.error ?? 'unknown reason'}`,
+        bot.name,
+      );
+    }
+    return result;
   }
 
   // === Private ===
