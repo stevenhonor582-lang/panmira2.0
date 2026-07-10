@@ -49,18 +49,13 @@ import {
 export type { PendingBatch, RunningTask, ApiTaskOptions, ApiTaskResult, ActivityEventData } from './bridge-types.js';
 import type { PendingBatch, RunningTask, ApiTaskOptions, ApiTaskResult, ActivityEventData } from './bridge-types.js';
 import { BridgeCard } from './bridge-card.js';
+import { BridgeExecutor } from './bridge-executor.js';
 import { BridgeObserver } from './bridge-observer.js';
 import { TaskManager } from '../task/task-manager.js';
-import { useSDKCore } from '../sdk-core/feature-flag.js';
 import { buildCompletionCard } from '../feishu/cardkit-renderer.js';
-import { createFeishuMcpServer } from '../feishu/mcp-server.js';
 import { QueryRunner } from '../sdk-core/query-runner.js';
 import { fetchKnowledgeContext } from './knowledge-fetcher.js';
 import type { KnowledgeFetcherDeps } from './knowledge-fetcher.js';
-import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
-import { spawn as nodeSpawn } from 'node:child_process';
-import { existsSync as fsExists } from 'node:fs';
-import { join as pathJoin } from 'node:path';
 
 export class MessageBridge {
   private engine: Engine;
@@ -115,8 +110,6 @@ export class MessageBridge {
     }
     return undefined;
   };
-  /** Lazy per-engine cache so a session override doesn't pay instantiation cost each turn. */
-  private engineCache = new Map<EngineName, { engine: Engine; executor: Executor }>();
   private sessionManager: SessionManager;
   private outputsManager: OutputsManager;
   private audit: AuditLogger;
@@ -127,6 +120,7 @@ export class MessageBridge {
   private sessionRegistry?: SessionRegistry;
   private observer!: BridgeObserver;
   private card!: BridgeCard;
+  private executor2!: BridgeExecutor;
   private senderOverrides = new Map<string, IMessageSender>();
   private runningTasks = new Map<string, RunningTask>(); // keyed by chatId
   private messageQueues = new Map<string, IncomingMessage[]>(); // per-chatId message queue
@@ -152,7 +146,6 @@ export class MessageBridge {
     this.engine = createEngine(config, logger);
     this.executor = this.engine.createExecutor();
     const defaultEngineName = resolveEngineName(config);
-    this.engineCache.set(defaultEngineName, { engine: this.engine, executor: this.executor });
     this.sessionManager = new SessionManager(config.claude.defaultWorkingDirectory, logger, config.name, sessionStore);
     this.outputsManager = new OutputsManager(config.claude.outputsBaseDir, config.name, logger);
     this.audit = new AuditLogger(logger);
@@ -191,6 +184,14 @@ export class MessageBridge {
       getSender: (chatId) => this.getSender(chatId),
       getRunningTask: (chatId) => this.runningTasks.get(chatId),
     });
+    this.executor2 = new BridgeExecutor({
+      config: this.config,
+      logger: this.logger,
+      sessionManager: this.sessionManager,
+      getSender: (chatId) => this.getSender(chatId),
+      defaultEngine: this.engine,
+      defaultExecutor: this.executor,
+    });
 
     this.outputHandler = new OutputHandler(logger, sender, this.outputsManager);
 
@@ -213,7 +214,7 @@ export class MessageBridge {
       config: this.config,
       logger: this.logger,
       sessionManager: this.sessionManager,
-      engineCache: this.engineCache,
+      engineCache: this.executor2.getEngineCache(),
       sessionRegistry: this.sessionRegistry,
       getSender: (chatId: string) => this.getSender(chatId),
     };
@@ -235,17 +236,8 @@ export class MessageBridge {
    * on the same engine don't re-instantiate the SDK wrapper.
    */
 
-  private startExecutionGated(opts: Record<string, any>): ExecutionHandle {
-    return useSDKCore(this.config.name)
-      ? this.createSDKCoreHandle({ prompt: opts.prompt, botName: this.config.name, chatId: opts.chatId,
-          abortController: opts.abortController, knowledgeContext: opts.knowledgeContext,
-          systemPromptOverride: opts.systemPromptOverride })
-      : this.executorForChat(opts.chatId).startExecution({
-          prompt: opts.prompt, cwd: opts.cwd, sessionId: opts.sessionId,
-          abortController: opts.abortController, outputsDir: opts.outputsDir,
-          apiContext: opts.apiContext, model: opts.model, maxTurns: opts.maxTurns,
-          systemPromptOverride: opts.systemPromptOverride,
-          knowledgeContext: opts.knowledgeContext, userRole: opts.userRole });
+  private startExecutionGated(opts: any): ExecutionHandle {
+    return this.executor2.startExecutionGated(opts);
   }
 
   private taskManager = new TaskManager();
@@ -269,24 +261,9 @@ export class MessageBridge {
   }
 
   private executorForChat(chatId: string): Executor {
-    const session = this.sessionManager.getSession(chatId);
-    const name = session.engine ?? resolveEngineName(this.config);
-    let entry = this.engineCache.get(name);
-    if (!entry) {
-      const engine = createEngine(this.config, this.logger, name);
-      const executor = engine.createExecutor();
-      entry = { engine, executor };
-      this.engineCache.set(name, entry);
-    }
-    return entry.executor;
+    return this.executor2.executorForChat(chatId);
   }
 
-  /**
-   * Phase γ-3/γ-4: Create execution handle backed by SDK Core (QueryRunner).
-   * Bypasses legacy executor + ensureIsolatedWorkspace.
-   * Uses English slug cwd from bot_configs.english_slug (V021).
-   * Phase γ-4: injects knowledgeContext (RAG memories/documents) into prompt.
-   */
   private createSDKCoreHandle(opts: {
     prompt: string;
     botName: string;
@@ -295,94 +272,12 @@ export class MessageBridge {
     knowledgeContext?: string | null;
     systemPromptOverride?: string;
   }): ExecutionHandle {
-    // Resolve binary path
-    const binaryCandidates = [
-      pathJoin(process.cwd(), 'node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude'),
-      pathJoin(process.cwd(), 'node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs'),
-    ];
-    const claudeExe = binaryCandidates.find(p => fsExists(p)) || 'claude';
-
-    // Build full prompt
-    const sep = String.fromCharCode(10, 10, 45, 45, 45, 10, 10);
-    const parts = [opts.systemPromptOverride, opts.knowledgeContext].filter(Boolean);
-    const fullPrompt = parts.length > 0
-      ? parts.join(sep) + sep + '\u7528\u6237\u95ee\u9898: ' + opts.prompt
-      : opts.prompt;
-
-    // Spawn function (same as executor.ts createSpawnFn)
-    const apiKey = this.config.claude.apiKey;
-    const baseUrl = this.config.claude.baseUrl;
-    const spawnFn = (options: { command: string; args: string[]; cwd: string; env: Record<string, string | undefined>; signal: AbortSignal }) => {
-      const baseEnv = options.env && Object.keys(options.env).length > 0
-        ? { ...process.env, ...options.env } : { ...process.env };
-      const env: Record<string, string> = {};
-      for (const [key, value] of Object.entries(baseEnv)) {
-        if (value === undefined) continue;
-        if (key.startsWith('CLAUDE_')) continue;
-        if (apiKey && (key.startsWith('ANTHROPIC_API_KEY') || key.startsWith('ANTHROPIC_AUTH_TOKEN') || key.startsWith('ANTHROPIC_BASE_URL'))) continue;
-        env[key] = value;
-      }
-      if (apiKey) {
-        env.ANTHROPIC_AUTH_TOKEN = apiKey;
-        if (!baseUrl) env.ANTHROPIC_API_KEY = apiKey;
-      }
-      if (baseUrl) env.ANTHROPIC_BASE_URL = baseUrl;
-      const child = nodeSpawn(options.command, options.args, {
-        cwd: options.cwd, env, signal: options.signal, stdio: ['pipe', 'pipe', 'pipe'],
-      });
-      // Debug: capture stderr
-      let stderrBuf = '';
-      child.stderr?.on('data', (d: Buffer) => { stderrBuf += d.toString(); });
-      child.on('exit', (code: number | null) => {
-        if (code !== 0) {
-          this.logger.error({ code, stderr: stderrBuf.slice(0, 500), command: options.command, cwd: options.cwd }, 'SDK Core binary exited non-zero');
-        }
-      });
-      return child;
-    };
-
-    // English slug cwd
-    const slugMap: Record<string, string> = {
-      '\u5f97\u4e00': 'deyi', '\u7384\u9274': 'xuanjian', '\u4e0d\u76c8': 'buying',
-      '\u5b88\u9759': 'shoujing', '\u4fe1\u8a00': 'xinyan',
-    };
-    const slug = slugMap[opts.botName] || opts.botName;
-    const cwd = `/home/ubuntu/workspace/${slug}`;
-
-    // Call SDK query() with ESM import (NOT require)
-    const stream = sdkQuery({
-      prompt: fullPrompt,
-      options: {
-        permissionMode: 'bypassPermissions',
-        allowDangerouslySkipPermissions: true,
-        cwd,
-        abortController: opts.abortController,
-        includePartialMessages: true,
-        settingSources: baseUrl ? ['project'] : ['user', 'project'],
-        spawnClaudeCodeProcess: spawnFn,
-        executable: claudeExe,
-        pathToClaudeCodeExecutable: claudeExe,
-        systemPrompt: opts.systemPromptOverride || undefined,
-      mcpServers: { feishu: createFeishuMcpServer(this.getSender(opts.chatId), opts.chatId) },
-      } as any,
-    });
-
-    return {
-      stream: stream as unknown as ExecutionHandle['stream'],
-      sendAnswer: () => {},
-      resolveQuestion: () => {},
-      finish: () => { opts.abortController.abort(); },
-    };
+    return this.executor2.createSDKCoreHandle(opts);
   }
 
 
   private prepareSessionForExecution(chatId: string) {
-    const session = this.sessionManager.getSession(chatId);
-    const engineName = session.engine ?? resolveEngineName(this.config);
-    if (session.sessionId && session.sessionIdEngine && session.sessionIdEngine !== engineName) {
-      this.sessionManager.resetSession(chatId);
-    }
-    return { session: this.sessionManager.getSession(chatId), engineName };
+    return this.executor2.prepareSessionForExecution(chatId);
   }
 
   /** Inject the doc sync service for /sync commands. */
@@ -1277,20 +1172,19 @@ export class MessageBridge {
     // Start multi-turn execution
     // Resolve user role from permissions config
     const userRole = resolveUserRole(this.config.permissions, userId);
-    const executionHandle = useSDKCore(this.config.name)
-      ? this.createSDKCoreHandle({ prompt, botName: this.config.name, abortController, chatId, knowledgeContext, systemPromptOverride })
-      : this.executorForChat(chatId).startExecution({
-          prompt,
-          cwd,
-          sessionId: session.sessionId,
-          abortController,
-          outputsDir,
-          apiContext,
-          model: session.model,
-          systemPromptOverride,
-          knowledgeContext,
-          userRole,
-        });
+    const executionHandle = this.startExecutionGated({
+      prompt,
+      chatId,
+      abortController,
+      cwd,
+      sessionId: session.sessionId,
+      outputsDir,
+      apiContext,
+      model: session.model,
+      systemPromptOverride,
+      knowledgeContext,
+      userRole,
+    });
 
     const rateLimiter = new RateLimiter(1500);
 
@@ -2548,7 +2442,7 @@ export class MessageBridge {
     this.engine = createEngine(newConfig, this.logger);
     this.executor = this.engine.createExecutor();
     const engineName = resolveEngineName(newConfig);
-    this.engineCache.set(engineName, { engine: this.engine, executor: this.executor });
+    this.executor2.getEngineCache().set(engineName, { engine: this.engine, executor: this.executor });
   }
 
   /**
