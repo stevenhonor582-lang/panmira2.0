@@ -266,3 +266,115 @@ describe('QueryRunner.createDefault', () => {
     ).rejects.toBeInstanceOf(BotNotFoundError);
   });
 });
+
+// === R49-D Step 1: buildOptions must inject hooks/canUseTool/agents ===
+// Verifies the SDK Core dependencies are actually wired through to query(),
+// not just constructed and ignored. (RED before R49-D fix; GREEN after.)
+describe('QueryRunner.buildOptions injection (R49-D step 1)', () => {
+  it('6. passes hookRegistry callbacks as options.hooks to query()', async () => {
+    // Arrange — pre-populate hookRegistry.all so buildOptions has something
+    // to pass through.
+    const stubs = makeStubs();
+    const fakeMatcher = { hooks: [vi.fn().mockResolvedValue({ continue: true })] };
+    (stubs.hookRegistry as { all: unknown }).all = { PreToolUse: [fakeMatcher] };
+    setQueryStream(STREAM_WITH_SESSION);
+
+    const runner = new QueryRunner(
+      stubs.sessionManager,
+      stubs.systemPromptInjector,
+      stubs.agentDefinitionBuilder,
+      stubs.hookRegistry,
+      stubs.canUseToolDecider,
+      undefined,
+      undefined,
+    );
+
+    // Act
+    await runner.runQuery({ botName: '得一', prompt: 'hi' });
+
+    // Assert — query() received options.hooks matching hookRegistry.all.
+    const callArgs = queryMock.mock.calls[0] as unknown as [{ options: Record<string, unknown> }];
+    const options = callArgs[0].options;
+    expect(options.hooks).toBeDefined();
+    expect(options.hooks).toMatchObject({ PreToolUse: [fakeMatcher] });
+  });
+
+  it('7. passes canUseToolDecider.decide as options.canUseTool to query()', async () => {
+    // Arrange
+    const stubs = makeStubs();
+    setQueryStream(STREAM_WITH_SESSION);
+
+    const runner = new QueryRunner(
+      stubs.sessionManager,
+      stubs.systemPromptInjector,
+      stubs.agentDefinitionBuilder,
+      stubs.hookRegistry,
+      stubs.canUseToolDecider,
+      undefined,
+      undefined,
+    );
+
+    // Act
+    await runner.runQuery({ botName: '得一', prompt: 'hi' });
+
+    // Assert — canUseTool is the decider.decide reference (not undefined).
+    const callArgs = queryMock.mock.calls[0] as unknown as [{ options: Record<string, unknown> }];
+    const options = callArgs[0].options;
+    expect(options.canUseTool).toBe(stubs.canUseToolDecider.decide);
+  });
+
+  it('8. passes agents map from agentDefinitionBuilder as options.agents to query()', async () => {
+    // Arrange — simulate 2 business experts in DB
+    const stubs = makeStubs();
+    const fakeExperts = {
+      deyi_expert: { description: 'd', prompt: 'p', tools: ['Read'] },
+      xuanjian_expert: { description: 'x', prompt: 'p', tools: ['Read'] },
+    };
+    (stubs.agentDefinitionBuilder as { buildBusinessExperts: ReturnType<typeof vi.fn> }).buildBusinessExperts =
+      vi.fn().mockResolvedValue(fakeExperts);
+    setQueryStream(STREAM_WITH_SESSION);
+
+    const runner = new QueryRunner(
+      stubs.sessionManager,
+      stubs.systemPromptInjector,
+      stubs.agentDefinitionBuilder,
+      stubs.hookRegistry,
+      stubs.canUseToolDecider,
+      undefined,
+      undefined,
+    );
+
+    // Act
+    await runner.runQuery({ botName: '得一', prompt: 'hi' });
+
+    // Assert — agents map passed through AND buildBusinessExperts was called
+    const callArgs = queryMock.mock.calls[0] as unknown as [{ options: Record<string, unknown> }];
+    const options = callArgs[0].options;
+    expect(options.agents).toBe(fakeExperts);
+    expect(stubs.agentDefinitionBuilder.buildBusinessExperts).toHaveBeenCalledTimes(1);
+  });
+
+  it('9. sets enableFileCheckpointing=true so Query.rewindFiles() works (R49-D step 4)', async () => {
+    // Arrange
+    const stubs = makeStubs();
+    setQueryStream(STREAM_WITH_SESSION);
+
+    const runner = new QueryRunner(
+      stubs.sessionManager,
+      stubs.systemPromptInjector,
+      stubs.agentDefinitionBuilder,
+      stubs.hookRegistry,
+      stubs.canUseToolDecider,
+      undefined,
+      undefined,
+    );
+
+    // Act
+    await runner.runQuery({ botName: '得一', prompt: 'hi' });
+
+    // Assert
+    const callArgs = queryMock.mock.calls[0] as unknown as [{ options: Record<string, unknown> }];
+    const options = callArgs[0].options;
+    expect(options.enableFileCheckpointing).toBe(true);
+  });
+});

@@ -202,6 +202,8 @@ export class QueryRunner {
   ): Promise<Record<string, unknown>> {
     const sessionConfig = this.sessionManager.buildSessionConfig(bot, false);
     const systemPrompt = await this.systemPromptInjector.inject(bot.agentId);
+    // R49-D step 1: build agent map from DB so SDK can resolve Task tool subagents
+    const agentsMap = await this.agentDefinitionBuilder.buildBusinessExperts();
 
     return {
       permissionMode: "bypassPermissions",
@@ -214,6 +216,15 @@ export class QueryRunner {
       executable: CLAUDE_EXECUTABLE,
       pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE,
       systemPrompt: systemPrompt || undefined,
+      // R49-D step 1: wire SDK Core deps into query() options:
+      //   hooks       -> 28 hook events via HookRegistry
+      //   canUseTool  -> per-bot allow/deny policy via CanUseToolDecider
+      //   agents      -> business expert subagents from agent_instances table
+      //   enableFileCheckpointing -> Query.rewindFiles() (R49-D step 4)
+      hooks: this.hookRegistry.all,
+      canUseTool: this.canUseToolDecider.decide,
+      agents: agentsMap,
+      enableFileCheckpointing: true,
     };
   }
 
