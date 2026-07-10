@@ -79,9 +79,11 @@ test.describe("R38-C5 · tab-basics model binding + memory agentId link", () => 
     // 断言 PATCH body
     expect(patchBody).not.toBeNull();
     expect(patchUrl).toContain(EMP_ID);
-    expect(patchBody).toHaveProperty("modelId");
-    expect(typeof patchBody!.modelId).toBe("string");
-    expect((patchBody!.modelId as string).length).toBeGreaterThan(0);
+    // R50-3: 页面已对齐后端 PATCH handler,R38-E 显式声明写 model_id(snake_case)。
+    // 修复前断言 camelCase modelId,与真实 PATCH body 不符。
+    expect(patchBody).toHaveProperty("model_id");
+    expect(typeof (patchBody as Record<string, unknown>).model_id).toBe("string");
+    expect(((patchBody as Record<string, unknown>).model_id as string).length).toBeGreaterThan(0);
     expect(patchBody).toHaveProperty("default_model");
     expect(patchBody).toHaveProperty("default_engine");
   });
