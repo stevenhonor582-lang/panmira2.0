@@ -152,6 +152,8 @@ export function PersonCard({ person, className, onChanged }: Props) {
   const todayDone = stats?.todayDone ?? 0;
   const hasError = todayErrors > 0;
   const hasWarning = stats !== null && todayDone === 0 && todayErrors === 0;
+  // R43: 数据条 loading 状态 - 4 列统一占位(stats 或 agentCount 任一未就绪 → 全显示 —)
+  const dataBarLoading = stats === null || agentCount === null;
 
   // R41-E: 本周 token 数值化 (K/M 缩写)
   const weekTokens = stats?.weekTokens ?? 0;
@@ -357,11 +359,12 @@ export function PersonCard({ person, className, onChanged }: Props) {
             <span
               className={cn(
                 "text-base font-bold tabular-nums leading-none",
-                hasError ? "text-rose-700 dark:text-rose-300" : "text-foreground",
+                dataBarLoading ? "text-muted-foreground/50" :
+                  hasError ? "text-rose-700 dark:text-rose-300" : "text-foreground",
               )}
-              title="今日完成的对话/任务数"
+              title={dataBarLoading ? "加载中…" : "今日完成的对话/任务数"}
             >
-              {todayDone}
+              {dataBarLoading ? "—" : todayDone}
             </span>
             <span className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground leading-none">
               今日完成
@@ -372,11 +375,12 @@ export function PersonCard({ person, className, onChanged }: Props) {
             <span
               className={cn(
                 "text-base font-bold tabular-nums leading-none",
-                hasError ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400",
+                dataBarLoading ? "text-muted-foreground/50" :
+                  hasError ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400",
               )}
-              title={hasError ? `今日异常 ${todayErrors} 个` : "今日无异常"}
+              title={dataBarLoading ? "加载中…" : hasError ? `今日异常 ${todayErrors} 个` : "今日无异常"}
             >
-              {todayErrors}
+              {dataBarLoading ? "—" : todayErrors}
             </span>
             <span className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground leading-none">
               今日异常
@@ -384,8 +388,14 @@ export function PersonCard({ person, className, onChanged }: Props) {
           </div>
           {/* 名下数字员工 - 数组长度(对接 R42 真实值) */}
           <div className="flex flex-col items-center gap-0.5">
-            <span className="text-base font-bold tabular-nums leading-none text-foreground">
-              {agentCount ?? "—"}
+            <span
+              className={cn(
+                "text-base font-bold tabular-nums leading-none",
+                dataBarLoading ? "text-muted-foreground/50" : "text-foreground",
+              )}
+              title={dataBarLoading ? "加载中…" : "当前真人已绑定的数字员工数"}
+            >
+              {dataBarLoading ? "—" : (agentCount ?? 0)}
             </span>
             <span className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground leading-none">
               名下数字员工
@@ -393,8 +403,14 @@ export function PersonCard({ person, className, onChanged }: Props) {
           </div>
           {/* 本周 token - 缩写值 + label */}
           <div className="flex flex-col items-center gap-0.5">
-            <span className="text-base font-bold tabular-nums leading-none text-foreground">
-              {weekTokensDisplay}
+            <span
+              className={cn(
+                "text-base font-bold tabular-nums leading-none",
+                dataBarLoading ? "text-muted-foreground/50" : "text-foreground",
+              )}
+              title={dataBarLoading ? "加载中…" : "本周累计 token"}
+            >
+              {dataBarLoading ? "—" : weekTokensDisplay}
             </span>
             <span className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground leading-none">
               本周 token

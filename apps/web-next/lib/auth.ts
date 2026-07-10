@@ -9,6 +9,9 @@ export interface AuthUser {
   name: string;
   role: string;
   tenantId: string;
+  // R43: 系统内置账号标识(后端 users.is_system)
+  // true = 当前用户是系统管理员,前端用此挂星标 / 禁自操作
+  isSystem?: boolean;
 }
 
 export interface LoginResponse {

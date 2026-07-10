@@ -18,7 +18,7 @@ import {
 } from "recharts";
 import {
   Bot, Plus, Trash2, Sparkles, Clock, CheckCircle2, AlertTriangle,
-  Info,
+  Info, Copy,
   Pencil, MoreVertical, Loader2,
 } from "lucide-react";
 import {
@@ -48,6 +48,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { deriveAgentStatus } from "../../../_components/data";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/components/toast/toast-provider";
 import {
   PersonEditPane, PersonEditBar, PersonText, PersonSelect,
   personToDraft, diffDraft,
@@ -237,12 +238,13 @@ interface UnassignedAgent {
 }
 
 export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?: () => void }) {
+  const toast = useToast();
   const [bound, setBound] = React.useState<PersonAgent[]>([]);
   const [available, setAvailable] = React.useState<UnassignedAgent[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
-  const [acting, setActing] = React.useState(false);
+  const [acting, setActing] = React.useState<string | null>(null);
 
   const load = React.useCallback(() => {
     setLoading(true);
@@ -291,6 +293,51 @@ export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?
       onChanged?.();
     } finally {
       setBusy(false);
+    }
+  };
+  // R43 修复: 恢复"复制为模板"功能(被 R42 误删,后端 POST /api/v2/admin/agent-templates 已支持)
+  // 拉取 instance 完整行作为 snapshot 投到 templates 表
+  const handleCopyAsTemplate = async (agentId: string, agentName: string) => {
+    setActing(agentId);
+    try {
+      const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
+      const fp = (p: string) => (API_BASE ? API_BASE + p : p);
+      const detail = await api<{ data?: Record<string, unknown> } | Record<string, unknown>>(
+        fp(`/api/v2/employees/${agentId}`),
+      );
+      const row: any = (detail as any)?.data ?? detail;
+      if (!row || !row.name) {
+        toast.error("获取数字员工详情失败,无法复制为模板");
+        return;
+      }
+      const body = {
+        name: `${row.name}(副本)`,
+        roleTemplate: row.role_template ?? row.roleTemplate ?? null,
+        description: row.description ?? null,
+        systemPrompt: row.system_prompt ?? row.systemPrompt ?? null,
+        capabilities: row.capabilities ?? [],
+        tools: row.tools ?? [],
+        category: row.category ?? "general",
+        templateType: row.template_type ?? row.templateType ?? "custom",
+        ironLaws: row.iron_laws ?? row.ironLaws ?? [],
+        boundary: row.boundary ?? {},
+        orchestration: row.orchestration ?? {},
+        persona: row.persona ?? null,
+      };
+      const created = await api<{ agent?: { id: string; name: string } } | { id: string; name: string }>(
+        fp("/api/v2/admin/agent-templates"),
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      );
+      const newId = (created as any)?.agent?.id ?? (created as any)?.id;
+      toast.success(`已复制为模板「${body.name}」${newId ? " · " + String(newId).slice(0, 8) : ""}`);
+    } catch (err: any) {
+      toast.error("复制为模板失败:" + (err?.message ?? String(err)));
+    } finally {
+      setActing(null);
     }
   };
 
@@ -358,16 +405,20 @@ export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?
                 <DropdownMenu>
                   <DropdownMenuTrigger
                     className="inline-flex items-center justify-center size-6 rounded-md text-foreground/40 hover:text-foreground hover:bg-muted/40 disabled:opacity-50"
-                    disabled={acting}
+                    disabled={!!acting}
                     data-testid={`person-agent-menu-${a.id.slice(0, 8)}`}
                   >
                     {acting ? <Loader2 className="size-3.5 animate-spin" /> : <MoreVertical className="size-3.5" />}
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-44">
-                    {/* R42-FRONTEND: '提升为模板' / '复制为模板' 两项已删(后端 promote / copy-as-template 端点不存在)。
-                        模板创建走 POST /api/v2/admin/agent-templates(snapshot),
-                        实例 → 实例生成走 /api/v2/admin/agent-templates/:id/instantiate。
-                        解绑仍保留。*/}
+                    {/* R43 修复: 恢复"复制为模板"(后端 POST /api/v2/admin/agent-templates 已支持) */}
+                    <DropdownMenuItem
+                      onClick={() => handleCopyAsTemplate(a.id, a.display_name ?? a.name)}
+                      data-testid={`person-agent-copy-template-${a.id.slice(0, 8)}`}
+                    >
+                      <Copy className="size-4" /> 复制为模板
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
                     <DropdownMenuItem
                       onClick={() => handleRemove(a.id)}
                       data-testid={`person-agent-unbind-${a.id.slice(0, 8)}`}
@@ -412,8 +463,7 @@ export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?
         />
       </div>
 
-      {/* R42-FRONTEND: '复制为模板' 弹窗已删(后端 copy-as-template 端点 404)。
-          模板创建走模板管理页 POST /api/v2/admin/agent-templates。*/}
+      {/* R43 修复: "复制为模板"功能已恢复(放在每个 agent 卡片的下拉菜单中) */}
     </div>
   );
 }
