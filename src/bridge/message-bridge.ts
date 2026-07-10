@@ -48,9 +48,7 @@ import {
 } from './bridge-types.js';
 export type { PendingBatch, RunningTask, ApiTaskOptions, ApiTaskResult, ActivityEventData } from './bridge-types.js';
 import type { PendingBatch, RunningTask, ApiTaskOptions, ApiTaskResult, ActivityEventData } from './bridge-types.js';
-import { sendFinalCard, sendPlanContent, sendCompletionNotice } from './card-renderer.js';
-// buildCompletionCard 现已挪到 cardkit-renderer.ts,sendFinalCard 内部已带按钮
-import type { CardRendererDeps } from './card-renderer.js';
+import { BridgeCard } from './bridge-card.js';
 import { BridgeObserver } from './bridge-observer.js';
 import { TaskManager } from '../task/task-manager.js';
 import { useSDKCore } from '../sdk-core/feature-flag.js';
@@ -128,6 +126,7 @@ export class MessageBridge {
   private memoryClient: MemoryClient;
   private sessionRegistry?: SessionRegistry;
   private observer!: BridgeObserver;
+  private card!: BridgeCard;
   private senderOverrides = new Map<string, IMessageSender>();
   private runningTasks = new Map<string, RunningTask>(); // keyed by chatId
   private messageQueues = new Map<string, IncomingMessage[]>(); // per-chatId message queue
@@ -185,6 +184,13 @@ export class MessageBridge {
       sessionManager: this.sessionManager,
       getOnActivityEvent: () => this.onActivityEvent,
     });
+    this.card = new BridgeCard({
+      config: this.config,
+      logger: this.logger,
+      sessionManager: this.sessionManager,
+      getSender: (chatId) => this.getSender(chatId),
+      getRunningTask: (chatId) => this.runningTasks.get(chatId),
+    });
 
     this.outputHandler = new OutputHandler(logger, sender, this.outputsManager);
 
@@ -210,14 +216,6 @@ export class MessageBridge {
       engineCache: this.engineCache,
       sessionRegistry: this.sessionRegistry,
       getSender: (chatId: string) => this.getSender(chatId),
-    };
-  }
-
-  private get _cardDeps(): CardRendererDeps {
-    return {
-      logger: this.logger,
-      sessionManager: this.sessionManager,
-      getSender: (chatId) => this.getSender(chatId),
     };
   }
 
@@ -2499,66 +2497,18 @@ export class MessageBridge {
   }
 
   /**
-   * Send the final card update with exponential backoff retry.
-   * Retries with exponential backoff (2s → 4s → 8s). If all retries fail,
-   * sends a plain text fallback so the user at least sees the result.
+   * Facade — 转发到 this.card (R49-C1 step 2 抽出 BridgeCard)
    */
   private async sendFinalCard(messageId: string, state: CardState, chatId?: string): Promise<void> {
-    // commit-17 (2026-06-25): audit bot autonomy violations
-    // Per user.bot_autonomy 95% + user.bot.behavior.no_auto_recommend 95%:
-    //   - bot must NOT auto-recommend
-    //   - bot must NOT say "我推荐 X" / "我建议 X" / "按 X 落地" / "默认推荐 X"
-    //   - bot 看到 risk/issue -> 告诉用户，让用户决定
-    this.auditBotAutonomy(state, chatId);
-    return sendFinalCard(this._cardDeps, messageId, state, chatId);
+    return this.card.sendFinalCard(messageId, state, chatId);
   }
-
-  /**
-   * commit-17: detect bot autonomous recommendation in final output.
-   * commit-18: metrics counter + detailed audit log.
-   * Per user.bot_autonomy 95% + user.bot.behavior.no_auto_recommend 95%:
-   *   - bot must NOT auto-recommend
-   *   - bot 看到 risk/issue -> 告诉用户，让用户决定
-   *
-   * Returns: { violations: string[], count: number } for metrics tracking
-   */
-  private _autonomyViolationCount: number = 0;
-  public getAutonomyViolationCount(): number { return this._autonomyViolationCount; }
-  public resetAutonomyViolationCount(): void { this._autonomyViolationCount = 0; }
-
+  public getAutonomyViolationCount(): number { return this.card.getAutonomyViolationCount(); }
+  public resetAutonomyViolationCount(): void { return this.card.resetAutonomyViolationCount(); }
   private auditBotAutonomy(state: CardState, chatId?: string): { violations: string[], count: number } {
-    const text = state.responseText || '';
-    // Detect autonomous recommendation patterns
-    const recommendPattern = /我推荐[：:]?|我建议[：:]?|按\s*[\w\s]+\s*落地|默认推荐|建议\s*(你|您)/g;
-    const matches = text.match(recommendPattern);
-    if (matches && matches.length > 0) {
-      this._autonomyViolationCount += matches.length;
-
-      this.logger.warn({
-        chatId,
-        bot: this.config.name,
-        matches,
-        matchCount: matches.length,
-        textLen: text.length,
-        totalViolationsThisSession: this._autonomyViolationCount,
-        // commit-18: structured audit fields
-        auditType: 'bot_autonomy_violation',
-        detectedAt: new Date().toISOString(),
-        rule: 'user.bot_autonomy 95% + user.bot.behavior.no_auto_recommend 95%',
-      }, 'commit-18 AUDIT: bot output contains autonomous recommendation - violates user.bot_autonomy');
-
-      // Append explicit reminder to responseText (before final card send)
-      const warningBanner = '\n\n---\n⚠️ **决策权在用户**：以上是 bot 看到的事实 + 你之前的输入。bot 不替你决策，请你自己决定。';
-      state.responseText = text + warningBanner;
-    }
-    return { violations: matches || [], count: matches?.length || 0 };
+    return this.card.auditBotAutonomy(state, chatId);
   }
-
-  /**
-   * Read and send plan file content to the user when ExitPlanMode is triggered.
-   */
-  private async sendPlanContent(chatId: string, processor: StreamProcessor, _currentState: CardState): Promise<void> {
-    return sendPlanContent(this._cardDeps, chatId, processor, _currentState);
+  private async sendPlanContent(chatId: string, processor: StreamProcessor, currentState: CardState): Promise<void> {
+    return this.card.sendPlanContent(chatId, processor, currentState);
   }
 
   /**
@@ -2590,7 +2540,7 @@ export class MessageBridge {
   }
 
   private async sendCompletionNotice(chatId: string, state: CardState, durationMs: number): Promise<void> {
-    return sendCompletionNotice(this._cardDeps, chatId, state, durationMs);
+    return this.card.sendCompletionNotice(chatId, state, durationMs);
   }
 
   updateConfig(newConfig: BotConfigBase): void {
@@ -2904,44 +2854,6 @@ export class MessageBridge {
     chatId: string,
     state: CardState,
   ): Promise<CardState> {
-    if (!state.responseText) return state;
-    const lowerText = state.responseText.toLowerCase();
-    const claimPatterns = ['未收到', '空应答', '没收到', 'with: = 空', 'with:=""', 'with: ""'];
-    const claimed = claimPatterns.some((k) => lowerText.toLowerCase().includes(k.toLowerCase()));
-    if (!claimed) return state;
-
-    const task = this.runningTasks.get(chatId);
-    const answers = task?.lastUserAnswers;
-    if (!answers || Object.keys(answers).length === 0) {
-      this.logger.warn(
-        { chatId },
-        'LLM Final card claims 未收到 and audit has no answer — keeping text as-is (genuine timeout?)',
-      );
-      return state;
-    }
-
-    const answerText = Object.values(answers).join(' / ');
-    this.logger.warn(
-      { chatId, claimed: 'not received', actual: answerText },
-      'LLM Final card lied about not receiving answer — correcting from task.lastUserAnswers',
-    );
-    // Step 1: replace "未收到" phrase with acknowledgment of real answer
-    let fixed = state.responseText.replace(
-      /(未收到[^\n]{0,80}|空应答[^\n]{0,80}|没收到[^\n]{0,80}|with:\s*=\s*空[^\n]{0,80}|with:\s*=\s*""[^\n]{0,80})/g,
-      `已收到你的选择：${answerText}`,
-    );
-
-    // Step 2 (fix, 2026-06-29): truncate LLM fallback lists that were generated
-    // under the false "未收到" assumption. Per user.bot_interaction.expectation
-    // + user.prefer.bot_behavior_on_question_timeout: after a real answer is
-    // received, LLM's "3 个可能意图 / 或者直接发 / 你可以 / 下一条消息直接说"
-    // is misleading — strip these fallback phrasings so Final card shows only
-    // the real execution content.
-    fixed = fixed.replace(
-      /\n\n[\s\S]*(3 个可能意图|3 个可能选项|或者直接发|你可以|下一条消息直接说|下一条消息直接回复|如果你看到中途想叫停)[^\n]*\n?[\s\S]*?(?=\n\n|$)/g,
-      '\n\n',
-    ).trim();
-
-    return { ...state, responseText: fixed };
+    return this.card.auditCorrectFinalCard(chatId, state);
   }
 }
