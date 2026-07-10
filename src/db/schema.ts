@@ -45,6 +45,12 @@ const byteaColumn = customType<{ data: Buffer; driverData: string }>({
 
 export const userRoleEnum = pgEnum('user_role', ['admin', 'member']);
 
+// ── R42-SCHEMA: target_type enum for polymorphic agent refs ───────────────────
+// 关联表(agent_skill_refs / agent_knowledge_refs / agent_mcp_refs)的
+// agent_id 列是多态外键:target_type 决定它指向 agent_templates 还是
+// agent_instances。Polymorphic FK 在 DB 层无法强制约束,应用层负责一致。
+export const targetTypeEnum = pgEnum('target_type', ['template', 'instance']);
+
 export const tenants = pgTable('tenants', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: varchar('name', { length: 255 }).notNull(),
@@ -69,9 +75,21 @@ export const users = pgTable('users', {
   passwordHash: varchar('password_hash', { length: 255 }),
 
   avatarUrl: text('avatar_url'),
+  // R42-SCHEMA: 系统内置账号 = true(如 admin@panmira.com 管理员),
+  // 真人管理员(steven) = false。区分用途:系统账号永远不能被删除/降权。
+  isSystem: boolean('is_system').notNull().default(false),
 });
 
-export const agents = pgTable('agents', {
+// ── R42-SCHEMA: agents → agent_templates + agent_instances 物理拆表 ─────────
+//
+// 决策(R42-DIAG 已拍板):
+//   - 蓝图字段 → agent_templates(共享 name/role_template/persona/system_prompt/
+//     orchestration/boundary/iron_laws/category/template_type)
+//   - 蓝图 + 全字段 → agent_instances(蓝图 + channel_ids/owner_user_id/
+//     working_dir/model_id/status/deployment_type/... + source_template_id)
+//   - is_template 字段彻底删除(不再需要)
+//   - 6 个现有 agent(全部 is_template=true)全转 instance(用户指令)
+export const agentTemplates = pgTable('agent_templates', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id')
     .notNull()
@@ -81,35 +99,59 @@ export const agents = pgTable('agents', {
   description: text('description'),
   capabilities: jsonb('capabilities').default([]),
   tools: jsonb('tools').default([]),
+  persona: text('persona'),
   systemPrompt: text('system_prompt'),
   orchestration: jsonb('orchestration').default({}),
   boundary: jsonb('boundary').default({}),
   ironLaws: jsonb('iron_laws').default([]),
+  category: varchar('category', { length: 255 }).default('general'),
+  templateType: varchar('template_type', { length: 100 }).default('custom'),
   isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  displayName: text('display_name'),
-  version: integer('version').default(1),
-  deploymentType: varchar('deployment_type', { length: 30 }).notNull().default('bot'),
-  // 'bot' | 'job' | 'api' | 'mixed'
-  // R15-A: template vs instance + multi-bot working_dir + channel binding + visibility + temperature
-  isTemplate: boolean('is_template').notNull().default(false),
-  workingDir: text('working_dir'),
+  createdBy: uuid('created_by'),
+});
+
+export const agentInstances = pgTable('agent_instances', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id')
+    .notNull()
+    .references(() => tenants.id),
+  name: varchar('name', { length: 255 }).notNull(),
+  roleTemplate: varchar('role_template', { length: 255 }),
+  description: text('description'),
+  capabilities: jsonb('capabilities').default([]),
+  tools: jsonb('tools').default([]),
+  persona: text('persona'),
+  systemPrompt: text('system_prompt'),
+  orchestration: jsonb('orchestration').default({}),
+  boundary: jsonb('boundary').default({}),
+  ironLaws: jsonb('iron_laws').default([]),
+  category: varchar('category', { length: 255 }).default('general'),
+  templateType: varchar('template_type', { length: 100 }).default('custom'),
+  sourceTemplateId: uuid('source_template_id'),
+  isActive: boolean('is_active').default(true).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  createdBy: uuid('created_by'),
+  // ── instance 独有字段 ──
   channelIds: jsonb('channel_ids').$type<string[]>().default([]),
-  visibility: varchar('visibility', { length: 20 }).notNull().default('team'),
-  temperature: doublePrecision('temperature').notNull().default(0.7),
-  // R33-A: agent-level model binding. These DB columns already exist but were
-  // missing from the drizzle schema, so pipeline-engine couldn't read the
-  // agent's chosen model via drizzle — root cause of "agent bound to DeepSeek
-  // but global default (Minimax) wins at runtime". Now readable.
+  ownerUserId: uuid('owner_user_id'),
+  workingDir: text('working_dir'),
   defaultEngine: varchar('default_engine', { length: 64 }),
   defaultModel: varchar('default_model', { length: 128 }),
-  // R41-C: owner_user_id is the denormalized single-tenant binding cache.
-  // The canonical many-to-many binding lives in user_agent_bindings below.
-  // Front-end used to read only this column; R41-C re-introduces the
-  // explicit user_agent_bindings table so multi-binding / lifecycle
-  // (role, is_primary, audit) is supported without losing backwards compat.
-  ownerUserId: uuid('owner_user_id'),
+  modelId: text('model_id'),
+  defaultContextWindow: integer('default_context_window').default(200000),
+  defaultMaxTurns: integer('default_max_turns'),
+  complexityLevel: varchar('complexity_level', { length: 20 }).default('L1'),
+  status: varchar('status', { length: 20 }).notNull().default('active'),
+  deploymentType: varchar('deployment_type', { length: 30 }).notNull().default('bot'),
+  temperature: doublePrecision('temperature').notNull().default(0.7),
+  visibility: varchar('visibility', { length: 20 }).notNull().default('team'),
+  avatarUrl: text('avatar_url'),
+  avatarGlyph: text('avatar_glyph'),
+  avatarHue: text('avatar_hue'),
+  displayName: text('display_name'),
 });
 
 
@@ -126,7 +168,7 @@ export const userAgentBindings = pgTable(
     userId: uuid('user_id').notNull(),
     agentId: uuid('agent_id')
       .notNull()
-      .references(() => agents.id, { onDelete: 'cascade' }),
+      .references(() => agentInstances.id, { onDelete: 'cascade' }),
     role: text('role').notNull().default('user'),
     isPrimary: boolean('is_primary').default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -141,7 +183,7 @@ export const memories = pgTable('memories', {
   userId: text('user_id').notNull(),
   // R38-C1: agent-centric reintroduction. Nullable so legacy bot_id-only rows
   // still load. Backfilled in stage 2.
-  agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
+  agentId: uuid('agent_id').references(() => agentInstances.id, { onDelete: 'set null' }),
   botId: uuid('bot_id'),
   tenantId: text('tenant_id').notNull(),
   importance: real('importance').default(0.5),
@@ -168,7 +210,7 @@ export const auditLogs = pgTable('audit_logs', {
     .notNull()
     .references(() => tenants.id),
   userId: uuid('user_id').references(() => users.id),
-  agentId: uuid('agent_id').references(() => agents.id),
+  agentId: uuid('agent_id').references(() => agentInstances.id),
   action: varchar('action', { length: 255 }).notNull(),
   resourceType: varchar('resource_type', { length: 100 }),
   resourceId: varchar('resource_id', { length: 255 }),
@@ -198,11 +240,11 @@ export const botConfigs = pgTable('bot_configs', {
   botId: uuid('bot_id').defaultRandom(),
   remark: text('remark').default(''),
   displayName: text('display_name'),
-  agentTemplateId: uuid('agent_template_id').references(() => agents.id, { onDelete: 'set null' }),
+  agentTemplateId: uuid('agent_template_id').references(() => agentInstances.id, { onDelete: 'set null' }),
   // R34-A: 指向绑定的 agent 实例（非模板）。与 agentTemplateId 区别：
   //   agentTemplateId = 此 bot 基于哪个模板创建 (is_template=true 的 agent)
   //   agentId         = 此 bot 当前绑定的 agent 实例 (is_template=false 的 agent)
-  agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
+  agentId: uuid('agent_id').references(() => agentInstances.id, { onDelete: 'set null' }),
 }, (t) => ({
   nameIdx: uniqueIndex('bot_configs_name_unique').on(t.name),
   templateIdx: index('bot_configs_template_idx').on(t.agentTemplateId),
@@ -310,7 +352,7 @@ export const documents = pgTable('documents', {
   fileUrl: text('file_url'),
   botId: uuid('bot_id').references(() => botConfigs.botId),
   // R34-A: document 归属的 agent 实例（通过 bot_configs.agent_id 反查填充）
-  agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
+  agentId: uuid('agent_id').references(() => agentInstances.id, { onDelete: 'set null' }),
   // ── plan-B2: KB 关联 + 权限 + 版本化 ──
   kbId: uuid('kb_id'),
   kbType: varchar('kb_type', { length: 30 }),
@@ -347,7 +389,7 @@ export const folders = pgTable('folders', {
   updatedAt: varchar('updated_at', { length: 100 }),
   botId: uuid('bot_id').references(() => botConfigs.botId),
   // R34-A: folder 归属的 agent 实例（通过 bot_configs.agent_id 反查填充）
-  agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
+  agentId: uuid('agent_id').references(() => agentInstances.id, { onDelete: 'set null' }),
 });
 
 // ── sessions ─────────────────────────────────────────────────────────────────
@@ -728,7 +770,7 @@ export const userTeams = pgTable('user_teams', {
 
 // agent_team_auth: agent 授权给 team(saas spec §3.3 + §4.2)
 export const agentTeamAuth = pgTable('agent_team_auth', {
-  agentId: uuid('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  agentId: uuid('agent_id').notNull().references(() => agentInstances.id, { onDelete: 'cascade' }),
   teamId: uuid('team_id').notNull(),
   grantedBy: uuid('granted_by'),
   grantedAt: timestamp('granted_at', { withTimezone: true }).defaultNow().notNull(),
@@ -869,20 +911,26 @@ export const mcpServers = pgTable('mcp_servers', {
 // agent_skill_refs:agent 绑 skill(spec §9.3)
 export const agentSkillRefs = pgTable('agent_skill_refs', {
   id: uuid('id').primaryKey().defaultRandom(),
-  agentId: uuid('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  // R42-SCHEMA: polymorphic — 配合 targetType 决定指向 agent_templates 还是
+  // agent_instances(默认 'instance' 兼容老数据)
+  agentId: uuid('agent_id').notNull(),
   skillId: varchar('skill_id', { length: 255 }).notNull().references(() => skills.id, { onDelete: 'cascade' }),
   skillVersion: varchar('skill_version', { length: 20 }),
   params: jsonb('params').$type<Record<string, unknown>>().default({}),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  targetType: targetTypeEnum('target_type').notNull().default('instance'),
 });
 // agent_mcp_refs: agent 绑 MCP server (R38-C1 schema migration)
 export const agentMcpRefs = pgTable('agent_mcp_refs', {
   id: uuid('id').primaryKey().defaultRandom(),
-  agentId: uuid('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  // R42-SCHEMA: polymorphic — 配合 targetType 决定指向 agent_templates 还是
+  // agent_instances(默认 'instance' 兼容老数据)
+  agentId: uuid('agent_id').notNull(),
   mcpServerId: uuid('mcp_server_id').notNull().references(() => mcpServers.id, { onDelete: 'cascade' }),
   params: jsonb('params').$type<Record<string, unknown>>().default({}),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  targetType: targetTypeEnum('target_type').notNull().default('instance'),
 });
 
 // skill_usage:skill 调用日志,给 usage_reports 聚合
@@ -925,11 +973,14 @@ export const knowledgeBases = pgTable('knowledge_bases', {
 // agent_knowledge_refs: agent 绑 KB,带 topK + minScore 配置
 export const agentKnowledgeRefs = pgTable('agent_knowledge_refs', {
   id: uuid('id').primaryKey().defaultRandom(),
-  agentId: uuid('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  // R42-SCHEMA: polymorphic — 配合 targetType 决定指向 agent_templates 还是
+  // agent_instances(默认 'instance' 兼容老数据)
+  agentId: uuid('agent_id').notNull(),
   kbId: uuid('kb_id').notNull().references(() => knowledgeBases.id, { onDelete: 'cascade' }),
   topK: integer('top_k').notNull().default(5),
   minScore: numeric('min_score', { precision: 4, scale: 3 }).notNull().default('0.5'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  targetType: targetTypeEnum('target_type').notNull().default('instance'),
 });
 
 // ── plan-C (2026-07-06): Tenant Quota ─────────────────────────────────────
@@ -983,7 +1034,7 @@ export const skillDags = pgTable('skill_dags', {
 export const scheduledJobs = pgTable('scheduled_jobs', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
-  agentTemplateId: uuid('agent_template_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  agentTemplateId: uuid('agent_template_id').notNull().references(() => agentInstances.id, { onDelete: 'cascade' }),
   name: varchar('name', { length: 200 }).notNull(),
   description: text('description'),
   triggerType: varchar('trigger_type', { length: 20 }).notNull(),
@@ -1014,7 +1065,7 @@ export const scheduledJobs = pgTable('scheduled_jobs', {
 export const agentRunLogs = pgTable('agent_run_logs', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
-  agentTemplateId: uuid('agent_template_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  agentTemplateId: uuid('agent_template_id').notNull().references(() => agentInstances.id, { onDelete: 'cascade' }),
   deploymentType: varchar('deployment_type', { length: 20 }).notNull(),
   // 'bot' | 'job' | 'api'
   deploymentRefId: varchar('deployment_ref_id', { length: 255 }),
@@ -1129,9 +1180,9 @@ export const pipelineRuns = pgTable('pipeline_runs', {
 export const agentMessages = pgTable('agent_messages', {
   id: uuid('id').primaryKey().defaultRandom(),
   runId: uuid('run_id').notNull().references(() => pipelineRuns.id, { onDelete: 'cascade' }),
-  fromAgentId: uuid('from_agent_id').references(() => agents.id),
+  fromAgentId: uuid('from_agent_id').references(() => agentInstances.id),
   fromNodeId: varchar('from_node_id', { length: 100 }),
-  toAgentId: uuid('to_agent_id').references(() => agents.id),
+  toAgentId: uuid('to_agent_id').references(() => agentInstances.id),
   toNodeId: varchar('to_node_id', { length: 100 }),
   payload: jsonb('payload').default({}),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
