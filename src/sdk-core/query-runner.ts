@@ -15,6 +15,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { createLogger, type Logger } from '../utils/logger.js';
 import { SDKSessionManager, type BotRecord } from './session-manager.js';
+import { pool } from '../db/index.js';
 import { SystemPromptInjector } from './system-prompt-injector.js';
 import { AgentDefinitionBuilder } from './agent-definition-builder.js';
 import { HookRegistry } from './hook-registry.js';
@@ -145,6 +146,13 @@ export class QueryRunner {
     const messages = await this.executeStream(opts.prompt, options, bot);
     const sessionId = this.extractSessionId(messages, bot);
 
+    // R49-D step 3: capture SDK modelUsage + usage -> task_metrics.
+    // recordUsageSafely swallows errors internally so the main return
+    // path is never blocked by observability failures.
+    await this.recordUsageSafely(bot, messages).catch((err: unknown) => {
+      LOG.warn({ bot_name: bot.name, err: String(err) }, 'usage record failed');
+    });
+
     LOG.info(
       { bot_name: bot.name, session_id: sessionId, message_count: messages.length },
       'Query completed',
@@ -271,5 +279,67 @@ export class QueryRunner {
       'No session_id in SDK stream',
       bot.name,
     );
+  }
+
+  // === R49-D step 3: SDK usage -> task_metrics ===
+
+  /**
+   * Walk the stream, find the final SDKResultMessage (subtype=success|error),
+   * and persist its modelUsage + usage + total_cost_usd into task_metrics.
+   *
+   * Tags layout:
+   *   {
+   *     bot_name, session_id, num_turns, duration_ms, duration_api_ms,
+   *     total_cost_usd, modelUsage: { [modelName]: ModelUsage },
+   *     usage: NonNullableUsage, subtype
+   *   }
+   *
+   * Fire-and-forget wrapper used by runQuery — never throws.
+   */
+  private async recordUsageSafely(bot: BotRecord, messages: SDKMessage[]): Promise<void> {
+    try {
+    const resultMsg = messages.find(
+      (m): m is SDKMessage & { type: 'result' } =>
+        (m as { type?: string }).type === 'result',
+    );
+    if (!resultMsg) return;
+
+    const r = resultMsg as unknown as {
+      subtype?: string;
+      num_turns?: number;
+      duration_ms?: number;
+      duration_api_ms?: number;
+      total_cost_usd?: number;
+      session_id?: string;
+      usage?: unknown;
+      modelUsage?: Record<string, unknown>;
+    };
+
+    const tags = {
+      bot_name: bot.name,
+      session_id: r.session_id,
+      subtype: r.subtype,
+      num_turns: r.num_turns,
+      duration_ms: r.duration_ms,
+      duration_api_ms: r.duration_api_ms,
+      total_cost_usd: r.total_cost_usd,
+      usage: r.usage,
+      modelUsage: r.modelUsage,
+    };
+
+    await pool.query(
+      `INSERT INTO task_metrics (metric_name, metric_value, tags)
+       VALUES ($1, $2, $3)`,
+      ['sdk_usage', r.total_cost_usd ?? 0, JSON.stringify(tags)],
+    );
+
+    LOG.debug(
+      { bot_name: bot.name, session_id: r.session_id, num_models: Object.keys(r.modelUsage ?? {}).length },
+      'sdk_usage recorded',
+    );
+    } catch (err: unknown) {
+      // Never throw out of recordUsageSafely - it would block the main return path.
+      LOG.warn({ bot_name: bot.name, err: String(err) }, 'sdk_usage record threw');
+    }
   }
 }
