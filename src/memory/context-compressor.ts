@@ -88,12 +88,18 @@ export class ContextCompressor {
     };
 
     try {
+      // R48-W1 P1.3: ON CONFLICT upsert,避免 auto-compress/{date} 重复堆积
+      // 依赖 unique index idx_memories_bot_subject_unique(bot_id, subject_normalized) WHERE invalidated_at IS NULL
       await this.deps.pool.query(
         `INSERT INTO memories (id, content, layer, user_id, bot_id, tenant_id, importance,
            metadata_json, subject, subject_normalized, confidence, hit_count, type, polarity)
          SELECT gen_random_uuid()::text, $1, 3, $2, bc.bot_id, 'tenant-default', 8,
            $3::jsonb, $4, $4, 0.9, 0, 'event', 'affirm'
-         FROM bot_configs bc WHERE bc.name = $5 LIMIT 1`,
+         FROM bot_configs bc WHERE bc.name = $5 LIMIT 1
+         ON CONFLICT (bot_id, subject_normalized) WHERE invalidated_at IS NULL
+         DO UPDATE SET content = EXCLUDED.content,
+                       metadata_json = EXCLUDED.metadata_json,
+                       updated_at = NOW()`,
         [content, 'auto-compress', JSON.stringify(metadata), subject, this.deps.botName],
       );
     } catch (e: any) {

@@ -5,6 +5,7 @@ import { MemoryManager } from '../../memory-engine/memory-manager.js';
 import { PostgresStore } from '../../memory-engine/storage/postgres-store.js';
 import { OpenAIEmbedder } from '../../memory-engine/retrieval/embedder.js';
 import { MemoryLayer } from '../../core/constants.js';
+import { runCurator } from '../../services/memory-curator.js';
 
 /**
  * R38-C4 阶段 3.6: agentId 反查 bot_id 列表。
@@ -103,6 +104,20 @@ export const handleMemoryRoutes: RouteHandler = async (_ctx, req, res, method, u
       results: filtered.map((r) => ({ content: r.memory.content, similarity: r.similarity, layer: r.memory.layer, bot_id: r.memory.botId })),
       filter: { agentId: agentId || null, botId: botId || null, bot_count: botIdsFilter?.length ?? 0 },
     });
+    return true;
+  }
+
+  // R48-W1 P1.2 memory-curator manual trigger — 复用上方 internal-key 校验
+  if (url === '/api/v1/memory/curate' && method === 'POST') {
+    const body = await parseJsonBody(req).catch(() => ({} as any));
+    const dryRun = body.dryRun !== false; // 默认 dryRun,符合 W1 策略
+    const limit = typeof body.limit === 'number' ? body.limit : 500;
+    try {
+      const stats = await runCurator({ dryRun, limit });
+      jsonResponse(res, 200, { ok: true, dryRun, stats });
+    } catch (err: any) {
+      jsonResponse(res, 500, { ok: false, error: err.message });
+    }
     return true;
   }
 
