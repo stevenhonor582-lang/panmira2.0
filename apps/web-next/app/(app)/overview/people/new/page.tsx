@@ -41,6 +41,19 @@ export default function Page() {
   );
 }
 
+/**
+ * R45-4: 用 crypto 强随机生成 12 字符密码(邮件模式下前端生成,满足后端必填约束)
+ */
+function genPassword(): string {
+  if (typeof window !== "undefined" && window.crypto?.getRandomValues) {
+    const arr = new Uint8Array(12);
+    window.crypto.getRandomValues(arr);
+    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+    return Array.from(arr, (b) => alphabet[b % alphabet.length]).join("");
+  }
+  return Math.random().toString(36).slice(2, 14);
+}
+
 const STEPS = [
   { key: "basic", label: "基础信息" },
   { key: "sid", label: "生成 SID" },
@@ -143,14 +156,18 @@ function NewPersonWizard() {
       };
       if (form.notifyMode === "manual") {
         payload.password = form.password;
+      } else {
+        // R45-4: 邮件模式 — 前端生成密码(后端 /api/v2/people 必填 password)
+        payload.password = genPassword();
       }
       const result = await createPerson(payload);
       if (!result) {
         setErr("创建失败");
         return;
       }
-      if (form.notifyMode === "email" && result.generatedPassword) {
-        setGenPwd(result.generatedPassword);
+      if (form.notifyMode === "email") {
+        // R45-4: 邮件模式用前端生成的密码显示给用户(后端 /api/v2/people 不返回 generatedPassword)
+        setGenPwd(payload.password!);
       } else {
         router.push("/overview/people");
       }

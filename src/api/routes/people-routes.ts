@@ -5,6 +5,7 @@
  */
 import type * as http from 'node:http';
 import { pool } from '../../db/index.js';
+import { UserStore } from '../../db/user-store.js';
 import { jsonResponse, parseJsonBody, ok, fail, paginated } from './helpers.js';
 import { requireBearer, requireAnyScope } from '../oauth-middleware.js';
 
@@ -21,6 +22,74 @@ export async function handlePeopleRoutes(
   if (!ctx) return true;
 
   const tenantId = ctx.tenantId || '00000000-0000-0000-0000-000000000000';
+
+  // ====== R45-4: POST /api/v2/people — 真人创建(补全 R11 之后无 POST 端点的洞) ======
+  // Body: { name, email, phone?, role?, department?, position?, password? }
+  // 鉴权:admin 全权;operator 只能创建 member。
+  // 行为:userStore.register(同 /api/auth/users POST) + 不分配 agent/pipeline(交给后续 PATCH)。
+  if (method === 'POST' && u.pathname === '/api/v2/people') {
+    if (!requireAnyScope(ctx, ['people:admin', '*'])) {
+      jsonResponse(res, 403, fail('forbidden', '需要 people:admin'));
+      return true;
+    }
+    // R45-4: people-routes 用 requireBearer(),ctx 是 OAuthContext(无 role) — 查 users 表拿
+    const callerRes = ctx.userId
+      ? await pool.query('SELECT role FROM users WHERE id = $1', [ctx.userId])
+      : { rows: [] };
+    const callerRole: string = callerRes.rows[0]?.role ?? '';
+    if (callerRole !== 'admin' && callerRole !== 'operator') {
+      jsonResponse(res, 403, fail('forbidden', '需要 admin 或 operator 角色'));
+      return true;
+    }
+    const body = await parseJsonBody(req);
+    const email = (body as any).email;
+    const name = (body as any).name;
+    const phone = (body as any).phone;
+    const role = (body as any).role ?? 'member';
+    const department = (body as any).department;
+    const position = (body as any).position;
+    const employeeStatus = (body as any).employeeStatus ?? 'active';
+    // R45-4: password 必填 — 前端 wizard 邮件模式用 crypto.randomBytes 生成 12 字符密码
+    const userPwd: string | undefined = (body as any).password;
+    if (!email || !name) {
+      jsonResponse(res, 400, fail('bad_request', 'email, name are required'));
+      return true;
+    }
+    if (!userPwd || userPwd.length < 6) {
+      jsonResponse(res, 400, fail('bad_request', 'password 必填且至少 6 字符'));
+      return true;
+    }
+    const VALID_ROLES = ['admin', 'operator', 'member'];
+    const VALID_EMPLOYEE_STATUS = ['active', 'paused', 'departed'];
+    if (!VALID_ROLES.includes(role)) {
+      jsonResponse(res, 400, fail('bad_request', `role must be one of ${VALID_ROLES.join(', ')}`));
+      return true;
+    }
+    if (!VALID_EMPLOYEE_STATUS.includes(employeeStatus)) {
+      jsonResponse(res, 400, fail('bad_request', `employeeStatus must be one of ${VALID_EMPLOYEE_STATUS.join(', ')}`));
+      return true;
+    }
+    if (role === 'admin' && callerRole !== 'admin') {
+      jsonResponse(res, 403, fail('forbidden', '只有 admin 能创建 admin 账户'));
+      return true;
+    }
+    if (role === 'operator' && callerRole !== 'admin') {
+      jsonResponse(res, 403, fail('forbidden', '只有 admin 能创建 operator 账户'));
+      return true;
+    }
+    try {
+      const userStore = new UserStore();
+      const user = await userStore.register(email, userPwd, name, {
+        phone, role, department, position, employeeStatus,
+      });
+      jsonResponse(res, 201, {
+        user,
+      });
+    } catch (err: any) {
+      jsonResponse(res, 400, fail('bad_request', String(err?.message ?? err)));
+    }
+    return true;
+  }
 
   // GET /api/v2/people — 列表
   if (method === 'GET' && u.pathname === '/api/v2/people') {

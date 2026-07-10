@@ -274,8 +274,9 @@ export async function createPerson(payload: {
   agentIds?: string[];
   pipelineIds?: string[];
 }): Promise<{ user: Person; generatedPassword?: string } | null> {
+  // R45-4: 改调 POST /api/v2/people(后端 R45-4 加的端点;原 /api/auth/users 保留作兼容)
   const res = await api<{ user: Person; generatedPassword?: string }>(
-    fullPath("/api/auth/users"),
+    fullPath("/api/v2/people"),
     {
       method: "POST",
       headers: { "content-type": "application/json" },
