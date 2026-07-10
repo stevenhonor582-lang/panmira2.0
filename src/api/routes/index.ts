@@ -31,3 +31,5 @@ export { jsonResponse, readBody, parseJsonBody } from './helpers.js';
 export type { RouteContext, RouteHandler } from './types.js';
 // R49-B: v3 health (unified envelope + DB/Redis/MCP/CC-SDK checks)
 export { handleV3HealthRoutes } from './v3-health-routes.js';
+// R49-B: v3 list routes (unified envelope + flat data array + pagination)
+export { handleV3ListRoutes } from './v3-list-routes.js';

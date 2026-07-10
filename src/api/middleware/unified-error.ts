@@ -128,6 +128,34 @@ export function sendAccepted<T>(
 }
 
 /**
+ * 分页响应 — data 直接是数组,pagination 与 envelope meta 平级
+ *   { success: true, data: [...], pagination: { total, page, limit }, meta: { traceId, version, timestamp } }
+ *
+ * R49-B 新路由推荐用此格式(替代旧 helpers.paginated 的 data.items 包裹)
+ */
+export function sendPaginated<T>(
+  res: http.ServerResponse,
+  items: T[],
+  total: number,
+  page: number,
+  limit: number,
+  version: ApiVersion,
+  traceId?: string,
+): void {
+  const envelope = {
+    success: true,
+    data: items,
+    pagination: { total, page, limit },
+    meta: {
+      traceId: traceId ?? (res as any).traceId ?? generateTraceId(),
+      version,
+      timestamp: nowIso(),
+    },
+  };
+  jsonResponse(res, StatusCode.OK, envelope);
+}
+
+/**
  * 204 No Content
  */
 export function sendNoContent(res: http.ServerResponse): void {

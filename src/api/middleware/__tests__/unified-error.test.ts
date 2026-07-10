@@ -10,6 +10,7 @@ import {
   sendAccepted,
   sendNoContent,
   sendError,
+  sendPaginated,
   withErrorBoundary,
   handleCaughtError,
 } from "../unified-error.js";
@@ -214,3 +215,31 @@ describe("handleCaughtError mapping", () => {
     expect(parseBody(res).error.code).toBe("SERVICE_UNAVAILABLE");
   });
 });
+
+describe("sendPaginated", () => {
+  it("returns flat data array + pagination + meta", () => {
+    const res = makeRes();
+    sendPaginated(res, [{ id: 1 }, { id: 2 }], 100, 1, 20, "v3");
+    expect(res.statusCode).toBe(200);
+    const body = parseBody(res);
+    expect(body.success).toBe(true);
+    expect(body.data).toEqual([{ id: 1 }, { id: 2 }]); // direct array
+    expect(body.pagination).toEqual({ total: 100, page: 1, limit: 20 });
+    expect(body.meta.version).toBe("v3");
+    expect(body.meta.traceId).toHaveLength(32);
+  });
+
+  it("preserves explicit traceId", () => {
+    const res = makeRes();
+    sendPaginated(res, [], 0, 1, 20, "v3", "explicit-tid");
+    expect(parseBody(res).meta.traceId).toBe("explicit-tid");
+  });
+
+  it("handles empty array", () => {
+    const res = makeRes();
+    sendPaginated(res, [], 0, 1, 20, "v3");
+    expect(parseBody(res).data).toEqual([]);
+    expect(parseBody(res).pagination.total).toBe(0);
+  });
+});
+
