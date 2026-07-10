@@ -23,26 +23,26 @@ function makeDeps(totalTokens: number, contextWindow: number, opts: Partial<Comp
     contextWindow,
     chatId: 't1',
     botName: '得一',
-    threshold: opts.threshold ?? 0.8,
-    forceThreshold: opts.forceThreshold ?? 0.95,
+    threshold: opts.threshold,
+    forceThreshold: opts.forceThreshold,
     ...opts,
   };
 }
 
 describe('ContextCompressor.shouldCompress', () => {
-  it('returns false when usage < 80% threshold', () => {
-    const c = new ContextCompressor(makeDeps(159999, 200000));
+  it('returns false when usage < 70% threshold', () => {
+    const c = new ContextCompressor(makeDeps(139999, 200000));
     expect(c.shouldCompress()).toBe(false);
   });
 
-  it('returns true (warn) when usage 80-95%', () => {
-    const c = new ContextCompressor(makeDeps(170001, 200000));
+  it('returns true (warn) when usage 70-85%', () => {
+    const c = new ContextCompressor(makeDeps(150000, 200000));
     expect(c.shouldCompress()).toBe(true);
     expect(c.urgency()).toBe('warn');
   });
 
-  it('returns true (force) when usage > 95%', () => {
-    const c = new ContextCompressor(makeDeps(200000, 200000));
+  it('returns true (force) when usage >= 85%', () => {
+    const c = new ContextCompressor(makeDeps(170000, 200000));
     expect(c.shouldCompress()).toBe(true);
     expect(c.urgency()).toBe('force');
   });
@@ -55,7 +55,7 @@ describe('ContextCompressor.shouldCompress', () => {
 
 describe('ContextCompressor.compress — summarize old messages to memory', () => {
   it('writes summary to memories table + resets session', async () => {
-    const deps = makeDeps(180000, 200000);
+    const deps = makeDeps(150000, 200000);
     const c = new ContextCompressor(deps);
     await c.compress('对话历史太长,前 30 轮总结:用户讨论了...');
     expect(deps.pool.query).toHaveBeenCalledWith(
@@ -77,11 +77,11 @@ describe('ContextCompressor.compress — summarize old messages to memory', () =
 
 describe('ContextCompressor.urgency', () => {
   it('handles different model context windows correctly', () => {
-    // 78% < 80% threshold → none
-    expect(new ContextCompressor(makeDeps(400000, 512000)).urgency()).toBe('none');
-    // 97% > 95% force threshold → force
-    expect(new ContextCompressor(makeDeps(500001, 512000)).urgency()).toBe('force');
-    // 10% < 80% → none
+    // 68% < 70% threshold → none
+    expect(new ContextCompressor(makeDeps(350000, 512000)).urgency()).toBe('none');
+    // 85% >= force threshold → force
+    expect(new ContextCompressor(makeDeps(435200, 512000)).urgency()).toBe('force');
+    // 10% < 70% → none
     expect(new ContextCompressor(makeDeps(100000, 1000000)).urgency()).toBe('none');
   });
 });

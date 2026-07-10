@@ -3,12 +3,14 @@
 /**
  * /tasks/new — DAG editor page (P7-B1).
  *
- * Layout:
+ * R36-5 Layout: 画布在左,任务名称 + 描述在右
  *   ┌──────────────── 100% ────────────────┐
  *   │ Header: title + back link             │
- *   ├───────────────────────────────────────┤
- *   │  TaskDagEditor (dynamic, ssr:false)   │
- *   │  onSave → POST /api/v2/admin/pipelines│
+ *   ├──────────────────┬────────────────────┤
+ *   │ TaskDagEditor    │ 任务名称 + 描述     │
+ *   │ (canvas, 大区域) │  + 错误提示 + 提示  │
+ *   ├──────────────────┴────────────────────┤
+ *   │ Save / Cancel 按钮                    │
  *   └───────────────────────────────────────┘
  */
 
@@ -158,45 +160,10 @@ export default function NewTaskPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 px-6 py-4 lg:grid-cols-[280px_1fr] flex-1 min-h-0">
-        <aside className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="task-name" className="text-xs">
-              任务名称
-            </Label>
-            <Input
-              id="task-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="例如 · 客户意向分类"
-              className="h-9"
-              maxLength={120}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="task-desc" className="text-xs">
-              描述
-            </Label>
-            <textarea
-              id="task-desc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="这个任务做什么 / 触发条件 / 期望产出"
-              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              rows={4}
-            />
-          </div>
-          {error && (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 text-rose-700 px-3 py-2 text-xs">
-              {error}
-            </div>
-          )}
-          <div className="rounded-lg bg-muted/30 px-3 py-2 text-[11px] font-mono text-muted-foreground">
-            保存后将跳转到 /tasks/{`{id}`}/
-          </div>
-        </aside>
-
-        <section className="min-h-0 min-w-0">
+      {/* R36-5: 画布左 + 表单右(grid 布局,移动端 stacked) */}
+      <div className="grid gap-4 px-6 py-4 lg:grid-cols-[1fr_320px] flex-1 min-h-0">
+        {/* 左:画布(主舞台,占主区域) */}
+        <section className="min-h-0 min-w-0 order-2 lg:order-1">
           <TaskDagEditor
             readOnly={false}
             onChange={(value) => setSnapshot(value)}
@@ -205,6 +172,65 @@ export default function NewTaskPage() {
             onSaveDraft={saveDraft}
           />
         </section>
+
+        {/* 右:任务名称 + 描述 + 提示(sticky 滚动) */}
+        <aside className="space-y-4 order-1 lg:order-2 lg:overflow-y-auto lg:max-h-full">
+          <div className="rounded-xl border border-border bg-card p-4">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-foreground/55">
+                任务元信息
+              </span>
+            </div>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="task-name" className="text-xs">
+                  任务名称 <span className="text-rose-500">*</span>
+                </Label>
+                <Input
+                  id="task-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="例如 · 客户意向分类"
+                  className="h-9"
+                  maxLength={120}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="task-desc" className="text-xs">
+                  描述
+                </Label>
+                <textarea
+                  id="task-desc"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="这个任务做什么 / 触发条件 / 期望产出"
+                  className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  rows={5}
+                />
+              </div>
+            </div>
+          </div>
+
+          {error && (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 text-rose-700 px-3 py-2 text-xs">
+              {error}
+            </div>
+          )}
+
+          <div className="rounded-lg bg-muted/30 px-3 py-2 text-[11px] font-mono text-muted-foreground">
+            保存后将跳转到 /tasks/{`{id}`}/
+          </div>
+
+          <div className="rounded-lg bg-muted/20 px-3 py-2 text-[11px] text-foreground/65">
+            <p className="mb-1 font-medium text-foreground/85">操作提示</p>
+            <ul className="ml-4 list-disc space-y-0.5">
+              <li>左侧画布拖拽节点 / 连线编排 DAG</li>
+              <li>点击节点配置参数(模型 / prompt / 触发器)</li>
+              <li>顶部「测试运行」会先自动保存草稿</li>
+              <li>右上「保存草稿」跳转到详情页</li>
+            </ul>
+          </div>
+        </aside>
       </div>
     </div>
   );

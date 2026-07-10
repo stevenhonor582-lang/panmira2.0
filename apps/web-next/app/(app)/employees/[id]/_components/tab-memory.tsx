@@ -13,6 +13,7 @@ import {
  *
  * 数据源:
  *   GET /api/v2/foundation/memory/l{1,2,3}?bot_id=<agent.id>&limit=5
+ *   (R38-C5 4.2: 跳链改用 agentId,bot_id 兼容保留)
  *   返回 { total, memories: [...] }
  *   GET /api/v2/foundation/memory/l1?bot_id=<agent.id>&limit=100  (取最近 100 条做归纳)
  *
@@ -164,7 +165,7 @@ export function TabMemory({ id }: { id: string }) {
             共 {total} 条
           </span>
           <Link
-            href={`/foundation/memory/l1?botId=${encodeURIComponent(agent.id)}`}
+            href={`/foundation/memory/l1?agentId=${encodeURIComponent(agent.id)}&botId=${encodeURIComponent(agent.id)}`}
             className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[12px] font-medium ring-1 ring-border text-foreground/70 hover:bg-muted/60 hover:text-foreground transition-colors"
             data-testid="memory-jump-full"
           >
@@ -299,7 +300,7 @@ function LayerSection({
         </div>
         {hasItems && (
           <Link
-            href={`/foundation/memory/${layer.route}?botId=${encodeURIComponent(agentId)}`}
+            href={`/foundation/memory/${layer.route}?agentId=${encodeURIComponent(agentId)}&botId=${encodeURIComponent(agentId)}`}
             onClick={(e) => e.stopPropagation()}
             className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-foreground/40 hover:text-foreground/70 transition-colors"
           >

@@ -51,7 +51,27 @@ export async function handleBotRoutes(
     const localBots = registry.list();
     const runningNames = new Set(localBots.map((b) => b.name));
 
-    // Enrich with bot_id/remark/display_name from DB
+    // R36-3: 一次性查 bot_configs.agent_id(实例绑定) + 对应 agent.name
+    // 这是入口"空闲/占用/已绑"状态的权威来源,避免前端扫全表错配。
+    let agentNameById = new Map<string, string>();
+    let agentBoundByName = new Map<string, string | null>();
+    if (botConfigStore) {
+      try {
+        const result = await pool.query(
+          `SELECT bc.name AS bot_name, bc.agent_id::text AS agent_id, a.name AS agent_name
+             FROM bot_configs bc
+             LEFT JOIN agents a ON a.id::text = bc.agent_id::text`
+        );
+        for (const r of result.rows) {
+          agentBoundByName.set(r.bot_name, r.agent_id ?? null);
+          if (r.agent_id && r.agent_name) {
+            agentNameById.set(r.agent_id, r.agent_name);
+          }
+        }
+      } catch { /* best-effort,降级到原行为 */ }
+    }
+
+    // Enrich with bot_id/remark/display_name/agent_id(实例绑定) from DB
     if (botConfigStore) {
       try {
         const allRows = await botConfigStore.listAll();
@@ -59,10 +79,14 @@ export async function handleBotRoutes(
         for (const bot of localBots) {
           const row = rowMap.get(bot.name);
           if (row) {
-            (bot as any).remark = (row.configJson as any)?.remark || '';
-            (bot as any).bot_id = (row as any).bot_id || '';
-            (bot as any).display_name = (row as any).display_name || ((bot as any).remark ? bot.name + '--' + (bot as any).remark : bot.name);
+            (bot as any).remark = (row.configJson as any)?.remark || row.remark || '';
+            (bot as any).bot_id = row.botId || '';
+            (bot as any).display_name = row.displayName || ((bot as any).remark ? bot.name + '--' + (bot as any).remark : bot.name);
           }
+          // R36-3: 注入实例绑定状态(权威来源)
+          const boundAgentId = agentBoundByName.get(bot.name) ?? null;
+          (bot as any).agent_id = boundAgentId;
+          (bot as any).agent_name = boundAgentId ? agentNameById.get(boundAgentId) ?? null : null;
         }
       } catch { /* best-effort */ }
     }
@@ -75,17 +99,23 @@ export async function handleBotRoutes(
         const allRows = await botConfigStore.listAll();
         pausedBots = allRows
           .filter((r) => !runningNames.has(r.name))
-          .map((r) => ({
-            name: r.name,
-            platform: r.platform,
-            engine: 'paused',
-            workingDirectory: (r.configJson as any).defaultWorkingDirectory || '',
-            description: (r.configJson as any).description || '',
-            remark: (r.configJson as any).remark || '',
-            bot_id: (r as any).bot_id || '',
-            display_name: (r as any).display_name || ((r.configJson as any).remark ? r.name + '--' + (r.configJson as any).remark : r.name),
-            paused: true,
-          }));
+          .map((r) => {
+            const boundAgentId = agentBoundByName.get(r.name) ?? null;
+            return {
+              name: r.name,
+              platform: r.platform,
+              engine: 'paused',
+              workingDirectory: (r.configJson as any).defaultWorkingDirectory || '',
+              description: (r.configJson as any).description || '',
+              remark: (r.configJson as any).remark || r.remark || '',
+              bot_id: r.botId || '',
+              display_name: r.displayName || ((r.configJson as any).remark ? r.name + '--' + (r.configJson as any).remark : r.name),
+              paused: true,
+              // R36-3: 暂停的 bot 也要带绑定状态,前端才能正确分类
+              agent_id: boundAgentId,
+              agent_name: boundAgentId ? agentNameById.get(boundAgentId) ?? null : null,
+            };
+          });
       } catch {
         /* ignore */
       }

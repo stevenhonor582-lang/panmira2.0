@@ -333,7 +333,29 @@ export class AgentStore {
       [generateWorkingDir(overrides.name), created.id],
     );
     const refreshed = await pool.query('SELECT * FROM agents WHERE id = $1', [created.id]);
-    return this.mapRow(refreshed.rows[0]);
+    const instance = this.mapRow(refreshed.rows[0]);
+
+    // R38-C4 阶段 3.5: 深拷贝 refs 关联(模板实例化时同步克隆)
+    // - agent_skill_refs (skill_id + skill_version + params)
+    // - agent_knowledge_refs (kb_id + topK + minScore)
+    // - agent_mcp_refs (mcp_server_id + params)
+    await pool.query(
+      `INSERT INTO agent_skill_refs (agent_id, skill_id, skill_version, params)
+        SELECT $1, skill_id, skill_version, params FROM agent_skill_refs WHERE agent_id = $2`,
+      [instance.id, templateId],
+    );
+    await pool.query(
+      `INSERT INTO agent_knowledge_refs (agent_id, kb_id, top_k, min_score)
+        SELECT $1, kb_id, top_k, min_score FROM agent_knowledge_refs WHERE agent_id = $2`,
+      [instance.id, templateId],
+    );
+    await pool.query(
+      `INSERT INTO agent_mcp_refs (agent_id, mcp_server_id, params)
+        SELECT $1, mcp_server_id, params FROM agent_mcp_refs WHERE agent_id = $2`,
+      [instance.id, templateId],
+    );
+
+    return instance;
   }
 
   async update(
@@ -426,8 +448,6 @@ export class AgentStore {
     if (data.avatarGlyph !== undefined) { sets.push(`avatar_glyph = $${idx++}`); values.push(data.avatarGlyph); }
     if (data.avatarHue !== undefined) { sets.push(`avatar_hue = $${idx++}`); values.push(data.avatarHue); }
     if (data.modelId !== undefined) { sets.push(`model_id = $${idx++}`); values.push(data.modelId); }
-    if (data.defaultContextWindow !== undefined) { sets.push(`default_context_window = $${idx++}`); values.push(data.defaultContextWindow); }
-    if (data.persona !== undefined) { sets.push(`persona = $${idx++}`); values.push(data.persona); }
 
     if (sets.length === 0) return this.findById(id);
 

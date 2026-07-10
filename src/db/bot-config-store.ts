@@ -9,6 +9,13 @@ export interface BotConfigRow {
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
+  // R36-3+ 修复:BotConfigRow 之前缺这些字段,SELECT * 后未映射,
+  // 导致前端注入的 bot_id / display_name / remark 永远是 undefined,
+  // 最终 PATCH channel_ids 时写入空字符串。
+  botId?: string;
+  agentId?: string | null;
+  displayName?: string | null;
+  remark?: string;
 }
 
 export class BotConfigStore {
@@ -202,6 +209,10 @@ export class BotConfigStore {
       isActive: r.is_active,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
+      botId: r.bot_id,
+      agentId: r.agent_id ?? null,
+      displayName: r.display_name ?? null,
+      remark: r.remark ?? '',
     };
   }
 }

@@ -16,6 +16,8 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/toast/toast-provider";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { normalizeAutoCompressDraft } from "../../new/_components/form";
+import { CONTEXT_PRESETS, buildModelBindingPatch, engineFromProvider, nextSelectedProviderIdOnBindingRefresh, readUseModelRouting } from "./tab-basics-config";
 
 // ⑨ 复杂度四档(中文,智能体运行参数,不受底层模型影响)
 const COMPLEXITY_OPTIONS = [
@@ -65,17 +67,6 @@ const TYPE_LABEL: Record<string, string> = {
   minimax: "MiniMax",
 };
 
-/** provider.type/name → agent.default_engine(对齐 ENGINE_OPTIONS) */
-function engineFromProvider(p: ProviderInfo): string {
-  const t = (p.type || "").toLowerCase();
-  if (t === "anthropic" || /claude/i.test(p.name)) return "claude";
-  if (t === "openai") return "openai";
-  if (t === "glm" || t === "zhipu") return "glm";
-  if (t === "minimax") return "minimax";
-  if (t === "deepseek") return "deepseek";
-  return t || "openai";
-}
-
 /** 安全解析 JSON 字符串,失败返回空对象(用于 orchestration 等字段)。 */
 function safeParse(raw: string): Record<string, unknown> {
   try {
@@ -92,7 +83,7 @@ function safeParse(raw: string): Record<string, unknown> {
 // - 专属大模型 绑定卡片(R31-C 新增,独立保存)
 // - 编辑模式: 第二卡片切换为"引擎与模型"编辑表单
 export function TabBasics({ id }: { id: string }) {
-  const { agent, loading, reload } = useAgent(id);
+  const { agent, loading, reload, setAgent } = useAgent(id);
   const [draft, setDraft] = React.useState<Record<string, unknown>>({});
   const [origDraft, setOrigDraft] = React.useState<Record<string, unknown>>({});
 
@@ -252,10 +243,10 @@ export function TabBasics({ id }: { id: string }) {
           </div>
 
           {/* === 专属大模型 绑定卡片 (R31-C) === */}
-          <ModelBindingCard agent={agent} onSaved={reload} />
+          <ModelBindingCard agent={agent} onSaved={reload} setAgent={setAgent} />
 
           {/* === R34-B: 上下文窗口 + 自动压缩 === */}
-          <ContextWindowCard agent={agent} onSaved={reload} />
+          <ContextWindowCard agent={agent} onSaved={reload} setAgent={setAgent} />
         </div>
       )}
     </EditPane>
@@ -270,16 +261,11 @@ export function TabBasics({ id }: { id: string }) {
 // - 保存:PATCH /api/v2/employees/:id { default_context_window, orchestration }
 // ────────────────────────────────────────────────────────────
 
-const CONTEXT_PRESETS = [
-  { value: 32000, label: "32K · 轻量客服" },
-  { value: 64000, label: "64K · 通用平衡" },
-  { value: 128000, label: "128K · 长文分析" },
-  { value: 200000, label: "200K · 全量记忆" },
-];
-
 interface AutoCompressConfig {
   enabled: boolean;
+  warnThresholdPct: number;
   thresholdPct: number;
+  resetThresholdPct: number;
   ratioPct: number;
 }
 
@@ -290,14 +276,16 @@ function readAutoCompress(agent: Agent): AutoCompressConfig {
   const orch =
     typeof orchRaw === "string" ? safeParse(orchRaw) : (orchRaw as Record<string, unknown> | null);
   const ac = (orch?.autoCompress ?? {}) as Record<string, unknown>;
-  return {
+  return normalizeAutoCompressDraft({
     enabled: typeof ac.enabled === "boolean" ? (ac.enabled as boolean) : true,
-    thresholdPct: typeof ac.thresholdPct === "number" ? (ac.thresholdPct as number) : 80,
+    warnThresholdPct: typeof ac.warnThresholdPct === "number" ? (ac.warnThresholdPct as number) : 50,
+    thresholdPct: typeof ac.thresholdPct === "number" ? (ac.thresholdPct as number) : 70,
+    resetThresholdPct: typeof ac.resetThresholdPct === "number" ? (ac.resetThresholdPct as number) : 85,
     ratioPct: typeof ac.ratioPct === "number" ? (ac.ratioPct as number) : 50,
-  };
+  });
 }
 
-function ContextWindowCard({ agent, onSaved }: { agent: Agent; onSaved: () => void }) {
+function ContextWindowCard({ agent, onSaved, setAgent }: { agent: Agent; onSaved: () => void; setAgent: (next: Agent | null) => void }) {
   const toast = useToast();
   const [providers, setProviders] = React.useState<ProviderInfo[]>([]);
   const [ctxDraft, setCtxDraft] = React.useState<number>(agent.defaultContextWindow || 200000);
@@ -347,12 +335,14 @@ function ContextWindowCard({ agent, onSaved }: { agent: Agent; onSaved: () => vo
   const dirtyCtx = ctxDraft !== origCtx;
   const dirtyAc =
     ac.enabled !== origAc.enabled ||
+    ac.warnThresholdPct !== origAc.warnThresholdPct ||
     ac.thresholdPct !== origAc.thresholdPct ||
+    ac.resetThresholdPct !== origAc.resetThresholdPct ||
     ac.ratioPct !== origAc.ratioPct;
   const isDirty = dirtyCtx || dirtyAc;
   const exceedsMax = providerMax !== null && ctxDraft > providerMax;
 
-  const presetValues = CONTEXT_PRESETS.map((p) => p.value);
+  const presetValues: number[] = CONTEXT_PRESETS.map((p) => p.value);
   const isCustom = !presetValues.includes(ctxDraft);
 
   async function save() {
@@ -363,11 +353,14 @@ function ContextWindowCard({ agent, onSaved }: { agent: Agent; onSaved: () => vo
       const orchRaw = raw?.orchestration;
       const baseOrch =
         (typeof orchRaw === "string" ? safeParse(orchRaw) : (orchRaw as Record<string, unknown> | null)) ?? {};
+      const normalizedAc = normalizeAutoCompressDraft(ac);
+      setAc(normalizedAc);
       const patch: Record<string, unknown> = {
-        orchestration: { ...baseOrch, autoCompress: ac },
+        orchestration: { ...baseOrch, autoCompress: normalizedAc },
       };
       if (dirtyCtx) patch.default_context_window = ctxDraft;
-      await updateAgent(agent.id, patch);
+      const updated = await updateAgent(agent.id, patch);
+      if (updated) setAgent(updated);
       toast.success("上下文与压缩配置已保存");
       onSaved();
     } catch (e: unknown) {
@@ -397,7 +390,7 @@ function ContextWindowCard({ agent, onSaved }: { agent: Agent; onSaved: () => vo
       <div className="mb-2 text-[11px] font-mono uppercase tracking-[0.18em] text-foreground/45">
         上下文窗口
       </div>
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
         {CONTEXT_PRESETS.map((p) => {
           const active = !isCustom && ctxDraft === p.value;
           return (
@@ -462,24 +455,42 @@ function ContextWindowCard({ agent, onSaved }: { agent: Agent; onSaved: () => vo
         </div>
       </label>
       {ac.enabled && (
-        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <CompactNumberField
+            label="警告阈值"
+            suffix="%"
+            min={10}
+            max={95}
+            value={ac.warnThresholdPct}
+            onChange={(n) => setAc(normalizeAutoCompressDraft({ ...ac, warnThresholdPct: n }))}
+            hint={`用到 ${ac.warnThresholdPct}% 时提示`}
+          />
           <CompactNumberField
             label="压缩触发阈值"
             suffix="%"
             min={10}
-            max={95}
+            max={99}
             value={ac.thresholdPct}
-            onChange={(n) => setAc({ ...ac, thresholdPct: n })}
-            hint={`用到 ${ac.thresholdPct}% 时触发`}
+            onChange={(n) => setAc(normalizeAutoCompressDraft({ ...ac, thresholdPct: n }))}
+            hint={`用到 ${ac.thresholdPct}% 时压缩`}
           />
           <CompactNumberField
-            label="压缩比例"
+            label="强制重置阈值"
+            suffix="%"
+            min={10}
+            max={99}
+            value={ac.resetThresholdPct}
+            onChange={(n) => setAc(normalizeAutoCompressDraft({ ...ac, resetThresholdPct: n }))}
+            hint={`用到 ${ac.resetThresholdPct}% 时开新会话`}
+          />
+          <CompactNumberField
+            label="压缩后保留比例"
             suffix="%"
             min={10}
             max={90}
             value={ac.ratioPct}
-            onChange={(n) => setAc({ ...ac, ratioPct: n })}
-            hint={`压缩到原来的 ${ac.ratioPct}%`}
+            onChange={(n) => setAc(normalizeAutoCompressDraft({ ...ac, ratioPct: n }))}
+            hint={`保留约 ${ac.ratioPct}%`}
           />
         </div>
       )}
@@ -540,7 +551,7 @@ function CompactNumberField({
 // - 单选 + 独立保存(不走 EditPane),PATCH /api/v2/employees/:id
 //   { default_engine, default_model }
 // - 用 Toast 通知,不用 alert
-function ModelBindingCard({ agent, onSaved }: { agent: Agent; onSaved: () => void }) {
+function ModelBindingCard({ agent, onSaved, setAgent }: { agent: Agent; onSaved: () => void; setAgent: (next: Agent | null) => void }) {
   const toast = useToast();
   const [providers, setProviders] = React.useState<ProviderInfo[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -584,39 +595,61 @@ function ModelBindingCard({ agent, onSaved }: { agent: Agent; onSaved: () => voi
     );
   }, [providers, agent.defaultModel, agent.defaultEngine]);
 
-  // 初始化选中(默认指向当前绑定)
-  React.useEffect(() => {
-    if (currentBinding && selectedId === null) {
-      setSelectedId(currentBinding.id);
-    }
-  }, [currentBinding, selectedId]);
+  // 初始化选中(默认指向当前绑定);agent 刷新后同步,但不覆盖用户未保存选择。
+  const lastSyncedBindingId = React.useRef<string | null>(null);
 
-  // R32-B: 模型路由开关 — 存 agent.orchestration.useModelRouting
+  React.useEffect(() => {
+    lastSyncedBindingId.current = null;
+    setSelectedId(null);
+  }, [agent.id]);
+
+  React.useEffect(() => {
+    const currentBindingId = currentBinding?.id ?? null;
+    setSelectedId((prev) =>
+      nextSelectedProviderIdOnBindingRefresh({
+        selectedId: prev,
+        currentBindingId,
+        lastSyncedBindingId: lastSyncedBindingId.current,
+      }),
+    );
+    lastSyncedBindingId.current = currentBindingId;
+  }, [agent.id, agent.updatedAt, currentBinding?.id]);
+
+  // R32-B/R36-1: 模型路由开关 — 存 agent.orchestration.useModelRouting
   const rawOrch = (agent.raw as Record<string, unknown> | null)?.orchestration;
   const orchObj = (typeof rawOrch === "string" ? safeParse(rawOrch) : rawOrch) as
     | Record<string, unknown>
     | null;
-  const [useRouting, setUseRouting] = React.useState<boolean>(
-    typeof orchObj?.useModelRouting === "boolean" ? (orchObj.useModelRouting as boolean) : true,
-  );
+  const savedUseRouting = readUseModelRouting(orchObj);
+  const [useRouting, setUseRouting] = React.useState<boolean>(savedUseRouting);
 
-  const isDirty = !!selectedId && selectedId !== currentBinding?.id;
+  React.useEffect(() => {
+    setUseRouting(savedUseRouting);
+  }, [agent.id, agent.updatedAt, savedUseRouting]);
+
+  const selectedProvider = selectedId ? providers.find((x) => x.id === selectedId) ?? null : null;
+  const modelDirty = !!selectedProvider && selectedProvider.id !== currentBinding?.id;
+  const routingDirty = useRouting !== savedUseRouting;
+  const isDirty = modelDirty || routingDirty;
 
   async function save() {
-    if (!selectedId) return;
-    const p = providers.find((x) => x.id === selectedId);
-    if (!p) return;
+    if (!selectedProvider && !routingDirty) return;
     setSaving(true);
     try {
-      // 合并 orchestration(保留既有键,写入 useModelRouting)
-      const mergedOrch = { ...(orchObj ?? {}), useModelRouting: useRouting };
-      await updateAgent(agent.id, {
-        default_engine: engineFromProvider(p),
-        default_model: p.model,
-        orchestration: mergedOrch,
+      const patch = buildModelBindingPatch({
+        selectedProvider,
+        currentProvider: currentBinding,
+        useModelRouting: useRouting,
+        orchestration: orchObj,
       });
+      // R38-E: 写 model_id 到 body(snake_case 对齐后端 PATCH handler),让后端联级更新 agents.model_id FK
+      if (selectedProvider && selectedProvider.id !== currentBinding?.id) {
+        patch.model_id = selectedProvider.id;
+      }
+      const updated = await updateAgent(agent.id, patch);
+      if (updated) setAgent(updated);
       toast.success(
-        `已绑定 ${p.name} · ${p.model}${useRouting ? "(遵循全局路由)" : "(固定模型)"}`,
+        `已${modelDirty && selectedProvider ? `绑定 ${selectedProvider.name} · ${selectedProvider.model}` : "更新模型路由"}${useRouting ? "(遵循全局路由)" : "(固定模型)"}`,
       );
       onSaved();
     } catch (e: unknown) {
@@ -704,10 +737,13 @@ function ModelBindingCard({ agent, onSaved }: { agent: Agent; onSaved: () => voi
               <li key={p.id}>
                 <label
                   className={cn(
-                    "flex items-start gap-3 rounded-lg px-3 py-2.5 cursor-pointer ring-1 transition-colors",
+                    "flex items-start gap-3 rounded-lg px-3 py-2.5 ring-1 transition-colors",
+                    useRouting ? "cursor-not-allowed opacity-55" : "cursor-pointer",
                     checked
                       ? "ring-amber-500/40 bg-amber-500/[0.06]"
-                      : "ring-border hover:bg-muted/30",
+                      : useRouting
+                        ? "ring-border"
+                        : "ring-border hover:bg-muted/30",
                   )}
                 >
                   <input
@@ -715,8 +751,9 @@ function ModelBindingCard({ agent, onSaved }: { agent: Agent; onSaved: () => voi
                     name="model-binding"
                     value={p.id}
                     checked={checked}
+                    disabled={useRouting}
                     onChange={() => setSelectedId(p.id)}
-                    className="mt-1 size-3.5 accent-amber-500"
+                    className="mt-1 size-3.5 accent-amber-500 disabled:cursor-not-allowed"
                   />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">

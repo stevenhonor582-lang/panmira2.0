@@ -3,11 +3,11 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  TEMPLATE_PRESETS, useTemplates, useAgents, createInstanceFromTemplate,
+  TEMPLATE_PRESETS, useTemplates, useAgents, createInstanceFromTemplate, copyAsTemplate,
   type Agent,
 } from "../../_lib/data";
 import { AvatarMark } from "../../_components/avatar-mark";
-import { ArrowUpRight, Plus, Lock, Globe2, ArrowRight, X, Loader2 } from "lucide-react";
+import { ArrowUpRight, Plus, Lock, Globe2, ArrowRight, X, Loader2, Copy, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -22,6 +22,7 @@ export function TemplatesBoard() {
   const [mounted, setMounted] = React.useState(false);
   const { templates: rawTemplates, loading } = useTemplates();
   const [modalTpl, setModalTpl] = React.useState<Agent | null>(null);
+  const [copyTpl, setCopyTpl] = React.useState<Agent | null>(null);
 
   React.useEffect(() => {
     const t = setTimeout(() => setMounted(true), 30);
@@ -81,7 +82,7 @@ export function TemplatesBoard() {
       </div>
 
       {tab === "mine" ? (
-        <MineGrid mounted={mounted} templates={templates} loading={loading} onInstantiate={(tpl) => setModalTpl(tpl)} />
+        <MineGrid mounted={mounted} templates={templates} loading={loading} onInstantiate={(tpl) => setModalTpl(tpl)} onCopy={(tpl) => setCopyTpl(tpl)} />
       ) : (
         <PublicGrid mounted={mounted} />
       )}
@@ -89,17 +90,22 @@ export function TemplatesBoard() {
       {modalTpl && (
         <FromTemplateModal template={modalTpl} onClose={() => setModalTpl(null)} />
       )}
+
+      {copyTpl && (
+        <CopyAsTemplateModal template={copyTpl} onClose={() => setCopyTpl(null)} onDone={() => setCopyTpl(null)} />
+      )}
     </div>
   );
 }
 
 function MineGrid({
-  mounted, templates, loading, onInstantiate,
+  mounted, templates, loading, onInstantiate, onCopy,
 }: {
   mounted: boolean;
   templates: Agent[];
   loading: boolean;
   onInstantiate: (tpl: Agent) => void;
+  onCopy: (tpl: Agent) => void;
 }) {
   if (loading) {
     return (
@@ -140,14 +146,18 @@ function MineGrid({
           }
           style={{ transitionDelay: mounted ? `${i * 60}ms` : "0ms" }}
         >
-          <TemplateCard tpl={a} onInstantiate={() => onInstantiate(a)} />
+          <TemplateCard
+            tpl={a}
+            onInstantiate={() => onInstantiate(a)}
+            onCopy={() => onCopy(a)}
+          />
         </div>
       ))}
     </div>
   );
 }
 
-function TemplateCard({ tpl, onInstantiate }: { tpl: Agent; onInstantiate: () => void }) {
+function TemplateCard({ tpl, onInstantiate, onCopy }: { tpl: Agent; onInstantiate: () => void; onCopy: () => void }) {
   return (
     <div className="group relative flex h-full flex-col overflow-hidden rounded-3xl bg-card p-6 ring-1 ring-border transition-shadow hover:shadow-[0_24px_60px_-30px_rgba(0,0,0,0.18)]">
       <div
@@ -192,20 +202,31 @@ function TemplateCard({ tpl, onInstantiate }: { tpl: Agent; onInstantiate: () =>
         </div>
       )}
 
-      <div className="relative mt-auto flex items-center justify-between pt-6">
-        <div className="text-[11px] font-mono text-foreground/45">
+      <div className="relative mt-auto flex items-center justify-between gap-2 pt-6">
+        <div className="text-[11px] font-mono text-foreground/45 truncate">
           <span>{tpl.role}</span>
           <span className="mx-1">·</span>
           <span>{tpl.model}</span>
         </div>
-        <Button
-          size="sm"
-          onClick={onInstantiate}
-          className="gap-1 text-[12px]"
-          data-testid={`instantiate-${tpl.id.slice(0, 8)}`}
-        >
-          从此模板创建 <ArrowRight className="size-3.5" />
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onCopy}
+            className="gap-1 text-[12px]"
+            data-testid={`copy-as-template-${tpl.id.slice(0, 8)}`}
+          >
+            <Copy className="size-3.5" /> 复制
+          </Button>
+          <Button
+            size="sm"
+            onClick={onInstantiate}
+            className="gap-1 text-[12px]"
+            data-testid={`instantiate-${tpl.id.slice(0, 8)}`}
+          >
+            <Sparkles className="size-3.5" /> 创建实例 <ArrowRight className="size-3.5" />
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -379,6 +400,95 @@ function FromTemplateModal({
   );
 }
 
+
+function CopyAsTemplateModal({
+  template,
+  onClose,
+  onDone,
+}: {
+  template: Agent;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [name, setName] = React.useState(`${template.displayName || template.name} - 副本`);
+  const [submitting, setSubmitting] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    if (!name.trim()) {
+      setError("请填写新模板名字");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      await copyAsTemplate(template.id, name.trim());
+      onDone();
+      // Refresh page so the new template shows up in the list
+      if (typeof window !== "undefined") {
+        window.location.reload();
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={!!template} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>复制为新模板</DialogTitle>
+          <DialogDescription>
+            深拷贝 <strong className="text-foreground/80">{template.displayName || template.name}</strong> 的全部配置
+            (人格、系统提示词、技能、铁律、KB、MCP 引用),分配新 id + is_template=true。
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <label className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/55">
+              新模板名字 · name
+            </label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="如:销售模板 v2"
+              autoFocus
+              data-testid="copy-template-name"
+            />
+            <p className="text-[11px] text-foreground/45">
+              模板允许重名 — 不必担心覆盖现有模板。
+            </p>
+          </div>
+
+          {error && (
+            <div className="rounded-md bg-rose-500/10 px-3 py-2 text-[12.5px] text-rose-700 dark:text-rose-300">
+              {error}
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" size="sm" onClick={onClose} disabled={submitting}>
+            取消
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="gap-1.5"
+            data-testid="copy-template-submit"
+          >
+            {submitting ? <Loader2 className="size-3.5 animate-spin" /> : <Copy className="size-3.5" />}
+            {submitting ? "复制中…" : "复制"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 function hueToGrad(hue: string): string {
   const m: Record<string, string> = {
     amber: "from-amber-300/55 via-amber-100/40 to-transparent",

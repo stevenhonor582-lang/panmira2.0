@@ -86,17 +86,69 @@ export function Step5({
         )}
       </section>
 
-      {/* Folders level — tree builder */}
-      <section>
-        <h3 className="mb-3 flex items-center gap-2 text-[12px] font-medium tracking-tight text-foreground/65">
-          <Folder className="size-3.5" />
-          文件夹 · 来自 /api/knowledge/folders ({folders.length} 个真实节点 · 可选更细粒度)
-        </h3>
-        <FolderTree
-          folders={folders}
-          selected={form.kbFolderIds}
-          onToggle={toggleFolder}
-        />
+      {/* R36-4: 文件夹按三层权限分段渲染 — 组织公共 / 群协作 / 数字员工 */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="flex items-center gap-2 text-[12px] font-medium tracking-tight text-foreground/65">
+            <Folder className="size-3.5" />
+            文件夹 · 三层权限视图({folders.length} 个真实节点)
+          </h3>
+          <span className="font-mono text-[10.5px] text-foreground/45">
+            公开 {countByTier(folders, "organization")} · 群 {countByTier(folders, "group")} · 员工 {countByTier(folders, "agent")}
+          </span>
+        </div>
+        <p className="text-[11px] leading-relaxed text-foreground/55">
+          不同层级的文件夹对你可见性不同:组织公共区全员可见;群协作区仅参与者可见;
+          数字员工区仅参与者可见。后端已按你的身份过滤,无权访问的文件夹不会返回。
+        </p>
+
+        {/* 组织公共区 */}
+        {renderTierBlock({
+          tier: "organization",
+          icon: <Folder className="size-3.5 text-emerald-600/80 dark:text-emerald-400/80" />,
+          title: "组织公共区",
+          desc: "全员可见 · 制度 / 模板 / 公告",
+          accentRing: "ring-emerald-500/25",
+          folders: folders,
+          selected: form.kbFolderIds,
+          onToggle: toggleFolder,
+        })}
+
+        {/* 群协作区 */}
+        {renderTierBlock({
+          tier: "group",
+          icon: <Folder className="size-3.5 text-sky-600/80 dark:text-sky-400/80" />,
+          title: "群协作区",
+          desc: "仅参与者可见 · 群组文档 / 协同纪要",
+          accentRing: "ring-sky-500/25",
+          folders: folders,
+          selected: form.kbFolderIds,
+          onToggle: toggleFolder,
+        })}
+
+        {/* 数字员工 */}
+        {renderTierBlock({
+          tier: "agent",
+          icon: <Folder className="size-3.5 text-amber-600/80 dark:text-amber-400/80" />,
+          title: "数字员工",
+          desc: "仅参与者可见 · 个人 / 实例私有文档",
+          accentRing: "ring-amber-500/25",
+          folders: folders,
+          selected: form.kbFolderIds,
+          onToggle: toggleFolder,
+        })}
+
+        {/* 其它未分段(防御性,理论上不会有) */}
+        {renderTierBlock({
+          tier: "other",
+          icon: <Folder className="size-3.5 text-foreground/45" />,
+          title: "其它",
+          desc: "未归类的根节点(默认公共)",
+          accentRing: "ring-border",
+          folders: folders,
+          selected: form.kbFolderIds,
+          onToggle: toggleFolder,
+        })}
       </section>
 
       {/* Summary + selected chips */}
@@ -139,6 +191,54 @@ function LayerCard({
         <span className="text-[12.5px] font-semibold">{label}</span>
       </div>
       <p className="mt-1 text-[11px] text-foreground/65">{desc}</p>
+    </div>
+  );
+}
+
+// R36-4: 按 accessTier 统计数量
+function countByTier(folders: KbFolderInfo[], tier: "organization" | "group" | "agent" | "other"): number {
+  return folders.filter((f) => (f.accessTier ?? "other") === tier).length;
+}
+
+// R36-4: 单段渲染 — 若该段无节点返回 null(干净折叠)
+function renderTierBlock({
+  tier,
+  icon,
+  title,
+  desc,
+  accentRing,
+  folders,
+  selected,
+  onToggle,
+}: {
+  tier: "organization" | "group" | "agent" | "other";
+  icon: React.ReactNode;
+  title: string;
+  desc: string;
+  accentRing: string;
+  folders: KbFolderInfo[];
+  selected: string[];
+  onToggle: (id: string) => void;
+}) {
+  const tierFolders = folders.filter((f) => (f.accessTier ?? "other") === tier);
+  if (tierFolders.length === 0) return null;
+  return (
+    <div className={"rounded-2xl bg-card p-3 ring-1 " + accentRing}>
+      <div className="mb-2 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {icon}
+          <span className="text-[12.5px] font-semibold">{title}</span>
+          <span className="rounded bg-foreground/5 px-1.5 py-0.5 font-mono text-[10px] text-foreground/55">
+            {tierFolders.length}
+          </span>
+        </div>
+        <span className="text-[10.5px] text-foreground/50">{desc}</span>
+      </div>
+      <FolderTree
+        folders={tierFolders}
+        selected={selected}
+        onToggle={onToggle}
+      />
     </div>
   );
 }

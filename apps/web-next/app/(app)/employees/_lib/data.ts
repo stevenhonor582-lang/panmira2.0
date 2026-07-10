@@ -404,6 +404,65 @@ export async function createInstanceFromTemplate(input: {
   return mapEmployeeToAgent(row);
 }
 
+/**
+ * R38-C6 阶段 4.6: 实例 → 模板(POST /api/v2/admin/agents/:id/promote)。
+ * 服务端会先解绑所有 bot_configs,清空 channel_ids/model_id/working_dir。
+ * 返回更新后的 agent。
+ */
+export async function promoteAgent(id: string): Promise<Agent> {
+  const res = await api<{ success?: boolean; data?: any } | any>(
+    fullPath(`/api/v2/admin/agents/${id}/promote`),
+    { method: "POST" },
+  );
+  const row = (res as any)?.agent ?? (res as any)?.data?.agent ?? (res as any)?.data ?? res;
+  if (!row || !row.id) {
+    const err = (res as any)?.error;
+    throw new Error(err?.message ?? err?.code ?? "promote_failed");
+  }
+  return mapEmployeeToAgent(row);
+}
+
+/**
+ * R38-C6 阶段 4.6: 模板 → 实例(POST /api/v2/admin/agents/:id/demote)。
+ * 服务端会分配新的 working_dir,is_template=false。
+ */
+export async function demoteAgent(id: string): Promise<Agent> {
+  const res = await api<{ success?: boolean; data?: any } | any>(
+    fullPath(`/api/v2/admin/agents/${id}/demote`),
+    { method: "POST" },
+  );
+  const row = (res as any)?.agent ?? (res as any)?.data?.agent ?? (res as any)?.data ?? res;
+  if (!row || !row.id) {
+    const err = (res as any)?.error;
+    throw new Error(err?.message ?? err?.code ?? "demote_failed");
+  }
+  return mapEmployeeToAgent(row);
+}
+
+/**
+ * R38-C6 阶段 4.6: 跨模板复制(POST /api/v2/admin/agents/:srcId/copy-as-template)。
+ * 服务端会深拷贝源 agent 的字段 + skill/kb/mcp refs 为新模板。
+ * name 可选 — 不传则沿用源名(模板允许重名)。
+ */
+export async function copyAsTemplate(
+  srcId: string,
+  name?: string,
+): Promise<Agent> {
+  const res = await api<{ success?: boolean; data?: any } | any>(
+    fullPath(`/api/v2/admin/agents/${srcId}/copy-as-template`),
+    {
+      method: "POST",
+      body: name ? { name: name.trim() } : {},
+    },
+  );
+  const row = (res as any)?.agent ?? (res as any)?.data?.agent ?? (res as any)?.data ?? res;
+  if (!row || !row.id) {
+    const err = (res as any)?.error;
+    throw new Error(err?.message ?? err?.code ?? "copy_as_template_failed");
+  }
+  return mapEmployeeToAgent(row);
+}
+
 // ── React hooks for client components ────────────────────────
 
 import { useEffect, useState } from "react";
@@ -412,7 +471,12 @@ import { useEffect, useState } from "react";
  * Fetches a single Agent by id. Returns {agent, loading}.
  * 直接走 GET /:id 详情端点(返回完整字段)。
  */
-export function useAgent(id: string): { agent: Agent | null; loading: boolean; reload: () => void } {
+export function useAgent(id: string): {
+  agent: Agent | null;
+  loading: boolean;
+  reload: () => void;
+  setAgent: (next: Agent | null) => void;
+} {
   const [agent, setAgent] = useState<Agent | null>(null);
   const [loading, setLoading] = useState(true);
   const [nonce, setNonce] = useState(0);
@@ -445,7 +509,7 @@ export function useAgent(id: string): { agent: Agent | null; loading: boolean; r
       alive = false;
     };
   }, [id, nonce]);
-  return { agent, loading, reload: () => setNonce((n) => n + 1) };
+  return { agent, loading, reload: () => setNonce((n) => n + 1), setAgent };
 }
 
 /**

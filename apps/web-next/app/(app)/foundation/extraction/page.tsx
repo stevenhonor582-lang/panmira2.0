@@ -183,7 +183,7 @@ export default function ExtractionPage() {
                     <p className="text-xs text-muted-foreground text-center py-8">尚无数据</p>
                   ) : (
                     <div className="w-full h-[180px]">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                         <BarChart data={chartData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.92 0 0)" vertical={false} />
                           <XAxis dataKey="day" tick={{ fontSize: 10 }} interval="preserveStartEnd" minTickGap={8} stroke="oklch(0.55 0 0)" />

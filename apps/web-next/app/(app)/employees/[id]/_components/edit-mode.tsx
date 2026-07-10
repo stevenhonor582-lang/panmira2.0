@@ -70,6 +70,12 @@ export function EditPane({ id, label, children, onSaved, readOnly, onSave, isDir
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
+  React.useEffect(() => {
+    setEditing(false);
+    setSaving(false);
+    setError(null);
+  }, [id]);
+
   const ctx: EditCtx = React.useMemo(() => ({
     editing,
     startEdit: () => { setError(null); setEditing(true); },

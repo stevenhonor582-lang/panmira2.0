@@ -46,7 +46,7 @@ export function ByAgent({ rows }: Props) {
       ) : (
         <div className="mt-4 grid gap-4 lg:grid-cols-[200px_1fr] items-center">
           <div className="h-48">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
               <PieChart>
                 <Pie
                   data={data}

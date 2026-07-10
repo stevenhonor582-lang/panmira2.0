@@ -2,11 +2,12 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useAgent, updateAgent } from "../../_lib/data";
+import { useRouter } from "next/navigation";
+import { useAgent, updateAgent, createInstanceFromTemplate, copyAsTemplate } from "../../_lib/data";
 import { AvatarMark, statusTone } from "../../_components/avatar-mark";
 import {
   ArrowLeft, User2, GitBranch, Hash,
-  MoreVertical, Pause, Play, Archive, Copy, Loader2, Check,
+  MoreVertical, Pause, Play, Archive, Copy, Loader2, Check, Sparkles
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,11 +17,58 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 
 export function AgentHeader({ id }: { id: string }) {
+  const router = useRouter();
   const { agent, loading, reload } = useAgent(id);
   const [acting, setActing] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
+  const [instantiateOpen, setInstantiateOpen] = React.useState(false);
+  const [instanceName, setInstanceName] = React.useState("");
+  const [instantiating, setInstantiating] = React.useState(false);
+  const [instantiateError, setInstantiateError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (agent && !instanceName) {
+      setInstanceName(`${agent.displayName || agent.name} - 副本`);
+    }
+  }, [agent?.id]);
+
+  const handleInstantiate = async () => {
+    if (!instanceName.trim() || !agent) return;
+    setInstantiating(true);
+    setInstantiateError(null);
+    try {
+      const created = await createInstanceFromTemplate({
+        templateId: agent.id,
+        name: instanceName.trim(),
+        ownerId: null,
+      });
+      setInstantiateOpen(false);
+      router.push(`/employees/${created.id}`);
+    } catch (e: unknown) {
+      setInstantiateError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setInstantiating(false);
+    }
+  };
+
+  const handleCopyAsTemplate = async () => {
+    if (!agent) return;
+    setActing(true);
+    try {
+      await copyAsTemplate(agent.id);
+      reload();
+    } catch (e) {
+      console.error("[agent-header] copyAsTemplate failed:", e);
+    } finally {
+      setActing(false);
+    }
+  };
 
   if (loading) return <div className="h-48 rounded-2xl bg-muted/40 animate-pulse" />;
   if (!agent) {
@@ -113,6 +161,23 @@ export function AgentHeader({ id }: { id: string }) {
               {copied ? <Check className="size-4 text-emerald-500" /> : <Copy className="size-4" />}
               {copied ? "已复制 SID" : "复制 SID"}
             </DropdownMenuItem>
+            {agent.isTemplate && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => setInstantiateOpen(true)}
+                  data-testid="menu-generate-instance"
+                >
+                  <Sparkles className="size-4" /> 生成实例
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={handleCopyAsTemplate}
+                  data-testid="menu-copy-as-template"
+                >
+                  <Copy className="size-4" /> 复制为模板
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -139,7 +204,17 @@ export function AgentHeader({ id }: { id: string }) {
             {agent.persona || agent.description || <span className="text-foreground/40">暂无人格定义,点击编辑添加</span>}
           </p>
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1 text-right">
+        <div className="flex shrink-0 flex-col items-end gap-2 text-right">
+          {agent.isTemplate && (
+            <Button
+              size="sm"
+              onClick={() => setInstantiateOpen(true)}
+              className="gap-1.5"
+              data-testid="generate-instance-primary"
+            >
+              <Sparkles className="size-3.5" /> 生成实例
+            </Button>
+          )}
           <Stat label="今日任务" value={agent.tasksToday} />
           <span className="text-[11.5px] font-mono text-foreground/45">
             主理 · {agent.ownerName}
@@ -161,6 +236,54 @@ export function AgentHeader({ id }: { id: string }) {
           created {new Date(agent.createdAt).toLocaleDateString("zh-CN")}
         </span>
       </div>
+
+      <Dialog open={instantiateOpen} onOpenChange={(o) => { if (!o) setInstantiateOpen(false); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>从模板生成实例</DialogTitle>
+            <DialogDescription>
+              深拷贝 <strong className="text-foreground/80">{agent.displayName || agent.name}</strong> 的全部配置,
+              分配新 id + is_template=false + 新 working_dir。
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <label className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/55">
+                新实例名字 · name
+              </label>
+              <Input
+                value={instanceName}
+                onChange={(e) => setInstanceName(e.target.value)}
+                placeholder="如:墨言-销售1组"
+                autoFocus
+                data-testid="instantiate-name"
+              />
+            </div>
+            {instantiateError && (
+              <div className="rounded-md bg-rose-500/10 px-3 py-2 text-[12.5px] text-rose-700 dark:text-rose-300">
+                {instantiateError}
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={() => setInstantiateOpen(false)} disabled={instantiating}>
+              取消
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleInstantiate}
+              disabled={instantiating}
+              className="gap-1.5"
+              data-testid="instantiate-submit"
+            >
+              {instantiating ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+              {instantiating ? "创建中…" : "创建并跳到详情"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </header>
   );
 }

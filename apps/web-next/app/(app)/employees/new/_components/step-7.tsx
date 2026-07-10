@@ -20,6 +20,12 @@ interface TestResult {
 
 interface SubmitResult { ok: boolean; error?: string; id?: string }
 
+interface ProviderLite {
+  id: string;
+  name?: string;
+  model?: string;
+}
+
 export function Step7({
   form,
   onSubmit,
@@ -29,6 +35,27 @@ export function Step7({
   onSubmit: () => Promise<SubmitResult>;
   onPublished: (id: string) => void;
 }) {
+  // R38-C5 4.5: 拉 provider 列表用于 modelId 校验(form.providerId 是 agents.model_id FK)
+  const [providers, setProviders] = React.useState<ProviderLite[]>([]);
+  React.useEffect(() => {
+    let alive = true;
+    api<{ providers: ProviderLite[] } | ProviderLite[]>("/api/providers")
+      .then((res) => {
+        if (!alive) return;
+        const list = ((res as { providers?: ProviderLite[] })?.providers ??
+          (Array.isArray(res) ? res : [])) as ProviderLite[];
+        setProviders(list.filter((p) => !!p.id));
+      })
+      .catch(() => {
+        if (alive) setProviders([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const providerIdValid =
+    !form.providerId || providers.some((p) => p.id === form.providerId);
   const [phase, setPhase] = React.useState<"idle" | "submitting" | "success" | "error">("idle");
   const [errorMsg, setErrorMsg] = React.useState<string>("");
   const [createdId, setCreatedId] = React.useState<string>("");
@@ -65,6 +92,13 @@ export function Step7({
   };
 
   const handlePublish = async () => {
+    if (!providerIdValid) {
+      setPhase("error");
+      setErrorMsg(
+        "modelId 不在 provider 列表里 — Step 2 选的 provider 已失效或被删除,请回 Step 2 重选。",
+      );
+      return;
+    }
     setPhase("submitting");
     setErrorMsg("");
     const res = await onSubmit();
@@ -111,6 +145,19 @@ export function Step7({
           </p>
         </div>
       </header>
+
+      {!providerIdValid && (
+        <div className="rounded-2xl bg-rose-500/10 p-4 ring-1 ring-rose-500/30">
+          <div className="flex items-center gap-2 text-[13px] font-semibold text-rose-700 dark:text-rose-300">
+            <AlertCircle className="size-4" />
+            modelId 校验失败
+          </div>
+          <div className="mt-2 rounded-xl bg-rose-500/5 p-2.5 font-mono text-[11.5px] text-rose-800 dark:text-rose-200">
+            当前选中 providerId <code>{form.providerId || "(空)"}</code> 不在 provider_configs 列表里。
+            请回到 Step 2 重选一个可用的大模型。
+          </div>
+        </div>
+      )}
 
       <Summary form={form} />
 
@@ -160,7 +207,9 @@ export function Step7({
         <button
           type="button"
           onClick={handlePublish}
-          className="inline-flex items-center gap-1.5 rounded-full bg-foreground px-6 py-2.5 text-[13.5px] font-medium text-background hover:opacity-90"
+          disabled={!providerIdValid}
+          className="inline-flex items-center gap-1.5 rounded-full bg-foreground px-6 py-2.5 text-[13.5px] font-medium text-background hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+          data-testid="step7-publish-btn"
         >
           {phase === "error" ? <RefreshCw className="size-4" /> : <Rocket className="size-4" />}
           {phase === "error" ? "重试发布" : "发布"}

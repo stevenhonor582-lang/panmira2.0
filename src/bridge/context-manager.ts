@@ -21,7 +21,80 @@ export interface LayerContent {
   trimmable?: boolean;
 }
 
-export const CONTEXT_USAGE_THRESHOLD = 0.85;
+export interface AutoCompressRuntimeConfig {
+  enabled: boolean;
+  warnThreshold: number;
+  compressThreshold: number;
+  resetThreshold: number;
+  retainRatio: number;
+}
+
+export type ContextUsageAction = 'none' | 'warn' | 'compress' | 'reset';
+
+export const DEFAULT_AUTO_COMPRESS_CONFIG: AutoCompressRuntimeConfig = {
+  enabled: true,
+  warnThreshold: 0.5,
+  compressThreshold: 0.7,
+  resetThreshold: 0.85,
+  retainRatio: 0.5,
+};
+
+/** @deprecated Use normalizeAutoCompressConfig(...).compressThreshold instead. */
+export const CONTEXT_USAGE_THRESHOLD = DEFAULT_AUTO_COMPRESS_CONFIG.resetThreshold;
+
+function ratioFromPercentLike(value: unknown, fallback: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  const ratio = value > 1 ? value / 100 : value;
+  return Math.min(0.99, Math.max(0.01, ratio));
+}
+
+export function normalizeAutoCompressConfig(raw: unknown): AutoCompressRuntimeConfig {
+  const obj = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const warnThreshold = ratioFromPercentLike(
+    obj.warnThresholdPct ?? obj.warningThresholdPct ?? obj.warnThreshold,
+    DEFAULT_AUTO_COMPRESS_CONFIG.warnThreshold,
+  );
+  const compressThreshold = ratioFromPercentLike(
+    obj.compressThresholdPct ?? obj.thresholdPct ?? obj.compressThreshold,
+    DEFAULT_AUTO_COMPRESS_CONFIG.compressThreshold,
+  );
+  const resetThreshold = ratioFromPercentLike(
+    obj.resetThresholdPct ?? obj.forceThresholdPct ?? obj.resetThreshold ?? obj.forceThreshold,
+    DEFAULT_AUTO_COMPRESS_CONFIG.resetThreshold,
+  );
+  const retainRatio = ratioFromPercentLike(
+    obj.retainRatioPct ?? obj.ratioPct ?? obj.retainRatio,
+    DEFAULT_AUTO_COMPRESS_CONFIG.retainRatio,
+  );
+
+  return {
+    enabled: typeof obj.enabled === 'boolean' ? obj.enabled : DEFAULT_AUTO_COMPRESS_CONFIG.enabled,
+    warnThreshold: Math.min(warnThreshold, Math.max(0.01, compressThreshold - 0.01)),
+    compressThreshold,
+    resetThreshold: Math.max(resetThreshold, compressThreshold),
+    retainRatio,
+  };
+}
+
+export function resolveContextUsageAction(
+  usedTokens: number,
+  contextWindow: number,
+  config: AutoCompressRuntimeConfig = DEFAULT_AUTO_COMPRESS_CONFIG,
+): ContextUsageAction {
+  if (!config.enabled || !contextWindow || contextWindow <= 0) return 'none';
+  const ratio = usedTokens / contextWindow;
+  if (ratio >= config.resetThreshold) return 'reset';
+  if (ratio >= config.compressThreshold) return 'compress';
+  if (ratio >= config.warnThreshold) return 'warn';
+  return 'none';
+}
+
+export function summaryCharLimitFromRetainRatio(
+  baseLimit: number,
+  config: AutoCompressRuntimeConfig = DEFAULT_AUTO_COMPRESS_CONFIG,
+): number {
+  return Math.max(200, Math.floor(baseLimit * config.retainRatio));
+}
 
 export class ContextManager {
   private layers: LayerContent[] = [];
@@ -46,8 +119,13 @@ export class ContextManager {
   }
 
   /** Check if proactive compression should be triggered. */
-  shouldCompress(usedTokens: number, contextWindow: number): boolean {
-    return usedTokens / contextWindow >= CONTEXT_USAGE_THRESHOLD;
+  shouldCompress(
+    usedTokens: number,
+    contextWindow: number,
+    config: AutoCompressRuntimeConfig = DEFAULT_AUTO_COMPRESS_CONFIG,
+  ): boolean {
+    const action = resolveContextUsageAction(usedTokens, contextWindow, config);
+    return action === 'compress' || action === 'reset';
   }
 
   /**
