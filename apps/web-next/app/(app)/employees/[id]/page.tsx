@@ -2,10 +2,6 @@
 
 /**
  * /employees/[id] — agent detail page (P7-B2).
- *
- * Client component (the tab render-function pattern would otherwise leak
- * a server-side render function into a client child). Uses React.use() to
- * unwrap the Next.js 16 params/searchParams promises on the client.
  */
 
 import * as React from "react";
@@ -21,6 +17,7 @@ import { TabCollab } from "./_components/tab-collab";
 import { TabTasks } from "./_components/tab-tasks";
 import { TabLogs } from "./_components/tab-logs";
 import type { EmployeeTabValue } from "./_components/tab-tabs";
+import { useAgent } from "../_lib/data";
 
 export default function Page() {
   const params = useParams<{ id: string }>();
@@ -29,10 +26,14 @@ export default function Page() {
   const tab = searchParams?.get("tab") ?? undefined;
   const initial = (tab ?? "basics") as EmployeeTabValue;
 
+  // R51-B1: 模板隐藏记忆 / 日志 / 任务 tab(模板只是"配方",没有运行实例)
+  const { agent } = useAgent(id);
+  const isTemplate = Boolean(agent?.isTemplate);
+
   return (
     <div className="space-y-7">
       <AgentHeader id={id} />
-      <EmployeeTabs defaultValue={initial}>
+      <EmployeeTabs defaultValue={initial} isTemplate={isTemplate}>
         {(active) => {
           switch (active) {
             case "basics":
