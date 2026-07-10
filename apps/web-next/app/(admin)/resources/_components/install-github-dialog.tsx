@@ -92,7 +92,7 @@ export function InstallGitBranchDialog({ open, onOpenChange, kind, onInstalled }
         </DialogHeader>
         <form onSubmit={submit} className="space-y-3.5">
           <div className="space-y-1.5">
-            <Label htmlFor="ghUrl">GitHub URL</Label>
+            <Label htmlFor="ghUrl">GitHub 仓库地址</Label>
             <div className="relative">
               <GitBranch className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <Input

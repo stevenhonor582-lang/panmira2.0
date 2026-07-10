@@ -99,7 +99,7 @@ export default function UsersSettingsPage() {
                   <TableHead>用户</TableHead>
                   <TableHead>角色</TableHead>
                   <TableHead>状态</TableHead>
-                  <TableHead>Tenant</TableHead>
+                  <TableHead>租户</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
               </TableHeader>

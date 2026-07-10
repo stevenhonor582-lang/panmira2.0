@@ -31,7 +31,7 @@ export default function VoicePage() {
           <CardContent className="px-3.5 space-y-1">
             <div className="flex items-center gap-2">
               <Server className="size-4 text-blue-500" />
-              <p className="text-xs text-muted-foreground">Agent</p>
+              <p className="text-xs text-muted-foreground">数字员工</p>
             </div>
             <p className="text-sm font-medium">Claude / GLM / DeepSeek</p>
           </CardContent>

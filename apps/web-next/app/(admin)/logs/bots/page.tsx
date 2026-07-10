@@ -118,9 +118,9 @@ export default function BotLogsPage() {
                         <thead>
                           <tr className="text-xs text-muted-foreground">
                             <th className="text-left py-1 px-2 font-medium">状态</th>
-                            <th className="text-left py-1 px-2 font-medium">Chat ID</th>
+                            <th className="text-left py-1 px-2 font-medium">会话 ID</th>
                             <th className="text-left py-1 px-2 font-medium">模型</th>
-                            <th className="text-right py-1 px-2 font-medium">Tokens</th>
+                            <th className="text-right py-1 px-2 font-medium">令牌数</th>
                             <th className="text-right py-1 px-2 font-medium">花费</th>
                             <th className="text-left py-1 px-2 font-medium">最后活动</th>
                           </tr>

@@ -31,7 +31,7 @@ export function OAuthRevokeDialog({ client, open, onOpenChange, onConfirm }: Pro
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Revoke OAuth Client</DialogTitle>
+          <DialogTitle>撤销 OAuth 客户端</DialogTitle>
           <DialogDescription>
             确认 revoke <strong>{client.name}</strong>?
             <br />

@@ -63,10 +63,10 @@ const DEFAULT_CONFIG: Record<Persona, VoiceConfig> = {
 const STORAGE_KEY = "panmira.voice.config.v1";
 
 const PROVIDER_OPTIONS: { value: Provider; label: string; hint: string }[] = [
-  { value: "local", label: "Local", hint: "内置 · panmira-tts v2" },
+  { value: "local", label: "本地", hint: "内置 · panmira-tts v2" },
   { value: "openai", label: "OpenAI", hint: "tts-1 · alloy/echo/..." },
   { value: "elevenlabs", label: "ElevenLabs", hint: "voices API" },
-  { value: "edge", label: "Edge", hint: "Microsoft Edge TTS · Neural" },
+  { value: "edge", label: "Edge 浏览器", hint: "Microsoft Edge TTS · Neural" },
 ];
 
 interface TestResult {

@@ -125,7 +125,7 @@ export function KbDialog({ open, onOpenChange, onSubmit }: Props) {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="chunkSize">Chunk Size</Label>
+              <Label htmlFor="chunkSize">切片大小</Label>
               <Input
                 id="chunkSize"
                 type="number"
@@ -136,7 +136,7 @@ export function KbDialog({ open, onOpenChange, onSubmit }: Props) {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="chunkOverlap">Chunk Overlap</Label>
+              <Label htmlFor="chunkOverlap">切片重叠</Label>
               <Input
                 id="chunkOverlap"
                 type="number"

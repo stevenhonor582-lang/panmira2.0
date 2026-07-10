@@ -144,7 +144,7 @@ function AlertsTab() {
             </div>
           </div>
           <div className="space-y-1.5 min-w-[140px]">
-            <label className="text-xs text-muted-foreground">Bot</label>
+            <label className="text-xs text-muted-foreground">数字员工</label>
             <Select value={botFilter} onValueChange={(v) => v && setBotFilter(v)}>
               <SelectTrigger><SelectValue placeholder="全部" /></SelectTrigger>
               <SelectContent>

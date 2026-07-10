@@ -63,13 +63,13 @@ export function McpDialog({ open, onOpenChange, onSubmit }: Props) {
               placeholder="如:github-mcp" required />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="mcp-url">URL</Label>
+            <Label htmlFor="mcp-url">服务地址</Label>
             <Input id="mcp-url" value={url} onChange={(e) => setUrl(e.target.value)}
               placeholder="https://mcp.example.com/sse" required />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="mcp-transport">Transport</Label>
+              <Label htmlFor="mcp-transport">传输协议</Label>
               <select id="mcp-transport" value={transport}
                 onChange={(e) => setTransport(e.target.value)}
                 className="flex h-8 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
@@ -78,7 +78,7 @@ export function McpDialog({ open, onOpenChange, onSubmit }: Props) {
               </select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="mcp-auth">Auth</Label>
+              <Label htmlFor="mcp-auth">认证方式</Label>
               <select id="mcp-auth" value={authType}
                 onChange={(e) => setAuthType(e.target.value)}
                 className="flex h-8 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
@@ -90,7 +90,7 @@ export function McpDialog({ open, onOpenChange, onSubmit }: Props) {
           </div>
           {authType === "api_key" && (
             <div className="space-y-1.5">
-              <Label htmlFor="mcp-key">API Key</Label>
+              <Label htmlFor="mcp-key">API 密钥</Label>
               <Input id="mcp-key" type="text" value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder="sk-..." />

@@ -128,8 +128,8 @@ export default function ResourcesPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>名称</TableHead>
-                      <TableHead>URL</TableHead>
-                      <TableHead>Transport</TableHead>
+                      <TableHead>地址</TableHead>
+                      <TableHead>传输协议</TableHead>
                       <TableHead>健康</TableHead>
                       <TableHead className="text-right">检查时间</TableHead>
                     </TableRow>

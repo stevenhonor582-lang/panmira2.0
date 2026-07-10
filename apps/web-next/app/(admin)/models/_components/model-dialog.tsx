@@ -140,7 +140,7 @@ export function ModelDialog({ open, onOpenChange, initial, onSubmit }: Props) {
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="baseUrl">Base URL</Label>
+            <Label htmlFor="baseUrl">基础 URL</Label>
             <Input
               id="baseUrl"
               value={baseUrl}

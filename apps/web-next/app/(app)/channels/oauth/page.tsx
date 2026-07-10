@@ -657,7 +657,7 @@ function CreateClientDialog({
                 <SelectItem value="web">Web</SelectItem>
                 <SelectItem value="native">Native (App)</SelectItem>
                 <SelectItem value="cli">CLI</SelectItem>
-                <SelectItem value="mcp_server">MCP Server</SelectItem>
+                <SelectItem value="mcp_server">MCP 服务</SelectItem>
               </SelectContent>
             </Select>
           </div>

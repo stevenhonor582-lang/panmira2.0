@@ -43,11 +43,11 @@ export function McpDetailDrawer({ server, open, onOpenChange, onDelete, onHealth
         <div className="flex-1 overflow-y-auto p-4 space-y-4 text-sm">
           <section className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Transport</p>
+              <p className="text-[11px] uppercase tracking-wider text-muted-foreground">传输协议</p>
               <p className="text-xs font-mono">{server.transport ?? "http"}</p>
             </div>
             <div className="space-y-1">
-              <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Auth</p>
+              <p className="text-[11px] uppercase tracking-wider text-muted-foreground">认证方式</p>
               <p className="text-xs font-mono">{server.authType ?? "none"}</p>
             </div>
             <div className="space-y-1 col-span-2">

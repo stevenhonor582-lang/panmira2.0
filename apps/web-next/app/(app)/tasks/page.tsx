@@ -373,7 +373,7 @@ function ListHeader() {
     <div className="px-4 py-2 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground border-b bg-muted/20 grid grid-cols-12 gap-3">
       <div className="col-span-5">任务名</div>
       <div className="col-span-2">规模</div>
-      <div className="col-span-2">Bot</div>
+      <div className="col-span-2">数字员工</div>
       <div className="col-span-2">负责人</div>
       <div className="col-span-1 text-right">状态</div>
     </div>

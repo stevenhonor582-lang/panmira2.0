@@ -66,30 +66,30 @@ const PLATFORM_FIELDS: Record<
   Array<{ key: string; label: string; placeholder: string }>
 > = {
   feishu: [
-    { key: "appId", label: "App ID", placeholder: "cli_xxx" },
-    { key: "appSecret", label: "App Secret", placeholder: "xxx" },
-    { key: "verificationToken", label: "Verification Token", placeholder: "xxx" },
-    { key: "encryptKey", label: "Encrypt Key", placeholder: "xxx" },
+    { key: "appId", label: "应用 ID", placeholder: "cli_xxx" },
+    { key: "appSecret", label: "应用密钥", placeholder: "xxx" },
+    { key: "verificationToken", label: "校验 Token", placeholder: "xxx" },
+    { key: "encryptKey", label: "加密密钥", placeholder: "xxx" },
   ],
   wechat: [
-    { key: "corpId", label: "Corp ID", placeholder: "wx_xxx" },
-    { key: "agentId", label: "Agent ID", placeholder: "1000001" },
-    { key: "secret", label: "Secret", placeholder: "xxx" },
-    { key: "token", label: "Token", placeholder: "xxx" },
+    { key: "corpId", label: "企业 ID", placeholder: "wx_xxx" },
+    { key: "agentId", label: "数字员工 ID", placeholder: "1000001" },
+    { key: "secret", label: "密钥", placeholder: "xxx" },
+    { key: "token", label: "令牌", placeholder: "xxx" },
   ],
   wechatwork: [
-    { key: "corpId", label: "Corp ID", placeholder: "ww_xxx" },
-    { key: "agentId", label: "Agent ID", placeholder: "1000001" },
-    { key: "secret", label: "Secret", placeholder: "xxx" },
-    { key: "token", label: "Token", placeholder: "xxx" },
+    { key: "corpId", label: "企业 ID", placeholder: "ww_xxx" },
+    { key: "agentId", label: "数字员工 ID", placeholder: "1000001" },
+    { key: "secret", label: "密钥", placeholder: "xxx" },
+    { key: "token", label: "令牌", placeholder: "xxx" },
   ],
   whatsapp: [
-    { key: "phoneNumberId", label: "Phone Number ID", placeholder: "123" },
-    { key: "accessToken", label: "Access Token", placeholder: "EAAGxxx" },
+    { key: "phoneNumberId", label: "手机号 ID", placeholder: "123" },
+    { key: "accessToken", label: "访问令牌", placeholder: "EAAGxxx" },
     { key: "verifyToken", label: "Verify Token (Webhook)", placeholder: "xxx" },
   ],
   webhook: [
-    { key: "url", label: "URL", placeholder: "https://partner.example.com/hook" },
+    { key: "url", label: "地址", placeholder: "https://partner.example.com/hook" },
     { key: "secret", label: "签名 Secret", placeholder: "xxx" },
   ],
 };

@@ -156,7 +156,7 @@ export default function WebhookIntegrationPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="space-y-1.5">
-            <Label htmlFor="wh-url">Webhook URL</Label>
+            <Label htmlFor="wh-url">回调地址</Label>
             <div className="flex gap-2">
               <Input
                 id="wh-url"
@@ -170,7 +170,7 @@ export default function WebhookIntegrationPage() {
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="wh-secret">Secret Token</Label>
+            <Label htmlFor="wh-secret">安全令牌</Label>
             <div className="flex gap-2">
               <Input
                 id="wh-secret"

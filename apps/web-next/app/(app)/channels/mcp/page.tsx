@@ -689,7 +689,7 @@ function EditDialog({
             </div>
           ) : (
             <div className="space-y-1">
-              <Label htmlFor="mcp-url">URL</Label>
+              <Label htmlFor="mcp-url">服务地址</Label>
               <Input
                 id="mcp-url"
                 placeholder="https://api.example.com/mcp"
@@ -712,8 +712,8 @@ function EditDialog({
                 <SelectContent>
                   <SelectItem value="none">无</SelectItem>
                   <SelectItem value="api_key">API Key</SelectItem>
-                  <SelectItem value="bearer">Bearer Token</SelectItem>
-                  <SelectItem value="basic">Basic Auth</SelectItem>
+                  <SelectItem value="bearer">Bearer 令牌</SelectItem>
+                  <SelectItem value="basic">Basic 认证</SelectItem>
                 </SelectContent>
               </Select>
             </div>

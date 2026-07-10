@@ -11,12 +11,12 @@ import { api } from "@/lib/api";
 import type { SystemStatus, AlertItem, BotAlertSummary } from "./_components/types";
 
 const COUNT_META: { key: keyof SystemStatus["counts"]; label: string; icon: typeof Cpu; tone: string }[] = [
-  { key: "agent", label: "Agent", icon: Bot, tone: "primary" },
+  { key: "agent", label: "数字员工", icon: Bot, tone: "primary" },
   { key: "llm", label: "LLM", icon: Cpu, tone: "blue" },
   { key: "kb", label: "KB", icon: Database, tone: "emerald" },
   { key: "oauth", label: "OAuth", icon: KeyRound, tone: "amber" },
   { key: "mcp", label: "MCP", icon: Plug, tone: "rose" },
-  { key: "embedding", label: "Embedding", icon: Wrench, tone: "violet" },
+  { key: "embedding", label: "嵌入模型", icon: Wrench, tone: "violet" },
 ];
 
 const TONE: Record<string, { bg: string; fg: string }> = {

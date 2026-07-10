@@ -124,7 +124,7 @@ export default function AgentsPage() {
       <header className="flex items-center justify-between gap-3">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <h2 className="text-xl font-semibold tracking-tight">Agent</h2>
+            <h2 className="text-xl font-semibold tracking-tight">数字员工</h2>
             <Link href="/agents/onboarding" className="text-muted-foreground hover:text-primary" title="了解模板/编排/蓝图三者关系">
               <HelpCircle className="size-4" />
             </Link>

@@ -78,10 +78,10 @@ export default function BotLogDetailPage({
                 <thead className="bg-muted/50 text-muted-foreground text-xs uppercase">
                   <tr>
                     <th className="px-4 py-3 text-left">状态</th>
-                    <th className="px-4 py-3 text-left">Session</th>
-                    <th className="px-4 py-3 text-left">Chat ID</th>
+                    <th className="px-4 py-3 text-left">会话</th>
+                    <th className="px-4 py-3 text-left">会话 ID</th>
                     <th className="px-4 py-3 text-left">模型</th>
-                    <th className="px-4 py-3 text-right">Tokens</th>
+                    <th className="px-4 py-3 text-right">令牌数</th>
                     <th className="px-4 py-3 text-right">花费</th>
                     <th className="px-4 py-3 text-left">最后活动</th>
                   </tr>

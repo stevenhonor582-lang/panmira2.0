@@ -99,7 +99,7 @@ export default function RuntimeConsolePage() {
       </div>
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Runtime Console</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">运行时控制台</h1>
           <p className="text-sm text-muted-foreground">实时监控所有 Bot 的运行 session(30s 自动刷新)</p>
         </div>
         <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
@@ -159,7 +159,7 @@ export default function RuntimeConsolePage() {
               <thead className="bg-muted/50 text-muted-foreground text-xs uppercase">
                 <tr>
                   <th className="px-4 py-3 text-left">状态</th>
-                  <th className="px-4 py-3 text-left">Bot</th>
+                  <th className="px-4 py-3 text-left">数字员工</th>
                   <th className="px-4 py-3 text-left">模型</th>
                   <th className="px-4 py-3 text-left">最后活动</th>
                   <th className="px-4 py-3 text-right">花费</th>

@@ -122,8 +122,8 @@ export default function AgentLogsPage() {
                         <thead>
                           <tr className="text-xs text-muted-foreground">
                             <th className="text-left py-1 px-2 font-medium">状态</th>
-                            <th className="text-left py-1 px-2 font-medium">Pipeline</th>
-                            <th className="text-right py-1 px-2 font-medium">Tokens</th>
+                            <th className="text-left py-1 px-2 font-medium">流水线</th>
+                            <th className="text-right py-1 px-2 font-medium">令牌数</th>
                             <th className="text-right py-1 px-2 font-medium">耗时</th>
                             <th className="text-right py-1 px-2 font-medium">花费</th>
                             <th className="text-left py-1 px-2 font-medium">开始</th>
