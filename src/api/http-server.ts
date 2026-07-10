@@ -61,6 +61,7 @@ import { handleEmployeesRoutes } from './routes/employees-routes.js';
 import { handleV3HealthRoutes } from './routes/v3-health-routes.js';
 import { handleV3ListRoutes } from './routes/v3-list-routes.js';
 import { handleV3OpenApiRoutes } from './routes/v3-openapi-routes.js'; // R49-B Step 6
+import { markV1Deprecated, hookResForDeprecation } from './middleware/v1-deprecation.js'; // R49-B Step 7
 import { handleTasksRoutes } from './routes/tasks-routes.js';
 import { handleFoundationRoutes } from './routes/foundation-routes.js';
 import { handleFoundationMemoryRoutes } from './routes/foundation-memory-routes.js';
@@ -357,6 +358,12 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
         jsonResponse(res, 401, { error: 'Unauthorized' });
         return;
       }
+    }
+
+    // R49-B Step 7: 给 v1 路由响应自动加 Deprecation/Sunset/Link header
+    if (url.startsWith('/api/v1/') || url.startsWith('/api/bots') || url.startsWith('/api/agents') || url === '/api/skills' || url.startsWith('/api/skills/')) {
+      hookResForDeprecation(res, url);
+      markV1Deprecated(res, url);
     }
 
     try {
