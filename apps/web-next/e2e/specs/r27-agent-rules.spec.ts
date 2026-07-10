@@ -21,10 +21,12 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('R27-collab: 员工详情协作 tab 加载 + 工作目录只读', async ({ page }) => {
+  // 2026-07-11 R50-2: 协作 tab 内"运行参数(只读)"区(原"R15-A · 多 Bot 字段"块改名为运行参数);
+  // 工作目录 row label 由 "工作目录 · working_dir" 改为 "工作目录 · 系统生成"。
   await page.goto(`${BASE}/employees/1634063d-5862-4230-93d3-1aa166ba0a1c/`);
   await page.getByRole('tab', { name: '协作' }).click();
-  await expect(page.getByText('R15-A · 多 Bot 字段')).toBeVisible({ timeout: 8000 });
-  await expect(page.getByText('工作目录 · working_dir')).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText('运行参数(只读)')).toBeVisible({ timeout: 8000 });
+  await expect(page.getByText('工作目录 · 系统生成')).toBeVisible({ timeout: 5000 });
   await expect(page.getByText('只读').first()).toBeVisible();
 });
 

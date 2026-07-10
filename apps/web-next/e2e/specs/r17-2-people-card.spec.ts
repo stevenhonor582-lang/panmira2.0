@@ -54,14 +54,21 @@ test("R17-2 · 03 详情页头部紧凑 + 编辑按钮", async ({ page }) => {
   await firstCard.click();
   await page.waitForURL(/\/overview\/people\/[^/]+\/?/, { timeout: 10000 });
 
-  // 编辑按钮在 tab 行 (sticky nav 内,显示"编辑")
-  const editBtn = page.locator('nav[aria-label="详情 tab"] button[aria-label="编辑基础信息"]');
+  // R23 改动后:编辑按钮移到 BasicTab 卡片头部(信息区右上角"编辑"),不在 nav 行内。
+  // 特征:BasicTab 的"基本信息"卡片头右侧,有 Pencil + "编辑" 文字的按钮。
+  const editBtn = page.getByRole("button", { name: /^编辑$/ }).first();
   await expect(editBtn).toBeVisible();
   await expect(editBtn).toContainText("编辑");
 
-  // 点编辑进入编辑模式
+  // 点编辑进入编辑模式 → 表单出现 + 底部"保存 / 取消"操作条出现
   await editBtn.click();
-  await expect(editBtn).toContainText("退出编辑");
+  // 编辑模式卡片头改为"编辑基本信息"标题
+  await expect(page.getByText("编辑基本信息")).toBeVisible();
+  // 底部 PersonEditBar 出现"保存"按钮(原本"取消"也已存在)
+  const saveBtn = page.getByRole("button", { name: /^保存$/ });
+  await expect(saveBtn).toBeVisible();
+  const cancelBtn = page.getByRole("button", { name: /^取消$/ });
+  await expect(cancelBtn).toBeVisible();
 });
 
 test("R17-2 · 04 协作 tab 3 分区", async ({ page }) => {
@@ -74,10 +81,9 @@ test("R17-2 · 04 协作 tab 3 分区", async ({ page }) => {
 
   // 切到协作 tab
   await page.click('button:has-text("协作对象")');
-  // 3 个分区标题
-  await expect(page.locator('text=可调度的数字员工')).toBeVisible();
-  await expect(page.locator('text=可访问的知识库')).toBeVisible();
-  await expect(page.locator('text=可使用的任务模板')).toBeVisible();
+  // R26-A 改动后:协作 tab 改为"协作总览 · 关系总图(只读)"(画布版),
+  // 原 3 个分区(可调度/可访问/可使用)被替换为可视化关系图。
+  await expect(page.getByText(/协作总览.*关系总图/)).toBeVisible();
 });
 
 test("R17-2 · 05 ?edit=true 自动进编辑模式", async ({ page }) => {
@@ -87,11 +93,11 @@ test("R17-2 · 05 ?edit=true 自动进编辑模式", async ({ page }) => {
   await expect(firstCard).toBeVisible({ timeout: 10000 });
   await firstCard.click();
   await page.waitForURL(/\/overview\/people\/[^/]+\/?/, { timeout: 10000 });
-  // 附加 ?edit=true
+  // 附加 ?edit=true → 自动进入编辑模式(R17-2 设计的核心功能)
   const url = page.url().split("?")[0];
   await page.goto(`${url}?edit=true`);
-  // 编辑按钮应显示"退出编辑"
-  const editBtn = page.locator('nav[aria-label="详情 tab"] button[aria-label="编辑基础信息"]');
-  await expect(editBtn).toBeVisible();
-  await expect(editBtn).toContainText("退出编辑");
+  // 编辑模式卡片头改为"编辑基本信息"标题,底部保存/取消条出现
+  await expect(page.getByText("编辑基本信息")).toBeVisible();
+  const saveBtn = page.getByRole("button", { name: /^保存$/ });
+  await expect(saveBtn).toBeVisible();
 });

@@ -27,9 +27,10 @@ test("R28-C: skills tab renders KB two zones + tools default/extra", async ({ pa
   if (await skillsTab.isVisible().catch(() => false)) await skillsTab.click();
   await page.waitForTimeout(800);
   const body = await page.textContent("body");
-  // ⑦ 知识库两区标题
-  expect.soft(body, "公共知识库").toContain("公共知识库");
-  expect.soft(body, "该 Agent 专属").toContain("该 Agent 专属");
+  // ⑦ 知识库两区标题 — R50-2: "公共知识库" 已重命名为"组织公共知识区",
+  // 第二区表达改为"个人 / 群组 / 私人"被自动隐藏的权限隔离文案。
+  expect.soft(body, "组织公共知识区").toContain("组织公共知识区");
+  expect.soft(body, "已自动隐藏").toContain("已自动隐藏");
   // 权限隔离提示
   expect.soft(body, "权限隔离").toContain("权限隔离");
   // ⑧ 工具:默认已启用 + 额外

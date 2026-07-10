@@ -40,7 +40,8 @@ test("R17-1 sidebar 删除冗余子项", async ({ page }) => {
 
   expect(sidebarText).not.toContain("新建向导");
   expect(sidebarText).not.toContain("员工详情");
-  expect(sidebarText).toContain("员工库");
+  // R32-A 改动后:员工库拆为「智能体员工 / 数字员工」两区,保留"数字员工"作为锚点。
+  expect(sidebarText).toContain("数字员工");
 
   expect(sidebarText).not.toContain("短期记忆");
   expect(sidebarText).not.toContain("长期记忆");
@@ -55,19 +56,19 @@ test("R17-1 sidebar 删除冗余子项", async ({ page }) => {
   expect(sidebarText).toContain("定时任务");
 });
 
-test("R17-1 topbar 版本号 Panmira 2.0", async ({ page }) => {
+test("R17-1 topbar 版本号 PAMELA 2.4", async ({ page }) => {
   await loginAdmin(page);
   await page.goto(`${BASE}/employees`);
   await page.waitForLoadState("networkidle");
   await page.waitForTimeout(1500);
 
   const sidebarText = await page.locator("aside").innerText({ timeout: 10000 });
-  expect(sidebarText).toContain("2.0");
+  expect(sidebarText).toContain("2.4");
   expect(sidebarText).not.toContain("IA v6");
   expect(sidebarText).not.toContain("Admin Console");
 
   await page.screenshot({
-    path: "/home/ubuntu/panmira-N1/.claude/r17-1-sidebar-2.0.png",
+    path: "/home/ubuntu/panmira-N1/.claude/r17-1-sidebar-2.4.png",
     fullPage: false,
   });
 });

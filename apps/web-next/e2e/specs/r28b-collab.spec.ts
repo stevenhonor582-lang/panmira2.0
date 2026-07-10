@@ -28,15 +28,15 @@ test('R28B-collab: Agent 协作关系图 + 可见性 radio', async ({ page }) =>
   // 关系图标题
   await expect(page.getByText('协作关系图').first()).toBeVisible({ timeout: 8000 });
   // 可见性 radio 三选项
-  await expect(page.getByTestId('visibility-private')).toBeVisible();
-  await expect(page.getByTestId('visibility-team')).toBeVisible();
-  await expect(page.getByTestId('visibility-public')).toBeVisible();
-  // 默认 team 选中
+  await expect(page.getByTestId('visibility-private')).toBeVisible({ timeout: 8000 });
+  await expect(page.getByTestId('visibility-team')).toBeVisible({ timeout: 8000 });
+  await expect(page.getByTestId('visibility-public')).toBeVisible({ timeout: 8000 });
+  // 默认 team 选中(border-violet-500/60 + ring 都属 violet-500 类)
   await expect(page.getByTestId('visibility-team')).toHaveClass(/border-violet-500/);
   // 说明文案在
   await expect(page.getByText(/影响后续任务调度权限/)).toBeVisible();
-  // R15-A 字段仍在
-  await expect(page.getByText('R15-A · 多 Bot 字段')).toBeVisible();
+  // 2026-07-11 R50-2: 原"R15-A · 多 Bot 字段"标题已重命名为"运行参数(只读)"
+  await expect(page.getByText('运行参数(只读)')).toBeVisible();
   expect(errors, errors.join('\n')).toHaveLength(0);
 });
 
@@ -58,23 +58,28 @@ test('R28B-person: 真人协作关系图(画布)', async ({ page }) => {
 
 // R28-B 可见性 PATCH 生效
 test('R28B-visibility: 切换 radio → 保存 → API 生效', async ({ page }) => {
-  const agentId = 'efadf77d-5b8c-45c3-acb6-1f4c851b67fb'; // 测试Bot--验证缝合
+  test.setTimeout(90000); // 此测试涉及 3 次 API 调用 + 页面跳转,放宽到 90s
+  // 2026-07-11 R50-2: 原"测试Bot--验证缝合"agent 已删除,改用现存的数智底座管理(同 test 1)。
+  const agentId = '0253fff5-5daf-42f4-8642-dd1f95251c53';
   await page.goto(`${BASE}/employees/${agentId}/`);
   await page.getByRole('tab', { name: '协作' }).click();
-  // 先确认默认 team
+  // 等可见性 radio 加载
+  await expect(page.getByTestId('visibility-team')).toBeVisible({ timeout: 10000 });
+  // 先确认默认 team(border-violet-500/60 + ring 都属 violet-500 类)
   await expect(page.getByTestId('visibility-team')).toHaveClass(/border-violet-500/);
-  // 进编辑模式
-  await page.getByRole('button', { name: /编辑|退出编辑/ }).first().click().catch(async () => {
-    // 没有编辑按钮 — 直接尝试切 radio(可能默认就在编辑态)
-  });
-  // 点 private radio
-  await page.getByTestId('visibility-private').click();
+  // 进编辑模式 — 协作 tab 顶部"编辑"按钮(R45 后改为按钮而非整行 inline)
+  const editBtn = page.getByTestId('edit-collab');
+  if (await editBtn.isVisible().catch(() => false)) {
+    await editBtn.click();
+    await page.waitForTimeout(300); // 等 EditPane 进 editing 状态
+  }
+  // 点 private radio(只读态 disabled 也允许 click,只触发 selected 视觉态)
+  await page.getByTestId('visibility-private').click({ timeout: 8000 });
   await expect(page.getByTestId('visibility-private')).toHaveClass(/border-violet-500/);
-  // 保存(顶部 save-collab 按钮)
+  // 保存(顶部 save-collab 按钮 — 只有在编辑态才有)
   const saveBtn = page.getByTestId('save-collab');
-  if (await saveBtn.count() > 0 && await saveBtn.isEnabled()) {
+  if (await saveBtn.count() > 0 && await saveBtn.isEnabled().catch(() => false)) {
     await saveBtn.click();
-    // 等 reload 完成
     await page.waitForTimeout(800);
   }
   // 直接查 API 确认最终态
