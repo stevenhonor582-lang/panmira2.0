@@ -378,3 +378,92 @@ describe('QueryRunner.buildOptions injection (R49-D step 1)', () => {
     expect(options.enableFileCheckpointing).toBe(true);
   });
 });
+
+// === R49-D Step 2: extras override + base defaults preserved ===
+describe('QueryRunner.buildOptions extras (R49-D step 2)', () => {
+  it('10. merges extras.mcpServers into options envelope', async () => {
+    // Arrange — bridge injects feishu mcpServer via extras
+    const stubs = makeStubs();
+    const fakeMcp = { feishu: { command: 'fake-feishu-mcp', args: [] } };
+    setQueryStream(STREAM_WITH_SESSION);
+
+    const runner = new QueryRunner(
+      stubs.sessionManager,
+      stubs.systemPromptInjector,
+      stubs.agentDefinitionBuilder,
+      stubs.hookRegistry,
+      stubs.canUseToolDecider,
+      undefined,
+      undefined,
+    );
+
+    // Act
+    await runner.runQuery({
+      botName: '得一',
+      prompt: 'hi',
+      extras: { mcpServers: fakeMcp },
+    });
+
+    // Assert — mcpServers from extras is in options
+    const callArgs = queryMock.mock.calls[0] as unknown as [{ options: Record<string, unknown> }];
+    const options = callArgs[0].options;
+    expect(options.mcpServers).toBe(fakeMcp);
+    // Base defaults preserved (e.g. hooks still injected)
+    expect(options.hooks).toBeDefined();
+    expect(options.canUseTool).toBe(stubs.canUseToolDecider.decide);
+    expect(options.enableFileCheckpointing).toBe(true);
+  });
+
+  it('11. extras.override wins over base default (e.g. permissionMode)', async () => {
+    // Arrange — bridge explicitly sets permissionMode='default' instead of bypassPermissions
+    const stubs = makeStubs();
+    setQueryStream(STREAM_WITH_SESSION);
+
+    const runner = new QueryRunner(
+      stubs.sessionManager,
+      stubs.systemPromptInjector,
+      stubs.agentDefinitionBuilder,
+      stubs.hookRegistry,
+      stubs.canUseToolDecider,
+      undefined,
+      undefined,
+    );
+
+    // Act
+    await runner.runQuery({
+      botName: '得一',
+      prompt: 'hi',
+      extras: { permissionMode: 'default' },
+    });
+
+    // Assert — extras.permissionMode wins
+    const callArgs = queryMock.mock.calls[0] as unknown as [{ options: Record<string, unknown> }];
+    const options = callArgs[0].options;
+    expect(options.permissionMode).toBe('default');
+  });
+
+  it('12. without extras, base defaults are untouched', async () => {
+    // Arrange — no extras; verify default permissionMode is preserved
+    const stubs = makeStubs();
+    setQueryStream(STREAM_WITH_SESSION);
+
+    const runner = new QueryRunner(
+      stubs.sessionManager,
+      stubs.systemPromptInjector,
+      stubs.agentDefinitionBuilder,
+      stubs.hookRegistry,
+      stubs.canUseToolDecider,
+      undefined,
+      undefined,
+    );
+
+    // Act
+    await runner.runQuery({ botName: '得一', prompt: 'hi' });
+
+    // Assert — defaults unchanged
+    const callArgs = queryMock.mock.calls[0] as unknown as [{ options: Record<string, unknown> }];
+    const options = callArgs[0].options;
+    expect(options.permissionMode).toBe('bypassPermissions');
+    expect(options.allowDangerouslySkipPermissions).toBe(true);
+  });
+});

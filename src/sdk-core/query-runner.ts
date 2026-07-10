@@ -81,6 +81,13 @@ export interface QueryRunnerOptions {
   readonly continue?: boolean;
   /** Optional abort controller */
   readonly abortController?: AbortController;
+  /**
+   * Extra SDK options to merge into the final options envelope.
+   * Used by createSDKCoreHandle for mcpServers (feishu) and other
+   * per-bot customizations that should NOT live in QueryRunner's
+   * default build path. R49-D step 2.
+   */
+  readonly extras?: Readonly<Record<string, unknown>>;
 }
 
 export interface QueryResult {
@@ -205,7 +212,7 @@ export class QueryRunner {
     // R49-D step 1: build agent map from DB so SDK can resolve Task tool subagents
     const agentsMap = await this.agentDefinitionBuilder.buildBusinessExperts();
 
-    return {
+    const base: Record<string, unknown> = {
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
       cwd: sessionConfig.cwd,
@@ -226,6 +233,10 @@ export class QueryRunner {
       agents: agentsMap,
       enableFileCheckpointing: true,
     };
+
+    // R49-D step 2: bridge can inject per-bot customizations (mcpServers etc.)
+    // without re-implementing the SDK query() call. extras override defaults.
+    return opts.extras ? { ...base, ...opts.extras } : base;
   }
 
 
