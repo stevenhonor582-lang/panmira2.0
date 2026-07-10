@@ -77,7 +77,7 @@ export function sendOk<T>(
     success: true,
     data,
     meta: {
-      traceId: traceId ?? generateTraceId(),
+      traceId: traceId ?? (res as any).traceId ?? generateTraceId(),
       version,
       timestamp: nowIso(),
     },
@@ -98,7 +98,7 @@ export function sendCreated<T>(
     success: true,
     data,
     meta: {
-      traceId: traceId ?? generateTraceId(),
+      traceId: traceId ?? (res as any).traceId ?? generateTraceId(),
       version,
       timestamp: nowIso(),
     },
@@ -119,7 +119,7 @@ export function sendAccepted<T>(
     success: true,
     data,
     meta: {
-      traceId: traceId ?? generateTraceId(),
+      traceId: traceId ?? (res as any).traceId ?? generateTraceId(),
       version,
       timestamp: nowIso(),
     },
@@ -150,7 +150,7 @@ export function sendError(
     success: false,
     error: err,
     meta: {
-      traceId: traceId ?? generateTraceId(),
+      traceId: traceId ?? (res as any).traceId ?? generateTraceId(),
       version,
       timestamp: nowIso(),
     },
