@@ -428,6 +428,30 @@ export async function createInstanceFromTemplate(input: {
  *  - "复制为模板":调 POST /api/v2/admin/agent-templates(snapshot 拷成新 template)
  */
 
+/**
+ * R44-1: POST /api/v2/admin/agent-instances/:id/promote-to-template
+ * 基于 instance 蓝图字段创建新 template(创建,不是改原 instance),同时解绑 bot_configs。
+ * 成功返回新 template 的 { id, name }。
+ */
+export async function promoteInstanceToTemplate(
+  instanceId: string,
+  name?: string,
+): Promise<{ id: string; name: string }> {
+  const res = await api<{ success?: boolean; data?: any } | any>(
+    fullPath(`/api/v2/admin/agent-instances/${encodeURIComponent(instanceId)}/promote-to-template`),
+    {
+      method: 'POST',
+      body: name ? { name } : {},
+    },
+  );
+  const row = (res as any)?.data?.agent ?? (res as any)?.agent ?? (res as any)?.data ?? res;
+  if (!row || !row.id) {
+    const err = (res as any)?.error;
+    throw new Error(err?.message ?? err?.code ?? 'promote_failed');
+  }
+  return { id: row.id, name: row.name };
+}
+
 /** @deprecated R42 起删除 — 走 POST /api/v2/admin/agent-templates 直接创建模板 */
 export async function promoteAgent(_id: string): Promise<never> {
   throw new Error(

@@ -4,10 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import type { Agent } from "../_lib/data";
-import { updateAgent, createInstanceFromTemplate } from "../_lib/data";
+import { updateAgent, createInstanceFromTemplate, promoteInstanceToTemplate } from "../_lib/data";
 import { AvatarMark, statusTone } from "./avatar-mark";
 import {
-  MoreVertical, Pause, Play, Archive, FileText, Bot, Loader2, Sparkles,
+  MoreVertical, Pause, Play, Archive, FileText, Bot, Loader2, Sparkles, FileUp,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -16,6 +16,12 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/toast/toast-provider";
 
 const ROLE_LABEL: Record<string, string> = {
   "full-stack-engineer": "全栈工程",
@@ -51,6 +57,11 @@ export function AgentCard({
   const [hover, setHover] = React.useState(false);
   const [pos, setPos] = React.useState({ x: 50, y: 50 });
   const [acting, setActing] = React.useState(false);
+  // R44-1: 提升为模板 dialog 状态
+  const [promoteOpen, setPromoteOpen] = React.useState(false);
+  const [promoteName, setPromoteName] = React.useState("");
+  const [promoting, setPromoting] = React.useState(false);
+  const toast = useToast();
 
   const reduce =
     typeof window !== "undefined" &&
@@ -73,7 +84,7 @@ export function AgentCard({
   const t = statusTone(agent.status);
   const avatarSize = "md"; // 统一中尺寸头像
 
-  const onAction = async (e: React.MouseEvent, action: "pause" | "activate" | "deprecate" | "toTemplate" | "toInstance" | "copyAsTemplate" | "generateInstance") => {
+  const onAction = async (e: React.MouseEvent, action: "pause" | "activate" | "deprecate" | "promoteToTemplate" | "toInstance" | "copyAsTemplate" | "generateInstance") => {
     e.preventDefault();
     e.stopPropagation();
     setActing(true);
@@ -92,20 +103,23 @@ export function AgentCard({
           ownerId: null,
         });
         router.push(`/employees/${created.id}`);
+      } else if (action === "promoteToTemplate") {
+        // R44-1: 实例 → 模板。弹 dialog 让用户填新模板名,确认后调 promoteInstanceToTemplate
+        setPromoteName(`${agent.displayName || agent.name}-模板`);
+        setPromoteOpen(true);
+        setActing(false);
+        return;
       } else {
-        // R42-ROUTES 已删除 promote / demote / copy-as-template 端点 — 用 toast 提示后置
+        // R42-ROUTES 已删除 demote / copy-as-template 端点 — 用 toast 提示后置(R44 范围外,保留 stub)
         const msg = {
-          toTemplate:
-            "提升为模板 已在 R42 删除。请在模板管理页新建模板,或从实例 '生成模板'。",
           toInstance:
             "转为实例 已在 R42 删除。请从模板点 '生成实例'。",
           copyAsTemplate:
             "复制为模板 已在 R42 删除。请直接新建模板,把要复制的字段粘过去。",
-        }[action as "toTemplate" | "toInstance" | "copyAsTemplate"];
+        }[action as "toInstance" | "copyAsTemplate"];
         if (typeof window !== "undefined" && msg) {
           window.alert(msg);
         }
-        // 后端 deprecated stub 仍会 throw,但不需要走 createInstanceFromTemplate / promoteAgent / demoteAgent / copyAsTemplate 路径
         return;
       }
       onChanged?.();
@@ -194,9 +208,18 @@ export function AgentCard({
                   派生自 {agent.templateSource.slice(0, 8)}…
                 </div>
               )}
-              {/* R42-FRONTEND: 仅保留 '生成实例'(R42 主路径)。提升为模板 / 复制为模板 / 转为实例
-                  三个菜单项已在 R42 删除 — 隐藏避免误导。后端无对应端点。
+              {/* R42-FRONTEND: R42 主路径保留 '生成实例'。
+                  R44-1: 实例 → 模板 端点已恢复,加 '提升为模板' 菜单项(只对非模板 instance 显示)。
+                  R44-2/3/4(复制为模板 / 转为实例)未做,继续走 stub。
               */}
+              {!agent.isTemplate && (
+                <DropdownMenuItem
+                  onClick={(e) => onAction(e, "promoteToTemplate")}
+                  data-testid="menu-promote-to-template"
+                >
+                  <FileUp className="size-4" /> 提升为模板
+                </DropdownMenuItem>
+              )}
               {agent.isTemplate && (
                 <DropdownMenuItem
                   onClick={(e) => onAction(e, "generateInstance")}
@@ -311,6 +334,58 @@ export function AgentCard({
           </div>
         </div>
       </div>
+
+      {/* R44-1: 提升为模板 dialog */}
+      <Dialog open={promoteOpen} onOpenChange={setPromoteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>提升为模板</DialogTitle>
+            <DialogDescription>
+              将基于「{agent.displayName || agent.name}」创建一个新模板。
+              原实例保留,但会解绑该实例关联的所有 bot。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <label className="text-[12px] text-foreground/70">新模板名</label>
+            <Input
+              value={promoteName}
+              onChange={(e) => setPromoteName(e.target.value)}
+              placeholder="新模板名"
+              data-testid="promote-name-input"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPromoteOpen(false)} disabled={promoting}>
+              取消
+            </Button>
+            <Button
+              onClick={async () => {
+                const trimmed = promoteName.trim();
+                if (!trimmed) {
+                  toast.error("模板名不能为空");
+                  return;
+                }
+                setPromoting(true);
+                try {
+                  const result = await promoteInstanceToTemplate(agent.id, trimmed);
+                  toast.success(`已创建模板「${result.name}」`);
+                  setPromoteOpen(false);
+                  onChanged?.();
+                } catch (err: unknown) {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  toast.error(`提升为模板失败: ${msg}`);
+                } finally {
+                  setPromoting(false);
+                }
+              }}
+              disabled={promoting}
+              data-testid="promote-confirm"
+            >
+              {promoting ? "处理中..." : "确认提升"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Link>
   );
 }
