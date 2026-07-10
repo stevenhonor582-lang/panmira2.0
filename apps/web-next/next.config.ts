@@ -63,8 +63,8 @@ const nextConfig: NextConfig = {
       // ---- R14-E: /optimization 并入 /diagnosis ----
       { source: "/overview/optimization", destination: "/overview/diagnosis", permanent: false },
 
-      // ---- R29-A: "路由" 内置到大模型,/channels/routing → /channels/llm ----
-      { source: "/channels/routing", destination: "/channels/llm", permanent: true },
+      // ---- R51-A: /channels/routing 改为帮助文档页(术语 + 决策表),不再重定向 ----
+      // 实操面板已合入 /channels/llm,但保留独立 URL 用于解释路由策略 vs Fallback 的关系。
 
     ];
   },
