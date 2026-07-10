@@ -1205,3 +1205,97 @@ export const rateLimitState = pgTable('rate_limit_state', {
 }, (t) => ({
   updatedIdx: index('rate_limit_state_updated_idx').on(t.updatedAt),
 }));
+
+// ── R49-B · 语义层 4 表(只声明, 不接路由) ────────────────────────────────────
+//
+// 来源: .claude/R48-UPGRADE-IMPLEMENTATION-SPEC.md §3.1
+// 用户决策 (2026-07-10): 建表暂不接入, 等 R49 块 C/D 阶段再 wire
+//
+// 设计: 纯增量, 不删任何 KB / document / memory 表
+// 注意: 这里的声明只用于 TypeScript 类型推导; 同步和路由在块 C 才接
+
+// 1. semantic_assets: 语义资产主表
+export const semanticAssets = pgTable('semantic_assets', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull(),
+  teamId: uuid('team_id'),
+  ownerUserId: uuid('owner_user_id'),
+  type: varchar('type', { length: 40 }).notNull(),
+  semanticKind: varchar('semantic_kind', { length: 40 }),
+  name: varchar('name', { length: 200 }).notNull(),
+  description: text('description'),
+  sourceTable: varchar('source_table', { length: 60 }).notNull(),
+  sourceId: text('source_id').notNull(),
+  sourceUrl: text('source_url'),
+  contentHash: text('content_hash').notNull(),
+  embedding: vectorColumn('embedding', 1024),
+  embeddingModel: varchar('embedding_model', { length: 60 }),
+  embeddingAt: timestamp('embedding_at', { withTimezone: true }),
+  visibility: varchar('visibility', { length: 20 }).default('team'),
+  qualityScore: real('quality_score').default(0),
+  hitCount: integer('hit_count').default(0),
+  lastHitAt: timestamp('last_hit_at', { withTimezone: true }),
+  tags: jsonb('tags').default([]),
+  metadata: jsonb('metadata').default({}),
+  status: varchar('status', { length: 20 }).default('active'),
+  createdBy: uuid('created_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  sourceUq: uniqueIndex('semantic_assets_source_uq').on(t.sourceTable, t.sourceId, t.type),
+}));
+
+// 2. semantic_versions: 版本表
+export const semanticVersions = pgTable('semantic_versions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  assetId: uuid('asset_id').notNull().references(() => semanticAssets.id, { onDelete: 'cascade' }),
+  version: integer('version').notNull(),
+  content: text('content').notNull(),
+  contentHash: text('content_hash').notNull(),
+  embedding: vectorColumn('embedding', 1024),
+  diffFromPrev: text('diff_from_prev'),
+  changeReason: varchar('change_reason', { length: 40 }),
+  changedBy: uuid('changed_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  assetVerUq: uniqueIndex('semantic_versions_asset_version_uq').on(t.assetId, t.version),
+}));
+
+// 3. semantic_relations: 关系表
+export const semanticRelations = pgTable('semantic_relations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull(),
+  fromAssetId: uuid('from_asset_id').notNull().references(() => semanticAssets.id, { onDelete: 'cascade' }),
+  toAssetId: uuid('to_asset_id').notNull().references(() => semanticAssets.id, { onDelete: 'cascade' }),
+  relationType: varchar('relation_type', { length: 40 }).notNull(),
+  weight: real('weight').default(1.0),
+  confidence: real('confidence').default(0.8),
+  source: varchar('source', { length: 40 }),
+  evidence: jsonb('evidence').default({}),
+  createdBy: uuid('created_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  fromToTypeUq: uniqueIndex('semantic_relations_from_to_type_uq').on(t.fromAssetId, t.toAssetId, t.relationType),
+}));
+
+// 4. semantic_injection_rules: 注入规则
+export const semanticInjectionRules = pgTable('semantic_injection_rules', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull(),
+  name: varchar('name', { length: 200 }).notNull(),
+  description: text('description'),
+  triggerWhen: jsonb('trigger_when').notNull().default({}),
+  assetFilter: jsonb('asset_filter').notNull().default({}),
+  injectionMode: varchar('injection_mode', { length: 20 }).default('system_prompt'),
+  priority: integer('priority').default(100),
+  maxAssets: integer('max_assets').default(5),
+  minScore: real('min_score').default(0.5),
+  enabled: boolean('enabled').default(true),
+  hitCount: integer('hit_count').default(0),
+  helpfulCount: integer('helpful_count').default(0),
+  harmfulCount: integer('harmful_count').default(0),
+  lastEvaluatedAt: timestamp('last_evaluated_at', { withTimezone: true }),
+  createdBy: uuid('created_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
