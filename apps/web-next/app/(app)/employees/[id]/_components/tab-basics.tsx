@@ -642,9 +642,9 @@ function ModelBindingCard({ agent, onSaved, setAgent }: { agent: Agent; onSaved:
         useModelRouting: useRouting,
         orchestration: orchObj,
       });
-      // R38-C5 4.4: 写 modelId 到 body,让后端联级更新 agents.model_id FK
+      // R38-E: 写 model_id 到 body(snake_case 对齐后端 PATCH handler),让后端联级更新 agents.model_id FK
       if (selectedProvider && selectedProvider.id !== currentBinding?.id) {
-        (patch as Record<string, unknown>).modelId = selectedProvider.id;
+        patch.model_id = selectedProvider.id;
       }
       const updated = await updateAgent(agent.id, patch);
       if (updated) setAgent(updated);

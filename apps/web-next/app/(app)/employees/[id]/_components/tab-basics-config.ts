@@ -8,6 +8,7 @@ export interface ModelBindingProvider {
 export type ModelBindingPatch = {
   default_engine?: string;
   default_model?: string;
+  model_id?: string;
   orchestration: Record<string, unknown>;
 };
 
