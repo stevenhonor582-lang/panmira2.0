@@ -59,7 +59,8 @@ import { handleOverviewRoutes } from './routes/overview-routes.js';
 import { handlePeopleRoutes } from './routes/people-routes.js';
 import { handleEmployeesRoutes } from './routes/employees-routes.js';
 import { handleV3HealthRoutes } from './routes/v3-health-routes.js';
-import { handleV3ListRoutes } from './routes/v3-list-routes.js'; // R49-B Step 5
+import { handleV3ListRoutes } from './routes/v3-list-routes.js';
+import { handleV3OpenApiRoutes } from './routes/v3-openapi-routes.js'; // R49-B Step 6
 import { handleTasksRoutes } from './routes/tasks-routes.js';
 import { handleFoundationRoutes } from './routes/foundation-routes.js';
 import { handleFoundationMemoryRoutes } from './routes/foundation-memory-routes.js';
@@ -304,7 +305,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     }
 
     // Rate limiting (by IP, exempt health/metrics)
-    if (url !== '/api/health' && url !== '/api/v3/health' && url !== '/metrics' && !url.startsWith('/memory/')) {
+    if (url !== '/api/health' && url !== '/api/v3/health' && !url.startsWith('/api/v3/openapi') && url !== '/metrics' && !url.startsWith('/memory/')) {
       const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
         || req.socket.remoteAddress
         || 'unknown';
@@ -326,6 +327,7 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
       !url.startsWith('/api/auth') &&
       !url.startsWith('/api/v1/memory') &&
       url !== '/api/v3/health' &&
+      !url.startsWith('/api/v3/openapi') &&
       !url.startsWith('/oauth') &&
       url !== '/.well-known/oauth-authorization-server' &&
       !url.startsWith('/api/reports') &&
@@ -360,6 +362,9 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     try {
       // R49-B: GET /api/v3/health — unified envelope + DB/Redis/MCP/CC-SDK checks
       if (await handleV3HealthRoutes(req, res, method, url)) return;
+
+      // R49-B Step 6: GET /api/v3/openapi.json — OpenAPI 3.0 spec
+      if (await handleV3OpenApiRoutes(req, res, method, url)) return;
 
       // R49-B Step 5: GET /api/v3/employees + /api/v3/agents — unified list response
       if (await handleV3ListRoutes(req, res, method, url)) return;
