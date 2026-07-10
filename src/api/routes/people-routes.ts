@@ -324,9 +324,21 @@ export async function handlePeopleRoutes(
           return true;
         }
 
+        // R41-C: keep user_agent_bindings (m:n) in sync alongside the denormalized
+        // owner_user_id cache. Without this, the new filter=unassigned (which reads
+        // bindings) would still show agents that were 'bound' via the legacy PATCH.
         if (action === 'add') {
           await pool.query(
             'UPDATE agents SET owner_user_id = $1 WHERE id = ANY($2::uuid[])',
+            [userId, agentIds],
+          );
+          await pool.query(
+            `INSERT INTO user_agent_bindings (tenant_id, user_id, agent_id, role)
+               SELECT a.tenant_id, $1::uuid, a.id, 'owner'
+                 FROM agents a
+                WHERE a.id = ANY($2::uuid[])
+               ON CONFLICT (tenant_id, user_id, agent_id, role) DO UPDATE
+                 SET updated_at = now()`,
             [userId, agentIds],
           );
         } else if (action === 'remove') {
@@ -334,12 +346,27 @@ export async function handlePeopleRoutes(
             'UPDATE agents SET owner_user_id = NULL WHERE owner_user_id = $1 AND id = ANY($2::uuid[])',
             [userId, agentIds],
           );
+          await pool.query(
+            `DELETE FROM user_agent_bindings
+              WHERE user_id = $1 AND agent_id = ANY($2::uuid[])`,
+            [userId, agentIds],
+          );
         } else {
           // set: 先解绑所有,再绑定传入的
           await pool.query('UPDATE agents SET owner_user_id = NULL WHERE owner_user_id = $1', [userId]);
+          await pool.query('DELETE FROM user_agent_bindings WHERE user_id = $1', [userId]);
           if (agentIds.length > 0) {
             await pool.query(
               'UPDATE agents SET owner_user_id = $1 WHERE id = ANY($2::uuid[])',
+              [userId, agentIds],
+            );
+            await pool.query(
+              `INSERT INTO user_agent_bindings (tenant_id, user_id, agent_id, role)
+                 SELECT a.tenant_id, $1::uuid, a.id, 'owner'
+                   FROM agents a
+                  WHERE a.id = ANY($2::uuid[])
+                 ON CONFLICT (tenant_id, user_id, agent_id, role) DO UPDATE
+                   SET updated_at = now()`,
               [userId, agentIds],
             );
           }

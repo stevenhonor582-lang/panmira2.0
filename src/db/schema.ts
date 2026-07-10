@@ -104,7 +104,35 @@ export const agents = pgTable('agents', {
   // but global default (Minimax) wins at runtime". Now readable.
   defaultEngine: varchar('default_engine', { length: 64 }),
   defaultModel: varchar('default_model', { length: 128 }),
+  // R41-C: owner_user_id is the denormalized single-tenant binding cache.
+  // The canonical many-to-many binding lives in user_agent_bindings below.
+  // Front-end used to read only this column; R41-C re-introduces the
+  // explicit user_agent_bindings table so multi-binding / lifecycle
+  // (role, is_primary, audit) is supported without losing backwards compat.
+  ownerUserId: uuid('owner_user_id'),
 });
+
+
+// ── R41-C: user_agent_bindings ─────────────────────────────────────────────────
+// Canonical many-to-many: which user is bound to which agent, with a role
+// (owner|user|approver) and is_primary flag. The DB column `agents.owner_user_id`
+// is kept as a denormalized cache so existing queries continue to work, but the
+// source of truth for "is this agent assigned to anyone" is now this join table.
+export const userAgentBindings = pgTable(
+  'user_agent_bindings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id'),
+    userId: uuid('user_id').notNull(),
+    agentId: uuid('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    role: text('role').notNull().default('user'),
+    isPrimary: boolean('is_primary').default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+);
 
 export const memories = pgTable('memories', {
   id: text('id').primaryKey(),

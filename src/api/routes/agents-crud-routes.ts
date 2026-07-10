@@ -461,6 +461,126 @@ export async function handleAgentsCrudRoutes(
     }
   }
 
+  // ====== R41-C: POST /api/v2/admin/agents/:id/assign  数字员工分配给真人 ======
+  // Body: { userId: string, role?: 'owner'|'user'|'approver' }
+  // Effect: INSERT into user_agent_bindings + UPDATE agents.owner_user_id.
+  // Idempotent on (user_id, agent_id) pair — re-assigning just refreshes role.
+  const assignMatch = u.pathname.match(/^\/api\/v2\/admin\/agents\/([^/]+)\/assign$/);
+  if (method === 'POST' && assignMatch) {
+    if (!requireAnyScope(ctx, ['agent:admin', 'people:admin', '*'])) {
+      jsonResponse(res, 403, { error: 'insufficient_scope', required: 'agent:admin OR people:admin' });
+      return true;
+    }
+    const agentId = assignMatch[1];
+    try {
+      const body = await parseJsonBody(req);
+      const userId = typeof body?.userId === 'string' ? body.userId.trim() : '';
+      if (!userId) {
+        jsonResponse(res, 400, { error: 'bad_request', message: 'userId 必填' });
+        return true;
+      }
+      const roleRaw = typeof body?.role === 'string' ? body.role : '';
+      const role = (['owner', 'user', 'approver'] as string[]).includes(roleRaw) ? roleRaw : 'user';
+
+      // Validate agent + user exist
+      const agentChk = await pool.query('SELECT id, owner_user_id FROM agents WHERE id = $1', [agentId]);
+      if (agentChk.rows.length === 0) {
+        jsonResponse(res, 404, { error: 'agent_not_found' });
+        return true;
+      }
+      const userChk = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
+      if (userChk.rows.length === 0) {
+        jsonResponse(res, 404, { error: 'user_not_found' });
+        return true;
+      }
+
+      const tenantId = ctx.tenantId || agentChk.rows[0].owner_user_id || '00000000-0000-0000-0000-000000000000';
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        // Upsert binding (idempotent on (tenant_id, user_id, agent_id, role))
+        await client.query(
+          `INSERT INTO user_agent_bindings (tenant_id, user_id, agent_id, role)
+             VALUES ($1, $2, $3, $4)
+           ON CONFLICT (tenant_id, user_id, agent_id, role) DO UPDATE
+             SET updated_at = now()`,
+          [tenantId, userId, agentId, role],
+        );
+        // Sync denormalized cache on agents
+        await client.query(
+          `UPDATE agents SET owner_user_id = $1, updated_at = now() WHERE id = $2`,
+          [userId, agentId],
+        );
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw err;
+      } finally {
+        client.release();
+      }
+      jsonResponse(res, 200, { ok: true, agentId, userId, role });
+      return true;
+    } catch (err) {
+      jsonResponse(res, 500, { error: 'internal_error', message: String(err) });
+      return true;
+    }
+  }
+
+  // ====== R41-C: DELETE /api/v2/admin/agents/:id/assign  解除绑定 ======
+  // Body: { userId: string } (optional — if absent, clears any binding for this agent)
+  // Effect: DELETE from user_agent_bindings, clear agents.owner_user_id if it matched.
+  if (method === 'DELETE' && assignMatch) {
+    if (!requireAnyScope(ctx, ['agent:admin', 'people:admin', '*'])) {
+      jsonResponse(res, 403, { error: 'insufficient_scope', required: 'agent:admin OR people:admin' });
+      return true;
+    }
+    const agentId = assignMatch[1];
+    try {
+      const body = await parseJsonBody(req).catch(() => ({} as any));
+      const userId = typeof body?.userId === 'string' ? body.userId.trim() : '';
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        let removed = 0;
+        if (userId) {
+          const r = await client.query(
+            `DELETE FROM user_agent_bindings WHERE agent_id = $1 AND user_id = $2`,
+            [agentId, userId],
+          );
+          removed = r.rowCount ?? 0;
+          // If owner_user_id was this user, clear it
+          await client.query(
+            `UPDATE agents SET owner_user_id = NULL, updated_at = now()
+              WHERE id = $1 AND owner_user_id = $2`,
+            [agentId, userId],
+          );
+        } else {
+          const r = await client.query(
+            `DELETE FROM user_agent_bindings WHERE agent_id = $1`,
+            [agentId],
+          );
+          removed = r.rowCount ?? 0;
+          await client.query(
+            `UPDATE agents SET owner_user_id = NULL, updated_at = now() WHERE id = $1`,
+            [agentId],
+          );
+        }
+        await client.query('COMMIT');
+        jsonResponse(res, 200, { ok: true, agentId, userId: userId || null, removed });
+        return true;
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw err;
+      } finally {
+        client.release();
+      }
+    } catch (err) {
+      jsonResponse(res, 500, { error: 'internal_error', message: String(err) });
+      return true;
+    }
+  }
+
   jsonResponse(res, 404, { error: 'not_found' });
   return true;
 }

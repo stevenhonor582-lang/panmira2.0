@@ -67,12 +67,25 @@ export async function handleEmployeesRoutes(
       } else if (filter === 'all') {
         // 不加 is_template 条件
       } else if (filter === 'unassigned') {
-        // R27 规则 4: 未归属 OR 归属当前真人(用于真人详情添加 agent 选择器)
+        // R41-C: 'unassigned' means 'not bound to ANY user'. Source of truth is
+        // user_agent_bindings (m:n). owner_user_id is a denormalized cache so we
+        // also exclude agents whose owner_user_id is set to someone else (in case
+        // backfill from agents.owner_user_id has not yet created the binding row).
         where += ' AND is_template = false';
         if (owner) {
           params.push(owner);
-          where += ` AND (owner_user_id IS NULL OR owner_user_id = $${params.length})`;
+          // Show: NOT bound to anyone else, but bound to OR owned by this user
+          where += ` AND NOT EXISTS (
+            SELECT 1 FROM user_agent_bindings uab
+             WHERE uab.agent_id = agents.id
+               AND uab.user_id IS DISTINCT FROM $${params.length}::uuid
+          )`;
         } else {
+          where += ` AND NOT EXISTS (
+            SELECT 1 FROM user_agent_bindings uab
+             WHERE uab.agent_id = agents.id
+          )`;
+          // 兜底:如果 agents.owner_user_id 有值(旧数据/未回填),也排除
           where += ' AND owner_user_id IS NULL';
         }
       } else {
