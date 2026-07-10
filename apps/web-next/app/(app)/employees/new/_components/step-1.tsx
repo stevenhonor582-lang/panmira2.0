@@ -41,13 +41,24 @@ const HUES = ["amber", "rose", "teal", "sky", "indigo", "stone", "emerald", "vio
  * 根因:之前 hard-code 默认 fullstack + 复制现有是个外跳 Link。
  * 修复:统一改用 ResourcePicker + 选完预填 form 字段。
  */
+const TEMPLATE_CATEGORIES: { id: string; label: string; desc: string; glyph: string; hue: string }[] = [
+  { id: "painting", label: "绘画型", desc: "图像生成 · 视觉创作 · 风格迁移", glyph: "绘", hue: "rose" },
+  { id: "copy",     label: "文案型", desc: "文字创作 · 营销文案 · 内容运营", glyph: "文", hue: "amber" },
+  { id: "ops",      label: "运维型", desc: "部署 · 监控 · 故障响应 · 24x7", glyph: "运", hue: "teal" },
+  { id: "other",    label: "其它",   desc: "客服 · 研究 · 通用对话 · 其它用途", glyph: "通", hue: "indigo" },
+];
+
 export function Step1({
   form,
   setForm,
+  mode = "instance",
 }: {
   form: WizardForm;
   setForm: (v: WizardForm) => void;
+  mode?: "instance" | "template";
 }) {
+  const isTemplateMode = mode === "template";
+
   const set = <K extends keyof WizardForm>(k: K, v: WizardForm[K]) =>
     setForm({ ...form, [k]: v });
 
@@ -173,6 +184,57 @@ export function Step1({
 
   return (
     <div className="space-y-7">
+      {isTemplateMode && (
+        <section className="rounded-2xl bg-amber-500/[0.04] p-5 ring-1 ring-amber-500/30">
+          <div className="flex items-baseline justify-between gap-3">
+            <Label>模板类型 · 选一个</Label>
+            <span className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-amber-700 dark:text-amber-300">
+              模板模式 · 决定后续派生实例时的默认角色归属
+            </span>
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {TEMPLATE_CATEGORIES.map((cat) => {
+              const active = form.templateCategory === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => set("templateCategory", cat.id)}
+                  className={
+                    "group flex w-full items-start gap-3 rounded-xl p-3.5 text-left ring-1 transition-all " +
+                    (active
+                      ? "bg-foreground/[0.04] ring-foreground/40 shadow-sm"
+                      : "bg-background ring-border hover:ring-foreground/30 hover:bg-muted/40")
+                  }
+                  data-testid={`template-category-${cat.id}`}
+                >
+                  <span
+                    className={`inline-flex size-10 shrink-0 items-center justify-center rounded-lg text-[15px] font-semibold bg-${cat.hue}-100 dark:bg-${cat.hue}-900/40 text-${cat.hue}-700 dark:text-${cat.hue}-300 ring-1 ring-${cat.hue}-500/30`}
+                  >
+                    {cat.glyph}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-foreground/45">
+                        {cat.id}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 text-[14px] font-semibold tracking-tight">{cat.label}</div>
+                    <div className="mt-1 text-[12px] leading-snug text-foreground/60">{cat.desc}</div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          {form.templateCategory && (
+            <div className="mt-3 rounded-lg bg-background/60 px-3 py-2 text-[12px] text-foreground/70 ring-1 ring-border">
+              已选 · <strong>{TEMPLATE_CATEGORIES.find((c) => c.id === form.templateCategory)?.label}</strong>
+              · 提交后此模板只能派生相同类型(同类)的实例
+            </div>
+          )}
+        </section>
+      )}
+
       <section className="rounded-2xl bg-muted/30 p-5 ring-1 ring-border">
         <div className="flex items-baseline justify-between gap-3">
           <Label>起点 · 选一个</Label>

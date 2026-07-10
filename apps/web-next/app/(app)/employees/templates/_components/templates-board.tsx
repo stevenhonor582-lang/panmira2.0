@@ -63,10 +63,10 @@ export function TemplatesBoard() {
           </p>
         </div>
         <Link
-          href="/employees/new"
+          href="/employees/new?type=template"
           className="inline-flex items-center gap-2 rounded-full bg-foreground px-5 py-2.5 text-[13px] font-medium text-background hover:opacity-90"
         >
-          <Plus className="size-4" /> 从空白起新模板
+          <Plus className="size-4" /> 新建模板
         </Link>
       </header>
 
@@ -195,10 +195,10 @@ function MineGrid({
           模板可以从零新建,或在数字员工画廊把已有 agent "转为模板"。
         </p>
         <Link
-          href="/employees/new"
+          href="/employees/new?type=template"
           className="mt-3 inline-flex items-center gap-2 rounded-full bg-foreground px-4 py-2 text-[12.5px] font-medium text-background"
         >
-          <Plus className="size-3.5" /> 从空白起
+          <Plus className="size-3.5" /> 新建模板
         </Link>
       </div>
     );

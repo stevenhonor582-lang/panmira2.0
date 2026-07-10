@@ -28,13 +28,17 @@ interface ProviderLite {
 
 export function Step7({
   form,
+  mode = "instance",
   onSubmit,
   onPublished,
 }: {
   form: WizardForm;
+  mode?: "instance" | "template";
   onSubmit: () => Promise<SubmitResult>;
   onPublished: (id: string) => void;
 }) {
+  const isTemplateMode = mode === "template";
+
   // R38-C5 4.5: 拉 provider 列表用于 modelId 校验(form.providerId 是 agents.model_id FK)
   const [providers, setProviders] = React.useState<ProviderLite[]>([]);
   React.useEffect(() => {
@@ -78,7 +82,8 @@ export function Step7({
           mcpServerIds: form.mcpServerIds,
           kbFolderIds: form.kbFolderIds,
           knowledgeBaseIds: form.knowledgeBaseIds,
-          channelIds: form.channelIds,
+          // R51-C2: 模板模式不带 channelIds(模板不绑入口)
+          channelIds: isTemplateMode ? [] : form.channelIds,
         },
         headers: { "content-type": "application/json" },
       });
@@ -159,7 +164,7 @@ export function Step7({
         </div>
       )}
 
-      <Summary form={form} />
+      <Summary form={form} isTemplateMode={isTemplateMode} />
 
       {/* R17-3: 发布前测试结果 */}
       {testError && (
@@ -212,7 +217,7 @@ export function Step7({
           data-testid="step7-publish-btn"
         >
           {phase === "error" ? <RefreshCw className="size-4" /> : <Rocket className="size-4" />}
-          {phase === "error" ? "重试发布" : "发布"}
+          {phase === "error" ? "重试发布" : (isTemplateMode ? "发布模板" : "发布")}
         </button>
       </div>
     </div>
@@ -281,7 +286,7 @@ function TestResultPanel({ result }: { result: TestResult }) {
   );
 }
 
-function Summary({ form }: { form: WizardForm }) {
+function Summary({ form, isTemplateMode }: { form: WizardForm; isTemplateMode: boolean }) {
   return (
     <div className="rounded-2xl bg-card p-5 ring-1 ring-border">
       <div className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-foreground/45">
@@ -297,8 +302,15 @@ function Summary({ form }: { form: WizardForm }) {
         <Field k="技能" v={`${form.skills.length} skills · ${form.mcpServerIds.length} mcp · ${form.tools.length} tools`} />
         <Field k="知识" v={`${form.knowledgeBaseIds.length} KB · ${form.kbFolderIds.length} folders`} />
         <Field k="可见性" v={form.visibility} />
-        <Field k="频道" v={form.channelIds.length === 0 ? "未绑定" : `${form.channelIds.length} 个`} />
-        <Field k="工作目录" v={form.workingDir || <span className="italic text-foreground/45">默认(后端生成)</span>} mono />
+        {!isTemplateMode && (
+          <>
+            <Field k="频道" v={form.channelIds.length === 0 ? "未绑定" : `${form.channelIds.length} 个`} />
+            <Field k="工作目录" v={form.workingDir || <span className="italic text-foreground/45">默认(后端生成)</span>} mono />
+          </>
+        )}
+        {isTemplateMode && form.templateCategory && (
+          <Field k="模板类型" v={form.templateCategory} mono />
+        )}
       </dl>
     </div>
   );

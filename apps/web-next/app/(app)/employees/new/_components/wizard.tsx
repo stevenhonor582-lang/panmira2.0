@@ -3,7 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, ArrowRight, SkipForward, CheckCircle2, AlertCircle, Loader2, X } from "lucide-react";
-import { EMPTY_FORM, PERSONA_PRESETS, formToAgentPayload, type WizardForm, type ProviderInfo, type SkillInfo, type McpServerInfo, type KbFolderInfo, type KbInfo, type ChannelBotInfo } from "./form";
+import { EMPTY_FORM, PERSONA_PRESETS, formToAgentPayload, type WizardMode, type WizardForm, type ProviderInfo, type SkillInfo, type McpServerInfo, type KbFolderInfo, type KbInfo, type ChannelBotInfo } from "./form";
 import { StepRail, STEPS } from "./stepper";
 import { Step1 } from "./step-1";
 import { Step2 } from "./step-2";
@@ -83,6 +83,9 @@ export function NewBotWizard() {
   const router = useRouter();
   const params = useSearchParams();
   const templateIdParam = params.get("template");
+  // R51-C1: 入口 URL ?type=template | ?type=instance(默认 instance)
+  const mode: WizardMode = params.get("type") === "template" ? "template" : "instance";
+  const isTemplateMode = mode === "template";
 
   const { data: wizardData, loading: dataLoading, error: dataError } = useWizardData();
 
@@ -117,7 +120,7 @@ export function NewBotWizard() {
   const jump = (s: number) => setCurrent(s);
 
   const submit = async (): Promise<{ ok: boolean; error?: string; id?: string }> => {
-    const payload = formToAgentPayload(form);
+    const payload = formToAgentPayload(form, mode);
     // R27 规则 1: api() 不抛 4xx,需手动检查返回体里的 error 字段(name_taken / bot_already_bound)
     try {
       const res = await api<{ agent: { id: string }; error?: string; message?: string }>("/api/agents/", {
@@ -153,17 +156,17 @@ export function NewBotWizard() {
     <div className="grid gap-7 lg:grid-cols-[260px_1fr]">
       <aside className="space-y-5">
         <Link
-          href="/employees"
+          href={isTemplateMode ? "/employees/templates" : "/employees"}
           className="inline-flex items-center gap-1.5 text-[12px] font-mono uppercase tracking-[0.18em] text-foreground/45 hover:text-foreground"
         >
-          <ArrowLeft className="size-3" /> 员工库
+          <ArrowLeft className="size-3" /> {isTemplateMode ? "模板库" : "员工库"}
         </Link>
         <div>
           <div className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/40">
             单页 7 步向导
           </div>
           <h1 className="mt-1 text-2xl font-semibold tracking-tighter">
-            创建新的数字员工
+            {isTemplateMode ? "创建新的员工模板" : "创建新的数字员工"}
           </h1>
         </div>
         <StepRail current={current} onJump={jump} />
@@ -199,7 +202,7 @@ export function NewBotWizard() {
         )}
 
         <div className="pt-6 transition-opacity duration-300" key={`step-${current}`}>
-          {current === 1 && <Step1 form={form} setForm={setForm} />}
+          {current === 1 && <Step1 form={form} setForm={setForm} mode={mode} />}
           {current === 2 && wizardData && (
             <Step2 form={form} setForm={setForm} providers={wizardData.providers} />
           )}
@@ -230,7 +233,7 @@ export function NewBotWizard() {
             />
           )}
           {current === 7 && (
-            <Step7 form={form} onSubmit={submit} onPublished={(id) => router.push(`/employees/${id}`)} />
+            <Step7 form={form} mode={mode} onSubmit={submit} onPublished={(id) => router.push(isTemplateMode ? "/employees/templates" : `/employees/${id}`)} />
           )}
         </div>
 
@@ -247,7 +250,7 @@ export function NewBotWizard() {
                     if (!ok) return;
                   }
                 }
-                router.push("/employees");
+                router.push(isTemplateMode ? "/employees/templates" : "/employees");
               }}
               className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-[12.5px] font-medium text-foreground/55 hover:text-foreground hover:bg-muted/60"
               data-testid="wizard-cancel"

@@ -150,7 +150,7 @@ export function GalleryBoard() {
               <FileText className="size-3.5" /> 模板管理
             </Button>
           </Link>
-          <Link href="/employees/new">
+          <Link href="/employees/new?type=instance">
             <Button size="sm" className="gap-1.5">
               <Plus className="size-3.5" />
               {boardTab === "templates" ? "新建模板" : "新建数字员工"}

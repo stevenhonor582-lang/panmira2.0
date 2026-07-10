@@ -252,6 +252,17 @@ export async function startApiServer(options: ApiServerOptions): Promise<ApiServ
     const method = req.method || 'GET';
     let url = req.url || '/';
 
+    // R51-C2: 兼容 trailing slash (Next.js rewrite + 浏览器 fetch /api/foo/ 都到 /api/foo/)
+    // 保留 query string,只去掉 path 末尾的 /
+    {
+      const qIdx = url.indexOf('?');
+      const pathOnly = qIdx >= 0 ? url.slice(0, qIdx) : url;
+      const query = qIdx >= 0 ? url.slice(qIdx) : '';
+      if (pathOnly.length > 1 && pathOnly.endsWith('/')) {
+        url = pathOnly.replace(/\/+$/, '') + query;
+      }
+    }
+
     // Security headers
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('X-Content-Type-Options', 'nosniff');

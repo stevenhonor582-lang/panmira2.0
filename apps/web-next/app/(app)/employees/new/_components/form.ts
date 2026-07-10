@@ -89,6 +89,8 @@ export interface WizardForm {
   templateId: string;
   glyph: string;
   hue: string;
+  // R51-C2: 模板类型(仅 type=template 时用): painting(绘画)/ copy(文案)/ ops(运维)/ other(其它)
+  templateCategory: string;
   // Step 2 — brain
   providerId: string;        // → model_id (FK to provider_configs.id)
   providerModel: string;     // denormalized for preview
@@ -142,6 +144,7 @@ export const EMPTY_FORM: WizardForm = {
   templateId: "",
   glyph: "新",
   hue: "amber",
+  templateCategory: "",
   providerId: "",
   providerModel: "",
   providerName: "",
@@ -239,9 +242,23 @@ export const PERSONA_PRESETS: PersonaPreset[] = [
 ];
 
 // Convert WizardForm → POST /api/agents body. Keeps the wizard in charge of shape.
-export function formToAgentPayload(form: WizardForm): Record<string, unknown> {
+// R51-C2: mode=template → 模板(isTemplate=true, 不绑入口/不锁工作目录,提交后跳到模板列表)
+//         mode=instance → 数字员工(isTemplate=false, 走原流程)
+export type WizardMode = "instance" | "template";
+
+export function formToAgentPayload(
+  form: WizardForm,
+  mode: WizardMode = "instance",
+): Record<string, unknown> {
+  const isTemplate = mode === "template";
+  // 模板类型:R51-C2 4 选 1 (绘画/文案/运维/其它) — 留兜底,空值归到 "other"
+  const category = isTemplate
+    ? (form.templateCategory && form.templateCategory.trim().length > 0
+        ? form.templateCategory
+        : "other")
+    : "general";
   return {
-    name: form.name.trim() || "未命名员工",
+    name: form.name.trim() || (isTemplate ? "未命名模板" : "未命名员工"),
     description: form.description,
     systemPrompt: form.systemPrompt,
     persona: form.persona,
@@ -262,17 +279,18 @@ export function formToAgentPayload(form: WizardForm): Record<string, unknown> {
     // R15-A/B columns (real)
     visibility: form.visibility,
     temperature: form.temperature,
-    workingDir: form.workingDir || undefined,
-    channelIds: form.channelIds,
-    isTemplate: false,
+    // 模板不锁工作目录(工作目录是实例的属性,模板是空白基底)
+    workingDir: isTemplate ? undefined : (form.workingDir || undefined),
+    channelIds: isTemplate ? [] : form.channelIds,
+    isTemplate,
     defaultContextWindow: form.contextWindow,
     defaultModel: form.providerModel || undefined,
     defaultEngine: "claude",
     modelId: form.providerId || undefined,
     avatarGlyph: form.glyph,
     avatarHue: form.hue,
-    templateType: "custom",
-    category: "general",
+    templateType: isTemplate ? "custom" : "custom",
+    category,
     status: "active",
   };
 }
