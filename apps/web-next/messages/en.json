@@ -1,0 +1,1 @@
+{ "common": { "appName": "Panmira · AI Resource Management", "save": "Save", "cancel": "Cancel", "search": "Search", "new": "New", "delete": "Delete", "edit": "Edit" }, "nav": { "dashboard": "Dashboard", "agents": "Employees", "knowledge": "Knowledge", "memory": "Memory", "tasks": "Tasks" } }

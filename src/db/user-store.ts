@@ -33,6 +33,9 @@ export interface User {
   department: string | null;
   position: string | null;
   employeeStatus: EmployeeStatus;
+  // R42/R43: 系统内置账号标识(admin@panmira.com = true),
+  // 后端用此禁删除/降权,前端挂星标
+  isSystem: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -412,6 +415,8 @@ export class UserStore {
       department: row.department ?? null,
       position: row.position ?? null,
       employeeStatus: (row.employee_status ?? 'active') as EmployeeStatus,
+      // R42/R43: 系统内置账号标识,默认 false
+      isSystem: row.is_system ?? false,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };

@@ -751,6 +751,9 @@ function sanitizeUser(user: User) {
     department: user.department,
     position: user.position,
     employeeStatus: user.employeeStatus,
+    // R43: 系统管理员标识 - 后端真值(用户表 is_system 列)
+    // true = 系统内置账号,前端用此挂星标与禁用删除/降权按钮
+    isSystem: user.isSystem,
   };
 }
 

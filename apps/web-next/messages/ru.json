@@ -1,0 +1,1 @@
+{ "common": { "appName": "Panmira · Управление ресурсами ИИ", "save": "Сохранить", "cancel": "Отмена", "search": "Поиск", "new": "Создать", "delete": "Удалить", "edit": "Изменить" }, "nav": { "dashboard": "Панель", "agents": "Сотрудники", "knowledge": "База знаний", "memory": "Память", "tasks": "Задачи" } }

@@ -1,0 +1,1 @@
+{ "common": { "appName": "Panmira · 数智资源管理", "save": "保存", "cancel": "取消", "search": "搜索", "new": "新建", "delete": "删除", "edit": "编辑" }, "nav": { "dashboard": "仪表盘", "agents": "数字员工", "knowledge": "知识库", "memory": "记忆", "tasks": "任务" } }
