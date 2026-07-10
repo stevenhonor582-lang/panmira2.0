@@ -2,11 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import * as fs from "fs";
 
 const BASE = "http://localhost:3200";
-
-// R38-C6 fixtures — 现网已有 agent
-const TPL_ID = "58098b93-ba8e-46a8-9100-c1a6ebfa7829"; // 守静 -- 模板
-const TPL_ID2 = "da02892e-9da4-4886-875a-fce01eaf7cca"; // 守静 -- 模板(供生成实例用)
-const INS_ID = "c5bf8d20-90f4-4780-95cc-ed866651b3c8"; // 不盈 -- 全栈开发 实例(用于 promote)
+const API_BASE = "http://localhost:9100";
 
 const ADMIN_TOKEN = fs.existsSync("/tmp/admin_token.txt")
   ? fs.readFileSync("/tmp/admin_token.txt", "utf8").replace("TOKEN=", "").trim()
@@ -32,18 +28,43 @@ async function loginAdmin(page: Page) {
   );
 }
 
+/**
+ * R38-E 自愈 fixture: 用 API 现拉一份 instance + template 列表,
+ * 不再硬编码 uuid。任意一个模板 promote/demote 切换过后,测试依然能跑通。
+ */
+type Fx = { insId: string; tplId: string; tplId2: string };
+
+async function fetchFx(request: import("@playwright/test").APIRequestContext): Promise<Fx> {
+  const headers = { authorization: `Bearer ${ADMIN_TOKEN}` };
+  const allRes = await request.get(`${API_BASE}/api/v2/employees?filter=all&limit=200`, { headers });
+  expect(allRes.status(), "/api/v2/employees?filter=all").toBe(200);
+  const body = (await allRes.json()) as { data?: { items?: Array<{ id: string; is_template: boolean; name: string }> } };
+  const items = body?.data?.items ?? [];
+  const instances = items.filter((x) => !x.is_template);
+  const templates = items.filter((x) => x.is_template);
+  if (instances.length === 0) throw new Error("R38-E fixture: no instances in DB");
+  if (templates.length < 2) throw new Error(`R38-E fixture: need >=2 templates, got ${templates.length}`);
+  return {
+    insId: instances[0].id,
+    tplId: templates[0].id,
+    tplId2: templates[1].id,
+  };
+}
+
 test.describe("R38-C6 · templates promote / copy / generate-instance", () => {
   test.beforeEach(async ({ page }) => {
     await loginAdmin(page);
   });
 
-  test("实例卡片下拉菜单有 提升为模板 + 复制为模板 选项", async ({ page }) => {
-    // 进 gallery(实例列表),找信言实例卡片的下拉菜单
+  test("实例卡片下拉菜单有 提升为模板 + 复制为模板 选项", async ({ page, request }) => {
+    const { insId } = await fetchFx(request);
+
+    // 进 gallery(实例列表),找实例卡片的下拉菜单
     await page.goto(`${BASE}/employees`);
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(4000);
 
-    const menuBtn = page.getByTestId(`agent-card-menu-${INS_ID.slice(0, 8)}`);
+    const menuBtn = page.getByTestId(`agent-card-menu-${insId.slice(0, 8)}`);
     await expect(menuBtn).toBeVisible({ timeout: 10000 });
     await menuBtn.click();
 
@@ -52,8 +73,10 @@ test.describe("R38-C6 · templates promote / copy / generate-instance", () => {
     await expect(page.getByTestId("menu-copy-as-template")).toBeVisible();
   });
 
-  test("实例 → 提升为模板 成功(POST /api/v2/admin/agents/:id/promote)", async ({ page }) => {
-    // 进 gallery,点信言实例卡片的 promote 菜单
+  test("实例 → 提升为模板 成功(POST /api/v2/admin/agents/:id/promote)", async ({ page, request }) => {
+    const { insId } = await fetchFx(request);
+
+    // 进 gallery,点实例卡片的 promote 菜单
     await page.goto(`${BASE}/employees`);
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(4000);
@@ -73,22 +96,24 @@ test.describe("R38-C6 · templates promote / copy / generate-instance", () => {
 
     page.on("dialog", (d) => d.accept());
 
-    const menuBtn = page.getByTestId(`agent-card-menu-${INS_ID.slice(0, 8)}`);
+    const menuBtn = page.getByTestId(`agent-card-menu-${insId.slice(0, 8)}`);
     await menuBtn.click();
     await page.getByTestId("menu-promote").click();
     await page.waitForTimeout(4000);
 
-    expect(promoteUrl).toContain(`/api/v2/admin/agents/${INS_ID}/promote`);
+    expect(promoteUrl).toContain(`/api/v2/admin/agents/${insId}/promote`);
     expect([200, 400]).toContain(promoteRespStatus);
     // 200 = 成功 promote; 400 = already_template(前序测试残留状态,也算符合端点存在)
   });
 
-  test("模板卡片有 复制 按钮 + 点开 modal 输入名字 + 提交 → POST copy-as-template", async ({ page }) => {
+  test("模板卡片有 复制 按钮 + 点开 modal 输入名字 + 提交 → POST copy-as-template", async ({ page, request }) => {
+    const { tplId } = await fetchFx(request);
+
     await page.goto(`${BASE}/employees/templates`);
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(4000);
 
-    const copyBtn = page.getByTestId(`copy-as-template-${TPL_ID.slice(0, 8)}`);
+    const copyBtn = page.getByTestId(`copy-as-template-${tplId.slice(0, 8)}`);
     await expect(copyBtn).toBeVisible({ timeout: 10000 });
     await copyBtn.click();
 
@@ -114,16 +139,18 @@ test.describe("R38-C6 · templates promote / copy / generate-instance", () => {
     await page.getByTestId("copy-template-submit").click();
     await page.waitForTimeout(3500);
 
-    expect(copyUrl).toContain(`/api/v2/admin/agents/${TPL_ID}/copy-as-template`);
+    expect(copyUrl).toContain(`/api/v2/admin/agents/${tplId}/copy-as-template`);
     expect(copyStatus).toBe(201);
   });
 
-  test("模板卡片有 创建实例 按钮 + 点开 modal 提交 → POST from-template + 跳新实例", async ({ page }) => {
+  test("模板卡片有 创建实例 按钮 + 点开 modal 提交 → POST from-template + 跳新实例", async ({ page, request }) => {
+    const { tplId2 } = await fetchFx(request);
+
     await page.goto(`${BASE}/employees/templates`);
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(4000);
 
-    const instantiateBtn = page.getByTestId(`instantiate-${TPL_ID2.slice(0, 8)}`);
+    const instantiateBtn = page.getByTestId(`instantiate-${tplId2.slice(0, 8)}`);
     await expect(instantiateBtn).toBeVisible({ timeout: 10000 });
     await instantiateBtn.click();
 
@@ -153,8 +180,10 @@ test.describe("R38-C6 · templates promote / copy / generate-instance", () => {
     expect(page.url()).toMatch(/\/employees\/[0-9a-f-]+/);
   });
 
-  test("模板详情页头部有 生成实例 按钮 + 点开 modal 提交 → 创建并跳新实例", async ({ page }) => {
-    await page.goto(`${BASE}/employees/${TPL_ID}`);
+  test("模板详情页头部有 生成实例 按钮 + 点开 modal 提交 → 创建并跳新实例", async ({ page, request }) => {
+    const { tplId } = await fetchFx(request);
+
+    await page.goto(`${BASE}/employees/${tplId}`);
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
