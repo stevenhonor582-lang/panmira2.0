@@ -9,7 +9,7 @@
  * @module sdk-core/query-runner
  */
 
-import { query, type SDKMessage, type Options, type SpawnOptions, type SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
+import { query, type Query, type SDKMessage, type Options, type SpawnOptions, type SpawnedProcess, type RewindFilesResult } from "@anthropic-ai/claude-agent-sdk";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -91,6 +91,24 @@ export interface QueryRunnerOptions {
   readonly extras?: Readonly<Record<string, unknown>>;
 }
 
+/**
+ * R49-D step 4: rewind a previous session to a user message checkpoint.
+ *
+ * Opens the session via SDK query() with options.resume, then calls
+ * Query.rewindFiles() with the target userMessageId. Requires
+ * enableFileCheckpointing: true (already set by buildOptions).
+ */
+export interface RewindFilesRequest {
+  /** Bot Chinese name (same bot context as the original session). */
+  readonly botName: string;
+  /** SDK session id returned from runQuery(). */
+  readonly sessionId: string;
+  /** UUID of the user message to rewind to. */
+  readonly userMessageId: string;
+  /** If true, returns a preview of changes without modifying files. */
+  readonly dryRun?: boolean;
+}
+
 export interface QueryResult {
   /** SDK session ID */
   readonly sessionId: string;
@@ -115,6 +133,21 @@ export interface QueryResult {
  * ```
  */
 export class QueryRunner {
+  /**
+   * R49-D step 6: track the most recent Query handle so stopTask() can
+   * delegate to it. Cleared when the stream completes or errors.
+   *
+   * NOTE: panmira runs ONE query per runner per bot turn. Concurrency
+   * would require an explicit Query registry; out of scope here.
+   */
+  private lastQuery: Query | null = null;
+  /**
+   * R49-D step 6: every task_id seen in SDKTaskNotificationMessage events
+   * during the most recent runQuery/runQueryStream call. Lets the frontend
+   * list active background tasks without re-parsing the message stream.
+   */
+  private readonly knownTaskIds: Set<string> = new Set();
+
   constructor(
     private readonly sessionManager: SDKSessionManager,
     private readonly systemPromptInjector: SystemPromptInjector,
@@ -209,6 +242,114 @@ export class QueryRunner {
     LOG.info({ bot_name: bot.name }, 'Query stream completed');
   }
 
+  /**
+   * R49-D step 4: rewind a session to a previous user message checkpoint.
+   *
+   * Opens the session via SDK query({options: { resume: sessionId,
+   * enableFileCheckpointing: true }}) and calls Query.rewindFiles().
+   * The Query handles both message streaming and the control call; we
+   * iterate the stream to completion so the SDK releases session resources
+   * before returning.
+   *
+   * Frontend can invoke this via the bridge to expose an "undo to
+   * checkpoint" affordance in card-rendered UIs.
+   *
+   * @param req - rewind request (botName, sessionId, userMessageId, dryRun?)
+   * @returns RewindFilesResult from the SDK
+   * @throws {QueryExecutionError} if canRewind=false or SDK query fails
+   */
+  async rewindFiles(req: RewindFilesRequest): Promise<RewindFilesResult> {
+    const bot = await this.sessionManager.resolveBot(req.botName);
+
+    const handle = query({
+      prompt: '',
+      options: {
+        cwd: this.sessionManager.buildSessionConfig(bot, false).cwd,
+        resume: req.sessionId,
+        enableFileCheckpointing: true,
+        settingSources: this.baseUrl ? ['project'] : ['user', 'project'],
+        spawnClaudeCodeProcess: createSpawnFn(this.apiKey, this.baseUrl),
+        executable: CLAUDE_EXECUTABLE,
+        pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE,
+      } as Options,
+    }) as unknown as Query & { rewindFiles: (id: string, opts?: { dryRun?: boolean }) => Promise<RewindFilesResult> };
+
+    // Drain the stream so the SDK finishes rewind bookkeeping. We don't
+    // surface messages - this call is a control request, not a chat turn.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      for await (const _msg of handle as unknown as AsyncIterable<SDKMessage>) { /* noop */ }
+    } catch {
+      // rewindFiles() is what returns the verdict; drain errors do not block it.
+    }
+
+    let result: RewindFilesResult;
+    try {
+      result = await handle.rewindFiles(req.userMessageId, { dryRun: req.dryRun });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new QueryExecutionError(`rewindFiles failed: ${msg}`, bot.name, err);
+    }
+
+    LOG.info(
+      { bot_name: bot.name, session_id: req.sessionId, user_message_id: req.userMessageId, can_rewind: result.canRewind, dry_run: req.dryRun },
+      'rewindFiles completed',
+    );
+
+    if (!result.canRewind) {
+      throw new QueryExecutionError(
+        `rewindFiles rejected: ${result.error ?? 'unknown reason'}`,
+        bot.name,
+      );
+    }
+    return result;
+  }
+
+  /**
+   * R49-D step 6: stop a background task by its task_id.
+   *
+   * Delegates to Query.stopTask() on the most recently started Query
+   * handle. Caller is responsible for harvesting task_id from
+   * SDKTaskNotificationMessage events that have been streamed back via
+   * runQueryStream().
+   *
+   * @param taskId - task id from a previously observed task_notification
+   * @returns resolves when the SDK has signalled the task is stopping
+   * @throws {QueryExecutionError} if no active query or stopTask() throws
+   */
+  async stopTask(taskId: string): Promise<void> {
+    if (!this.lastQuery) {
+      throw new QueryExecutionError(
+        `stopTask(${taskId}): no active query (query must be running)`,
+        '(unknown)',
+      );
+    }
+    if (!this.knownTaskIds.has(taskId)) {
+      // Not necessarily fatal — taskId may have been emitted by another runner
+      // instance — but warn so misuses surface quickly.
+      LOG.warn(
+        { task_id: taskId, known_count: this.knownTaskIds.size },
+        'stopTask called for taskId not observed on this runner',
+      );
+    }
+    try {
+      await this.lastQuery.stopTask(taskId);
+      LOG.info({ task_id: taskId }, 'stopTask completed');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new QueryExecutionError(`stopTask failed: ${msg}`, '(unknown)', err);
+    }
+  }
+
+  /**
+   * R49-D step 6: list task_ids harvested from SDKTaskNotificationMessage
+   * events during the most recent runQuery/runQueryStream call. UI can
+   * poll this to render "running tasks" affordances.
+   */
+  getKnownTaskIds(): readonly string[] {
+    return [...this.knownTaskIds];
+  }
+
   // === Private ===
 
   private async buildOptions(
@@ -254,9 +395,22 @@ export class QueryRunner {
     bot: BotRecord,
   ): Promise<SDKMessage[]> {
     const messages: SDKMessage[] = [];
+    // R49-D step 6: capture the Query handle so stopTask() can delegate to it.
+    // Cast to Query so we can surface it as the public lastQuery field.
+    const handle = query({ prompt, options }) as unknown as Query;
+    this.lastQuery = handle;
+    this.knownTaskIds.clear();
     try {
-      const stream = query({ prompt, options });
-      for await (const message of stream) {
+      for await (const message of handle) {
+        // R49-D step 6: record every task_id seen in SDKTaskNotificationMessage.
+        // Use a typed lookup; SDKTaskNotificationMessage is a discriminated
+        // union so we narrow on subtype first.
+        if ((message as { type?: string }).type === 'system') {
+          const sys = message as { subtype?: string; task_id?: string };
+          if (sys.subtype === 'task_notification' && typeof sys.task_id === 'string') {
+            this.knownTaskIds.add(sys.task_id);
+          }
+        }
         messages.push(message);
       }
     } catch (err: unknown) {
@@ -266,6 +420,10 @@ export class QueryRunner {
         bot.name,
         err,
       );
+    } finally {
+      // Allow the runner to be reused, but drop the handle so callers can't
+      // accidentally call stopTask on a dead query.
+      this.lastQuery = null;
     }
     return messages;
   }
