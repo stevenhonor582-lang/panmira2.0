@@ -21,7 +21,10 @@
  *
  * 配置区:
  *   - 主理人(owner_user_id):ResourcePicker 选真人(保留 R27 行为)
- *   - 可见性(visibility):radio(私有/分组/全局) + 说明 "影响后续任务调度权限"
+ *   - 可见性(visibility):radio(公开/团队/私有) — R51-D1 语义收敛
+ *       - 公开:全员可用
+ *       - 团队:同部门可用
+ *       - 私有:草稿态,只有创建者本人/管理员能看
  *   - R15-A 多 Bot 字段:工作目录/绑定频道/温度/类型(只读)
  */
 
@@ -123,27 +126,34 @@ interface AgentRow {
 
 const FIELDS = ["owner_user_id", "visibility"];
 
+// R51-D1: 可见性 3 档语义收敛
+//   - private 私有 = 草稿态(只有创建者本人/管理员能看)
+//   - team    团队 = 同部门可用
+//   - public  公开 = 全员可用
 const VISIBILITY_OPTIONS: Array<{
   value: Agent["visibility"];
   label: string;
   desc: string;
+  // R51-D1: 私有选项作为草稿态视觉强化
+  draft?: boolean;
   icon: typeof Lock;
 }> = [
   {
     value: "private",
     label: "私有",
-    desc: "仅主理人可调度,其他人看不到",
+    desc: "草稿态 — 只有创建者本人或管理员能看见与调度",
+    draft: true,
     icon: Lock,
   },
   {
     value: "team",
-    label: "分组",
-    desc: "组内成员可调度(pipeline 可串联)",
+    label: "团队",
+    desc: "同部门成员可调度(pipeline 编排时可串联)",
     icon: UsersRound,
   },
   {
     value: "public",
-    label: "全局",
+    label: "公开",
     desc: "全员可调度,所有 pipeline 自动可选",
     icon: Globe,
   },
@@ -454,6 +464,15 @@ export function TabCollab({ id }: { id: string }) {
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
                             <span className="text-[13px] font-medium text-foreground/90">{opt.label}</span>
+                            {opt.draft && (
+                              <span
+                                className="shrink-0 inline-flex items-center gap-0.5 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wider text-amber-700 dark:text-amber-300"
+                                data-testid="visibility-draft-badge"
+                                title="私有 = 草稿态,只有创建者本人或管理员可见"
+                              >
+                                草稿
+                              </span>
+                            )}
                             <code className="font-mono text-[10px] text-foreground/45">{opt.value}</code>
                           </div>
                           <p className="mt-0.5 text-[11.5px] leading-relaxed text-foreground/65">
@@ -467,6 +486,8 @@ export function TabCollab({ id }: { id: string }) {
                 <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-500/[0.07] px-2.5 py-2 text-[11px] text-amber-700 dark:text-amber-300/90">
                   <AlertTriangle className="mt-0.5 size-3 shrink-0" />
                   <span>
+                    <strong className="mx-0.5">3 档语义</strong>:
+                    公开 = 全员可见 · 团队 = 同部门可见 · 私有 = 草稿态(仅本人/管理员)。
                     影响<strong className="mx-0.5">后续任务调度权限</strong>:pipeline 编排时只能选可见范围内的数字员工。
                     {ctx.editing ? "切换后点顶部保存生效。" : "点上方「编辑」开启修改。"}
                   </span>
