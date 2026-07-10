@@ -27,6 +27,9 @@ export interface LlmCallOptions {
   tools?: LlmTool[];
   maxTokens?: number;
   model?: string;
+  /** R38-C3: agent.id → 优先用 agents.model_id FK 直查 provider_configs(权威)。
+   *  不传则回退到 model 文本匹配(老逻辑,useModelRouting=true 时的行为)。 */
+  agentId?: string;
   timeoutMs?: number;
 }
 
@@ -94,10 +97,42 @@ export async function loadDefaultLlmProvider(): Promise<LlmProvider | null> {
 
 /**
  * R33-A: 按 model 精确反查 provider(锁定端点 + key)。
+ * R38-C3: 若同时传 agentId,优先用 agents.model_id FK 直查(权威),
+ *         失败才回退到 model 文本匹配。这是墨言根因修复 —
+ *         agents.model_id FK 是声明,但运行时完全不读,导致改 model_id 不生效。
  * useModelRouting=false 时,agent 走自己绑定的 provider,而非全局 default。
  * 匹配失败返回 null,调用方回退到 loadDefaultLlmProvider。
  */
-export async function loadLlmProviderByModel(model: string): Promise<LlmProvider | null> {
+export async function loadLlmProviderByModel(
+  model: string,
+  agentId?: string,
+): Promise<LlmProvider | null> {
+  // R38-C3 step 1: 先用 agents.model_id FK 直查(权威)
+  if (agentId) {
+    const fkResult = await pool.query(
+      `SELECT pc.name, pc.base_url, pc.api_key_encrypted, pc.model
+       FROM provider_configs pc
+       JOIN agents a ON a.model_id::text = pc.id::text
+       WHERE a.id::text = $1
+       LIMIT 1`,
+      [agentId],
+    );
+    const fkRow = fkResult.rows[0];
+    if (fkRow) {
+      if (!fkRow.api_key_encrypted) {
+        return { name: fkRow.name, baseUrl: fkRow.base_url, apiKey: '', model: fkRow.model };
+      }
+      try {
+        const apiKey = decrypt(fkRow.api_key_encrypted);
+        return { name: fkRow.name, baseUrl: fkRow.base_url, apiKey, model: fkRow.model };
+      } catch {
+        // decrypt 失败 → 回退到文本匹配
+      }
+    }
+    // model_id 为空或没命中 → 回退
+  }
+
+  // R38-C3 step 2: 回退到老逻辑 — model 文本匹配
   const result = await pool.query(
     `SELECT name, base_url, api_key_encrypted, model
      FROM provider_configs
@@ -124,8 +159,10 @@ export async function callLlm(opts: LlmCallOptions): Promise<LlmCallResult> {
   // 找不到才回退全局 default。这是 useModelRouting=false 锁定的核心:
   // 否则 DeepSeek model 会被送到 Minimax 端点直接失败。
   let provider: LlmProvider | null = null;
-  if (opts.model) {
-    provider = await loadLlmProviderByModel(opts.model);
+  // R38-C3: 优先用 agentId 的 model_id FK 直查(权威),
+  //         再回退到 model 文本匹配(useModelRouting=true 时)。
+  if (opts.agentId || opts.model) {
+    provider = await loadLlmProviderByModel(opts.model ?? '', opts.agentId);
   }
   if (!provider) {
     provider = await loadDefaultLlmProvider();

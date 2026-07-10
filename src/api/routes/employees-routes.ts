@@ -121,6 +121,7 @@ export async function handleEmployeesRoutes(
         jsonResponse(res, 404, fail('not_found', `Employee ${id} 不存在`));
         return true;
       }
+
       jsonResponse(res, 200, ok(agent));
       return true;
     } catch (e) {
@@ -430,6 +431,8 @@ export async function handleEmployeesRoutes(
         channel_ids: 'channelIds',
         visibility: 'visibility',
         temperature: 'temperature',
+        // R38-C3: model_id FK 直写(权威)
+        model_id: 'modelId',
       };
       const updates: Record<string, unknown> = {};
       for (const [snake, camel] of Object.entries(map)) {
@@ -439,18 +442,21 @@ export async function handleEmployeesRoutes(
         jsonResponse(res, 400, fail('no_fields', '请求体未包含任何可更新字段'));
         return true;
       }
-      // R35: channel_ids 独占校验(入口一对一)
+      // R35+R38-C3: channel_ids 独占校验 + 双向同步
+      //  - 解绑:旧 channelIds 中不再出现的 bot_id → bot_configs.agent_id = NULL
+      //  - 新增:新 channelIds 中的 bot_id → bot_configs.agent_id = $id(独占校验后)
+      // 根因:R34-A 只填了 agents.channel_ids,没回填 bot_configs.agent_id → 3/5 bot 缺失
       if ('channelIds' in updates) {
         const newCids = Array.isArray(updates.channelIds) ? updates.channelIds.filter((x) => typeof x === 'string') : [];
-        // R35: PATCH channelIds 时同步解绑原 agent(解绑时清空 bot_configs.agent_id)
         const newSet = new Set(newCids);
+        // R35: 解绑 — 不在新列表里的旧 bot 清空 agent_id
         await pool.query(
           `UPDATE bot_configs SET agent_id = NULL
            WHERE agent_id::text = $1 AND NOT (bot_id::text = ANY($2))`,
           [id, Array.from(newSet)]
         );
 
-        // 找已被其他 agent 占用的 bot_id
+        // 找已被其他 agent 占用的 bot_id(独占校验)
         const conflict = await pool.query(
           `SELECT bot_id, agent_id FROM bot_configs
            WHERE bot_id::text = ANY($1) AND agent_id IS NOT NULL AND agent_id::text != $2`,
@@ -492,6 +498,95 @@ export async function handleEmployeesRoutes(
         jsonResponse(res, 404, fail('not_found', `Employee ${id} 不存在`));
         return true;
       }
+
+      // R38-C3: PATCH 模型字段联级 + channelIds 联级 — 在 AgentStore.update 成功之后跑
+      //         (前置 PATCH 已校验独占,但不写 bot_configs.agent_id → 这里补)
+      try {
+        // 3.2: 新增的 channelId 同步写 bot_configs.agent_id
+        if ('channelIds' in updates) {
+          const newCids = Array.isArray(updates.channelIds) ? updates.channelIds.filter((x) => typeof x === 'string') : [];
+          if (newCids.length > 0) {
+            // 仅写 agent_id=NULL 或已 = $id 的(独占校验已保证不会写其它 agent 的 bot)
+            await pool.query(
+              `UPDATE bot_configs SET agent_id = $1::uuid
+               WHERE bot_id::text = ANY($2)
+                 AND (agent_id IS NULL OR agent_id::text = $1)`,
+              [id, newCids],
+            );
+          }
+        }
+
+        // 3.1: model_id / defaultEngine / defaultModel 联级
+        const hasModelId = 'modelId' in updates;
+        const hasDefaultEng = 'defaultEngine' in updates;
+        const hasDefaultModel = 'defaultModel' in updates;
+        if (hasModelId || hasDefaultEng || hasDefaultModel) {
+          let resolvedModelId: string | null | undefined = updates.modelId as string | null | undefined;
+          let resolvedEngine: string | null | undefined = updates.defaultEngine as string | null | undefined;
+          let resolvedModel: string | null | undefined = updates.defaultModel as string | null | undefined;
+
+          // 只给了 modelId 时反查 provider_configs → 同步 defaultEngine/defaultModel
+          if (hasModelId && !hasDefaultEng && !hasDefaultModel) {
+            const mid = resolvedModelId;
+            if (mid && typeof mid === 'string') {
+              const pc = await pool.query(
+                `SELECT id, type, model FROM provider_configs WHERE id::text = $1 LIMIT 1`,
+                [mid],
+              );
+              if (pc.rows[0]) {
+                resolvedEngine = pc.rows[0].type as string;
+                resolvedModel = pc.rows[0].model as string;
+                await pool.query(
+                  `UPDATE agents SET default_engine = $1, default_model = $2 WHERE id::text = $3`,
+                  [resolvedEngine, resolvedModel, id],
+                );
+              }
+            } else if (mid === null || mid === '') {
+              // 清空 model_id
+              resolvedEngine = null;
+              resolvedModel = null;
+            }
+          }
+
+          // 同时给了 modelId → 写 agents.model_id FK
+          if (hasModelId && resolvedModelId && typeof resolvedModelId === 'string') {
+            await pool.query(
+              `UPDATE agents SET model_id = $1 WHERE id::text = $2`,
+              [resolvedModelId, id],
+            );
+          } else if (hasModelId && (resolvedModelId === null || resolvedModelId === '')) {
+            await pool.query(
+              `UPDATE agents SET model_id = NULL WHERE id::text = $1`,
+              [id],
+            );
+          }
+
+          // 同步 chat_sessions.model + model_engine(best-effort,JOIN bot_configs 反查)
+          // 注意:chat_sessions 当前 PK 是 (bot_name, chat_id),无 agent_id 列 — R38 stage 1 待补
+          // 我们走 JOIN 通过 bot_configs.agent_id 定位这个 agent 的所有 bot
+          if (resolvedEngine !== undefined || resolvedModel !== undefined) {
+            try {
+              await pool.query(
+                `UPDATE chat_sessions cs
+                 SET model = COALESCE($2, cs.model),
+                     model_engine = COALESCE($3, cs.model_engine),
+                     updated_at = now()
+                 FROM bot_configs bc
+                 WHERE cs.bot_name = bc.name
+                   AND bc.agent_id::text = $1`,
+                [id, resolvedModel ?? null, resolvedEngine ?? null],
+              );
+            } catch (csErr) {
+              // chat_sessions 更新失败不影响主流程(墨言示例也无 session)
+            }
+          }
+        }
+      } catch (cascadeErr) {
+        // 联级失败不回滚 PATCH(主表已更新);记日志,后续清理
+        // eslint-disable-next-line no-console
+        console.warn(`[PATCH /api/v2/employees/${id}] cascade failed:`, (cascadeErr as Error).message);
+      }
+
       jsonResponse(res, 200, ok(agent));
       return true;
     } catch (e) {
