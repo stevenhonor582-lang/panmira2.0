@@ -359,7 +359,7 @@ export function TabCollab({ id }: { id: string }) {
             <section>
               <h3 className="mb-3 flex items-center gap-2 text-[13px] font-medium tracking-tight text-foreground/65">
                 <User2 className="size-4 text-foreground/45" />
-                主理人 · Owner
+                主理人 · 所有者
               </h3>
               {ctx.editing ? (
                 <div className="space-y-2">

@@ -369,7 +369,7 @@ function NewPersonWizard() {
         {step === 3 && (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              可多选。将选中的数字员工的 owner 设为该员工。(空也行,后续可分配。)
+              可多选。将选中的数字员工的所有者设为该员工。(空也行,后续可分配。)
             </p>
             {agents.length === 0 ? (
               <div className="rounded-lg border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
@@ -420,7 +420,7 @@ function NewPersonWizard() {
         {step === 4 && (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              可多选。将选中的流水线的 owner 设为该员工。
+              可多选。将选中的流水线的所有者设为该员工。
             </p>
             {pipelines.length === 0 ? (
               <div className="rounded-lg border border-dashed border-border p-6 text-center text-xs text-muted-foreground">

@@ -337,7 +337,7 @@ function RoleLegend({
           </div>
           <p className="mt-3 border-t border-border pt-2.5 text-[11px] text-foreground/55">
             <span className="font-mono text-foreground/45">说明 ·</span>{" "}
-            <span className="text-foreground/75">主理人</span> 是这个员工的归属者(等同于 owner);
+            <span className="text-foreground/75">主理人</span> 是这个员工的归属者(等同于所有者);
             <span className="text-foreground/75"> 模板</span> 标记表示当前是模板(可被复制派生实例),没有"主理(系统模板)"这一概念。
             点上面任一角色可快速筛选。
           </p>

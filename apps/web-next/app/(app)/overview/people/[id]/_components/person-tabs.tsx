@@ -471,7 +471,7 @@ export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?
           <DialogHeader>
             <DialogTitle>复制为新模板</DialogTitle>
             <DialogDescription>
-              深拷贝该数字员工的人设/系统提示/技能/KB/MCP,生成新模板(不改变 owner)。
+              深拷贝该数字员工的人设/系统提示/技能/KB/MCP,生成新模板(不改变所有者)。
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
