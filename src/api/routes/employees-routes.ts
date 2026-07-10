@@ -587,6 +587,17 @@ export async function handleEmployeesRoutes(
         console.warn(`[PATCH /api/v2/employees/${id}] cascade failed:`, (cascadeErr as Error).message);
       }
 
+      // R39: PATCH 联级后重拉 agent,响应返回 DB 最新状态
+      //   (AgentStore.update 返回的是入参 data 拼的对象,不是 DB 真实最新行)
+      //   否则前端 PATCH model_id 后看到的 defaultModel 是旧值(误导)
+      try {
+        const fresh = await agentStore.findById(id);
+        if (fresh) agent = fresh;
+      } catch (reloadErr) {
+        // 重拉失败用旧的,不影响主流程
+        console.warn(`[PATCH /api/v2/employees/${id}] reload after cascade failed:`, (reloadErr as Error).message);
+      }
+
       jsonResponse(res, 200, ok(agent));
       return true;
     } catch (e) {
