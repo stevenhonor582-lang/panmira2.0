@@ -111,7 +111,9 @@ export const memories = pgTable('memories', {
   content: text('content').notNull(),
   layer: integer('layer').notNull().default(1),
   userId: text('user_id').notNull(),
-  // 2026-06-17: agent_id column DROPPED. Use botId (uuid FK to bot_configs.bot_id).
+  // R38-C1: agent-centric reintroduction. Nullable so legacy bot_id-only rows
+  // still load. Backfilled in stage 2.
+  agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
   botId: uuid('bot_id'),
   tenantId: text('tenant_id').notNull(),
   importance: real('importance').default(0.5),
@@ -183,7 +185,9 @@ export const botConfigs = pgTable('bot_configs', {
 
 export const botSecrets = pgTable('bot_secrets', {
   id: uuid('id').primaryKey().defaultRandom(),
+  // R38-C1: agent_id FK nullable — same secret may still be looked up by botName.
   botName: varchar('bot_name', { length: 255 }).notNull(),
+  agentId: uuid('agent_id'),
   keyType: varchar('key_type', { length: 50 }).notNull(),
   encryptedValue: text('encrypted_value').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
@@ -197,6 +201,8 @@ export const botSecrets = pgTable('bot_secrets', {
 export const botBudgets = pgTable('bot_budgets', {
   id: uuid('id').primaryKey().defaultRandom(),
   botName: varchar('bot_name', { length: 255 }).notNull(),
+  // R38-C1: agent_id nullable; populated when bot is bound to an agent.
+  agentId: uuid('agent_id'),
   dailyLimitUsd: numeric('daily_limit_usd').default('0'),
   todaySpent: numeric('today_spent').default('0'),
   todayTasks: integer('today_tasks').default(0),
@@ -321,6 +327,8 @@ export const folders = pgTable('folders', {
 export const sessions = pgTable('sessions', {
   id: uuid('id').primaryKey(),
   botName: text('bot_name'),
+  // R38-C1: nullable agent_id; backfilled in stage 2.
+  agentId: uuid('agent_id'),
   claudeSessionId: text('claude_session_id'),
   workingDirectory: text('working_directory').notNull(),
   title: text('title').notNull(),
@@ -377,6 +385,8 @@ export const activityEvents = pgTable('activity_events', {
   cacheReadTokens: integer('cache_read_tokens').default(0),
   cacheCreationTokens: integer('cache_creation_tokens').default(0),
   botId: uuid('bot_id').references(() => botConfigs.botId),
+  // R38-C1: nullable agent_id; primary runtime anchor going forward.
+  agentId: uuid('agent_id'),
 });
 
 // ── provider_configs ─────────────────────────────────────────────────────────
@@ -538,6 +548,8 @@ export const chatSessions = pgTable('chat_sessions', {
   id: uuid('id').primaryKey().defaultRandom(),
   botName: varchar('bot_name', { length: 255 }).notNull(),
   chatId: varchar('chat_id', { length: 255 }).notNull(),
+  // R38-C1: nullable agent_id; runtime key for per-agent session continuity.
+  agentId: uuid('agent_id'),
   sessionId: text('session_id'),
   sessionIdEngine: varchar('session_id_engine', { length: 20 }),
   workingDirectory: text('working_directory').notNull(),
@@ -569,6 +581,8 @@ export const voiceIdentities = pgTable('voice_identities', {
 export const budgetHistory = pgTable('budget_history', {
   id: uuid('id').primaryKey().defaultRandom(),
   botName: varchar('bot_name', { length: 255 }).notNull(),
+  // R38-C1: nullable agent_id; backfilled in stage 2.
+  agentId: uuid('agent_id'),
   date: date('date', { mode: 'string' }).notNull(),
   costUsd: numeric('cost_usd').notNull(),
   taskCount: integer('task_count').notNull(),
@@ -582,6 +596,8 @@ export const budgetHistory = pgTable('budget_history', {
 
 export const circuitBreakerStates = pgTable('circuit_breaker_states', {
   botName: text('bot_name').primaryKey(),
+  // R38-C1: nullable agent_id; primary key still botName for now.
+  agentId: uuid('agent_id'),
   state: varchar('state', { length: 20 }).notNull().default('closed'),
   failures: integer('failures').notNull().default(0),
   lastFailure: bigint('last_failure', { mode: 'number' }).notNull().default(0),
@@ -830,6 +846,15 @@ export const agentSkillRefs = pgTable('agent_skill_refs', {
   skillVersion: varchar('skill_version', { length: 20 }),
   params: jsonb('params').$type<Record<string, unknown>>().default({}),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+// agent_mcp_refs: agent 绑 MCP server (R38-C1 schema migration)
+export const agentMcpRefs = pgTable('agent_mcp_refs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  agentId: uuid('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  mcpServerId: uuid('mcp_server_id').notNull().references(() => mcpServers.id, { onDelete: 'cascade' }),
+  params: jsonb('params').$type<Record<string, unknown>>().default({}),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 // skill_usage:skill 调用日志,给 usage_reports 聚合
