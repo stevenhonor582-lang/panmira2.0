@@ -1,8 +1,14 @@
 "use client";
 import * as React from "react";
 import type { WizardForm, KbFolderInfo, KbInfo } from "./form";
-import { Folder, FileText, ChevronRight, ChevronDown, Database, Info } from "lucide-react";
+import { Folder, FileText, ChevronRight, ChevronDown, Database, Info, Lock } from "lucide-react";
 
+/**
+ * Step 5 — 记忆注入
+ * R51-B4:
+ *   - L1 / L2 / L3 三层不可选(自动),UI 上标"自动注入"
+ *   - 公共知识库文案说清含义:组织内全员共享的资料库
+ */
 export function Step5({
   form,
   setForm,
@@ -31,27 +37,51 @@ export function Step5({
 
   return (
     <div className="space-y-7">
-      {/* Three-layer explanation */}
+      {/* R51-B4: 三层结构明确为"自动注入",不可勾选 */}
       <div className="rounded-2xl bg-muted/40 p-4 text-[12px] leading-relaxed text-foreground/70 ring-1 ring-border">
         <div className="mb-2 font-mono text-[10.5px] uppercase tracking-[0.18em] text-foreground/45">
-          知识三层结构 · 公共记忆
+          知识三层结构 · 自动注入
         </div>
         <div className="grid gap-2 sm:grid-cols-3">
-          <LayerCard level="L1" label="短期记忆" desc="24h 上下文窗口,自动维护,无需选" disabled />
-          <LayerCard level="L2" label="长期事实" desc="下方勾选 KB / 文件夹 → 注入此层" />
-          <LayerCard level="L3" label="永久原则" desc="第三步设置的铁律自动进入此层" disabled />
+          <LayerCard level="L1" label="短期记忆" desc="24 小时上下文窗口 — 系统自动维护" auto />
+          <LayerCard level="L2" label="长期事实" desc="下方勾选的公共知识库 / 文件夹 — 自动索引" auto />
+          <LayerCard level="L3" label="永久原则" desc="人格那一步设的铁律 — 自动进入此层" auto />
+        </div>
+        <div className="mt-2 flex items-start gap-1.5 text-[11px] text-foreground/55">
+          <Info className="mt-0.5 size-3 shrink-0" />
+          <span>三层结构由系统按规则自动维护,你只需要在下方勾选 L2 的知识来源。</span>
         </div>
       </div>
 
       {/* KB level */}
       <section>
-        <h3 className="mb-3 flex items-center gap-2 text-[12px] font-medium tracking-tight text-foreground/65">
-          <Database className="size-3.5" />
-          公共知识库 · 来自 /api/v2/admin/knowledge-bases ({knowledgeBases.length} 个真实可用)
-        </h3>
+        <div className="mb-2 flex items-baseline justify-between">
+          <h3 className="flex items-center gap-1.5 text-[12.5px] font-semibold text-foreground/85">
+            <Database className="size-3.5" />
+            公共知识库
+            <span className="ml-1 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] tracking-[0.12em] text-foreground/55">可选</span>
+          </h3>
+          <span className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-foreground/40">
+            {form.knowledgeBaseIds.length} / {knowledgeBases.length}
+          </span>
+        </div>
+        {/* R51-B4: 公共知识库文案说清含义 */}
+        <div className="mb-3 rounded-xl bg-muted/30 p-3 text-[11.5px] leading-relaxed text-foreground/70 ring-1 ring-border">
+          <div className="flex items-start gap-1.5">
+            <Lock className="mt-0.5 size-3 shrink-0 text-foreground/45" />
+            <div>
+              <b className="text-foreground/85">什么是"公共知识库"</b>
+              <span className="ml-1">— 组织内全员共享的资料库(产品手册 / 制度文档 / 行业标准)。</span>
+              <div className="mt-1">
+                勾选后,这位员工在 L2 长期事实里会自动按需检索这些文档;<br />
+                后端按你的身份过滤,无权限的不会返回。
+              </div>
+            </div>
+          </div>
+        </div>
         {knowledgeBases.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border p-4 text-center text-[12px] text-foreground/55">
-            还没有公共知识库。可以去 /foundation/knowledge 创建。
+            还没有公共知识库。可以去 知识库管理 创建。
           </div>
         ) : (
           <ul className="grid gap-2 sm:grid-cols-2">
@@ -86,7 +116,7 @@ export function Step5({
         )}
       </section>
 
-      {/* R36-4: 文件夹按三层权限分段渲染 — 组织公共 / 群协作 / 数字员工 */}
+      {/* 文件夹视图(原状,R51-B5 在下一个 commit 改) */}
       <section className="space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="flex items-center gap-2 text-[12px] font-medium tracking-tight text-foreground/65">
@@ -155,17 +185,17 @@ export function Step5({
       <section className="rounded-2xl bg-muted/30 p-4 ring-1 ring-border">
         <div className="flex items-baseline justify-between">
           <span className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-foreground/45">
-            已选注入
+            L2 已选注入
           </span>
           <span className="font-mono text-[11px] text-foreground/55">
-            {form.knowledgeBaseIds.length} KB · {form.kbFolderIds.length} folders · {form.ironLaws.length} iron laws
+            公共知识库 {form.knowledgeBaseIds.length} · 文件夹 {form.kbFolderIds.length} · 铁律 {form.ironLaws.length}
           </span>
         </div>
         <div className="mt-2 flex items-start gap-1.5 text-[11.5px] text-foreground/65">
           <Info className="mt-0.5 size-3 shrink-0 text-foreground/45" />
           <span>
-            勾选后,这位员工在 L2 长期记忆里会自动索引这些文档,
-            但 prompt 注入仍是受控的,不会整本塞进上下文。
+            勾选后,这位员工在 L2 长期事实里会自动按需检索这些文档,
+            但 prompt 注入是受控的,不会整本塞进上下文。
           </span>
         </div>
       </section>
@@ -177,30 +207,36 @@ function LayerCard({
   level,
   label,
   desc,
-  disabled,
+  auto,
 }: {
   level: string;
   label: string;
   desc: string;
-  disabled?: boolean;
+  auto?: boolean;
 }) {
   return (
-    <div className={"rounded-xl p-2.5 ring-1 " + (disabled ? "bg-muted/40 ring-border opacity-70" : "bg-card ring-foreground/30")}>
-      <div className="flex items-baseline gap-2">
-        <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-foreground/55">{level}</span>
-        <span className="text-[12.5px] font-semibold">{label}</span>
+    <div className={"rounded-xl p-2.5 ring-1 bg-card ring-foreground/30"}>
+      <div className="flex items-baseline justify-between gap-2">
+        <div className="flex items-baseline gap-2">
+          <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-foreground/55">{level}</span>
+          <span className="text-[12.5px] font-semibold">{label}</span>
+        </div>
+        {auto && (
+          <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[9.5px] tracking-[0.12em] text-emerald-700 dark:text-emerald-300">
+            自动注入
+          </span>
+        )}
       </div>
       <p className="mt-1 text-[11px] text-foreground/65">{desc}</p>
     </div>
   );
 }
 
-// R36-4: 按 accessTier 统计数量
+// 保留原函数(R51-B5 之前)
 function countByTier(folders: KbFolderInfo[], tier: "organization" | "group" | "agent" | "other"): number {
   return folders.filter((f) => (f.accessTier ?? "other") === tier).length;
 }
 
-// R36-4: 单段渲染 — 若该段无节点返回 null(干净折叠)
 function renderTierBlock({
   tier,
   icon,
@@ -243,7 +279,6 @@ function renderTierBlock({
   );
 }
 
-// Build a parent → children map and render top-level nodes recursively.
 function FolderTree({
   folders,
   selected,
@@ -261,7 +296,6 @@ function FolderTree({
       arr.push(f);
       m.set(key, arr);
     }
-    // Sort children by name for stable display
     for (const arr of m.values()) {
       arr.sort((a, b) => (a.name || "").localeCompare(b.name || "", "zh"));
     }
@@ -269,13 +303,11 @@ function FolderTree({
   }, [folders]);
 
   const roots = childrenMap.get(null) || [];
-  // If "root" is itself a node (id="root"), surface its children as top-level too.
   const rootNode = folders.find((f) => f.id === "root" || f.parentId === undefined);
   const effectiveRoots = rootNode ? (childrenMap.get(rootNode.id) || []) : [];
   const allRoots = [...roots, ...effectiveRoots];
 
   if (allRoots.length === 0 && folders.length > 0) {
-    // Fallback: surface everything as flat list
     return (
       <ul className="divide-y divide-border rounded-2xl bg-card ring-1 ring-border">
         {folders.slice(0, 50).map((f) => (
@@ -340,7 +372,7 @@ function FolderRow({
         {isRoot && <span className="flex-1 truncate font-mono text-[11px] text-foreground/45">{f.name}</span>}
         {!isRoot && (
           <span className="font-mono text-[10.5px] text-foreground/45">
-            {f.docCount != null ? `${f.docCount} docs` : ""}
+            {f.docCount != null ? `${f.docCount} 文档` : ""}
           </span>
         )}
         {!isRoot && (
