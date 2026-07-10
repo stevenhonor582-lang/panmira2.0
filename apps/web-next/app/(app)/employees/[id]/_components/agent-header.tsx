@@ -3,13 +3,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useAgent, updateAgent, createInstanceFromTemplate, copyAsTemplate } from "../../_lib/data";
+import { useAgent, updateAgent, createInstanceFromTemplate, copyAsTemplate, deleteAgent } from "../../_lib/data";
 import { AvatarMark, statusTone } from "../../_components/avatar-mark";
 import {
   ArrowLeft, User2, GitBranch, Hash,
-  MoreVertical, Pause, Play, Archive, Copy, Loader2, Check, Sparkles
+  MoreVertical, Pause, Play, Archive, Copy, Loader2, Check, Sparkles, Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/toast/toast-provider";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -31,6 +32,10 @@ export function AgentHeader({ id }: { id: string }) {
   const [instanceName, setInstanceName] = React.useState("");
   const [instantiating, setInstantiating] = React.useState(false);
   const [instantiateError, setInstantiateError] = React.useState<string | null>(null);
+  // R51-E2: 删除二次确认 dialog
+  const [deleteOpen, setDeleteOpen] = React.useState(false);
+  const [deleting, setDeleting] = React.useState(false);
+  const toast = useToast();
 
   React.useEffect(() => {
     if (agent && !instanceName) {
@@ -67,6 +72,22 @@ export function AgentHeader({ id }: { id: string }) {
       console.error("[agent-header] copyAsTemplate failed:", e);
     } finally {
       setActing(false);
+    }
+  };
+
+  const onConfirmDelete = async () => {
+    if (!agent) return;
+    setDeleting(true);
+    try {
+      await deleteAgent({ id: agent.id, isTemplate: agent.isTemplate });
+      toast.success(`已删除「${agent.displayName || agent.name}」`);
+      setDeleteOpen(false);
+      router.push("/employees");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`删除失败: ${msg}`);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -178,6 +199,14 @@ export function AgentHeader({ id }: { id: string }) {
                 </DropdownMenuItem>
               </>
             )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => setDeleteOpen(true)}
+              className="text-rose-600 focus:text-rose-700 dark:text-rose-400 dark:focus:text-rose-300"
+              data-testid="menu-delete"
+            >
+              <Trash2 className="size-4" /> 删除
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -280,6 +309,37 @@ export function AgentHeader({ id }: { id: string }) {
             >
               {instantiating ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
               {instantiating ? "创建中…" : "创建并跳到详情"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* R51-E2: 删除二次确认 dialog */}
+      <Dialog open={deleteOpen} onOpenChange={(o) => { if (!deleting) setDeleteOpen(o); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认删除 {agent.displayName || agent.name}?</DialogTitle>
+            <DialogDescription>
+              该操作不可撤销,所有绑定的入口/资源将自动释放。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-md bg-rose-500/10 px-3 py-2 text-[12.5px] text-rose-700 dark:text-rose-300">
+            {agent.isTemplate
+              ? "该模板被删除后,所有从该模板生成的实例仍保留(它们已独立)。"
+              : "该实例被删除后,所有绑定的 bot / 频道 / 知识库引用 / 运行日志将一并清理。"}
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={() => setDeleteOpen(false)} disabled={deleting}>
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={onConfirmDelete}
+              disabled={deleting}
+              data-testid="delete-confirm"
+            >
+              {deleting ? "删除中..." : "确认删除"}
             </Button>
           </div>
         </DialogContent>

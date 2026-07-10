@@ -170,6 +170,9 @@ export async function handleProviderRoutes(
         model,
         contextWindow: numOrNull(body.contextWindow ?? body.context_window),
         isDefault: !!body.isDefault,
+        modelCategory: typeof body.modelCategory === 'string' && body.modelCategory.trim()
+          ? body.modelCategory.trim()
+          : 'llm',
       });
       jsonResponse(res, 201, { provider: sanitize(provider) });
     } catch (err: any) {
@@ -206,6 +209,9 @@ export async function handleProviderRoutes(
     if (body.context_window !== undefined) patch.contextWindow = numOrNull(body.context_window);
     if (body.isDefault !== undefined) patch.isDefault = !!body.isDefault;
     if (body.is_default !== undefined) patch.isDefault = !!body.is_default;
+    if (body.modelCategory !== undefined && typeof body.modelCategory === 'string') {
+      patch.modelCategory = body.modelCategory.trim() || 'llm';
+    }
 
     const provider = await store.update(id, patch);
     if (!provider) {

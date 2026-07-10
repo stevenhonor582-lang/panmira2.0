@@ -356,6 +356,51 @@ export async function updateAgent(
 export async function archiveAgent(id: string): Promise<Agent | null> {
   return updateAgent(id, { status: "deprecated", is_active: false });
 }
+/**
+ * R51-E2: 硬删除 agent (admin only)。
+ * - instance: DELETE /api/v2/admin/agent-instances/:id (后端自动清 bindings/mcp/kb/logs/skills/team/messages)
+ * - template: DELETE /api/v2/admin/agent-templates/:id
+ * 删除二次确认由前端 Dialog 负责,后端不再二次确认(已有 RBAC)。
+ */
+export async function deleteAgent(agent: Pick<Agent, "id" | "isTemplate">): Promise<void> {
+  const path = agent.isTemplate
+    ? `/api/v2/admin/agent-templates/${encodeURIComponent(agent.id)}`
+    : `/api/v2/admin/agent-instances/${encodeURIComponent(agent.id)}`;
+  const res = await api<{ success?: boolean; deleted?: string } | any>(
+    fullPath(path),
+    { method: "DELETE" },
+  );
+  const row = (res as any)?.data ?? res;
+  if (!row || (row.deleted == null && row.success !== true)) {
+    const err = (res as any)?.error;
+    throw new Error(err?.message ?? err?.code ?? "delete_failed");
+  }
+}
+
+/**
+ * R51-E1: 拉取每个 agent 当前是否有"工作"中的 run。
+ * 后端无 endpoint,走 agent_run_logs 当前 active。
+ * 简化策略:前端用 store 内聚合 — 通过 GET /api/v2/admin/agent-run-logs?status=running&limit=200
+ *   取得当前所有 running log,按 agent_id 集合返回。
+ */
+export async function fetchActiveRunsByAgent(): Promise<Record<string, true>> {
+  try {
+    const res = await api<{ success?: boolean; data?: any[] } | any>(
+      fullPath("/api/v2/admin/agent-run-logs?status=running&limit=200"),
+    );
+    const items = (res as any)?.data ?? res;
+    const arr: any[] = Array.isArray(items) ? items : [];
+    const out: Record<string, true> = {};
+    for (const row of arr) {
+      const aid = row?.agent_id ?? row?.agentId ?? row?.template_id ?? row?.templateId;
+      if (typeof aid === "string" && aid.length > 0) out[aid] = true;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 
 // ── R15-A: Templates / from-template ─────────────────────────
 

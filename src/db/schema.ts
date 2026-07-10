@@ -469,6 +469,7 @@ export const providerConfigs = pgTable('provider_configs', {
   apiKeyEncrypted: text('api_key_encrypted'),
   model: text('model').notNull().default(''),
   isDefault: boolean('is_default').notNull().default(false),
+  modelCategory: text('model_category').notNull().default('llm'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -880,6 +881,7 @@ export const embeddingProviders = pgTable('embedding_providers', {
   dimensions: integer('dimensions').notNull().default(1024),
   pricingPer1k: numeric('pricing_per_1k', { precision: 10, scale: 6 }).notNull().default('0'),
   isDefault: boolean('is_default').notNull().default(false),
+  modelCategory: text('model_category').notNull().default('llm'),
   status: text('status').notNull().default('active'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

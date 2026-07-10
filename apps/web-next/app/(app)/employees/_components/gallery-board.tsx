@@ -3,9 +3,9 @@ import * as React from "react";
 import Link from "next/link";
 import {
   fetchAgents,
-  updateAgent,
   sortByOwnerFirst,
   facets as buildFacets,
+  fetchActiveRunsByAgent,
   type Agent,
 } from "../_lib/data";
 import { AgentCard, type AgentCardSize } from "./agent-card";
@@ -42,12 +42,15 @@ export function GalleryBoard() {
   const [agents, setAgents] = React.useState<Agent[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [boardTab, setBoardTab] = React.useState<BoardTab>("instances");
+  // R51-E1: 当前正在 run 的 agent id 集合(用于卡片显示 "工作中")
+  const [workingIds, setWorkingIds] = React.useState<Record<string, true>>({});
 
   const reload = React.useCallback(() => {
     setLoading(true);
     fetchAgents({ filter: "all" })
       .then((list) => setAgents(list))
       .finally(() => setLoading(false));
+    fetchActiveRunsByAgent().then(setWorkingIds).catch(() => setWorkingIds({}));
   }, []);
 
   React.useEffect(() => {
@@ -60,6 +63,9 @@ export function GalleryBoard() {
       .finally(() => {
         if (alive) setLoading(false);
       });
+    fetchActiveRunsByAgent()
+      .then((m) => { if (alive) setWorkingIds(m); })
+      .catch(() => { if (alive) setWorkingIds({}); });
     return () => {
       alive = false;
     };
@@ -165,7 +171,7 @@ export function GalleryBoard() {
       ) : list.length === 0 ? (
         <EmptyState tab={boardTab} />
       ) : (
-        <AsymGrid agents={list} mounted={mounted} onChanged={reload} boardTab={boardTab} />
+        <AsymGrid agents={list} mounted={mounted} onChanged={reload} boardTab={boardTab} workingIds={workingIds} />
       )}
     </div>
   );
@@ -239,12 +245,13 @@ function BoardTabButton({
 // R17-3: 平级卡片网格 — 统一尺寸,不再有 feature/tall/wide 大卡
 // 用户反馈:"一个特别大一个很长,造成错觉"
 function AsymGrid({
-  agents, mounted, onChanged, boardTab,
+  agents, mounted, onChanged, boardTab, workingIds,
 }: {
   agents: Agent[];
   mounted: boolean;
   onChanged: () => void;
   boardTab: BoardTab;
+  workingIds: Record<string, true>;
 }) {
   return (
     <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
@@ -263,6 +270,7 @@ function AsymGrid({
             showManageActions
             onChanged={onChanged}
             isTemplateTab={boardTab === "templates"}
+            workingIds={workingIds}
           />
         </div>
       ))}

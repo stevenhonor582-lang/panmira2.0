@@ -51,6 +51,7 @@ interface BackendProvider {
   model: string;
   contextWindow?: number | null;
   isDefault: boolean;
+  modelCategory?: string; // R51-A: llm | embedding | video | audio | rerank | other
   hasApiKey?: boolean;
   apiKeyMasked?: string | null;
   apiKeyEncrypted?: string | null; // legacy field, not used by listSafe
@@ -66,6 +67,7 @@ interface ProviderRow {
   model: string;
   contextWindow: number | null;
   isDefault: boolean;
+  modelCategory: string;
   hasApiKey: boolean;
   apiKeyMasked: string | null;
   latencyMs: number | null;
@@ -96,6 +98,28 @@ const PROVIDER_TONE: Record<string, string> = {
   embedding: "text-stone-700 dark:text-stone-300",
   llm: "text-foreground/80",
 };
+
+const CATEGORY_TONE: Record<string, string> = {
+  llm: "text-emerald-700 dark:text-emerald-300",
+  embedding: "text-sky-700 dark:text-sky-300",
+  video: "text-violet-700 dark:text-violet-300",
+  audio: "text-amber-700 dark:text-amber-300",
+  rerank: "text-rose-700 dark:text-rose-300",
+  other: "text-muted-foreground",
+};
+
+const CATEGORY_LABELS: Record<string, string> = {
+  llm: "LLM",
+  embedding: "Embedding",
+  video: "Video",
+  audio: "Audio",
+  rerank: "Rerank",
+  other: "Other",
+};
+
+function labelCategory(c: string): string {
+  return CATEGORY_LABELS[c?.toLowerCase()] ?? c ?? "LLM";
+}
 
 function labelType(t: string): string {
   return TYPE_LABEL[t?.toLowerCase()] ?? t;
@@ -135,6 +159,7 @@ export default function LLMProvidersPage() {
       model: r.model ?? "",
       contextWindow: r.contextWindow ?? null,
       isDefault: !!r.isDefault,
+      modelCategory: r.modelCategory ?? 'llm',
       hasApiKey: !!(r.hasApiKey ?? r.apiKeyEncrypted),
       apiKeyMasked: r.apiKeyMasked ?? null,
       latencyMs: latency[r.id]?.ms ?? null,
@@ -258,7 +283,7 @@ export default function LLMProvidersPage() {
     >
       <ModelRoutingPanel providers={rows} onSetDefault={setDefault} />
       <DenseTable
-        head={["服务商", "类型", "模型", "接口地址", "状态", "延迟", "上次测试", "操作"]}
+        head={["服务商", "类型", "类别", "模型", "接口地址", "状态", "延迟", "上次测试", "操作"]}
         rows={rows.map((p) => ({
           cells: [
             <div key="n" className="flex items-center gap-2">
@@ -285,6 +310,16 @@ export default function LLMProvidersPage() {
               )}
             >
               {labelType(p.type)}
+            </span>,
+            <span
+              key="cat"
+              className={cn(
+                "text-[11px] font-mono tracking-wide",
+                CATEGORY_TONE[p.modelCategory?.toLowerCase()] ?? "text-muted-foreground",
+              )}
+              title={`category: ${p.modelCategory ?? 'llm'}`}
+            >
+              {labelCategory(p.modelCategory)}
             </span>,
             <MonoCell key="m">{p.model || "—"}</MonoCell>,
             <MonoCell
@@ -445,6 +480,7 @@ function ProviderFormDialog({ mode, initial, onClose, onSaved }: FormProps) {
     initial?.contextWindow ? String(initial.contextWindow) : "",
   );
   const [isDefault, setIsDefault] = React.useState(!!initial?.isDefault);
+  const [modelCategory, setModelCategory] = React.useState<string>(initial?.modelCategory ?? "llm");
   const [busy, setBusy] = React.useState(false);
   const [testingConn, setTestingConn] = React.useState(false);
   const [testResult, setTestResult] = React.useState<{ ok: boolean; msg: string } | null>(null);
@@ -495,6 +531,7 @@ function ProviderFormDialog({ mode, initial, onClose, onSaved }: FormProps) {
       model: model.trim(),
       contextWindow: contextWindow.trim() ? Number(contextWindow) : null,
       isDefault,
+      modelCategory,
     };
     if (apiKey.trim()) body.apiKey = apiKey.trim();
 
@@ -565,6 +602,25 @@ function ProviderFormDialog({ mode, initial, onClose, onSaved }: FormProps) {
               </Select>
             </Field>
           </div>
+
+          <Field label="类别(Category)" htmlFor="pf-cat">
+            <Select value={modelCategory} onValueChange={setModelCategory}>
+              <SelectTrigger id="pf-cat" className="h-9">
+                <SelectValue placeholder="选择类别" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="llm">LLM · 大语言模型</SelectItem>
+                <SelectItem value="embedding">Embedding · 向量嵌入</SelectItem>
+                <SelectItem value="video">Video · 视频生成</SelectItem>
+                <SelectItem value="audio">Audio · 语音</SelectItem>
+                <SelectItem value="rerank">Rerank · 重排序</SelectItem>
+                <SelectItem value="other">Other · 其它</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[10.5px] text-muted-foreground font-mono">
+              R51-A · 区分模型用途,路由策略会按类别匹配
+            </p>
+          </Field>
 
           <Field label="接口地址(Base URL)" htmlFor="pf-base">
             <Input

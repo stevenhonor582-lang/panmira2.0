@@ -8,6 +8,14 @@ export type LLMProviderType =
   | "local"
   | "deepseek";
 
+export type ModelCategory =
+  | "llm"
+  | "embedding"
+  | "video"
+  | "audio"
+  | "rerank"
+  | "other";
+
 export type LLMStatus =
   | "connected"
   | "expired"
@@ -20,6 +28,7 @@ export interface LLMProvider {
   type: LLMProviderType | string;
   baseUrl: string;
   model: string;
+  modelCategory: ModelCategory;
   isDefault: boolean;
   status: LLMStatus;
   lastTestedAt: string | null;

@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import type { Agent } from "../_lib/data";
-import { updateAgent, createInstanceFromTemplate, promoteInstanceToTemplate, demoteTemplateToInstance } from "../_lib/data";
+import { updateAgent, createInstanceFromTemplate, promoteInstanceToTemplate, demoteTemplateToInstance, deleteAgent } from "../_lib/data";
 import { AvatarMark, statusTone } from "./avatar-mark";
 import {
   MoreVertical, Pause, Play, Archive, FileText, Bot, Loader2, Sparkles, FileUp,
+  Trash2, ArrowDownToLine, Activity, Layers, Radio, Brain, Hash, Brush, PenLine, Wrench, Box,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -34,6 +35,41 @@ const ROLE_LABEL: Record<string, string> = {
   "research-analyst": "调研分析",
 };
 
+// R51-E1: 模板分类(画 / 文 / 运 / 其它)。对齐 data.category 字段 + 默认兜底。
+const CATEGORY_PRESETS: Record<string, { label: string; Icon: typeof Brush; tone: string }> = {
+  art:        { label: "绘画", Icon: Brush,   tone: "bg-rose-500/10  text-rose-700  dark:text-rose-300  ring-rose-500/25" },
+  copy:       { label: "文案", Icon: PenLine, tone: "bg-amber-500/10 text-amber-700 dark:text-amber-300 ring-amber-500/25" },
+  writing:    { label: "文案", Icon: PenLine, tone: "bg-amber-500/10 text-amber-700 dark:text-amber-300 ring-amber-500/25" },
+  ops:        { label: "运维", Icon: Wrench,  tone: "bg-teal-500/10  text-teal-700  dark:text-teal-300  ring-teal-500/25" },
+  engineering:{ label: "工程", Icon: Box,     tone: "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 ring-indigo-500/25" },
+  support:    { label: "客服", Icon: Radio,   tone: "bg-sky-500/10   text-sky-700   dark:text-sky-300   ring-sky-500/25" },
+  research:   { label: "调研", Icon: Brain,   tone: "bg-violet-500/10 text-violet-700 dark:text-violet-300 ring-violet-500/25" },
+  general:    { label: "通用", Icon: Layers,  tone: "bg-zinc-500/10  text-zinc-700  dark:text-zinc-300  ring-zinc-500/25" },
+  custom:     { label: "其它", Icon: Layers,  tone: "bg-zinc-500/10  text-zinc-700  dark:text-zinc-300  ring-zinc-500/25" },
+};
+
+function categoryPreset(rawCategory: unknown): { key: string; label: string; Icon: typeof Brush; tone: string } {
+  const key = typeof rawCategory === "string" && rawCategory.length > 0 ? rawCategory : "general";
+  const preset = CATEGORY_PRESETS[key] ?? CATEGORY_PRESETS.general;
+  return { key, label: preset.label, Icon: preset.Icon, tone: preset.tone };
+}
+
+// R51-E1: 运行时状态 — 待命(默认 active) / 工作(active + 当前 run) / 暂停 / 弃用
+type RuntimeTone = ReturnType<typeof statusTone>;
+function runtimeTone(agent: Agent, workingIds: Record<string, true>): RuntimeTone {
+  if (agent.status === "paused" || agent.status === "deprecated") return statusTone(agent.status);
+  // status === "active" or "draft"
+  if (workingIds[agent.id]) {
+    return {
+      dot: "bg-emerald-400 animate-pulse",
+      label: "工作中",
+      chip: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/30",
+      accent: "bg-emerald-500/50",
+    };
+  }
+  return statusTone("active");
+}
+
 // R17-3: 卡片统一尺寸 — 不再有 feature/tall/wide 区分
 // 保留 AgentCardSize 类型仅为向后兼容,所有尺寸渲染相同内容
 export type AgentCardSize = "feature" | "tall" | "wide" | "regular" | "compact";
@@ -44,12 +80,15 @@ export function AgentCard({
   showManageActions = false,
   onChanged,
   isTemplateTab = false,
+  workingIds,
 }: {
   agent: Agent;
   size?: AgentCardSize;
   showManageActions?: boolean;
   onChanged?: () => void;
   isTemplateTab?: boolean;
+  /** R51-E1: 当前正在工作的 agent id 集合(由父层聚合) */
+  workingIds?: Record<string, true>;
 }) {
   // 静默忽略 size —— 所有卡片渲染相同布局(用户反馈:平级排列)
   const ref = React.useRef<HTMLAnchorElement>(null);
@@ -65,6 +104,9 @@ export function AgentCard({
   const [demoteOpen, setDemoteOpen] = React.useState(false);
   const [demoteName, setDemoteName] = React.useState("");
   const [demoting, setDemoting] = React.useState(false);
+  // R51-E2: 删除二次确认 dialog 状态
+  const [deleteOpen, setDeleteOpen] = React.useState(false);
+  const [deleting, setDeleting] = React.useState(false);
   const toast = useToast();
 
   const reduce =
@@ -85,12 +127,50 @@ export function AgentCard({
   const tiltY = reduce ? 0 : (50 - pos.x) * 0.05;
 
   const roleLabel = ROLE_LABEL[agent.role] ?? agent.role;
-  const t = statusTone(agent.status);
+  const runtimeMap = workingIds ?? {};
+  const t = runtimeTone(agent, runtimeMap);
   const avatarSize = "md"; // 统一中尺寸头像
 
-  const onAction = async (e: React.MouseEvent, action: "pause" | "activate" | "deprecate" | "promoteToTemplate" | "toInstance" | "copyAsTemplate" | "generateInstance") => {
+  // R51-E1: 模板分类(从 raw.category 读取,模板卡显示)
+  const category = React.useMemo(
+    () => categoryPreset((agent.raw as Record<string, unknown> | null)?.category),
+    [agent.raw],
+  );
+
+  // R51-E1: 通道入口(实例卡显示):来自 agent.channelIds,展示数量 + 类型(简化展示)
+  const channelInfo = React.useMemo(() => {
+    const ids = Array.isArray(agent.channelIds) ? agent.channelIds : [];
+    return { count: ids.length };
+  }, [agent.channelIds]);
+
+  // R51-E1: 模型 + CTX 展示
+  // 优先 defaultModel/defaultContextWindow(用户配置),回退到 model/contextWindow(provider_configs)
+  const modelLabel = React.useMemo(() => {
+    const m = (agent.defaultModel && agent.defaultModel.trim()) || (agent.model && agent.model.trim()) || "—";
+    // 截短 model id,只保留主要部分(如 claude-sonnet-4-6 → sonnet-4.6)
+    return m.replace(/^claude-/, "").replace(/^(gpt-|gemini-|deepseek-)/, "$1");
+  }, [agent.defaultModel, agent.model]);
+  const ctxLabel = React.useMemo(() => {
+    const c = agent.defaultContextWindow ?? agent.contextWindow ?? 0;
+    if (!c) return "—";
+    if (c >= 1000) return `${Math.round(c / 1000)}K`;
+    return String(c);
+  }, [agent.defaultContextWindow, agent.contextWindow]);
+
+  // R51-E1: 人格精简 — 截到 60 字内,前面加 icon
+  const personaShort = React.useMemo(() => {
+    const p = (agent.persona || agent.description || "").trim();
+    if (!p) return "";
+    return p.length > 60 ? p.slice(0, 60) + "…" : p;
+  }, [agent.persona, agent.description]);
+
+  const onAction = async (e: React.MouseEvent, action: "pause" | "activate" | "deprecate" | "promoteToTemplate" | "toInstance" | "copyAsTemplate" | "generateInstance" | "delete") => {
     e.preventDefault();
     e.stopPropagation();
+    if (action === "delete") {
+      setDeleteOpen(true);
+      return;
+    }
     setActing(true);
     try {
       if (action === "pause") {
@@ -149,6 +229,27 @@ export function AgentCard({
     }
   };
 
+  const onConfirmDelete = async () => {
+    setDeleting(true);
+    try {
+      await deleteAgent({ id: agent.id, isTemplate: agent.isTemplate });
+      toast.success(`已删除「${agent.displayName || agent.name}」`);
+      setDeleteOpen(false);
+      onChanged?.();
+      // 当前页若是详情页(URL 带 id),删除后跳回列表
+      if (typeof window !== "undefined" && window.location.pathname.includes(`/employees/${agent.id}`)) {
+        router.push("/employees");
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`删除失败: ${msg}`);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const CategoryIcon = category.Icon;
+
   return (
     <Link
       ref={ref}
@@ -167,6 +268,7 @@ export function AgentCard({
           ? "border-2 border-dashed border-violet-400/70"
           : "border border-border",
       )}
+      data-testid={`agent-card-${agent.id.slice(0, 8)}`}
     >
       <div
         aria-hidden
@@ -183,7 +285,6 @@ export function AgentCard({
           hover ? "opacity-100" : "opacity-0",
         )}
         style={{
-          // R32-A: hover 光晕亮度从 0.55 降到 0.22,避免遮挡卡片内容
           background: `radial-gradient(180px circle at ${pos.x}% ${pos.y}%, rgba(255,255,255,0.22), transparent 60%)`,
         }}
       />
@@ -252,6 +353,14 @@ export function AgentCard({
                   <ArrowDownToLine className="size-4" /> 转为实例
                 </DropdownMenuItem>
               )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={(e) => onAction(e, "delete")}
+                className="text-rose-600 focus:text-rose-700 dark:text-rose-400 dark:focus:text-rose-300"
+                data-testid="menu-delete"
+              >
+                <Trash2 className="size-4" /> 删除
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -262,7 +371,7 @@ export function AgentCard({
         aria-hidden
         className={cn(
           "absolute left-0 top-0 h-0.5 w-full z-[5] transition-opacity",
-          agent.status === "active" ? "opacity-0" : "opacity-100",
+          agent.status === "active" && !runtimeMap[agent.id] ? "opacity-0" : "opacity-100",
           t.accent,
         )}
       />
@@ -286,12 +395,13 @@ export function AgentCard({
         <div className="flex items-start justify-between gap-3">
           <AvatarMark glyph={agent.glyph} hue={agent.hue} size={avatarSize} />
           <div className="flex flex-wrap items-center justify-end gap-1.5">
-            {/* R25: 状态 chip(参照真人卡片) */}
+            {/* R51-E1: 运行时状态 chip — 待命 / 工作 / 暂停 / 弃用 */}
             <span
               className={cn(
                 "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-[0.18em]",
                 t.chip,
               )}
+              data-testid={`runtime-status-${agent.id.slice(0, 8)}`}
             >
               <span className={cn("size-1.5 rounded-full", t.dot)} />
               {t.label}
@@ -305,6 +415,19 @@ export function AgentCard({
               <span className="inline-flex items-center gap-1 rounded bg-blue-500/15 px-1.5 py-0.5 text-[9.5px] font-medium tracking-[0.18em] text-blue-700 dark:text-blue-300 ring-1 ring-blue-500/30">
                 <Bot className="size-2.5" />
                 实例
+              </span>
+            )}
+            {/* R51-E1: 模板分类 chip(画 / 文 / 运 / 其它)— 仅模板显示 */}
+            {agent.isTemplate && (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9.5px] font-medium tracking-[0.18em] ring-1",
+                  category.tone,
+                )}
+                data-testid={`template-category-${agent.id.slice(0, 8)}`}
+              >
+                <CategoryIcon className="size-2.5" />
+                {category.label}
               </span>
             )}
           </div>
@@ -326,27 +449,51 @@ export function AgentCard({
             </div>
           </div>
 
-          <p className="text-foreground/75 leading-relaxed text-[13px] line-clamp-3">
-            {agent.persona || agent.description || <span className="text-foreground/40">暂无人格定义</span>}
-          </p>
+          {/* R51-E1: 人格精简 — icon + 短描述 */}
+          {personaShort && (
+            <div className="flex items-start gap-1.5" data-testid={`persona-short-${agent.id.slice(0, 8)}`}>
+              <Brain className="size-3 shrink-0 mt-0.5 text-foreground/40" />
+              <p className="text-foreground/75 leading-snug text-[12.5px] line-clamp-2">
+                {personaShort}
+              </p>
+            </div>
+          )}
 
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-foreground/55 font-mono">
+          {/* R51-E1: 模型同步 + CTX(替代原硬编码的 model/ctx 显示,使用 defaultModel/defaultContextWindow) */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-foreground/55 font-mono">
             <span
               className={cn(
-                "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] ring-1",
+                "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] ring-1",
                 agent.isTemplate
                   ? "bg-violet-500/10 text-violet-700 dark:text-violet-300 ring-violet-500/25"
                   : "bg-blue-500/10 text-blue-700 dark:text-blue-300 ring-blue-500/25",
               )}
+              data-testid={`model-chip-${agent.id.slice(0, 8)}`}
+              title={`defaultModel: ${agent.defaultModel || agent.model}`}
             >
-              {agent.model}
+              <Brain className="size-2.5" />
+              {modelLabel}
             </span>
-            <span className="text-foreground/30">·</span>
-            <span>{(agent.contextWindow / 1000).toFixed(0)}k ctx</span>
-            {agent.workingDir && (
+            <span
+              className="inline-flex items-center gap-1 text-foreground/55"
+              data-testid={`ctx-chip-${agent.id.slice(0, 8)}`}
+              title={`defaultContextWindow: ${agent.defaultContextWindow ?? agent.contextWindow}`}
+            >
+              <Hash className="size-2.5" />
+              {ctxLabel} ctx
+            </span>
+            {/* R51-E1: 绑定入口数 + 频道类型(实例卡显示) */}
+            {!agent.isTemplate && (
               <>
                 <span className="text-foreground/30">·</span>
-                <span title={agent.workingDir} className="truncate">📁 {agent.workingDir.split("/").pop()}</span>
+                <span
+                  className="inline-flex items-center gap-1"
+                  data-testid={`bind-count-${agent.id.slice(0, 8)}`}
+                  title={channelInfo.count === 0 ? "尚未绑定入口" : `${channelInfo.count} 个入口`}
+                >
+                  <Radio className="size-2.5" />
+                  {channelInfo.count} 入口
+                </span>
               </>
             )}
           </div>
@@ -355,6 +502,12 @@ export function AgentCard({
             <span className="truncate pr-8" title={`主理人: ${agent.ownerName}`}>
               主理人 · {agent.ownerName}
             </span>
+            {/* R51-E1: 工作指示灯 — active + working 时额外高亮(右上小图标) */}
+            {runtimeMap[agent.id] && (
+              <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400" title="当前正在执行任务">
+                <Activity className="size-3 animate-pulse" />
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -457,6 +610,35 @@ export function AgentCard({
               data-testid="demote-confirm"
             >
               {demoting ? "处理中..." : "确认转实例"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* R51-E2: 删除二次确认 dialog */}
+      <Dialog open={deleteOpen} onOpenChange={(o) => { if (!deleting) setDeleteOpen(o); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认删除 {agent.displayName || agent.name}?</DialogTitle>
+            <DialogDescription>
+              该操作不可撤销,所有绑定的入口/资源将自动释放。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-md bg-rose-500/10 px-3 py-2 text-[12.5px] text-rose-700 dark:text-rose-300">
+            {agent.isTemplate
+              ? "该模板被删除后,所有从该模板生成的实例仍保留(它们已独立)。"
+              : "该实例被删除后,所有绑定的 bot / 频道 / 知识库引用 / 运行日志将一并清理。"}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={deleting}>
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={onConfirmDelete}
+              disabled={deleting}
+              data-testid="delete-confirm"
+            >
+              {deleting ? "删除中..." : "确认删除"}
             </Button>
           </DialogFooter>
         </DialogContent>

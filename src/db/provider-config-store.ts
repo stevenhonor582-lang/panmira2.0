@@ -12,6 +12,7 @@ export interface ProviderConfig {
   model: string;
   contextWindow: number | null;
   isDefault: boolean;
+  modelCategory: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -31,6 +32,7 @@ export class ProviderConfigStore {
         model TEXT NOT NULL DEFAULT '',
         context_window INTEGER,
         is_default BOOLEAN NOT NULL DEFAULT false,
+        model_category TEXT NOT NULL DEFAULT 'llm',
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
       )
@@ -38,6 +40,12 @@ export class ProviderConfigStore {
     // Ensure context_window column exists (added 2026-07-08 R16-1)
     try {
       await pool.query(`ALTER TABLE provider_configs ADD COLUMN IF NOT EXISTS context_window INTEGER`);
+    } catch {
+      /* ignore — column may already exist */
+    }
+    // R51-A (2026-07-11): model_category 区分 llm/embedding/video/audio/rerank/other
+    try {
+      await pool.query(`ALTER TABLE provider_configs ADD COLUMN IF NOT EXISTS model_category TEXT NOT NULL DEFAULT 'llm'`);
     } catch {
       /* ignore — column may already exist */
     }
@@ -76,6 +84,7 @@ export class ProviderConfigStore {
     model: string;
     contextWindow?: number | null;
     isDefault?: boolean;
+    modelCategory?: string;
   }): Promise<ProviderConfig> {
     await this.init();
     const id = crypto.randomUUID();
@@ -86,8 +95,8 @@ export class ProviderConfigStore {
     }
 
     const { rows } = await pool.query(
-      `INSERT INTO provider_configs (id, name, type, base_url, api_key_encrypted, model, context_window, is_default)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO provider_configs (id, name, type, base_url, api_key_encrypted, model, context_window, is_default, model_category)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
       [
         id,
@@ -98,6 +107,7 @@ export class ProviderConfigStore {
         data.model,
         data.contextWindow ?? null,
         data.isDefault ?? false,
+        data.modelCategory ?? 'llm',
       ],
     );
     return this.mapRow(rows[0]);
@@ -113,6 +123,7 @@ export class ProviderConfigStore {
       model?: string;
       contextWindow?: number | null;
       isDefault?: boolean;
+      modelCategory?: string;
     },
   ): Promise<ProviderConfig | null> {
     await this.init();
@@ -152,6 +163,10 @@ export class ProviderConfigStore {
     if (data.isDefault !== undefined) {
       sets.push(`is_default = $${idx++}`);
       params.push(data.isDefault);
+    }
+    if (data.modelCategory !== undefined) {
+      sets.push(`model_category = $${idx++}`);
+      params.push(data.modelCategory);
     }
 
     params.push(id);
@@ -224,6 +239,7 @@ export class ProviderConfigStore {
       model: r.model,
       contextWindow: r.context_window ?? null,
       isDefault: r.is_default,
+      modelCategory: r.model_category ?? 'llm',
       createdAt: r.created_at,
       updatedAt: r.updated_at,
     };
