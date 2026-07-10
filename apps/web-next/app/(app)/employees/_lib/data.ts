@@ -452,6 +452,54 @@ export async function promoteInstanceToTemplate(
   return { id: row.id, name: row.name };
 }
 
+/**
+ * R45-2: POST /api/v2/admin/agent-templates/:id/demote-to-instance
+ * 基于 template 蓝图字段创建新 instance(创建,不是改原 template)。
+ * 成功返回新 instance 的 { id, name }。
+ */
+export async function demoteTemplateToInstance(
+  templateId: string,
+  name?: string,
+): Promise<{ id: string; name: string }> {
+  const res = await api<{ success?: boolean; data?: any } | any>(
+    fullPath(`/api/v2/admin/agent-templates/${encodeURIComponent(templateId)}/demote-to-instance`),
+    {
+      method: 'POST',
+      body: name ? { name } : {},
+    },
+  );
+  const row = (res as any)?.data?.agent ?? (res as any)?.agent ?? (res as any)?.data ?? res;
+  if (!row || !row.id) {
+    const err = (res as any)?.error;
+    throw new Error(err?.message ?? err?.code ?? 'demote_failed');
+  }
+  return { id: row.id, name: row.name };
+}
+
+/**
+ * R45-3: POST /api/v2/admin/agent-templates/:id/copy-as-template
+ * 基于 source template 蓝图字段创建新 template(创建,不是改源 template)。
+ * 成功返回新 template 的 { id, name }。
+ */
+export async function copyTemplate(
+  sourceTemplateId: string,
+  name: string,
+): Promise<{ id: string; name: string }> {
+  const res = await api<{ success?: boolean; data?: any } | any>(
+    fullPath(`/api/v2/admin/agent-templates/${encodeURIComponent(sourceTemplateId)}/copy-as-template`),
+    {
+      method: 'POST',
+      body: { name },
+    },
+  );
+  const row = (res as any)?.data?.agent ?? (res as any)?.agent ?? (res as any)?.data ?? res;
+  if (!row || !row.id) {
+    const err = (res as any)?.error;
+    throw new Error(err?.message ?? err?.code ?? 'copy_failed');
+  }
+  return { id: row.id, name: row.name };
+}
+
 /** @deprecated R42 起删除 — 走 POST /api/v2/admin/agent-templates 直接创建模板 */
 export async function promoteAgent(_id: string): Promise<never> {
   throw new Error(

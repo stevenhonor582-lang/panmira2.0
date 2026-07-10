@@ -3,15 +3,16 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  TEMPLATE_PRESETS, useTemplates, useAgents, createInstanceFromTemplate, copyAsTemplate,
+  TEMPLATE_PRESETS, useTemplates, useAgents, createInstanceFromTemplate, copyAsTemplate, demoteTemplateToInstance, copyTemplate,
   type Agent,
 } from "../../_lib/data";
 import { AvatarMark } from "../../_components/avatar-mark";
-import { ArrowUpRight, Plus, Lock, Globe2, ArrowRight, X, Loader2, Copy, Sparkles } from "lucide-react";
+import { ArrowUpRight, Plus, Lock, Globe2, ArrowRight, X, Loader2, Copy, Sparkles, Download } from "lucide-react";
+import { useToast } from "@/components/toast/toast-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import { api } from "@/lib/api";
 
@@ -23,6 +24,17 @@ export function TemplatesBoard() {
   const { templates: rawTemplates, loading } = useTemplates();
   const [modalTpl, setModalTpl] = React.useState<Agent | null>(null);
   const [copyTpl, setCopyTpl] = React.useState<Agent | null>(null);
+  // R45-2: 转为实例 dialog
+  const [demoteTpl, setDemoteTpl] = React.useState<Agent | null>(null);
+  const [demoteName, setDemoteName] = React.useState("");
+  const [demoting, setDemoting] = React.useState(false);
+  const toast = useToast();
+  // 模板变更时预填默认实例名
+  React.useEffect(() => {
+    if (demoteTpl) {
+      setDemoteName(`${demoteTpl.displayName || demoteTpl.name}-实例`);
+    }
+  }, [demoteTpl]);
 
   React.useEffect(() => {
     const t = setTimeout(() => setMounted(true), 30);
@@ -82,7 +94,7 @@ export function TemplatesBoard() {
       </div>
 
       {tab === "mine" ? (
-        <MineGrid mounted={mounted} templates={templates} loading={loading} onInstantiate={(tpl) => setModalTpl(tpl)} onCopy={(tpl) => setCopyTpl(tpl)} />
+        <MineGrid mounted={mounted} templates={templates} loading={loading} onInstantiate={(tpl) => setModalTpl(tpl)} onCopy={(tpl) => setCopyTpl(tpl)} onToInstance={(tpl) => setDemoteTpl(tpl)} />
       ) : (
         <PublicGrid mounted={mounted} />
       )}
@@ -94,18 +106,74 @@ export function TemplatesBoard() {
       {copyTpl && (
         <CopyAsTemplateModal template={copyTpl} onClose={() => setCopyTpl(null)} onDone={() => setCopyTpl(null)} />
       )}
+
+      {/* R45-2: 模板 → 实例 dialog(就地展开) */}
+      {demoteTpl && (
+        <Dialog open={!!demoteTpl} onOpenChange={(o) => { if (!o) setDemoteTpl(null); }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>转为实例</DialogTitle>
+              <DialogDescription>
+                将基于「{demoteTpl.displayName || demoteTpl.name}」创建一个新实例。
+                原模板保留,实例默认状态 active。
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 py-2">
+              <label className="text-[12px] text-foreground/70">新实例名</label>
+              <Input
+                value={demoteName}
+                onChange={(e) => setDemoteName(e.target.value)}
+                placeholder="新实例名"
+                data-testid="tpl-to-instance-name-input"
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDemoteTpl(null)} disabled={demoting}>
+                取消
+              </Button>
+              <Button
+                onClick={async () => {
+                  const trimmed = demoteName.trim();
+                  if (!trimmed) {
+                    toast.error("实例名不能为空");
+                    return;
+                  }
+                  setDemoting(true);
+                  try {
+                    const result = await demoteTemplateToInstance(demoteTpl.id, trimmed);
+                    toast.success(`已创建实例「${result.name}」`);
+                    setDemoteTpl(null);
+                    if (typeof window !== "undefined") {
+                      window.location.reload();
+                    }
+                  } catch (e: unknown) {
+                    toast.error(e instanceof Error ? e.message : String(e));
+                  } finally {
+                    setDemoting(false);
+                  }
+                }}
+                disabled={demoting}
+                data-testid="tpl-to-instance-confirm"
+              >
+                {demoting ? "处理中..." : "确认转实例"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
 
 function MineGrid({
-  mounted, templates, loading, onInstantiate, onCopy,
+  mounted, templates, loading, onInstantiate, onCopy, onToInstance,
 }: {
   mounted: boolean;
   templates: Agent[];
   loading: boolean;
   onInstantiate: (tpl: Agent) => void;
   onCopy: (tpl: Agent) => void;
+  onToInstance: (tpl: Agent) => void;
 }) {
   if (loading) {
     return (
@@ -150,6 +218,7 @@ function MineGrid({
             tpl={a}
             onInstantiate={() => onInstantiate(a)}
             onCopy={() => onCopy(a)}
+            onToInstance={() => onToInstance(a)}
           />
         </div>
       ))}
@@ -157,7 +226,7 @@ function MineGrid({
   );
 }
 
-function TemplateCard({ tpl, onInstantiate, onCopy }: { tpl: Agent; onInstantiate: () => void; onCopy: () => void }) {
+function TemplateCard({ tpl, onInstantiate, onCopy, onToInstance }: { tpl: Agent; onInstantiate: () => void; onCopy: () => void; onToInstance: () => void }) {
   return (
     <div className="group relative flex h-full flex-col overflow-hidden rounded-3xl bg-card p-6 ring-1 ring-border transition-shadow hover:shadow-[0_24px_60px_-30px_rgba(0,0,0,0.18)]">
       <div
@@ -218,6 +287,24 @@ function TemplateCard({ tpl, onInstantiate, onCopy }: { tpl: Agent; onInstantiat
             data-testid={`instantiate-${tpl.id.slice(0, 8)}`}
           >
             <Sparkles className="size-3.5" /> 创建实例 <ArrowRight className="size-3.5" />
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onToInstance}
+            className="gap-1 text-[12px]"
+            data-testid={`to-instance-${tpl.id.slice(0, 8)}`}
+          >
+            <Download className="size-3.5" /> 转为实例
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onCopy}
+            className="gap-1 text-[12px]"
+            data-testid={`copy-tpl-${tpl.id.slice(0, 8)}`}
+          >
+            <Copy className="size-3.5" /> 复制为模板
           </Button>
         </div>
       </div>
@@ -406,6 +493,7 @@ function CopyAsTemplateModal({
   const [name, setName] = React.useState(`${template.displayName || template.name} - 副本`);
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const toast = useToast();
 
   const handleSubmit = async () => {
     if (!name.trim()) {
@@ -415,7 +503,8 @@ function CopyAsTemplateModal({
     setSubmitting(true);
     setError(null);
     try {
-      await copyAsTemplate(template.id, name.trim());
+      const result = await copyTemplate(template.id, name.trim());
+      toast.success(`已复制为模板「${result.name}」`);
       onDone();
       // Refresh page so the new template shows up in the list
       if (typeof window !== "undefined") {

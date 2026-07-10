@@ -692,6 +692,263 @@ export async function handleAgentsCrudRoutes(
     }
   }
 
+
+  // ====== R45-2: POST /api/v2/admin/agent-templates/:id/demote-to-instance ======
+  // 模板 → 实例:基于 template 蓝图字段创建新 instance(创建,不是改原 template)。
+  // Body: { name?: string }  // 可选,默认 <原 name>-实例
+  // 事务:INSERT agent_instances(蓝图+新 working_dir/status/source_template_id)
+  //       + 复制 skill/kb/mcp refs (target_type='instance')
+  // 蓝图字段: name / role_template / description / capabilities / tools / persona /
+  //           system_prompt / orchestration / boundary / iron_laws / category / template_type
+  // 不复制 template 独有字段(无 channel_ids / owner_user_id 默认空)
+  // 不删原 template(用户原话"转为实例"= 创建新实例,不是转换)
+  const demoteMatch = u.pathname.match(/^\/api\/v2\/admin\/agent-templates\/([^/]+)\/demote-to-instance$/);
+  if (method === 'POST' && demoteMatch) {
+    if (!requireAnyScope(ctx, ['agent:admin'])) {
+      jsonResponse(res, 403, { error: 'insufficient_scope', required: 'agent:admin' });
+      return true;
+    }
+    const templateId = demoteMatch[1];
+    const client = await pool.connect();
+    try {
+      const body = await parseJsonBody(req).catch(() => ({} as any));
+      const clientName: string | undefined = typeof body?.name === 'string' ? body.name.trim() : undefined;
+      await client.query('BEGIN');
+
+      // 1. 查 template 行(锁住,防止并发 demote)
+      const tplRes = await client.query(
+        `SELECT id, tenant_id, name, role_template, description, capabilities, tools,
+                persona, system_prompt, orchestration, boundary, iron_laws,
+                category, template_type
+           FROM agent_templates
+          WHERE id = $1
+          FOR UPDATE`,
+        [templateId],
+      );
+      if (tplRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        jsonResponse(res, 404, { error: 'template_not_found', message: `Template ${templateId} 不存在` });
+        return true;
+      }
+      const tpl = tplRes.rows[0];
+
+      // 2. 决定新 instance 名(默认 "<原 name>-实例", 用户传入优先)
+      const newName = clientName && clientName.length > 0
+        ? clientName
+        : `${tpl.name}-实例`;
+
+      // 3. 检查同名 instance 是否已存在(防 name_taken)
+      const dupRes = await client.query(
+        'SELECT id FROM agent_instances WHERE tenant_id = $1 AND name = $2',
+        [tpl.tenant_id, newName],
+      );
+      if (dupRes.rows.length > 0) {
+        await client.query('ROLLBACK');
+        jsonResponse(res, 400, { error: 'name_taken', message: `实例名「${newName}」已存在` });
+        return true;
+      }
+
+      // 4. INSERT 新 instance(蓝图字段 + 实例独有默认值)
+      const insInst = await client.query(
+        `INSERT INTO agent_instances (
+            id, tenant_id, name, role_template, description, capabilities, tools,
+            persona, system_prompt, orchestration, boundary, iron_laws,
+            category, template_type, source_template_id,
+            channel_ids, owner_user_id, working_dir,
+            status, is_active, created_by
+          ) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5::jsonb, $6::jsonb,
+                    $7, $8, $9::jsonb, $10::jsonb, $11::jsonb,
+                    $12, $13, $14,
+                    '[]'::jsonb, NULL, NULL,
+                    'active', true, $15
+          ) RETURNING *`,
+        [
+          tpl.tenant_id,
+          newName,
+          tpl.role_template,
+          tpl.description,
+          JSON.stringify(tpl.capabilities ?? []),
+          JSON.stringify(tpl.tools ?? []),
+          tpl.persona,
+          tpl.system_prompt,
+          JSON.stringify(tpl.orchestration ?? {}),
+          JSON.stringify(tpl.boundary ?? {}),
+          JSON.stringify(tpl.iron_laws ?? []),
+          tpl.category,
+          tpl.template_type,
+          tpl.id,
+          ctx.userId || null,
+        ],
+      );
+      const newInstance = insInst.rows[0];
+
+      // 5. 复制关联表(target_type='instance'): skill / kb / mcp
+      const skillIns = await client.query(
+        `INSERT INTO agent_skill_refs (agent_id, skill_id, skill_version, params, target_type)
+         SELECT $1, skill_id, skill_version, params, 'instance'::target_type
+           FROM agent_skill_refs
+          WHERE target_type = 'template' AND agent_id = $2`,
+        [newInstance.id, templateId],
+      );
+      const kbIns = await client.query(
+        `INSERT INTO agent_knowledge_refs (agent_id, kb_id, top_k, min_score, target_type)
+         SELECT $1, kb_id, top_k, min_score, 'instance'::target_type
+           FROM agent_knowledge_refs
+          WHERE target_type = 'template' AND agent_id = $2`,
+        [newInstance.id, templateId],
+      );
+      const mcpIns = await client.query(
+        `INSERT INTO agent_mcp_refs (agent_id, mcp_server_id, params, target_type)
+         SELECT $1, mcp_server_id, params, 'instance'::target_type
+           FROM agent_mcp_refs
+          WHERE target_type = 'template' AND agent_id = $2`,
+        [newInstance.id, templateId],
+      );
+
+      await client.query('COMMIT');
+      jsonResponse(res, 201, {
+        agent: newInstance,
+        source_template_id: templateId,
+        refs_copied: {
+          skills: skillIns.rowCount ?? 0,
+          knowledge: kbIns.rowCount ?? 0,
+          mcp: mcpIns.rowCount ?? 0,
+        },
+      });
+      return true;
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      jsonResponse(res, 500, { error: 'internal_error', message: String(err) });
+      return true;
+    } finally {
+      client.release();
+    }
+  }
+
+
+  // ====== R45-3: POST /api/v2/admin/agent-templates/:id/copy-as-template ======
+  // 模板 → 新模板:基于 source template 蓝图字段创建新 template(name 必须新)。
+  // Body: { name: string }  // 必填
+  // 行为:INSERT INTO agent_templates SELECT <蓝图字段 FROM source template> + 新 name
+  //       + 复制 skill/kb/mcp refs (target_type='template')
+  // 不删源 template(用户原话"复制为模板"= 创建新模板,不是改)
+  const copyTplMatch = u.pathname.match(/^\/api\/v2\/admin\/agent-templates\/([^/]+)\/copy-as-template$/);
+  if (method === 'POST' && copyTplMatch) {
+    if (!requireAnyScope(ctx, ['agent:admin'])) {
+      jsonResponse(res, 403, { error: 'insufficient_scope', required: 'agent:admin' });
+      return true;
+    }
+    const sourceTplId = copyTplMatch[1];
+    const client = await pool.connect();
+    try {
+      const body = await parseJsonBody(req).catch(() => ({} as any));
+      const newName: string | undefined = typeof body?.name === 'string' ? body.name.trim() : undefined;
+      if (!newName) {
+        jsonResponse(res, 400, { error: 'bad_request', message: 'name 必填' });
+        return true;
+      }
+      await client.query('BEGIN');
+
+      // 1. 查源 template(锁住,防并发 copy)
+      const srcRes = await client.query(
+        `SELECT id, tenant_id, role_template, description, capabilities, tools,
+                persona, system_prompt, orchestration, boundary, iron_laws,
+                category, template_type
+           FROM agent_templates
+          WHERE id = $1
+          FOR UPDATE`,
+        [sourceTplId],
+      );
+      if (srcRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        jsonResponse(res, 404, { error: 'template_not_found', message: `Template ${sourceTplId} 不存在` });
+        return true;
+      }
+      const src = srcRes.rows[0];
+
+      // 2. 检查同名 template 是否已存在(防 name_taken)
+      const dupRes = await client.query(
+        'SELECT id FROM agent_templates WHERE tenant_id = $1 AND name = $2',
+        [src.tenant_id, newName],
+      );
+      if (dupRes.rows.length > 0) {
+        await client.query('ROLLBACK');
+        jsonResponse(res, 400, { error: 'name_taken', message: `模板名「${newName}」已存在` });
+        return true;
+      }
+
+      // 3. INSERT 新 template(蓝图字段 + 新 name)
+      const insTpl = await client.query(
+        `INSERT INTO agent_templates (
+            id, tenant_id, name, role_template, description, capabilities, tools,
+            persona, system_prompt, orchestration, boundary, iron_laws,
+            category, template_type, is_active, created_by
+          ) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5::jsonb, $6::jsonb,
+                    $7, $8, $9::jsonb, $10::jsonb, $11::jsonb,
+                    $12, $13, true, $14
+          ) RETURNING *`,
+        [
+          src.tenant_id,
+          newName,
+          src.role_template,
+          src.description,
+          JSON.stringify(src.capabilities ?? []),
+          JSON.stringify(src.tools ?? []),
+          src.persona,
+          src.system_prompt,
+          JSON.stringify(src.orchestration ?? {}),
+          JSON.stringify(src.boundary ?? {}),
+          JSON.stringify(src.iron_laws ?? []),
+          src.category,
+          src.template_type,
+          ctx.userId || null,
+        ],
+      );
+      const newTpl = insTpl.rows[0];
+
+      // 4. 复制关联表(target_type='template'): skill / kb / mcp
+      const skillIns = await client.query(
+        `INSERT INTO agent_skill_refs (agent_id, skill_id, skill_version, params, target_type)
+         SELECT $1, skill_id, skill_version, params, 'template'::target_type
+           FROM agent_skill_refs
+          WHERE target_type = 'template' AND agent_id = $2`,
+        [newTpl.id, sourceTplId],
+      );
+      const kbIns = await client.query(
+        `INSERT INTO agent_knowledge_refs (agent_id, kb_id, top_k, min_score, target_type)
+         SELECT $1, kb_id, top_k, min_score, 'template'::target_type
+           FROM agent_knowledge_refs
+          WHERE target_type = 'template' AND agent_id = $2`,
+        [newTpl.id, sourceTplId],
+      );
+      const mcpIns = await client.query(
+        `INSERT INTO agent_mcp_refs (agent_id, mcp_server_id, params, target_type)
+         SELECT $1, mcp_server_id, params, 'template'::target_type
+           FROM agent_mcp_refs
+          WHERE target_type = 'template' AND agent_id = $2`,
+        [newTpl.id, sourceTplId],
+      );
+
+      await client.query('COMMIT');
+      jsonResponse(res, 201, {
+        agent: newTpl,
+        source_template_id: sourceTplId,
+        refs_copied: {
+          skills: skillIns.rowCount ?? 0,
+          knowledge: kbIns.rowCount ?? 0,
+          mcp: mcpIns.rowCount ?? 0,
+        },
+      });
+      return true;
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      jsonResponse(res, 500, { error: 'internal_error', message: String(err) });
+      return true;
+    } finally {
+      client.release();
+    }
+  }
+
   jsonResponse(res, 404, { error: 'not_found' });
   return true;
 }

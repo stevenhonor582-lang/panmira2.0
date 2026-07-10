@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import type { Agent } from "../_lib/data";
-import { updateAgent, createInstanceFromTemplate, promoteInstanceToTemplate } from "../_lib/data";
+import { updateAgent, createInstanceFromTemplate, promoteInstanceToTemplate, demoteTemplateToInstance } from "../_lib/data";
 import { AvatarMark, statusTone } from "./avatar-mark";
 import {
   MoreVertical, Pause, Play, Archive, FileText, Bot, Loader2, Sparkles, FileUp,
@@ -61,6 +61,10 @@ export function AgentCard({
   const [promoteOpen, setPromoteOpen] = React.useState(false);
   const [promoteName, setPromoteName] = React.useState("");
   const [promoting, setPromoting] = React.useState(false);
+  // R45-2: 转为实例 dialog 状态(template → instance, 模板卡菜单触发)
+  const [demoteOpen, setDemoteOpen] = React.useState(false);
+  const [demoteName, setDemoteName] = React.useState("");
+  const [demoting, setDemoting] = React.useState(false);
   const toast = useToast();
 
   const reduce =
@@ -109,14 +113,26 @@ export function AgentCard({
         setPromoteOpen(true);
         setActing(false);
         return;
+      } else if (action === "toInstance") {
+        // R45-2: 模板 → 实例。弹 dialog 让用户填新实例名,确认后调 demoteTemplateToInstance
+        if (!agent.isTemplate) {
+          // 非模板不应触发,defensive fallback
+          if (typeof window !== "undefined") {
+            window.alert("转为实例 仅对模板卡可用。");
+          }
+          setActing(false);
+          return;
+        }
+        setDemoteName(`${agent.displayName || agent.name}-实例`);
+        setDemoteOpen(true);
+        setActing(false);
+        return;
       } else {
-        // R42-ROUTES 已删除 demote / copy-as-template 端点 — 用 toast 提示后置(R44 范围外,保留 stub)
+        // R42-ROUTES 已删除 copy-as-template 端点 — R45-3 待做,保留 stub
         const msg = {
-          toInstance:
-            "转为实例 已在 R42 删除。请从模板点 '生成实例'。",
           copyAsTemplate:
             "复制为模板 已在 R42 删除。请直接新建模板,把要复制的字段粘过去。",
-        }[action as "toInstance" | "copyAsTemplate"];
+        }[action as "copyAsTemplate"];
         if (typeof window !== "undefined" && msg) {
           window.alert(msg);
         }
@@ -226,6 +242,14 @@ export function AgentCard({
                   data-testid="menu-generate-instance"
                 >
                   <Sparkles className="size-4" /> 生成实例
+                </DropdownMenuItem>
+              )}
+              {agent.isTemplate && (
+                <DropdownMenuItem
+                  onClick={(e) => onAction(e, "toInstance")}
+                  data-testid="menu-to-instance"
+                >
+                  <ArrowDownToLine className="size-4" /> 转为实例
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>
@@ -382,6 +406,57 @@ export function AgentCard({
               data-testid="promote-confirm"
             >
               {promoting ? "处理中..." : "确认提升"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* R45-2: 转为实例 dialog */}
+      <Dialog open={demoteOpen} onOpenChange={setDemoteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>转为实例</DialogTitle>
+            <DialogDescription>
+              将基于「{agent.displayName || agent.name}」创建一个新实例。
+              原模板保留,实例默认状态 active。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <label className="text-[12px] text-foreground/70">新实例名</label>
+            <Input
+              value={demoteName}
+              onChange={(e) => setDemoteName(e.target.value)}
+              placeholder="新实例名"
+              data-testid="demote-name-input"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDemoteOpen(false)} disabled={demoting}>
+              取消
+            </Button>
+            <Button
+              onClick={async () => {
+                const trimmed = demoteName.trim();
+                if (!trimmed) {
+                  toast.error("实例名不能为空");
+                  return;
+                }
+                setDemoting(true);
+                try {
+                  const result = await demoteTemplateToInstance(agent.id, trimmed);
+                  toast.success(`已创建实例「${result.name}」`);
+                  setDemoteOpen(false);
+                  onChanged?.();
+                } catch (err: unknown) {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  toast.error(`转为实例失败: ${msg}`);
+                } finally {
+                  setDemoting(false);
+                }
+              }}
+              disabled={demoting}
+              data-testid="demote-confirm"
+            >
+              {demoting ? "处理中..." : "确认转实例"}
             </Button>
           </DialogFooter>
         </DialogContent>
