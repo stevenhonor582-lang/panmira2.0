@@ -19,7 +19,7 @@ import {
 import {
   Bot, Plus, Trash2, Sparkles, Clock, CheckCircle2, AlertTriangle,
   Info, FileText,
-  Pencil,
+  Pencil, MoreVertical, Loader2, Copy,
 } from "lucide-react";
 import {
   fetchAgents, fetchPipelines, fetchPersonAgents, patchPersonAgents,
@@ -27,13 +27,26 @@ import {
   EMPLOYEE_STATUS_LABEL,
   type Person, type PersonAgent, type DigitalEmployee, type Pipeline, type ActivityEvent,
 } from "../../../_components/data";
+import { promoteAgent, copyAsTemplate } from "../../../../employees/_lib/data";
 import { api } from "@/lib/api";
 import {
   ResourcePicker,
   type ResourceItem,
 } from "@/components/resource-picker/resource-picker";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import { InitialsAvatar } from "../../../_components/avatar";
 import { StatusDot } from "../../../_components/status-dot";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { deriveAgentStatus } from "../../../_components/data";
 import { cn } from "@/lib/utils";
 import {
@@ -230,6 +243,50 @@ export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?
   const [loading, setLoading] = React.useState(true);
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
+  const [acting, setActing] = React.useState(false);
+  const [copyOpen, setCopyOpen] = React.useState(false);
+  const [copyName, setCopyName] = React.useState("");
+  const [copying, setCopying] = React.useState(false);
+  const [copyError, setCopyError] = React.useState<string | null>(null);
+  const [copySourceId, setCopySourceId] = React.useState<string | null>(null);
+
+  const handlePromote = async (agentId: string) => {
+    if (!confirm("将该数字员工提升为模板?(会解绑所有入口 bot)")) return;
+    setActing(true);
+    try {
+      await promoteAgent(agentId);
+      load();
+      onChanged?.();
+    } catch (e) {
+      console.error("[employees-tab] promote failed:", e);
+      alert("提升失败:" + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setActing(false);
+    }
+  };
+
+  const openCopy = (agentId: string, baseName: string) => {
+    setCopySourceId(agentId);
+    setCopyName(`${baseName} - 副本`);
+    setCopyError(null);
+    setCopyOpen(true);
+  };
+
+  const submitCopy = async () => {
+    if (!copySourceId || !copyName.trim()) return;
+    setCopying(true);
+    setCopyError(null);
+    try {
+      await copyAsTemplate(copySourceId, copyName.trim());
+      setCopyOpen(false);
+      load();
+      onChanged?.();
+    } catch (e) {
+      setCopyError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCopying(false);
+    }
+  };
 
   const load = React.useCallback(() => {
     setLoading(true);
@@ -327,26 +384,60 @@ export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?
                   <Link
                     href={`/employees/${a.id}`}
                     className="text-sm font-medium hover:underline truncate block"
+                    data-testid={`person-agent-link-${a.id.slice(0, 8)}`}
                   >
                     {a.display_name ?? a.name}
                   </Link>
-                  <div className="text-[11px] text-muted-foreground font-mono">
-                    {a.role_template ?? "general"}
+                  <div className="text-[11px] text-muted-foreground font-mono flex items-center gap-1.5">
+                    <span>{a.role_template ?? "general"}</span>
+                    {a.deployment_type && (
+                      <>
+                        <span className="text-foreground/25">·</span>
+                        <span className="uppercase tracking-wider">{a.deployment_type}</span>
+                      </>
+                    )}
                   </div>
                 </div>
                 <StatusDot status={a.is_active ? "active" : "paused"} />
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    className="inline-flex items-center justify-center size-6 rounded-md text-foreground/40 hover:text-foreground hover:bg-muted/40 disabled:opacity-50"
+                    disabled={acting}
+                    data-testid={`person-agent-menu-${a.id.slice(0, 8)}`}
+                  >
+                    {acting ? <Loader2 className="size-3.5 animate-spin" /> : <MoreVertical className="size-3.5" />}
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuItem
+                      onClick={() => handlePromote(a.id)}
+                      data-testid={`person-agent-promote-${a.id.slice(0, 8)}`}
+                    >
+                      <FileText className="size-4" /> 提升为模板
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => openCopy(a.id, a.display_name ?? a.name)}
+                      data-testid={`person-agent-copy-${a.id.slice(0, 8)}`}
+                    >
+                      <Copy className="size-4" /> 复制为模板
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => handleRemove(a.id)}
+                      data-testid={`person-agent-unbind-${a.id.slice(0, 8)}`}
+                    >
+                      <Trash2 className="size-4" /> 解绑
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
               {a.description && (
                 <p className="mt-3 text-xs text-muted-foreground line-clamp-2">{a.description}</p>
               )}
-              <div className="mt-3 flex justify-end">
-                <button
-                  onClick={() => handleRemove(a.id)}
-                  disabled={busy}
-                  className="text-[11px] text-muted-foreground hover:text-destructive inline-flex items-center gap-1 disabled:opacity-50"
-                >
-                  <Trash2 className="size-3" /> 解绑
-                </button>
+              <div className="mt-3 flex items-center justify-between text-[10.5px] font-mono text-muted-foreground/70">
+                <span title={a.created_at}>
+                  创建 {new Date(a.created_at).toLocaleDateString("zh-CN")}
+                </span>
+                <span className="font-mono text-[10px] text-foreground/30">{a.id.slice(0, 8)}…</span>
               </div>
             </div>
           ))}
@@ -373,6 +464,46 @@ export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?
           onConfirm={(sel) => void handleAdd(sel)}
         />
       </div>
+
+      {/* R38-C6 阶段 4.7: 复制为模板弹窗 */}
+      <Dialog open={copyOpen} onOpenChange={(o) => { if (!o) setCopyOpen(false); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>复制为新模板</DialogTitle>
+            <DialogDescription>
+              深拷贝该数字员工的人设/系统提示/技能/KB/MCP,生成新模板(不改变 owner)。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <label className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/55">
+                新模板名字 · name
+              </label>
+              <Input
+                value={copyName}
+                onChange={(e) => setCopyName(e.target.value)}
+                placeholder="如:销售模板 v2"
+                autoFocus
+                data-testid="person-copy-template-name"
+              />
+            </div>
+            {copyError && (
+              <div className="rounded-md bg-rose-500/10 px-3 py-2 text-[12.5px] text-rose-700 dark:text-rose-300">
+                {copyError}
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={() => setCopyOpen(false)} disabled={copying}>
+              取消
+            </Button>
+            <Button size="sm" onClick={submitCopy} disabled={copying} className="gap-1.5" data-testid="person-copy-template-submit">
+              {copying ? <Loader2 className="size-3.5 animate-spin" /> : <Copy className="size-3.5" />}
+              {copying ? "复制中…" : "复制"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -4,10 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import type { Agent } from "../_lib/data";
-import { updateAgent } from "../_lib/data";
+import { updateAgent, promoteAgent, demoteAgent, copyAsTemplate, createInstanceFromTemplate } from "../_lib/data";
 import { AvatarMark, statusTone } from "./avatar-mark";
 import {
-  MoreVertical, Pause, Play, Archive, FileText, Bot, Loader2,
+  MoreVertical, Pause, Play, Archive, FileText, Bot, Loader2, Copy, Sparkles,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -73,7 +73,7 @@ export function AgentCard({
   const t = statusTone(agent.status);
   const avatarSize = "md"; // 统一中尺寸头像
 
-  const onAction = async (e: React.MouseEvent, action: "pause" | "activate" | "deprecate" | "toTemplate" | "toInstance") => {
+  const onAction = async (e: React.MouseEvent, action: "pause" | "activate" | "deprecate" | "toTemplate" | "toInstance" | "copyAsTemplate" | "generateInstance") => {
     e.preventDefault();
     e.stopPropagation();
     setActing(true);
@@ -85,9 +85,20 @@ export function AgentCard({
       } else if (action === "deprecate") {
         await updateAgent(agent.id, { status: "deprecated", is_active: false });
       } else if (action === "toTemplate") {
-        await updateAgent(agent.id, { is_template: true });
+        // R38-C6: use dedicated /promote endpoint that also unbinds bots
+        await promoteAgent(agent.id);
       } else if (action === "toInstance") {
-        await updateAgent(agent.id, { is_template: false });
+        // R38-C6: use dedicated /demote endpoint
+        await demoteAgent(agent.id);
+      } else if (action === "copyAsTemplate") {
+        await copyAsTemplate(agent.id);
+      } else if (action === "generateInstance") {
+        const created = await createInstanceFromTemplate({
+          templateId: agent.id,
+          name: `${agent.displayName || agent.name} - 副本`,
+          ownerId: null,
+        });
+        router.push(`/employees/${created.id}`);
       }
       onChanged?.();
     } catch (err) {
@@ -173,13 +184,39 @@ export function AgentCard({
                 </div>
               )}
               {agent.isTemplate ? (
-                <DropdownMenuItem onClick={(e) => onAction(e, "toInstance")}>
-                  <Bot className="size-4" /> 转为实例
-                </DropdownMenuItem>
+                <>
+                  <DropdownMenuItem
+                    onClick={(e) => onAction(e, "generateInstance")}
+                    data-testid="menu-generate-instance"
+                  >
+                    <Sparkles className="size-4" /> 生成实例
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={(e) => onAction(e, "copyAsTemplate")}
+                    data-testid="menu-copy-as-template"
+                  >
+                    <Copy className="size-4" /> 复制为模板
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={(e) => onAction(e, "toInstance")}>
+                    <Bot className="size-4" /> 转为实例
+                  </DropdownMenuItem>
+                </>
               ) : (
-                <DropdownMenuItem onClick={(e) => onAction(e, "toTemplate")}>
-                  <FileText className="size-4" /> 转为模板
-                </DropdownMenuItem>
+                <>
+                  <DropdownMenuItem
+                    onClick={(e) => onAction(e, "toTemplate")}
+                    data-testid="menu-promote"
+                  >
+                    <FileText className="size-4" /> 提升为模板
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={(e) => onAction(e, "copyAsTemplate")}
+                    data-testid="menu-copy-as-template"
+                  >
+                    <Copy className="size-4" /> 复制为模板
+                  </DropdownMenuItem>
+                </>
               )}
             </DropdownMenuContent>
           </DropdownMenu>
