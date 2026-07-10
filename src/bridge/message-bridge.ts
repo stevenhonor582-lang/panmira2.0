@@ -50,6 +50,7 @@ export type { PendingBatch, RunningTask, ApiTaskOptions, ApiTaskResult, Activity
 import type { PendingBatch, RunningTask, ApiTaskOptions, ApiTaskResult, ActivityEventData } from './bridge-types.js';
 import { BridgeCard } from './bridge-card.js';
 import { BridgeExecutor } from './bridge-executor.js';
+import { BridgeStream, buildContinuationPrompt as _buildContinuationPrompt } from './bridge-stream.js';
 import { BridgeObserver } from './bridge-observer.js';
 import { TaskManager } from '../task/task-manager.js';
 import { buildCompletionCard } from '../feishu/cardkit-renderer.js';
@@ -121,6 +122,7 @@ export class MessageBridge {
   private observer!: BridgeObserver;
   private card!: BridgeCard;
   private executor2!: BridgeExecutor;
+  private stream!: BridgeStream;
   private senderOverrides = new Map<string, IMessageSender>();
   private runningTasks = new Map<string, RunningTask>(); // keyed by chatId
   private messageQueues = new Map<string, IncomingMessage[]>(); // per-chatId message queue
@@ -191,6 +193,12 @@ export class MessageBridge {
       getSender: (chatId) => this.getSender(chatId),
       defaultEngine: this.engine,
       defaultExecutor: this.executor,
+    });
+    this.stream = new BridgeStream({
+      config: this.config,
+      logger: this.logger,
+      sessionManager: this.sessionManager,
+      getSender: (chatId) => this.getSender(chatId),
     });
 
     this.outputHandler = new OutputHandler(logger, sender, this.outputsManager);
@@ -2450,34 +2458,7 @@ export class MessageBridge {
    * The new Claude session gets: what was asked, what was done, and what still needs doing.
    */
   private buildContinuationPrompt(originalPrompt: string, lastState: CardState): string {
-    const parts: string[] = [
-      '## 上下文续接（前次对话因长度溢出被压缩）',
-      '',
-      `**用户原始请求**: ${originalPrompt.slice(0, 500)}`,
-      '',
-    ];
-
-    if (lastState.toolCalls && lastState.toolCalls.length > 0) {
-      const toolSummary = lastState.toolCalls
-        .slice(-10)
-        .map((tc) => `- ${tc.name}${tc.detail ? ': ' + tc.detail.slice(0, 100) : ''} [${tc.status}]`)
-        .join('\n');
-      parts.push(`**已执行的操作**:\n${toolSummary}`, '');
-    }
-
-    if (lastState.responseText && lastState.responseText.length > 0) {
-      const truncated =
-        lastState.responseText.length > 1500
-          ? lastState.responseText.slice(0, 1500) + '...(已截断)'
-          : lastState.responseText;
-      parts.push(`**上次的回复摘要**:\n${truncated}`, '');
-    }
-
-    parts.push('---', '');
-    parts.push('请基于以上上下文继续。如果之前的操作已完成，直接告诉用户结果。如果有未完成的工作，继续执行。');
-    parts.push('', `用户最新消息: ${originalPrompt}`);
-
-    return parts.join('\n');
+    return _buildContinuationPrompt(originalPrompt, lastState);
   }
 
   /**
