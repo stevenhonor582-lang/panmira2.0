@@ -284,11 +284,14 @@ export async function fetchPerson(id: string): Promise<Person | null> {
 }
 
 export async function fetchAgents(): Promise<DigitalEmployee[]> {
-  const res = await api<{ agents?: DigitalEmployee[] } | DigitalEmployee[]>(
-    fullPath("/api/v2/admin/agents"),
+  // R41-B: 改走 /api/v2/employees?filter=all (单一数据源,排除 deprecated)
+  //   之前用 /api/v2/admin/agents 返回所有(含 deprecated),与员工侧不一致
+  //   后端 paginated envelope: { success, data: { items, total, page, limit } }
+  const res = await api<{ success?: boolean; data?: { items?: DigitalEmployee[] } } | DigitalEmployee[]>(
+    fullPath("/api/v2/employees?filter=all"),
   );
   if (Array.isArray(res)) return res as DigitalEmployee[];
-  return res.agents ?? [];
+  return res.data?.items ?? [];
 }
 
 export async function fetchAgent(id: string): Promise<DigitalEmployee | null> {

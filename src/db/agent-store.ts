@@ -154,11 +154,14 @@ export class AgentStore {
 
   /**
    * R15-A: 仅返回模板(is_template=true)。
-   * 模板可以处于任意 status(deprecated 模板仍可被复制)。
+   * R41-B: 排除 deprecated 与 /api/v2/employees?filter=template 对齐(单一基准)。
+   * 复制接口仍可指定 deprecated 模板 id(R34+ `from-template` 接受任何模板)。
    */
   async listTemplates(): Promise<AgentTemplate[]> {
     const result = await pool.query(
-      'SELECT * FROM agents WHERE is_template = true ORDER BY created_at DESC',
+      `SELECT * FROM agents
+        WHERE is_template = true AND status != 'deprecated'
+        ORDER BY created_at DESC`,
     );
     return result.rows.map((r: any) => this.mapRow(r));
   }

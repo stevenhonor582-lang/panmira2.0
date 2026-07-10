@@ -60,18 +60,22 @@ export async function handleEmployeesRoutes(
       const filter = u.searchParams.get('filter') || 'instance'; // instance|template|all|unassigned
       const owner = u.searchParams.get('owner'); // R27 规则 4: 配合 filter=unassigned,owner_user_id IS NULL OR = owner
 
+      // R41-B 统一基准: 排除 deprecated(详情 5 vs 下拉 11 不一致根因修复)
+      //   filter=instance: WHERE is_template=false AND status != 'deprecated'
+      //   filter=template: WHERE is_template=true AND status != 'deprecated'
+      //   filter=all:     UNION ALL (instance + template)
+      //   filter=unassigned: 保留 R41-C(NOT EXISTS user_agent_bindings + owner_user_id IS NULL)
+      const statusExcludeDeprecated = `status != 'deprecated'`;
       const params: unknown[] = [tenantId];
       let where = 'tenant_id = $1';
       if (filter === 'template') {
-        where += ' AND is_template = true';
-      } else if (filter === 'all') {
-        // 不加 is_template 条件
+        where += ` AND is_template = true AND ${statusExcludeDeprecated}`;
       } else if (filter === 'unassigned') {
         // R41-C: 'unassigned' means 'not bound to ANY user'. Source of truth is
         // user_agent_bindings (m:n). owner_user_id is a denormalized cache so we
         // also exclude agents whose owner_user_id is set to someone else (in case
         // backfill from agents.owner_user_id has not yet created the binding row).
-        where += ' AND is_template = false';
+        where += ` AND is_template = false AND ${statusExcludeDeprecated}`;
         if (owner) {
           params.push(owner);
           // Show: NOT bound to anyone else, but bound to OR owned by this user
@@ -88,9 +92,12 @@ export async function handleEmployeesRoutes(
           // 兜底:如果 agents.owner_user_id 有值(旧数据/未回填),也排除
           where += ' AND owner_user_id IS NULL';
         }
+      } else if (filter === 'all') {
+        // filter=all → UNION ALL(instance + template,排除 deprecated)
+        where += ` AND is_template = false AND ${statusExcludeDeprecated}`;
       } else {
         // instance (默认)
-        where += ' AND is_template = false';
+        where += ` AND is_template = false AND ${statusExcludeDeprecated}`;
       }
       if (status === 'active' || status === 'paused' || status === 'deprecated') {
         params.push(status);
@@ -98,18 +105,33 @@ export async function handleEmployeesRoutes(
       }
 
       params.push(limit); params.push(offset);
-      const result = await pool.query(
-        `SELECT
-            id, name, display_name, role_template, description,
+      const SELECT_COLS = `id, name, display_name, role_template, description,
             capabilities, tools, deployment_type, is_active,
             version, status, model_id, owner_user_id, source_template_id,
             is_template, working_dir, channel_ids, visibility, temperature,
             persona, complexity_level, default_engine, default_model,
-            created_at, updated_at
+            created_at, updated_at`;
+      const ORDER_AND_PAG = `ORDER BY is_template DESC, created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
+      let result;
+      if (filter === 'all') {
+        // UNION ALL(instance + template 都排除 deprecated)
+        const tmplWhere = `tenant_id = $1 AND is_template = true AND ${statusExcludeDeprecated}`;
+        const sqlAll = `(SELECT ${SELECT_COLS} FROM agents WHERE ${where} ${ORDER_AND_PAG})
+                        UNION ALL
+                        (SELECT ${SELECT_COLS} FROM agents WHERE ${tmplWhere} ${ORDER_AND_PAG})`;
+        result = await pool.query(sqlAll, params);
+        const cntSql = `SELECT
+            (SELECT count(*) FROM agents WHERE ${where})
+          + (SELECT count(*) FROM agents WHERE ${tmplWhere}) AS c`;
+        const cntResult = await pool.query(cntSql, params.slice(0, params.length - 2));
+        jsonResponse(res, 200, paginated(result.rows, parseInt(cntResult.rows[0].c, 10), Math.floor(offset / limit) + 1, limit));
+        return true;
+      }
+      result = await pool.query(
+        `SELECT ${SELECT_COLS}
            FROM agents
           WHERE ${where}
-          ORDER BY is_template DESC, created_at DESC
-          LIMIT $${params.length - 1} OFFSET $${params.length}`,
+          ${ORDER_AND_PAG}`,
         params,
       );
       const countResult = await pool.query(
