@@ -18,8 +18,8 @@ import {
 } from "recharts";
 import {
   Bot, Plus, Trash2, Sparkles, Clock, CheckCircle2, AlertTriangle,
-  Info, FileText,
-  Pencil, MoreVertical, Loader2, Copy,
+  Info,
+  Pencil, MoreVertical, Loader2,
 } from "lucide-react";
 import {
   fetchAgents, fetchPipelines, fetchPersonAgents, patchPersonAgents,
@@ -27,7 +27,6 @@ import {
   EMPLOYEE_STATUS_LABEL,
   type Person, type PersonAgent, type DigitalEmployee, type Pipeline, type ActivityEvent,
 } from "../../../_components/data";
-import { promoteAgent, copyAsTemplate } from "../../../../employees/_lib/data";
 import { api } from "@/lib/api";
 import {
   ResourcePicker,
@@ -244,49 +243,6 @@ export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [acting, setActing] = React.useState(false);
-  const [copyOpen, setCopyOpen] = React.useState(false);
-  const [copyName, setCopyName] = React.useState("");
-  const [copying, setCopying] = React.useState(false);
-  const [copyError, setCopyError] = React.useState<string | null>(null);
-  const [copySourceId, setCopySourceId] = React.useState<string | null>(null);
-
-  const handlePromote = async (agentId: string) => {
-    if (!confirm("将该数字员工提升为模板?(会解绑所有入口 bot)")) return;
-    setActing(true);
-    try {
-      await promoteAgent(agentId);
-      load();
-      onChanged?.();
-    } catch (e) {
-      console.error("[employees-tab] promote failed:", e);
-      alert("提升失败:" + (e instanceof Error ? e.message : String(e)));
-    } finally {
-      setActing(false);
-    }
-  };
-
-  const openCopy = (agentId: string, baseName: string) => {
-    setCopySourceId(agentId);
-    setCopyName(`${baseName} - 副本`);
-    setCopyError(null);
-    setCopyOpen(true);
-  };
-
-  const submitCopy = async () => {
-    if (!copySourceId || !copyName.trim()) return;
-    setCopying(true);
-    setCopyError(null);
-    try {
-      await copyAsTemplate(copySourceId, copyName.trim());
-      setCopyOpen(false);
-      load();
-      onChanged?.();
-    } catch (e) {
-      setCopyError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setCopying(false);
-    }
-  };
 
   const load = React.useCallback(() => {
     setLoading(true);
@@ -407,20 +363,11 @@ export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?
                   >
                     {acting ? <Loader2 className="size-3.5 animate-spin" /> : <MoreVertical className="size-3.5" />}
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuItem
-                      onClick={() => handlePromote(a.id)}
-                      data-testid={`person-agent-promote-${a.id.slice(0, 8)}`}
-                    >
-                      <FileText className="size-4" /> 提升为模板
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => openCopy(a.id, a.display_name ?? a.name)}
-                      data-testid={`person-agent-copy-${a.id.slice(0, 8)}`}
-                    >
-                      <Copy className="size-4" /> 复制为模板
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
+                  <DropdownMenuContent align="end" className="w-44">
+                    {/* R42-FRONTEND: '提升为模板' / '复制为模板' 两项已删(后端 promote / copy-as-template 端点不存在)。
+                        模板创建走 POST /api/v2/admin/agent-templates(snapshot),
+                        实例 → 实例生成走 /api/v2/admin/agent-templates/:id/instantiate。
+                        解绑仍保留。*/}
                     <DropdownMenuItem
                       onClick={() => handleRemove(a.id)}
                       data-testid={`person-agent-unbind-${a.id.slice(0, 8)}`}
@@ -461,49 +408,12 @@ export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?
           items={pickerItems}
           selectedIds={[]}
           confirmText={`绑定 ${busy ? "中…" : ""}`}
-          onConfirm={(sel) => void handleAdd(sel)}
+          onConfirm={(sel) => void handleAdd(sel as unknown as UnassignedAgent[])}
         />
       </div>
 
-      {/* R38-C6 阶段 4.7: 复制为模板弹窗 */}
-      <Dialog open={copyOpen} onOpenChange={(o) => { if (!o) setCopyOpen(false); }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>复制为新模板</DialogTitle>
-            <DialogDescription>
-              深拷贝该数字员工的人设/系统提示/技能/KB/MCP,生成新模板(不改变所有者)。
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <label className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/55">
-                新模板名字 · name
-              </label>
-              <Input
-                value={copyName}
-                onChange={(e) => setCopyName(e.target.value)}
-                placeholder="如:销售模板 v2"
-                autoFocus
-                data-testid="person-copy-template-name"
-              />
-            </div>
-            {copyError && (
-              <div className="rounded-md bg-rose-500/10 px-3 py-2 text-[12.5px] text-rose-700 dark:text-rose-300">
-                {copyError}
-              </div>
-            )}
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" size="sm" onClick={() => setCopyOpen(false)} disabled={copying}>
-              取消
-            </Button>
-            <Button size="sm" onClick={submitCopy} disabled={copying} className="gap-1.5" data-testid="person-copy-template-submit">
-              {copying ? <Loader2 className="size-3.5 animate-spin" /> : <Copy className="size-3.5" />}
-              {copying ? "复制中…" : "复制"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* R42-FRONTEND: '复制为模板' 弹窗已删(后端 copy-as-template 端点 404)。
+          模板创建走模板管理页 POST /api/v2/admin/agent-templates。*/}
     </div>
   );
 }

@@ -4,10 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import type { Agent } from "../_lib/data";
-import { updateAgent, promoteAgent, demoteAgent, copyAsTemplate, createInstanceFromTemplate } from "../_lib/data";
+import { updateAgent, createInstanceFromTemplate } from "../_lib/data";
 import { AvatarMark, statusTone } from "./avatar-mark";
 import {
-  MoreVertical, Pause, Play, Archive, FileText, Bot, Loader2, Copy, Sparkles,
+  MoreVertical, Pause, Play, Archive, FileText, Bot, Loader2, Sparkles,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -84,25 +84,36 @@ export function AgentCard({
         await updateAgent(agent.id, { status: "active", is_active: true });
       } else if (action === "deprecate") {
         await updateAgent(agent.id, { status: "deprecated", is_active: false });
-      } else if (action === "toTemplate") {
-        // R38-C6: use dedicated /promote endpoint that also unbinds bots
-        await promoteAgent(agent.id);
-      } else if (action === "toInstance") {
-        // R38-C6: use dedicated /demote endpoint
-        await demoteAgent(agent.id);
-      } else if (action === "copyAsTemplate") {
-        await copyAsTemplate(agent.id);
       } else if (action === "generateInstance") {
+        // R42-FRONTEND: 实例生成走 /api/v2/admin/agent-templates/:id/instantiate
         const created = await createInstanceFromTemplate({
           templateId: agent.id,
           name: `${agent.displayName || agent.name} - 副本`,
           ownerId: null,
         });
         router.push(`/employees/${created.id}`);
+      } else {
+        // R42-ROUTES 已删除 promote / demote / copy-as-template 端点 — 用 toast 提示后置
+        const msg = {
+          toTemplate:
+            "提升为模板 已在 R42 删除。请在模板管理页新建模板,或从实例 '生成模板'。",
+          toInstance:
+            "转为实例 已在 R42 删除。请从模板点 '生成实例'。",
+          copyAsTemplate:
+            "复制为模板 已在 R42 删除。请直接新建模板,把要复制的字段粘过去。",
+        }[action as "toTemplate" | "toInstance" | "copyAsTemplate"];
+        if (typeof window !== "undefined" && msg) {
+          window.alert(msg);
+        }
+        // 后端 deprecated stub 仍会 throw,但不需要走 createInstanceFromTemplate / promoteAgent / demoteAgent / copyAsTemplate 路径
+        return;
       }
       onChanged?.();
-    } catch (err) {
-      console.error("[agent-card] action failed:", err);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (typeof window !== "undefined") {
+        window.alert(`操作失败: ${message}`);
+      }
     } finally {
       setActing(false);
     }
@@ -183,40 +194,16 @@ export function AgentCard({
                   派生自 {agent.templateSource.slice(0, 8)}…
                 </div>
               )}
-              {agent.isTemplate ? (
-                <>
-                  <DropdownMenuItem
-                    onClick={(e) => onAction(e, "generateInstance")}
-                    data-testid="menu-generate-instance"
-                  >
-                    <Sparkles className="size-4" /> 生成实例
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={(e) => onAction(e, "copyAsTemplate")}
-                    data-testid="menu-copy-as-template"
-                  >
-                    <Copy className="size-4" /> 复制为模板
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={(e) => onAction(e, "toInstance")}>
-                    <Bot className="size-4" /> 转为实例
-                  </DropdownMenuItem>
-                </>
-              ) : (
-                <>
-                  <DropdownMenuItem
-                    onClick={(e) => onAction(e, "toTemplate")}
-                    data-testid="menu-promote"
-                  >
-                    <FileText className="size-4" /> 提升为模板
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={(e) => onAction(e, "copyAsTemplate")}
-                    data-testid="menu-copy-as-template"
-                  >
-                    <Copy className="size-4" /> 复制为模板
-                  </DropdownMenuItem>
-                </>
+              {/* R42-FRONTEND: 仅保留 '生成实例'(R42 主路径)。提升为模板 / 复制为模板 / 转为实例
+                  三个菜单项已在 R42 删除 — 隐藏避免误导。后端无对应端点。
+              */}
+              {agent.isTemplate && (
+                <DropdownMenuItem
+                  onClick={(e) => onAction(e, "generateInstance")}
+                  data-testid="menu-generate-instance"
+                >
+                  <Sparkles className="size-4" /> 生成实例
+                </DropdownMenuItem>
               )}
             </DropdownMenuContent>
           </DropdownMenu>

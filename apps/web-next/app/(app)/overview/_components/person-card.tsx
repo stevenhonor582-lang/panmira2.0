@@ -71,8 +71,8 @@ const STATUS_STYLE: Record<EmployeeStatus, { dot: string; chip: string; label: s
   },
 };
 
-// 系统管理员: 唯一内置账号,禁止删除/停用/状态切换
-const SYSADMIN_EMAIL = "20218181@qq.com";
+// 系统管理员: R42 起改由后端 users.is_system = true 标识(单一来源,前端不再硬编码邮箱)
+const LEGACY_SYSADMIN_EMAIL = "20218181@qq.com";
 
 interface Props {
   person: Person;
@@ -84,7 +84,12 @@ export function PersonCard({ person, className, onChanged }: Props) {
   const toast = useToast();
   const router = useRouter();
   const me = typeof window !== "undefined" ? getUser() : null;
-  const isSysAdmin = person.email === SYSADMIN_EMAIL;
+  // R42-FRONTEND: 系统管理员判定改走后端 is_system 字段(优先);fallback 到旧邮箱匹配
+  // ——给未回填 is_system 的历史数据一个软过渡。
+  const isSysAdmin =
+    person.isSystem === true ||
+    person.is_system === true ||
+    (person.isSystem == null && person.is_system == null && person.email === LEGACY_SYSADMIN_EMAIL);
   const status: EmployeeStatus = person.employeeStatus ?? "active";
   const statusStyle = STATUS_STYLE[status];
 
@@ -340,51 +345,58 @@ export function PersonCard({ person, className, onChanged }: Props) {
           </div>
         </div>
 
-        {/* === R41-E: 数据条 - 4 列(今日完成/今日异常/名下数字员工/本周token) === */}
+        {/* === R42-FRONTEND: 数据条 - 4 列,每列都加显式 label(0/2 等数字一眼可读) === */}
         <div
           className={cn(
-            "px-3 py-2 border-t border-border grid grid-cols-4 gap-1 text-center items-center",
+            "px-2 py-2 border-t border-border grid grid-cols-4 gap-1 text-center items-center",
             hasError ? "bg-rose-100/40 dark:bg-rose-950/30" : "bg-muted/20",
           )}
         >
-          {/* 今日完成 - 纯数字标识 */}
-          <div className="flex flex-col items-center">
+          {/* 今日完成 - 数字 + label */}
+          <div className="flex flex-col items-center gap-0.5">
             <span
               className={cn(
                 "text-base font-bold tabular-nums leading-none",
                 hasError ? "text-rose-700 dark:text-rose-300" : "text-foreground",
               )}
+              title="今日完成的对话/任务数"
             >
               {todayDone}
             </span>
-          </div>
-          {/* 今日异常 - 仅符号 ✓/✗ */}
-          <div className="flex flex-col items-center">
-            <span
-              className={cn(
-                "text-lg leading-none",
-                hasError ? "text-rose-500" : "text-emerald-500",
-              )}
-              title={hasError ? `今日异常 ${todayErrors}` : "今日无异常"}
-            >
-              {hasError ? "✗" : "✓"}
+            <span className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground leading-none">
+              今日完成
             </span>
           </div>
-          {/* 名下数字员工 - 数组长度 */}
-          <div className="flex flex-col items-center">
+          {/* 今日异常 - 数字(0=正常 ✓;>0 红色 ✗)+ label */}
+          <div className="flex flex-col items-center gap-0.5">
+            <span
+              className={cn(
+                "text-base font-bold tabular-nums leading-none",
+                hasError ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400",
+              )}
+              title={hasError ? `今日异常 ${todayErrors} 个` : "今日无异常"}
+            >
+              {todayErrors}
+            </span>
+            <span className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground leading-none">
+              今日异常
+            </span>
+          </div>
+          {/* 名下数字员工 - 数组长度(对接 R42 真实值) */}
+          <div className="flex flex-col items-center gap-0.5">
             <span className="text-base font-bold tabular-nums leading-none text-foreground">
               {agentCount ?? "—"}
             </span>
-            <span className="text-[9px] text-muted-foreground leading-none mt-0.5">
+            <span className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground leading-none">
               名下数字员工
             </span>
           </div>
-          {/* 本周 token - 直接数值 */}
-          <div className="flex flex-col items-center">
+          {/* 本周 token - 缩写值 + label */}
+          <div className="flex flex-col items-center gap-0.5">
             <span className="text-base font-bold tabular-nums leading-none text-foreground">
               {weekTokensDisplay}
             </span>
-            <span className="text-[9px] text-muted-foreground leading-none mt-0.5">
+            <span className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground leading-none">
               本周 token
             </span>
           </div>

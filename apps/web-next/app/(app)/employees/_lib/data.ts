@@ -360,16 +360,24 @@ export async function archiveAgent(id: string): Promise<Agent | null> {
 // ── R15-A: Templates / from-template ─────────────────────────
 
 /**
- * GET /api/v2/employees/templates — 拉模板列表(只含 is_template=true)。
+ * R42-FRONTEND: GET /api/v2/agent-templates — 拉模板列表
+ * (原 /api/v2/employees/templates 在 R42-ROUTES 中已统一改名)。
+ *
+ * 关键:r42 后端不返回 is_template 字段(整张表就是 templates),
+ *      前端强制置 isTemplate=true 给模板视图渲染用。
  */
 export async function fetchTemplates(): Promise<Agent[]> {
   try {
     const res = await api<{ success?: boolean; data?: { items?: any[] } } | { items?: any[] } | any[]>(
-      fullPath("/api/v2/employees/templates"),
+      fullPath("/api/v2/agent-templates"),
     );
     const items =
       (res as any)?.data?.items ?? (res as any)?.items ?? (Array.isArray(res) ? res : []);
-    return (items as any[]).map(mapEmployeeToAgent);
+    return (items as any[]).map((row) => {
+      const agent = mapEmployeeToAgent(row);
+      agent.isTemplate = true;
+      return agent;
+    });
   } catch (e) {
     console.error("[employees] fetchTemplates failed:", e);
     return [];
@@ -377,8 +385,11 @@ export async function fetchTemplates(): Promise<Agent[]> {
 }
 
 /**
- * POST /api/v2/employees/from-template — 从模板复制创建独立实例。
- * 返回新创建的 agent(含新 id,新 owner,is_template=false)。
+ * R42-FRONTEND: POST /api/v2/admin/agent-templates/:id/instantiate
+ * 由模板深拷贝出一个独立 instance(原 /api/v2/employees/from-template 已删)。
+ *
+ * body 字段由后端约定(模板 id 走 URL 参数;name / owner_id 走 body)。
+ * 返回新创建的 instance(含新 id,新 owner)。
  */
 export async function createInstanceFromTemplate(input: {
   templateId: string;
@@ -386,81 +397,60 @@ export async function createInstanceFromTemplate(input: {
   ownerId?: string | null;
 }): Promise<Agent> {
   const res = await api<{ success?: boolean; data?: any } | any>(
-    fullPath("/api/v2/employees/from-template"),
+    fullPath(`/api/v2/admin/agent-templates/${encodeURIComponent(input.templateId)}/instantiate`),
     {
       method: "POST",
       body: {
-        templateId: input.templateId,
         name: input.name,
-        ownerId: input.ownerId ?? null,
+        owner_id: input.ownerId ?? null,
       },
     },
   );
-  const row = (res as any)?.data ?? res;
+  const row =
+    (res as any)?.data?.instance ??
+    (res as any)?.instance ??
+    (res as any)?.data ??
+    (res as any)?.agent ??
+    res;
   if (!row || !row.id) {
     const err = (res as any)?.error;
-    throw new Error(err?.message ?? "from_template_failed");
+    throw new Error(err?.message ?? err?.code ?? "instantiate_failed");
   }
   return mapEmployeeToAgent(row);
 }
 
 /**
- * R38-C6 阶段 4.6: 实例 → 模板(POST /api/v2/admin/agents/:id/promote)。
- * 服务端会先解绑所有 bot_configs,清空 channel_ids/model_id/working_dir。
- * 返回更新后的 agent。
+ * R42-ROUTES 已删除 promote / demote / copy-as-template 三个端点(返回 404)。
+ * 这些函数保留作为 deprecated stub,在前端 UI 触发时给出明确报错。
+ * 后续新逻辑:
+ *  - "实例 → 模板":调 POST /api/v2/admin/agent-templates(从 instance 拷成新 template)
+ *  - "模板 → 实例":调 createInstanceFromTemplate
+ *  - "复制为模板":调 POST /api/v2/admin/agent-templates(snapshot 拷成新 template)
  */
-export async function promoteAgent(id: string): Promise<Agent> {
-  const res = await api<{ success?: boolean; data?: any } | any>(
-    fullPath(`/api/v2/admin/agents/${id}/promote`),
-    { method: "POST" },
+
+/** @deprecated R42 起删除 — 走 POST /api/v2/admin/agent-templates 直接创建模板 */
+export async function promoteAgent(_id: string): Promise<never> {
+  throw new Error(
+    "promoteAgent 已在 R42 删除。改用 POST /api/v2/admin/agent-templates 直接创建模板," +
+      "或在实例卡片详情页用 '生成实例' 反向拷贝。",
   );
-  const row = (res as any)?.agent ?? (res as any)?.data?.agent ?? (res as any)?.data ?? res;
-  if (!row || !row.id) {
-    const err = (res as any)?.error;
-    throw new Error(err?.message ?? err?.code ?? "promote_failed");
-  }
-  return mapEmployeeToAgent(row);
 }
 
-/**
- * R38-C6 阶段 4.6: 模板 → 实例(POST /api/v2/admin/agents/:id/demote)。
- * 服务端会分配新的 working_dir,is_template=false。
- */
-export async function demoteAgent(id: string): Promise<Agent> {
-  const res = await api<{ success?: boolean; data?: any } | any>(
-    fullPath(`/api/v2/admin/agents/${id}/demote`),
-    { method: "POST" },
+/** @deprecated R42 起删除 — 改用 createInstanceFromTemplate */
+export async function demoteAgent(_id: string): Promise<never> {
+  throw new Error(
+    "demoteAgent 已在 R42 删除。改用 createInstanceFromTemplate(从模板出实例)。",
   );
-  const row = (res as any)?.agent ?? (res as any)?.data?.agent ?? (res as any)?.data ?? res;
-  if (!row || !row.id) {
-    const err = (res as any)?.error;
-    throw new Error(err?.message ?? err?.code ?? "demote_failed");
-  }
-  return mapEmployeeToAgent(row);
 }
 
-/**
- * R38-C6 阶段 4.6: 跨模板复制(POST /api/v2/admin/agents/:srcId/copy-as-template)。
- * 服务端会深拷贝源 agent 的字段 + skill/kb/mcp refs 为新模板。
- * name 可选 — 不传则沿用源名(模板允许重名)。
- */
+/** @deprecated R42 起删除 — 走 POST /api/v2/admin/agent-templates 直接创建模板 */
 export async function copyAsTemplate(
-  srcId: string,
-  name?: string,
-): Promise<Agent> {
-  const res = await api<{ success?: boolean; data?: any } | any>(
-    fullPath(`/api/v2/admin/agents/${srcId}/copy-as-template`),
-    {
-      method: "POST",
-      body: name ? { name: name.trim() } : {},
-    },
+  _srcId: string,
+  _name?: string,
+): Promise<never> {
+  throw new Error(
+    "copyAsTemplate 已在 R42 删除。改用 POST /api/v2/admin/agent-templates(snapshot)创建新模板。",
   );
-  const row = (res as any)?.agent ?? (res as any)?.data?.agent ?? (res as any)?.data ?? res;
-  if (!row || !row.id) {
-    const err = (res as any)?.error;
-    throw new Error(err?.message ?? err?.code ?? "copy_as_template_failed");
-  }
-  return mapEmployeeToAgent(row);
 }
 
 // ── React hooks for client components ────────────────────────
@@ -486,7 +476,7 @@ export function useAgent(id: string): {
     (async () => {
       // 先走详情端点 — 返回完整 row(含 persona/system_prompt/iron_laws 等)。
       let row = await fetchAgent(id);
-      // 详情端点对 deprecated 状态会 404(digital_employees view 过滤) — 降级走列表。
+      // R42 详情端点保持 /api/v2/employees/:id 直查(向后兼容,自动 dispatch instance/template)。
       if (!row) {
         const list = await fetchAgents();
         if (alive) {

@@ -30,6 +30,10 @@ export interface Person {
   position?: string | null;
   employeeStatus?: EmployeeStatus;
   createdAt?: string;
+  // R42: users.is_system 字段 — 系统内置真人(true = 系统管理员,显示 ⭐ + 禁操作)
+  // 后端默认 snake_case,前端读 `isSystem ?? is_system` 兜底。
+  isSystem?: boolean | null;
+  is_system?: boolean | null;
 }
 
 export interface PersonActivity {
@@ -149,6 +153,9 @@ export interface PersonAgent {
   deployment_type: string | null;
   created_at: string;
   updated_at: string;
+  // R42: owner_user_id + owner 的 is_system 标记 (前端用来标记 ⭐ 归属的数智员工不挂 ⭐)
+  owner_user_id?: string | null;
+  owner_is_system?: boolean | null;
 }
 
 export async function fetchPersonStats(id: string): Promise<PersonStats | null> {

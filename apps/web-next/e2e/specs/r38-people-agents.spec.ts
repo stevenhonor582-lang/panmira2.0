@@ -61,7 +61,9 @@ test.describe("R38-C6 · 真人页 employees tab agent 列表", () => {
     await expect(page.getByText(/可调度|尚未关联|添加数字员工/).first()).toBeVisible({ timeout: 10000 });
   });
 
-  test("agent 卡片有下拉菜单 含 提升为模板 + 复制为模板 + 解绑 三项", async ({ page }) => {
+  test("agent 卡片下拉菜单只剩 解绑(R42 删 promote/copy 后)", async ({ page }) => {
+    // R42-FRONTEND: 提升为模板 / 复制为模板 两个菜单项已经删除(后端对应端点 404)。
+    // 当前菜单只保留 解绑 一个动作。
     await page.goto(`${BASE}/overview/people/${ADMIN_USER_ID}`);
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(1500);
@@ -72,13 +74,9 @@ test.describe("R38-C6 · 真人页 employees tab agent 列表", () => {
       await page.waitForTimeout(1500);
     }
 
-    // 找一个 agent 卡片的 menu 按钮(person-agent-menu-{prefix})
-    // 这个真人 owner 的 agent 列表可能为空(取决于是否绑定 owner_user_id)
-    // 我们用 first() 容错
     const menuBtns = page.locator('[data-testid^="person-agent-menu-"]');
     const cnt = await menuBtns.count();
     if (cnt === 0) {
-      // 接受空状态 — 但 tab 自身可见
       await expect(page.getByText(/该员工可调度/).first()).toBeVisible();
       return;
     }
@@ -88,17 +86,12 @@ test.describe("R38-C6 · 真人页 employees tab agent 列表", () => {
     await firstMenu.click();
     await page.waitForTimeout(500);
 
-    // 三项菜单
-    const promoteItem = page.locator('[data-testid^="person-agent-promote-"]').first();
-    const copyItem = page.locator('[data-testid^="person-agent-copy-"]').first();
+    // R42 后仅剩 '解绑' 菜单项 — 验证它可见就够(源里已删 promote/copy data-testid)
     const unbindItem = page.locator('[data-testid^="person-agent-unbind-"]').first();
-
-    await expect(promoteItem).toBeVisible();
-    await expect(copyItem).toBeVisible();
-    await expect(unbindItem).toBeVisible();
+    await expect(unbindItem).toBeVisible({ timeout: 3000 });
   });
 
-  test("复制为模板 弹窗可输入 + 提交 → POST copy-as-template", async ({ page }) => {
+  test.skip("R42 跳过: 复制为模板 弹窗已删除(后端端点 404)", async ({ page }) => {
     await page.goto(`${BASE}/overview/people/${ADMIN_USER_ID}`);
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(1500);

@@ -209,15 +209,8 @@ function TemplateCard({ tpl, onInstantiate, onCopy }: { tpl: Agent; onInstantiat
           <span>{tpl.model}</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={onCopy}
-            className="gap-1 text-[12px]"
-            data-testid={`copy-as-template-${tpl.id.slice(0, 8)}`}
-          >
-            <Copy className="size-3.5" /> 复制
-          </Button>
+          {/* R42-FRONTEND: 复制按钮已删(原 POST /api/v2/admin/agents/:id/copy-as-template 返回 404)。
+              保留'创建实例'(R42 主路径: POST /api/v2/admin/agent-templates/:id/instantiate)。*/}
           <Button
             size="sm"
             onClick={onInstantiate}
