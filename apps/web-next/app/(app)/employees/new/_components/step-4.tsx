@@ -2,8 +2,15 @@
 import * as React from "react";
 import type { WizardForm, SkillInfo, McpServerInfo } from "./form";
 import { BUILT_IN_TOOLS } from "./form";
-import { Search, ChevronDown, ChevronRight, CheckCircle2, Info } from "lucide-react";
+import { Search, ChevronDown, ChevronRight, CheckCircle2, Info, AlertCircle } from "lucide-react";
 
+/**
+ * Step 4 — 能力装载
+ * R51-B3:
+ *   - 技能 (skill) 必选 — 至少选一个才能发布
+ *   - 外接能力 (MCP Server) 可选 — 平常常用的接进来
+ *   - 内部工具 = 权限管理 — 勾选 = 授予调用权限,不勾 = 不可用
+ */
 export function Step4({
   form,
   setForm,
@@ -17,6 +24,30 @@ export function Step4({
 }) {
   return (
     <div className="space-y-7">
+      <div className="rounded-2xl bg-muted/40 p-4 text-[12px] leading-relaxed text-foreground/70 ring-1 ring-border">
+        <div className="mb-2 flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.18em] text-foreground/45">
+          <Info className="size-3" />
+          能力装载 · 三段
+        </div>
+        <ul className="space-y-1.5 font-mono text-[11.5px]">
+          <li>
+            <b className="text-foreground/85">技能</b>
+            <span className="ml-1 rounded bg-rose-500/10 px-1.5 py-0.5 text-[10px] tracking-[0.12em] text-rose-700 dark:text-rose-300">必选</span>
+            <span className="ml-1.5">· 来自技能库 · 至少选一个才能发布</span>
+          </li>
+          <li>
+            <b className="text-foreground/85">外接能力</b>
+            <span className="ml-1 rounded bg-muted px-1.5 py-0.5 text-[10px] tracking-[0.12em] text-foreground/55">可选</span>
+            <span className="ml-1.5">· 接入的外部服务,不强求</span>
+          </li>
+          <li>
+            <b className="text-foreground/85">内部工具</b>
+            <span className="ml-1 rounded bg-muted px-1.5 py-0.5 text-[10px] tracking-[0.12em] text-foreground/55">权限管理</span>
+            <span className="ml-1.5">· 勾选 = 授予调用权限,不勾 = 不可用</span>
+          </li>
+        </ul>
+      </div>
+
       <SkillPicker
         all={skills}
         selected={form.skills}
@@ -33,14 +64,20 @@ export function Step4({
       />
 
       <div className="rounded-2xl bg-muted/30 p-4 ring-1 ring-border">
-        <span className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-foreground/45">
-          当前已选
-        </span>
-        <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-[12px] font-mono text-foreground/85">
-          <span><CheckCircle2 className="mr-1 inline size-3 text-emerald-600" />{form.skills.length} skill</span>
-          <span><CheckCircle2 className="mr-1 inline size-3 text-emerald-600" />{form.mcpServerIds.length} mcp</span>
-          <span><CheckCircle2 className="mr-1 inline size-3 text-emerald-600" />{form.tools.length} tool</span>
+        <div className="flex items-baseline justify-between">
+          <span className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-foreground/45">
+            当前已选
+          </span>
+          <span className="font-mono text-[11px] text-foreground/55">
+            技能 {form.skills.length} · 外接 {form.mcpServerIds.length} · 内部 {form.tools.length}
+          </span>
         </div>
+        {form.skills.length === 0 && (
+          <div className="mt-2 flex items-start gap-1.5 text-[11.5px] text-rose-700 dark:text-rose-300">
+            <AlertCircle className="mt-0.5 size-3 shrink-0" />
+            <span>技能是必选项,至少选 1 个才能发布。</span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -91,13 +128,18 @@ function SkillPicker({
   return (
     <section>
       <div className="mb-2 flex items-baseline justify-between">
-        <h3 className="text-[12px] font-medium tracking-tight text-foreground/65">
-          Skills · 技能 · 来自 /api/skills ({all.length} 个真实可用)
+        <h3 className="flex items-center gap-1.5 text-[12.5px] font-semibold text-foreground/85">
+          技能
+          <span className="ml-1 rounded bg-rose-500/10 px-1.5 py-0.5 font-mono text-[10px] tracking-[0.12em] text-rose-700 dark:text-rose-300">必选</span>
+          <span className="font-mono text-[10.5px] text-foreground/45">· 来自技能库</span>
         </h3>
         <span className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-foreground/40">
           {selected.length} / {all.length}
         </span>
       </div>
+      <p className="mb-3 text-[11.5px] text-foreground/55">
+        至少选 1 个技能才能发布 — 技能是员工"能做什么"的核心。
+      </p>
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[220px]">
@@ -185,16 +227,21 @@ function McpPicker({
   return (
     <section>
       <div className="mb-2 flex items-baseline justify-between">
-        <h3 className="text-[12px] font-medium tracking-tight text-foreground/65">
-          MCP Servers · 来自 /api/mcp/servers ({servers.length} 个真实接入)
+        <h3 className="flex items-center gap-1.5 text-[12.5px] font-semibold text-foreground/85">
+          外接能力
+          <span className="ml-1 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] tracking-[0.12em] text-foreground/55">可选</span>
+          <span className="font-mono text-[10.5px] text-foreground/45">· 接入的外部服务</span>
         </h3>
         <span className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-foreground/40">
           {selected.length} / {servers.length}
         </span>
       </div>
+      <p className="mb-3 text-[11.5px] text-foreground/55">
+        平常常用的接进来 — 不选也能正常用,只是不能用这些外部能力。
+      </p>
       {servers.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border p-4 text-center text-[12px] text-foreground/55">
-          没有可用的 MCP server。请去 /channels/mcp 配置。
+          还没有接入任何外部服务。可以去 渠道管理 接入。
         </div>
       ) : (
         <ul className="divide-y divide-border rounded-2xl bg-card ring-1 ring-border">
@@ -232,8 +279,8 @@ function McpPicker({
                 </div>
                 {isOpen && (
                   <div className="bg-muted/20 px-4 py-2.5 text-[11.5px] text-foreground/65">
-                    <div className="font-mono">url: {srv.url || "—"}</div>
-                    <div className="font-mono mt-1">transport: {srv.transport} · status: {srv.status || "—"}</div>
+                    <div className="font-mono">地址: {srv.url || "—"}</div>
+                    <div className="font-mono mt-1">传输方式: {srv.transport} · 状态: {srv.status || "—"}</div>
                   </div>
                 )}
               </li>
@@ -255,16 +302,25 @@ function ToolPicker({
   return (
     <section>
       <div className="mb-2 flex items-baseline justify-between">
-        <h3 className="text-[12px] font-medium tracking-tight text-foreground/65">
-          Tools · 内置工具(每个都带说明)
+        <h3 className="flex items-center gap-1.5 text-[12.5px] font-semibold text-foreground/85">
+          内部工具
+          <span className="ml-1 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] tracking-[0.12em] text-foreground/55">权限管理</span>
         </h3>
         <span className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-foreground/40">
           {selected.length} / {BUILT_IN_TOOLS.length}
         </span>
       </div>
-      <p className="mb-3 text-[12px] text-foreground/55">
-        SDK 级工具,与模型解耦。不是所有员工都需要全部工具,选最小必要集即可。
-      </p>
+      {/* R51-B3: 工具 = 权限管理 — 语义明确:勾选 = 授予调用权限,不勾 = 不可用 */}
+      <div className="mb-3 rounded-xl bg-amber-500/10 p-3 text-[11.5px] leading-relaxed text-foreground/75 ring-1 ring-amber-500/25">
+        <div className="flex items-start gap-1.5">
+          <Info className="mt-0.5 size-3 shrink-0 text-amber-700 dark:text-amber-300" />
+          <div>
+            <b className="text-foreground/85">工具 = 权限管理</b>
+            <span className="ml-1.5">勾选 = 授予这位员工调用这个工具的权限;</span>
+            <span className="ml-1">不勾 = 不可用。最小授权,选员工真正需要的即可。</span>
+          </div>
+        </div>
+      </div>
       <ul className="grid gap-2 sm:grid-cols-2">
         {BUILT_IN_TOOLS.map((t) => {
           const on = selected.includes(t.id);
