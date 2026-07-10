@@ -8,9 +8,10 @@
 import { test, expect, type Page } from "@playwright/test";
 import * as fs from "fs";
 import {
-  trackAgent,
+  trackInstance,
   trackTemplate,
   cleanupTrackedResources,
+  sweepTestResidue,
 } from "../helpers/cleanup";
 
 const BASE = "http://localhost:3200";
@@ -71,6 +72,12 @@ async function fetchAnyTemplateId(
 test.describe("R42-FRONTEND · templates / instantiate", () => {
   test.beforeEach(async ({ page }) => {
     await loginAdmin(page);
+  });
+
+  // R42-X: best-effort bootstrap sweep — clears any test-prefix residue
+  // left over from a prior worker so a fresh run starts from zero.
+  test.beforeAll(async ({ request }) => {
+    await sweepTestResidue(request);
   });
 
   test.afterAll(async ({ request }) => {
@@ -192,10 +199,10 @@ test.describe("R42-FRONTEND · templates / instantiate", () => {
       await page.waitForTimeout(1500);
 
       if (createdId) {
-        trackAgent(createdId, null, `r42-instantiate:${newName}`);
+        trackInstance(createdId, null, `r42-instantiate:${newName}`);
       } else {
         const m = page.url().match(/\/employees\/([0-9a-f-]+)/);
-        if (m) trackAgent(m[1], null, `r42-instantiate-url:${newName}`);
+        if (m) trackInstance(m[1], null, `r42-instantiate-url:${newName}`);
       }
       expect(page.url()).toMatch(/\/employees\/[0-9a-f-]+/);
       return;
@@ -218,6 +225,6 @@ test.describe("R42-FRONTEND · templates / instantiate", () => {
       ? (inner as { id: string }).id
       : null;
     expect(createdId, "instantiate 返回 agent.id 应非空").not.toBeNull();
-    if (createdId) trackAgent(createdId, null, `r42-inst-api-fallback`);
+    if (createdId) trackInstance(createdId, null, `r42-inst-api-fallback`);
   });
 });

@@ -1,9 +1,10 @@
 import { test, expect, type Page } from "@playwright/test";
 import * as fs from "fs";
 import {
-  trackAgent,
+  trackInstance,
   trackTemplate,
   cleanupTrackedResources,
+  sweepTestResidue,
 } from "../helpers/cleanup";
 
 const BASE = "http://localhost:3200";
@@ -41,6 +42,12 @@ test.describe("R38-C6 · 真人页 employees tab agent 列表", () => {
   });
 
   // R40-A: afterAll hook 把测试期间 '从真人页复制-*' 创建的 agent 一并清掉
+  // R42-X: best-effort bootstrap sweep — clears any test-prefix residue
+  // left over from a prior worker so a fresh run starts from zero.
+  test.beforeAll(async ({ request }) => {
+    await sweepTestResidue(request);
+  });
+
   test.afterAll(async ({ request }) => {
     await cleanupTrackedResources(request);
   });

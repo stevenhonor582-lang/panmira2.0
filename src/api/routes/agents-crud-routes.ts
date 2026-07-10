@@ -293,6 +293,64 @@ export async function handleAgentsCrudRoutes(
     }
   }
 
+  // R42-X: DELETE /api/v2/admin/agent-instances/:id — 删 instance
+  // 解绑 user_agent_bindings + 清关联 + 删行
+  const instanceDelMatch = u.pathname.match(/^\/api\/v2\/admin\/agent-instances\/([^/]+)$/);
+  if (method === 'DELETE' && instanceDelMatch) {
+    if (!requireAnyScope(ctx, ['agent:admin'])) {
+      jsonResponse(res, 403, { error: 'insufficient_scope', required: 'agent:admin' });
+      return true;
+    }
+    const id = instanceDelMatch[1];
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const bindings = await client.query('DELETE FROM user_agent_bindings WHERE agent_id = $1', [id]);
+      const mcp = await client.query('DELETE FROM agent_mcp_refs WHERE agent_id = $1', [id]);
+      const kb = await client.query('DELETE FROM agent_knowledge_refs WHERE agent_id = $1', [id]);
+      const logs = await client.query('DELETE FROM agent_run_logs WHERE agent_template_id = $1', [id]);
+      const skills = await client.query('DELETE FROM agent_skill_refs WHERE agent_id = $1', [id]);
+      const team = await client.query('DELETE FROM agent_team_auth WHERE agent_id = $1', [id]);
+      const msgs = await client.query('DELETE FROM agent_messages WHERE from_agent_id = $1 OR to_agent_id = $1', [id]);
+      const result = await client.query('DELETE FROM agent_instances WHERE id = $1', [id]);
+      await client.query('COMMIT');
+      if ((result.rowCount ?? 0) === 0) {
+        jsonResponse(res, 404, { error: 'instance_not_found' });
+        return true;
+      }
+      jsonResponse(res, 200, { deleted: id, bindings_removed: bindings.rowCount ?? 0, mcp_removed: mcp.rowCount ?? 0, kb_removed: kb.rowCount ?? 0, logs_removed: logs.rowCount ?? 0, skills_removed: skills.rowCount ?? 0, team_removed: team.rowCount ?? 0, msgs_removed: msgs.rowCount ?? 0 });
+      return true;
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      jsonResponse(res, 500, { error: 'internal_error', message: String(err) });
+      return true;
+    } finally {
+      client.release();
+    }
+  }
+
+  // R42-X: DELETE /api/v2/admin/agent-templates/:id — 删 template
+  const templateDelMatch = u.pathname.match(/^\/api\/v2\/admin\/agent-templates\/([^/]+)$/);
+  if (method === 'DELETE' && templateDelMatch) {
+    if (!requireAnyScope(ctx, ['agent:admin'])) {
+      jsonResponse(res, 403, { error: 'insufficient_scope', required: 'agent:admin' });
+      return true;
+    }
+    const id = templateDelMatch[1];
+    try {
+      const [row] = await db.delete(agentTemplates).where(eq(agentTemplates.id, id)).returning({ id: agentTemplates.id });
+      if (!row) {
+        jsonResponse(res, 404, { error: 'template_not_found' });
+        return true;
+      }
+      jsonResponse(res, 200, { deleted: row.id });
+      return true;
+    } catch (err) {
+      jsonResponse(res, 500, { error: 'internal_error', message: String(err) });
+      return true;
+    }
+  }
+
   // R38-C4 阶段 3.7: GET /api/v2/admin/agents/:id/mcp-refs
   const mcpRefsListMatch = u.pathname.match(/^\/api\/v2\/admin\/agents\/([^/]+)\/mcp-refs$/);
   if (method === 'GET' && mcpRefsListMatch) {
