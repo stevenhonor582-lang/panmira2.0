@@ -3,7 +3,7 @@
 /**
  * R25 全站通用 ResourcePicker — 增删改查规范里的"选"。
  *
- * 用于:新建向导(选模板/选现有员工)、技能 tab(选 skill / tool / KB)、
+ * 用于:新建向导(选 HR / 选现有员工)、技能 tab(选 skill / tool / KB)、
  * channels(选 agent)、foundation(选 provider)等所有"从库选+看描述"的场景。
  *
  * 设计:

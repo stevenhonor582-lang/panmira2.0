@@ -3,7 +3,7 @@ import * as React from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Bot, BrainCircuit, Wrench, Brain, Network, ListChecks, ScrollText } from "lucide-react";
 
-// R51-B1: 模板只是"配方",没有运行实例,不应该有记忆 / 日志 / 任务 tab
+// R51-B1: HR 岗位只是"配方",没有运行实例,不应该有记忆 / 日志 / 任务 tab
 export const ALL_EMPLOYEE_TABS = [
   { value: "basics",   label: "基础信息",  icon: Bot,         forInstance: true,  forTemplate: true  },
   { value: "persona",  label: "人格",      icon: BrainCircuit,forInstance: true,  forTemplate: true  },

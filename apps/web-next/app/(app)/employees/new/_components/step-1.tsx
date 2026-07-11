@@ -12,7 +12,7 @@ import {
   ResourcePicker,
   type ResourceItem,
 } from "@/components/resource-picker/resource-picker";
-// Loader2 已不再需要(模板/实例列表 picker 内部自带 loading)
+// Loader2 已不再需要(HR / 实例列表 picker 内部自带 loading)
 
 // R27 规则 1: 中文→拼音首字母(与后端 generateWorkingDir 同源,仅用于预览)
 const PINYIN_PREVIEW: Record<string, string> = {
@@ -34,10 +34,10 @@ const HUES = ["amber", "rose", "teal", "sky", "indigo", "stone", "emerald", "vio
 /**
  * R25 起点选择 — 3 个起点都用 ResourcePicker 让用户主动选:
  *  - 空白起步:清空 form
- *  - 模板预设:从真实模板库(/api/v2/employees/templates)选
+ *  - HR 预填:从真实 HR 库(/api/v2/employees/templates)选
  *  - 复制现有:从真实实例(/api/v2/employees?filter=instance)选
  *
- * 用户反馈(R25):"模板预设直接默认全栈工程师不让选 / 复制现有选了没反应"。
+ * 用户反馈(R25):"HR 预填直接默认全栈工程师不让选 / 复制现有选了没反应"。
  * 根因:之前 hard-code 默认 fullstack + 复制现有是个外跳 Link。
  * 修复:统一改用 ResourcePicker + 选完预填 form 字段。
  */
@@ -66,7 +66,7 @@ export function Step1({
   const [templatePickerOpen, setTemplatePickerOpen] = React.useState(false);
   const [copyPickerOpen, setCopyPickerOpen] = React.useState(false);
 
-  // 模板 / 实例列表
+  // HR / 实例列表
   const [templates, setTemplates] = React.useState<Agent[]>([]);
   const [instances, setInstances] = React.useState<Agent[]>([]);
   const [templatesLoading, setTemplatesLoading] = React.useState(false);
@@ -132,7 +132,7 @@ export function Step1({
     description: a.persona || a.description || `角色 · ${a.role}`,
   });
 
-  // 从模板/实例预填 form
+  // 从 HR / 实例预填 form
   // clone=true 表示是从实例复制,建议名字加 " 副本"
   const applyAgent = (a: Agent, mode: "template" | "clone") => {
     const raw = (a.raw ?? {}) as Record<string, unknown>;
@@ -187,19 +187,19 @@ export function Step1({
       {isTemplateMode && (
         <section className="rounded-2xl bg-amber-500/[0.04] p-5 ring-1 ring-amber-500/30">
           <div className="flex items-baseline justify-between gap-3">
-            <Label>模板类型 · 选一个</Label>
+            <Label>岗位类型 · 选一个</Label>
             <span className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-amber-700 dark:text-amber-300">
-              模板模式 · 决定后续派生实例时的默认角色归属
+              HR 模式 · 决定后续派生实例时的默认角色归属
             </span>
           </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {TEMPLATE_CATEGORIES.map((cat) => {
-              const active = form.templateCategory === cat.id;
+              const active = form.hrCategory === cat.id;
               return (
                 <button
                   key={cat.id}
                   type="button"
-                  onClick={() => set("templateCategory", cat.id)}
+                  onClick={() => set("hrCategory", cat.id)}
                   className={
                     "group flex w-full items-start gap-3 rounded-xl p-3.5 text-left ring-1 transition-all " +
                     (active
@@ -226,10 +226,10 @@ export function Step1({
               );
             })}
           </div>
-          {form.templateCategory && (
+          {form.hrCategory && (
             <div className="mt-3 rounded-lg bg-background/60 px-3 py-2 text-[12px] text-foreground/70 ring-1 ring-border">
-              已选 · <strong>{TEMPLATE_CATEGORIES.find((c) => c.id === form.templateCategory)?.label}</strong>
-              · 提交后此模板只能派生相同类型(同类)的实例
+              已选 · <strong>{TEMPLATE_CATEGORIES.find((c) => c.id === form.hrCategory)?.label}</strong>
+              · 提交后此 HR 只能派生相同类型(同类)的实例
             </div>
           )}
         </section>
@@ -255,9 +255,9 @@ export function Step1({
           <StartPointCard
             active={startPoint === "template"}
             onClick={openTemplatePicker}
-            badge="模板"
-            title="模板预填"
-            desc="从模板库选一个,自动填名字/头像/人格/技能"
+            badge="HR"
+            title="HR 预填"
+            desc="从 HR 库选一个,自动填名字/头像/人格/技能"
             glyph="工"
             hue="indigo"
           />
@@ -276,7 +276,7 @@ export function Step1({
         {startPoint && startPoint !== "blank" && (
           <div className="mt-3 rounded-lg bg-background/60 px-3 py-2 text-[12px] text-foreground/70 ring-1 ring-border">
             {startPoint === "template" && (
-              <>已从模板预填 · 点"模板预填"可重选。后续 step 字段都还能改。</>
+              <>已从 HR 预填 · 点"HR 预填"可重选。后续 step 字段都还能改。</>
             )}
             {startPoint === "clone" && (
               <>已从现有员工复制 · 点"复制现有员工"可重选。名字已加"副本"后缀。</>
@@ -364,19 +364,19 @@ export function Step1({
         </div>
       </section>
 
-      {/* ResourcePicker — 模板预设 */}
+      {/* ResourcePicker — HR 预填 */}
       <ResourcePicker
         open={templatePickerOpen}
         onOpenChange={setTemplatePickerOpen}
-        title="选一个模板"
+        title="选一个 HR"
         items={templateItems}
         selectedIds={
           startPoint === "template" ? [form.templateId.replace("template:", "")] : []
         }
         loading={templatesLoading}
         multi={false}
-        placeholder="搜索模板名或人格…"
-        confirmText="用这个模板"
+        placeholder="搜索 HR 名或人格…"
+        confirmText="用这个 HR"
         onConfirm={(picked) => {
           if (picked.length === 0) return;
           const a = templates.find((t) => t.id === picked[0].id);

@@ -121,7 +121,7 @@ function mapEmployeeToAgent(row: any): Agent {
     contextWindow: row.default_context_window ?? row.defaultContextWindow ?? 200000,
     temperature: 0.3,
     ownerId: row.owner_user_id ?? row.ownerId ?? null,
-    ownerName: "系统模板",
+    ownerName: "系统 HR",
     templateSource: row.source_template_id ?? null,
     version: row.version ?? 1,
     createdAt: row.created_at ?? row.createdAt ?? new Date().toISOString(),
@@ -163,7 +163,7 @@ function mapEmployeeToAgent(row: any): Agent {
 
 /**
  * R15-A: fetchAgents 默认走 filter=all,前端按 isTemplate 分类。
- * 选项:filter="instance" 只取实例,"template" 只取模板,"all" 全部。
+ * 选项:filter="instance" 只取实例,"template" 只取 HR,"all" 全部。
  */
 export async function fetchAgents(
   opts: { filter?: "instance" | "template" | "all" } = {},
@@ -405,11 +405,11 @@ export async function fetchActiveRunsByAgent(): Promise<Record<string, true>> {
 // ── R15-A: Templates / from-template ─────────────────────────
 
 /**
- * R42-FRONTEND: GET /api/v2/agent-templates — 拉模板列表
+ * R42-FRONTEND: GET /api/v2/agent-templates — 拉 HR 列表
  * (原 /api/v2/employees/templates 在 R42-ROUTES 中已统一改名)。
  *
  * 关键:r42 后端不返回 is_template 字段(整张表就是 templates),
- *      前端强制置 isTemplate=true 给模板视图渲染用。
+ *      前端强制置 isTemplate=true 给 HR 视图渲染用。
  */
 export async function fetchTemplates(): Promise<Agent[]> {
   try {
@@ -431,9 +431,9 @@ export async function fetchTemplates(): Promise<Agent[]> {
 
 /**
  * R42-FRONTEND: POST /api/v2/admin/agent-templates/:id/instantiate
- * 由模板深拷贝出一个独立 instance(原 /api/v2/employees/from-template 已删)。
+ * 由 HR 岗位深拷贝出一个独立 instance(原 /api/v2/employees/from-template 已删)。
  *
- * body 字段由后端约定(模板 id 走 URL 参数;name / owner_id 走 body)。
+ * body 字段由后端约定(HR id 走 URL 参数;name / owner_id 走 body)。
  * 返回新创建的 instance(含新 id,新 owner)。
  */
 export async function createInstanceFromTemplate(input: {
@@ -468,9 +468,9 @@ export async function createInstanceFromTemplate(input: {
  * R42-ROUTES 已删除 promote / demote / copy-as-template 三个端点(返回 404)。
  * 这些函数保留作为 deprecated stub,在前端 UI 触发时给出明确报错。
  * 后续新逻辑:
- *  - "实例 → 模板":调 POST /api/v2/admin/agent-templates(从 instance 拷成新 template)
- *  - "模板 → 实例":调 createInstanceFromTemplate
- *  - "复制为模板":调 POST /api/v2/admin/agent-templates(snapshot 拷成新 template)
+ *  - "实例 → HR":调 POST /api/v2/admin/agent-templates(从 instance 拷成新 template)
+ *  - "HR → 实例":调 createInstanceFromTemplate
+ *  - "复制为 HR":调 POST /api/v2/admin/agent-templates(snapshot 拷成新 template)
  */
 
 /**
@@ -545,10 +545,10 @@ export async function copyTemplate(
   return { id: row.id, name: row.name };
 }
 
-/** @deprecated R42 起删除 — 走 POST /api/v2/admin/agent-templates 直接创建模板 */
+/** @deprecated R42 起删除 — 走 POST /api/v2/admin/agent-templates 直接创建 HR */
 export async function promoteAgent(_id: string): Promise<never> {
   throw new Error(
-    "promoteAgent 已在 R42 删除。改用 POST /api/v2/admin/agent-templates 直接创建模板," +
+    "promoteAgent 已在 R42 删除。改用 POST /api/v2/admin/agent-templates 直接创建 HR," +
       "或在实例卡片详情页用 '生成实例' 反向拷贝。",
   );
 }
@@ -556,17 +556,17 @@ export async function promoteAgent(_id: string): Promise<never> {
 /** @deprecated R42 起删除 — 改用 createInstanceFromTemplate */
 export async function demoteAgent(_id: string): Promise<never> {
   throw new Error(
-    "demoteAgent 已在 R42 删除。改用 createInstanceFromTemplate(从模板出实例)。",
+    "demoteAgent 已在 R42 删除。改用 createInstanceFromTemplate(从 HR 岗位出实例)。",
   );
 }
 
-/** @deprecated R42 起删除 — 走 POST /api/v2/admin/agent-templates 直接创建模板 */
+/** @deprecated R42 起删除 — 走 POST /api/v2/admin/agent-templates 直接创建 HR */
 export async function copyAsTemplate(
   _srcId: string,
   _name?: string,
 ): Promise<never> {
   throw new Error(
-    "copyAsTemplate 已在 R42 删除。改用 POST /api/v2/admin/agent-templates(snapshot)创建新模板。",
+    "copyAsTemplate 已在 R42 删除。改用 POST /api/v2/admin/agent-templates(snapshot)创建新 HR。",
   );
 }
 

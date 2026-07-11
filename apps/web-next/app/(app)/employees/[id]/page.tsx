@@ -26,7 +26,7 @@ export default function Page() {
   const tab = searchParams?.get("tab") ?? undefined;
   const initial = (tab ?? "basics") as EmployeeTabValue;
 
-  // R51-B1: 模板隐藏记忆 / 日志 / 任务 tab(模板只是"配方",没有运行实例)
+  // R51-B1: HR 隐藏记忆 / 日志 / 任务 tab(HR 只是"配方",没有运行实例)
   const { agent } = useAgent(id);
   const isTemplate = Boolean(agent?.isTemplate);
 

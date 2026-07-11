@@ -119,7 +119,7 @@ export function NewBotWizard() {
       persona: hrAgent.persona || prev.persona,
       systemPrompt: hrAgent.systemPrompt || prev.systemPrompt,
       ironLaws: hrAgent.ironLaws ?? prev.ironLaws,
-      templateCategory: typeof raw.category === "string" ? raw.category : prev.templateCategory,
+      hrCategory: typeof raw.category === "string" ? raw.category : prev.hrCategory,
       // 动态字段 — 用 HR 的基础值预填,招聘时可改
       name: prev.name || `${hrAgent.displayName || hrAgent.name}-员工`,
       glyph: hrAgent.glyph || prev.glyph,

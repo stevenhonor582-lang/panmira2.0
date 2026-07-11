@@ -82,7 +82,7 @@ export function Step7({
           mcpServerIds: form.mcpServerIds,
           kbFolderIds: form.kbFolderIds,
           knowledgeBaseIds: form.knowledgeBaseIds,
-          // R51-C2: 模板模式不带 channelIds(模板不绑入口)
+          // R51-C2: HR 模式不带 channelIds(HR 不绑入口)
           channelIds: isTemplateMode ? [] : form.channelIds,
         },
         headers: { "content-type": "application/json" },
@@ -217,7 +217,7 @@ export function Step7({
           data-testid="step7-publish-btn"
         >
           {phase === "error" ? <RefreshCw className="size-4" /> : <Rocket className="size-4" />}
-          {phase === "error" ? "重试发布" : (isTemplateMode ? "发布模板" : "发布")}
+          {phase === "error" ? "重试发布" : (isTemplateMode ? "发布 HR" : "发布")}
         </button>
       </div>
     </div>
@@ -308,8 +308,8 @@ function Summary({ form, isTemplateMode }: { form: WizardForm; isTemplateMode: b
             <Field k="工作目录" v={form.workingDir || <span className="italic text-foreground/45">默认(后端生成)</span>} mono />
           </>
         )}
-        {isTemplateMode && form.templateCategory && (
-          <Field k="模板类型" v={form.templateCategory} mono />
+        {isTemplateMode && form.hrCategory && (
+          <Field k="岗位类型" v={form.hrCategory} mono />
         )}
       </dl>
     </div>

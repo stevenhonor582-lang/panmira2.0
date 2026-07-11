@@ -5,40 +5,11 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { AvatarMark, statusTone } from "../../_components/avatar-mark";
 import {
-  Briefcase, Brush, PenLine, Wrench, Box, Layers, Sparkles, BookOpen,
+  Briefcase, Sparkles, Briefcase as DefaultIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-
-const CATEGORY_PRESETS: Record<string, { label: string; Icon: typeof Brush; tone: string }> = {
-  art:        { label: "绘画", Icon: Brush,    tone: "bg-rose-500/10  text-rose-700  dark:text-rose-300  ring-rose-500/25" },
-  copy:       { label: "文案", Icon: PenLine,  tone: "bg-amber-500/10 text-amber-700 dark:text-amber-300 ring-amber-500/25" },
-  writing:    { label: "文案", Icon: PenLine,  tone: "bg-amber-500/10 text-amber-700 dark:text-amber-300 ring-amber-500/25" },
-  ops:        { label: "运维", Icon: Wrench,   tone: "bg-teal-500/10  text-teal-700  dark:text-teal-300  ring-teal-500/25" },
-  engineering:{ label: "工程", Icon: Box,      tone: "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 ring-indigo-500/25" },
-  support:    { label: "客服", Icon: Brush,    tone: "bg-sky-500/10   text-sky-700   dark:text-sky-300   ring-sky-500/25" },
-  research:   { label: "调研", Icon: BookOpen, tone: "bg-violet-500/10 text-violet-700 dark:text-violet-300 ring-violet-500/25" },
-  general:    { label: "通用", Icon: Layers,   tone: "bg-zinc-500/10  text-zinc-700  dark:text-zinc-300  ring-zinc-500/30" },
-  custom:     { label: "其它", Icon: Layers,   tone: "bg-zinc-500/10  text-zinc-700  dark:text-zinc-300  ring-zinc-500/30" },
-};
-
-function categoryPreset(rawCategory: unknown): { key: string; label: string; Icon: typeof Brush; tone: string } {
-  const key = typeof rawCategory === "string" && rawCategory.length > 0 ? rawCategory : "general";
-  const preset = CATEGORY_PRESETS[key] ?? CATEGORY_PRESETS.general;
-  return { key, label: preset.label, Icon: preset.Icon, tone: preset.tone };
-}
-
-const HUE_GRAD: Record<string, string> = {
-  amber: "from-amber-300 to-rose-200",
-  rose: "from-rose-300 to-pink-200",
-  teal: "from-teal-300 to-sky-200",
-  stone: "from-stone-300 to-zinc-200",
-  indigo: "from-indigo-300 to-violet-200",
-  lime: "from-lime-300 to-emerald-200",
-  violet: "from-violet-300 to-indigo-200",
-  zinc: "from-zinc-300 to-stone-200",
-  sky: "from-sky-300 to-blue-200",
-  emerald: "from-emerald-300 to-teal-200",
-};
+import { getDepartmentColor } from "@/lib/department-color";
+import { truncate } from "@/lib/text-truncate";
 
 export interface HrCardData {
   id: string;
@@ -57,79 +28,93 @@ export interface HrCardData {
   usageCount: number;
 }
 
+/**
+ * R53-A1 HR 卡 — 名片样式
+ * ----------------------------------------------------------------
+ * 形状:圆角 16px(rounded-2xl)+ 1.5:1 横向(aspect-[3/2])+ 细阴影
+ * 部门色描边:2px solid 部门色(无底色,避免色彩乱)
+ * 文字:岗位介绍 60 字截断
+ *
+ * 内容:名称 / 类型徽章 / 介绍摘要 / 使用数 / "招聘" 按钮
+ */
 export function HrCard({ hr }: { hr: HrCardData; index?: number }) {
   const t = statusTone(hr.status);
-  const cat = categoryPreset(hr.category);
+  const deptColor = getDepartmentColor(hr.category);
+  // 介绍摘要(优先 persona,fallback description,60 字截断)
+  const summary = truncate(hr.persona || hr.description, 60);
+  const deptLabel = hr.category && hr.category.length > 0 ? hr.category : "通用";
   return (
     <div
-      className="group relative flex h-full flex-col overflow-hidden rounded-3xl bg-card p-6 ring-1 ring-border transition-all hover:ring-foreground/40 hover:shadow-[0_24px_60px_-30px_rgba(0,0,0,0.18)]"
+      className={cn(
+        // 名片基础:rounded-2xl (16px) + aspect 1.5:1 + 2px 部门色描边 + 细阴影
+        "group relative flex aspect-[3/2] flex-col overflow-hidden rounded-2xl bg-card p-5",
+        "border-2 shadow-sm",
+        "transition-all hover:shadow-md hover:-translate-y-0.5",
+      )}
+      style={{
+        borderColor: deptColor,
+        boxShadow: `0 4px 16px -8px ${deptColor}33, 0 1px 3px -1px rgba(0,0,0,0.08)`,
+      }}
       data-testid={`hr-card-${hr.id.slice(0, 8)}`}
     >
-      <div
-        aria-hidden
-        className={`pointer-events-none absolute -top-12 -right-10 size-44 rounded-full blur-3xl opacity-40 bg-gradient-to-br ${HUE_GRAD[hr.hue] ?? HUE_GRAD.amber}`}
-      />
+      {/* 顶行:头像 + 部门 + 状态 */}
       <div className="relative flex items-start justify-between gap-3">
-        <AvatarMark glyph={hr.glyph} hue={hr.hue} size="md" />
-        <div className="flex flex-col items-end gap-1.5">
-          <span className={cn("inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-[0.18em] ring-1", cat.tone)}>
-            <cat.Icon className="size-2.5" />
-            {cat.label}
+        <AvatarMark glyph={hr.glyph} hue={hr.hue} size="sm" />
+        <div className="flex flex-col items-end gap-1">
+          <span
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wider"
+            style={{
+              color: deptColor,
+              backgroundColor: `${deptColor}1a`, // 10% alpha
+            }}
+            data-testid={`hr-dept-${hr.id.slice(0, 8)}`}
+          >
+            <DefaultIcon className="size-2.5" />
+            {deptLabel}
           </span>
-          <span className={cn("inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-[0.18em]", t.chip)}>
+          <span className={cn("inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium", t.chip)}>
             <span className={cn("size-1.5 rounded-full", t.dot)} />
             {t.label}
           </span>
         </div>
       </div>
-      <div className="relative mt-5 flex flex-col gap-1.5 min-h-[80px]">
+
+      {/* 中段:名称 + 介绍摘要(60 字截断) */}
+      <div className="relative mt-3 flex flex-1 flex-col gap-1.5 min-h-0">
         <Link href={`/employees/hr/${hr.id}`} className="group/link">
-          <h3 className="text-xl font-semibold tracking-tight group-hover/link:underline">
+          <h3
+            className="text-base font-semibold tracking-tight group-hover/link:underline truncate"
+            title={hr.displayName || hr.name}
+          >
             {hr.displayName || hr.name || "未命名岗位"}
           </h3>
         </Link>
-        <p className="line-clamp-3 text-[13px] leading-relaxed text-foreground/65">
-          {hr.persona || hr.description || <span className="text-foreground/40">暂无描述</span>}
+        <p
+          className="text-[12px] leading-relaxed text-foreground/65 line-clamp-3"
+          title={hr.persona || hr.description}
+          data-testid={`hr-summary-${hr.id.slice(0, 8)}`}
+        >
+          {summary || <span className="text-foreground/40">暂无描述</span>}
         </p>
       </div>
-      {(hr.ironLaws.length > 0 || hr.skills.length > 0 || hr.tools.length > 0) && (
-        <div className="relative mt-3 flex flex-wrap gap-1.5 text-[10.5px] font-mono text-foreground/55">
-          {hr.ironLaws.length > 0 && (
-            <span className="rounded bg-rose-500/10 px-1.5 py-0.5 text-rose-700 dark:text-rose-300 ring-1 ring-rose-500/15">
-              {hr.ironLaws.length} 铁律
-            </span>
-          )}
-          {hr.skills.length > 0 && (
-            <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/15">
-              {hr.skills.length} 技能
-            </span>
-          )}
-          {hr.tools.length > 0 && (
-            <span className="rounded bg-sky-500/10 px-1.5 py-0.5 text-sky-700 dark:text-sky-300 ring-1 ring-sky-500/15">
-              {hr.tools.length} 工具
-            </span>
-          )}
-        </div>
-      )}
-      <div className="relative mt-auto flex items-center justify-between gap-3 pt-5">
-        <div className="flex items-center gap-2 text-[11px] font-mono text-foreground/55">
+
+      {/* 底行:使用数 + 招聘按钮 */}
+      <div className="relative mt-auto flex items-center justify-between gap-3 pt-3">
+        <div className="flex items-center gap-1.5 text-[11px] text-foreground/60">
           <Briefcase className="size-3" />
           <span className="tabular-nums">
-            <strong className="font-semibold text-foreground/80">{hr.usageCount}</strong> 实例在用
+            <strong className="font-semibold text-foreground/80">{hr.usageCount}</strong> 在用
           </span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <Link href={`/employees/hr/${hr.id}`}>
-            <Button size="sm" variant="outline" className="gap-1 text-[12px]">
-              查看
-            </Button>
-          </Link>
-          <Link href={`/employees/recruit?hrId=${encodeURIComponent(hr.id)}`}>
-            <Button size="sm" className="gap-1 text-[12px]" data-testid={`hr-recruit-${hr.id.slice(0, 8)}`}>
-              <Sparkles className="size-3.5" /> 招聘
-            </Button>
-          </Link>
-        </div>
+        <Link href={`/employees/recruit?hrId=${encodeURIComponent(hr.id)}`}>
+          <Button
+            size="sm"
+            className="gap-1 text-[11px] h-7 px-2.5"
+            data-testid={`hr-recruit-${hr.id.slice(0, 8)}`}
+          >
+            <Sparkles className="size-3" /> 招聘
+          </Button>
+        </Link>
       </div>
     </div>
   );

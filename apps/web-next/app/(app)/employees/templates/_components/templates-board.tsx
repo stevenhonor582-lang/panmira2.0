@@ -29,7 +29,7 @@ export function TemplatesBoard() {
   const [demoteName, setDemoteName] = React.useState("");
   const [demoting, setDemoting] = React.useState(false);
   const toast = useToast();
-  // 模板变更时预填默认实例名
+  // HR 变更时预填默认实例名
   React.useEffect(() => {
     if (demoteTpl) {
       setDemoteName(`${demoteTpl.displayName || demoteTpl.name}-实例`);
@@ -41,7 +41,7 @@ export function TemplatesBoard() {
     return () => clearTimeout(t);
   }, []);
 
-  // ⑦ 模板列表只显示 is_template=true 的空白模板,实例(is_template=false)不在此列
+  // ⑦ HR 列表只显示 is_template=true 的空白岗位,实例(is_template=false)不在此列
   const templates = rawTemplates.filter((t) => t.isTemplate);
   const totalMine = templates.length;
   const totalPublic = TEMPLATE_PRESETS.length;
@@ -52,13 +52,13 @@ export function TemplatesBoard() {
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-[10.5px] font-mono uppercase tracking-[0.22em] text-foreground/45">
             <span className="inline-block size-1.5 rounded-full bg-foreground/40" />
-            模板库
+            HR 库
           </div>
           <h1 className="text-5xl font-semibold tracking-tighter leading-[1.02] max-w-[14ch]">
-            从模板起手,或自己造一个
+            从 HR 岗位起手,或自己造一个
           </h1>
           <p className="max-w-[60ch] text-[15px] leading-relaxed text-foreground/65">
-            模板是数字员工的复制基底。同一个销售模板可以派生 5 个独立数字员工,配给不同员工,起不同名字。
+            HR(岗位)是数字员工的复制基底。同一个销售岗位可以派生 5 个独立数字员工,配给不同员工,起不同名字。
             <strong className="text-foreground/80"> 复制 = 深拷贝</strong>:人格、系统提示词、技能、铁律全部独立。
           </p>
         </div>
@@ -66,14 +66,14 @@ export function TemplatesBoard() {
           href="/employees/new?type=template"
           className="inline-flex items-center gap-2 rounded-full bg-foreground px-5 py-2.5 text-[13px] font-medium text-background hover:opacity-90"
         >
-          <Plus className="size-4" /> 新建模板
+          <Plus className="size-4" /> 新建 HR
         </Link>
       </header>
 
       <div className="flex items-center gap-1 self-start">
         {[
-          { id: "mine", label: "我自己的模板", count: totalMine, icon: <Lock className="size-3.5" /> },
-          { id: "public", label: "公开模板", count: totalPublic, icon: <Globe2 className="size-3.5" /> },
+          { id: "mine", label: "我自己的 HR", count: totalMine, icon: <Lock className="size-3.5" /> },
+          { id: "public", label: "公开 HR", count: totalPublic, icon: <Globe2 className="size-3.5" /> },
         ].map((t) => {
           const on = tab === t.id;
           return (
@@ -107,7 +107,7 @@ export function TemplatesBoard() {
         <CopyAsTemplateModal template={copyTpl} onClose={() => setCopyTpl(null)} onDone={() => setCopyTpl(null)} />
       )}
 
-      {/* R45-2: 模板 → 实例 dialog(就地展开) */}
+      {/* R45-2: HR → 实例 dialog(就地展开) */}
       {demoteTpl && (
         <Dialog open={!!demoteTpl} onOpenChange={(o) => { if (!o) setDemoteTpl(null); }}>
           <DialogContent className="sm:max-w-md">
@@ -115,7 +115,7 @@ export function TemplatesBoard() {
               <DialogTitle>转为实例</DialogTitle>
               <DialogDescription>
                 将基于「{demoteTpl.displayName || demoteTpl.name}」创建一个新实例。
-                原模板保留,实例默认状态 active。
+                原 HR 保留,实例默认状态 active。
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-2 py-2">
@@ -189,16 +189,16 @@ function MineGrid({
       <div className="flex flex-col items-center gap-2 rounded-3xl border border-dashed border-border py-16 text-center">
         <Lock className="size-5 text-foreground/40" />
         <p className="font-mono text-[10.5px] uppercase tracking-[0.22em] text-foreground/40">
-          暂无自定义模板
+          暂无自定义 HR
         </p>
         <p className="text-[13px] text-foreground/55 max-w-[36ch]">
-          模板可以从零新建,或在数字员工画廊把已有 agent "转为模板"。
+          HR 岗位可以从零新建,或在数字员工画廊把已有 agent "转为 HR 岗位"。
         </p>
         <Link
           href="/employees/new?type=template"
           className="mt-3 inline-flex items-center gap-2 rounded-full bg-foreground px-4 py-2 text-[12.5px] font-medium text-background"
         >
-          <Plus className="size-3.5" /> 新建模板
+          <Plus className="size-3.5" /> 新建 HR
         </Link>
       </div>
     );
@@ -304,7 +304,7 @@ function TemplateCard({ tpl, onInstantiate, onCopy, onToInstance }: { tpl: Agent
             className="gap-1 text-[12px]"
             data-testid={`copy-tpl-${tpl.id.slice(0, 8)}`}
           >
-            <Copy className="size-3.5" /> 复制为模板
+            <Copy className="size-3.5" /> 复制为 HR
           </Button>
         </div>
       </div>
@@ -406,7 +406,7 @@ function FromTemplateModal({
     <Dialog open={!!template} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>从模板创建实例</DialogTitle>
+          <DialogTitle>从 HR 招新员工</DialogTitle>
           <DialogDescription>
             深拷贝 <strong className="text-foreground/80">{template.displayName || template.name}</strong> 的全部配置
             (人格、系统提示词、技能、铁律),分配新 id + 新所有者。
@@ -452,7 +452,7 @@ function FromTemplateModal({
 
           <div className="rounded-md bg-muted/40 px-3 py-2.5 text-[11.5px] text-foreground/55">
             <div className="flex items-center justify-between">
-              <span>模板源</span>
+              <span>HR 源</span>
               <span className="font-mono">{template.id.slice(0, 8)}…</span>
             </div>
             <div className="mt-1 flex items-center justify-between">
@@ -497,14 +497,14 @@ function CopyAsTemplateModal({
 
   const handleSubmit = async () => {
     if (!name.trim()) {
-      setError("请填写新模板名字");
+      setError("请填写新 HR 名");
       return;
     }
     setSubmitting(true);
     setError(null);
     try {
       const result = await copyTemplate(template.id, name.trim());
-      toast.success(`已复制为模板「${result.name}」`);
+      toast.success(`已复制为 HR「${result.name}」`);
       onDone();
       // Refresh page so the new template shows up in the list
       if (typeof window !== "undefined") {
@@ -521,7 +521,7 @@ function CopyAsTemplateModal({
     <Dialog open={!!template} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>复制为新模板</DialogTitle>
+          <DialogTitle>复制为新 HR</DialogTitle>
           <DialogDescription>
             深拷贝 <strong className="text-foreground/80">{template.displayName || template.name}</strong> 的全部配置
             (人格、系统提示词、技能、铁律、KB、MCP 引用),分配新 id + is_template=true。
@@ -531,17 +531,17 @@ function CopyAsTemplateModal({
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
             <label className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/55">
-              新模板名字 · name
+              新 HR 名 · name
             </label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="如:销售模板 v2"
+              placeholder="如:销售岗位 v2"
               autoFocus
               data-testid="copy-template-name"
             />
             <p className="text-[11px] text-foreground/45">
-              模板允许重名 — 不必担心覆盖现有模板。
+              HR 允许重名 — 不必担心覆盖现有 HR。
             </p>
           </div>
 

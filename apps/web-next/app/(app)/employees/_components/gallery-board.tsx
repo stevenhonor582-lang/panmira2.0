@@ -76,7 +76,7 @@ export function GalleryBoard() {
     return () => clearTimeout(t);
   }, []);
 
-  // 当前 tab 数据(实例 vs 模板)
+  // 当前 tab 数据(实例 vs HR 岗位)
   const scopedList = React.useMemo(
     () => agents.filter((a) => (boardTab === "templates" ? a.isTemplate : !a.isTemplate)),
     [agents, boardTab],
@@ -139,21 +139,21 @@ export function GalleryBoard() {
             active={boardTab === "templates"}
             onClick={() => { setBoardTab("templates"); setFilter(EMPTY_FILTER); }}
             icon={<FileText className="size-3.5" />}
-            label="模板库"
+            label="HR 库"
             count={templatesCount}
           />
         </div>
 
         <div className="flex items-center gap-2">
-          <Link href="/employees/templates">
+          <Link href="/employees/hr">
             <Button variant="outline" size="sm" className="gap-1.5">
-              <FileText className="size-3.5" /> 模板管理
+              <FileText className="size-3.5" /> HR 管理
             </Button>
           </Link>
           <Link href="/employees/new?type=instance">
             <Button size="sm" className="gap-1.5">
               <Plus className="size-3.5" />
-              {boardTab === "templates" ? "新建模板" : "新建数字员工"}
+              {boardTab === "templates" ? "新建 HR" : "新建数字员工"}
             </Button>
           </Link>
         </div>
@@ -196,18 +196,18 @@ function Header({
           数字员工
         </div>
         <h1 className="text-5xl font-semibold tracking-tighter leading-[1.02] max-w-[14ch]">
-          {boardTab === "templates" ? "模板库" : "你的数字员工矩阵"}
+          {boardTab === "templates" ? "HR 库" : "你的数字员工矩阵"}
         </h1>
         <p className="max-w-[60ch] text-[15px] leading-relaxed text-foreground/65">
           {boardTab === "templates"
-            ? "模板是 agent 的复制基底 — 同一个销售模板可以派生出多个独立 agent,起不同名字,配给不同员工。"
+            ? "HR(岗位)是 agent 的复制基底 — 同一个岗位可以派生出多个独立员工,起不同名字,配给不同真人。"
             : "每个员工都是一组指令 + 一段人格 + 一条调用链。"}
           {loading ? (
             <> 正在拉取最新数据…</>
           ) : (
             <>
               {" "}共 <span className="font-mono text-foreground/90">{instancesCount}</span> 个实例 ·{" "}
-              <span className="font-mono text-foreground/90">{templatesCount}</span> 个模板。
+              <span className="font-mono text-foreground/90">{templatesCount}</span> 个 HR。
             </>
           )}
         </p>
@@ -346,7 +346,7 @@ function RoleLegend({
           <p className="mt-3 border-t border-border pt-2.5 text-[11px] text-foreground/55">
             <span className="font-mono text-foreground/45">说明 ·</span>{" "}
             <span className="text-foreground/75">主理人</span> 是这个员工的归属者(等同于所有者);
-            <span className="text-foreground/75"> 模板</span> 标记表示当前是模板(可被复制派生实例),没有"主理(系统模板)"这一概念。
+            <span className="text-foreground/75"> HR</span> 标记表示当前是 HR 岗位(可被复制派生实例),没有"主理(系统模板)"这一概念。
             点上面任一角色可快速筛选。
           </p>
         </div>
@@ -376,8 +376,8 @@ function EmptyState({ tab }: { tab: BoardTab }) {
       </span>
       <p className="max-w-[44ch] text-sm text-foreground/65">
         {tab === "templates"
-          ? "没有匹配的模板。试着清空检索,或到模板管理页新建一个。"
-          : "没有匹配的员工。试着清空检索,或从模板派生一个。"}
+          ? "没有匹配的 HR 岗位。试着清空检索,或到 HR 库新建一个。"
+          : "没有匹配的员工。试着清空检索,或从 HR 岗位派生一个。"}
       </p>
     </div>
   );

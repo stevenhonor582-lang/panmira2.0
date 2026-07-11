@@ -295,8 +295,8 @@ export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?
       setBusy(false);
     }
   };
-  // R43 修复: 恢复"复制为模板"功能(被 R42 误删,后端 POST /api/v2/admin/agent-templates 已支持)
-  // 拉取 instance 完整行作为 snapshot 投到 templates 表
+  // R43 修复: 恢复"复制为 HR"功能(被 R42 误删,后端 POST /api/v2/admin/agent-templates 已支持)
+  // 拉取 instance 完整行作为 snapshot 投到 templates/HR 表
   const handleCopyAsTemplate = async (agentId: string, agentName: string) => {
     setActing(agentId);
     try {
@@ -307,7 +307,7 @@ export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?
       );
       const row: any = (detail as any)?.data ?? detail;
       if (!row || !row.name) {
-        toast.error("获取数字员工详情失败,无法复制为模板");
+        toast.error("获取数字员工详情失败,无法复制为 HR");
         return;
       }
       const body = {
@@ -333,15 +333,15 @@ export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?
         },
       );
       const newId = (created as any)?.agent?.id ?? (created as any)?.id;
-      toast.success(`已复制为模板「${body.name}」${newId ? " · " + String(newId).slice(0, 8) : ""}`);
+      toast.success(`已复制为 HR「${body.name}」${newId ? " · " + String(newId).slice(0, 8) : ""}`);
     } catch (err: any) {
-      toast.error("复制为模板失败:" + (err?.message ?? String(err)));
+      toast.error("复制为 HR 失败:" + (err?.message ?? String(err)));
     } finally {
       setActing(null);
     }
   };
 
-  // R44-1: 提升为模板(调后端新加的 promote-to-template 端点,创建新 template + 解绑 bot_configs)
+  // R44-1: 提升为 HR(调后端新加的 promote-to-template 端点,创建新 template + 解绑 bot_configs)
   const handlePromoteToTemplate = async (agentId: string, agentName: string) => {
     setActing(agentId);
     try {
@@ -352,16 +352,16 @@ export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?
         {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ name: `${agentName}-模板` }),
+          body: JSON.stringify({ name: `${agentName}-HR` }),
         },
       );
       const newId = (result as any)?.agent?.id ?? (result as any)?.id;
-      const newName = (result as any)?.agent?.name ?? (result as any)?.name ?? `${agentName}-模板`;
-      toast.success(`已提升为模板「${newName}」${newId ? " · " + String(newId).slice(0, 8) : ""}`);
+      const newName = (result as any)?.agent?.name ?? (result as any)?.name ?? `${agentName}-HR`;
+      toast.success(`已提升为 HR「${newName}」${newId ? " · " + String(newId).slice(0, 8) : ""}`);
       load();
       onChanged?.();
     } catch (err: any) {
-      toast.error("提升为模板失败:" + (err?.message ?? String(err)));
+      toast.error("提升为 HR 失败:" + (err?.message ?? String(err)));
     } finally {
       setActing(null);
     }
@@ -450,21 +450,21 @@ export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?
                     {acting ? <Loader2 className="size-3.5 animate-spin" /> : <MoreVertical className="size-3.5" />}
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-44">
-                    {/* R44-1: 恢复"提升为模板"(后端 POST /api/v2/admin/agent-instances/:id/promote-to-template)
-                        比 R43 的"复制为模板"更精确 — 走的是事务+解绑 bot_configs,不是单纯 snapshot 拷。 */}
+                    {/* R44-1: 恢复"提升为 HR"(后端 POST /api/v2/admin/agent-instances/:id/promote-to-template)
+                        比 R43 的"复制为 HR"更精确 — 走的是事务+解绑 bot_configs,不是单纯 snapshot 拷。 */}
                     <DropdownMenuItem
                       onClick={() => handlePromoteToTemplate(a.id, a.display_name ?? a.name)}
                       data-testid={`person-agent-promote-${a.id.slice(0, 8)}`}
                     >
-                      <FileUp className="size-4" /> 提升为模板
+                      <FileUp className="size-4" /> 提升为 HR
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
-                    {/* R43 修复: 恢复"复制为模板"(后端 POST /api/v2/admin/agent-templates 已支持) */}
+                    {/* R43 修复: 恢复"复制为 HR"(后端 POST /api/v2/admin/agent-templates 已支持) */}
                     <DropdownMenuItem
                       onClick={() => handleCopyAsTemplate(a.id, a.display_name ?? a.name)}
                       data-testid={`person-agent-copy-template-${a.id.slice(0, 8)}`}
                     >
-                      <Copy className="size-4" /> 复制为模板
+                      <Copy className="size-4" /> 复制为 HR
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
@@ -511,7 +511,7 @@ export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?
         />
       </div>
 
-      {/* R43 修复: "复制为模板"功能已恢复(放在每个 agent 卡片的下拉菜单中) */}
+      {/* R43 修复: "复制为 HR"功能已恢复(放在每个 agent 卡片的下拉菜单中) */}
     </div>
   );
 }

@@ -35,7 +35,7 @@ const ROLE_LABEL: Record<string, string> = {
   "research-analyst": "调研分析",
 };
 
-// R51-E1: 模板分类(画 / 文 / 运 / 其它)。对齐 data.category 字段 + 默认兜底。
+// R51-E1: HR 岗位分类(画 / 文 / 运 / 其它)。对齐 data.category 字段 + 默认兜底。
 const CATEGORY_PRESETS: Record<string, { label: string; Icon: typeof Brush; tone: string }> = {
   art:        { label: "绘画", Icon: Brush,   tone: "bg-rose-500/10  text-rose-700  dark:text-rose-300  ring-rose-500/25" },
   copy:       { label: "文案", Icon: PenLine, tone: "bg-amber-500/10 text-amber-700 dark:text-amber-300 ring-amber-500/25" },
@@ -96,11 +96,11 @@ export function AgentCard({
   const [hover, setHover] = React.useState(false);
   const [pos, setPos] = React.useState({ x: 50, y: 50 });
   const [acting, setActing] = React.useState(false);
-  // R44-1: 提升为模板 dialog 状态
+  // R44-1: 提升为 HR dialog 状态
   const [promoteOpen, setPromoteOpen] = React.useState(false);
   const [promoteName, setPromoteName] = React.useState("");
   const [promoting, setPromoting] = React.useState(false);
-  // R45-2: 转为实例 dialog 状态(template → instance, 模板卡菜单触发)
+  // R45-2: 转为实例 dialog 状态(hr → instance, HR 卡菜单触发)
   const [demoteOpen, setDemoteOpen] = React.useState(false);
   const [demoteName, setDemoteName] = React.useState("");
   const [demoting, setDemoting] = React.useState(false);
@@ -131,7 +131,7 @@ export function AgentCard({
   const t = runtimeTone(agent, runtimeMap);
   const avatarSize = "md"; // 统一中尺寸头像
 
-  // R51-E1: 模板分类(从 raw.category 读取,模板卡显示)
+  // R51-E1: HR 岗位分类(从 raw.category 读取,HR 卡显示)
   const category = React.useMemo(
     () => categoryPreset((agent.raw as Record<string, unknown> | null)?.category),
     [agent.raw],
@@ -188,17 +188,17 @@ export function AgentCard({
         });
         router.push(`/employees/${created.id}`);
       } else if (action === "promoteToTemplate") {
-        // R44-1: 实例 → 模板。弹 dialog 让用户填新模板名,确认后调 promoteInstanceToTemplate
-        setPromoteName(`${agent.displayName || agent.name}-模板`);
+        // R44-1: 实例 → HR。弹 dialog 让用户填新 HR 名,确认后调 promoteInstanceToTemplate
+        setPromoteName(`${agent.displayName || agent.name}-HR`);
         setPromoteOpen(true);
         setActing(false);
         return;
       } else if (action === "toInstance") {
-        // R45-2: 模板 → 实例。弹 dialog 让用户填新实例名,确认后调 demoteTemplateToInstance
+        // R45-2: HR → 实例。弹 dialog 让用户填新实例名,确认后调 demoteTemplateToInstance
         if (!agent.isTemplate) {
-          // 非模板不应触发,defensive fallback
+          // 非 HR 不应触发,defensive fallback
           if (typeof window !== "undefined") {
-            window.alert("转为实例 仅对模板卡可用。");
+            window.alert("转为实例 仅对 HR 卡可用。");
           }
           setActing(false);
           return;
@@ -211,7 +211,7 @@ export function AgentCard({
         // R42-ROUTES 已删除 copy-as-template 端点 — R45-3 待做,保留 stub
         const msg = {
           copyAsTemplate:
-            "复制为模板 已在 R42 删除。请直接新建模板,把要复制的字段粘过去。",
+            "复制为 HR 已在 R42 删除。请直接新建 HR,把要复制的字段粘过去。",
         }[action as "copyAsTemplate"];
         if (typeof window !== "undefined" && msg) {
           window.alert(msg);
@@ -326,15 +326,15 @@ export function AgentCard({
                 </div>
               )}
               {/* R42-FRONTEND: R42 主路径保留 '生成实例'。
-                  R44-1: 实例 → 模板 端点已恢复,加 '提升为模板' 菜单项(只对非模板 instance 显示)。
-                  R44-2/3/4(复制为模板 / 转为实例)未做,继续走 stub。
+                  R44-1: 实例 → HR 端点已恢复,加 '提升为 HR' 菜单项(只对非 HR instance 显示)。
+                  R44-2/3/4(复制为 HR / 转为实例)未做,继续走 stub。
               */}
               {!agent.isTemplate && (
                 <DropdownMenuItem
                   onClick={(e) => onAction(e, "promoteToTemplate")}
                   data-testid="menu-promote-to-template"
                 >
-                  <FileUp className="size-4" /> 提升为模板
+                  <FileUp className="size-4" /> 提升为 HR
                 </DropdownMenuItem>
               )}
               {agent.isTemplate && (
@@ -375,20 +375,20 @@ export function AgentCard({
           t.accent,
         )}
       />
-      {/* R28-A: 实例卡片蓝色左 accent 线(一眼区分实例 vs 模板) */}
+      {/* R28-A: 实例卡片蓝色左 accent 线(一眼区分实例 vs HR) */}
       {!agent.isTemplate && (
         <div
           aria-hidden
           className="absolute left-0 top-0 h-full w-1.5 bg-blue-500/80 z-[5]"
         />
       )}
-      {/* R28-A: 模板卡片右下水印 */}
+      {/* R28-A: HR 卡片右下水印 */}
       {agent.isTemplate && (
         <div
           aria-hidden
           className="pointer-events-none absolute bottom-2 right-4 select-none text-6xl font-black leading-none tracking-tighter text-violet-500/[0.07]"
         >
-          模板
+          HR
         </div>
       )}
       <div className="relative flex h-full w-full flex-col p-5">
@@ -409,7 +409,7 @@ export function AgentCard({
             {agent.isTemplate ? (
               <span className="inline-flex items-center gap-1 rounded bg-violet-500/15 px-1.5 py-0.5 text-[9.5px] font-medium tracking-[0.18em] text-violet-700 dark:text-violet-300 ring-1 ring-violet-500/30">
                 <FileText className="size-2.5" />
-                模板
+                HR
               </span>
             ) : (
               <span className="inline-flex items-center gap-1 rounded bg-blue-500/15 px-1.5 py-0.5 text-[9.5px] font-medium tracking-[0.18em] text-blue-700 dark:text-blue-300 ring-1 ring-blue-500/30">
@@ -417,7 +417,7 @@ export function AgentCard({
                 实例
               </span>
             )}
-            {/* R51-E1: 模板分类 chip(画 / 文 / 运 / 其它)— 仅模板显示 */}
+            {/* R51-E1: HR 岗位分类 chip(画 / 文 / 运 / 其它)— 仅 HR 显示 */}
             {agent.isTemplate && (
               <span
                 className={cn(
@@ -512,22 +512,22 @@ export function AgentCard({
         </div>
       </div>
 
-      {/* R44-1: 提升为模板 dialog */}
+      {/* R44-1: 提升为 HR dialog */}
       <Dialog open={promoteOpen} onOpenChange={setPromoteOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>提升为模板</DialogTitle>
+            <DialogTitle>提升为 HR 岗位</DialogTitle>
             <DialogDescription>
-              将基于「{agent.displayName || agent.name}」创建一个新模板。
+              将基于「{agent.displayName || agent.name}」创建一个新 HR 岗位。
               原实例保留,但会解绑该实例关联的所有 bot。
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 py-2">
-            <label className="text-[12px] text-foreground/70">新模板名</label>
+            <label className="text-[12px] text-foreground/70">新 HR 名</label>
             <Input
               value={promoteName}
               onChange={(e) => setPromoteName(e.target.value)}
-              placeholder="新模板名"
+              placeholder="新 HR 名"
               data-testid="promote-name-input"
             />
           </div>
@@ -539,18 +539,18 @@ export function AgentCard({
               onClick={async () => {
                 const trimmed = promoteName.trim();
                 if (!trimmed) {
-                  toast.error("模板名不能为空");
+                  toast.error("HR 名不能为空");
                   return;
                 }
                 setPromoting(true);
                 try {
                   const result = await promoteInstanceToTemplate(agent.id, trimmed);
-                  toast.success(`已创建模板「${result.name}」`);
+                  toast.success(`已创建 HR 岗位「${result.name}」`);
                   setPromoteOpen(false);
                   onChanged?.();
                 } catch (err: unknown) {
                   const msg = err instanceof Error ? err.message : String(err);
-                  toast.error(`提升为模板失败: ${msg}`);
+                  toast.error(`提升为 HR 失败: ${msg}`);
                 } finally {
                   setPromoting(false);
                 }
@@ -570,7 +570,7 @@ export function AgentCard({
             <DialogTitle>转为实例</DialogTitle>
             <DialogDescription>
               将基于「{agent.displayName || agent.name}」创建一个新实例。
-              原模板保留,实例默认状态 active。
+              原 HR 保留,实例默认状态 active。
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 py-2">
@@ -625,7 +625,7 @@ export function AgentCard({
           </DialogHeader>
           <div className="rounded-md bg-rose-500/10 px-3 py-2 text-[12.5px] text-rose-700 dark:text-rose-300">
             {agent.isTemplate
-              ? "该模板被删除后,所有从该模板生成的实例仍保留(它们已独立)。"
+              ? "该 HR 岗位被删除后,所有从该岗位生成的实例仍保留(它们已独立)。"
               : "该实例被删除后,所有绑定的 bot / 频道 / 知识库引用 / 运行日志将一并清理。"}
           </div>
           <DialogFooter>

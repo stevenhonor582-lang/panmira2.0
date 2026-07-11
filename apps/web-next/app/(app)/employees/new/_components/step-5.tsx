@@ -222,7 +222,7 @@ function renderOrgBlock({
             {orgFolders.length}
           </span>
         </div>
-        <span className="text-[10.5px] text-foreground/50">全员可见 · 制度 / 模板 / 公告</span>
+        <span className="text-[10.5px] text-foreground/50">全员可见 · 制度 / 文档 / 公告</span>
       </div>
       <FolderTree
         folders={orgFolders}

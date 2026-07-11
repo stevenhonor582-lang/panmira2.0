@@ -90,7 +90,7 @@ export interface WizardForm {
   glyph: string;
   hue: string;
   // R51-C2: HR 岗位类型(仅 type=template 时用): painting(绘画)/ copy(文案)/ ops(运维)/ other(其它)
-  templateCategory: string;
+  hrCategory: string;
   // Step 2 — brain
   providerId: string;        // → model_id (FK to provider_configs.id)
   providerModel: string;     // denormalized for preview
@@ -144,7 +144,7 @@ export const EMPTY_FORM: WizardForm = {
   templateId: "",
   glyph: "新",
   hue: "amber",
-  templateCategory: "",
+  hrCategory: "",
   providerId: "",
   providerModel: "",
   providerName: "",
@@ -262,8 +262,8 @@ export function formToAgentPayload(
   const isTemplate = mode === "template";
   // HR 岗位类型:R51-C2 4 选 1 (绘画/文案/运维/其它) — 留兜底,空值归到 "other"
   const category = isTemplate
-    ? (form.templateCategory && form.templateCategory.trim().length > 0
-        ? form.templateCategory
+    ? (form.hrCategory && form.hrCategory.trim().length > 0
+        ? form.hrCategory
         : "other")
     : "general";
   // R53-T5: 招聘态把来源岗位透传给后端(source_template_id 前端兜底;后端已 R52 强校验)。

@@ -34,7 +34,7 @@ const STATUS_OPTIONS = [
   { value: "deprecated", label: "弃用" },
 ];
 
-// ⑤ 角色模板仅在创建时选择,编辑页不可改;⑧ 引擎/模型由专属大模型卡片管理
+// ⑤ 角色 HR 岗位仅在创建时选择,编辑页不可改;⑧ 引擎/模型由专属大模型卡片管理
 // 故 FIELDS 只保留可编辑字段:name / description / category / complexity_level / status
 const FIELDS = [
   "name", "description", "category",
@@ -79,7 +79,7 @@ function safeParse(raw: string): Record<string, unknown> {
 
 // R28-A: Agent 基础信息卡片统一真人 BasicTab 卡片布局
 // - 基本信息 卡片(名称/描述/角色/分类)
-// - 系统信息 卡片(Agent ID/工作目录/引擎·模型/主理人/模板来源/版本/创建于)
+// - 系统信息 卡片(Agent ID/工作目录/引擎·模型/主理人/HR 来源/版本/创建于)
 // - 专属大模型 绑定卡片(R31-C 新增,独立保存)
 // - 编辑模式: 第二卡片切换为"引擎与模型"编辑表单
 export function TabBasics({ id }: { id: string }) {
@@ -131,7 +131,7 @@ export function TabBasics({ id }: { id: string }) {
                 placeholder="给员工取个名字"
                 hint="显示名跟随名称"
               />
-              {/* ⑤ 角色模板:创建时选定,实例独立,编辑页只读不可改 */}
+              {/* ⑤ 角色 HR:创建时选定,实例独立,编辑页只读不可改 */}
               <ReadonlyField label="角色类型" icon={Cpu}>
                 <code className="font-mono text-[13px] tracking-tight">{agent.role}</code>
               </ReadonlyField>
