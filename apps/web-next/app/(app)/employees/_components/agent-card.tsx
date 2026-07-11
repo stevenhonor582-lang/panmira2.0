@@ -56,7 +56,9 @@ function categoryPreset(rawCategory: unknown): { key: string; label: string; Ico
   return { key, label: preset.label, Icon: preset.Icon, tone: preset.tone };
 }
 
-// R51-E1: 运行时状态 — 待命(默认 active) / 工作(active + 当前 run) / 暂停 / 弃用
+// R55-D 4.5: 运行时状态 — 待命(active 不工作) / 工作(active + 当前 run) / 暂停 / 弃用 / 草稿
+//   D6 决策:状态色只填内部,不描边 — 故 chip 字段统一去掉 ring
+//   D6 颜色:工作中 #22c55e (emerald-500),带 animate-pulse
 type RuntimeTone = ReturnType<typeof statusTone>;
 function runtimeTone(agent: Agent, workingIds: Record<string, true>): RuntimeTone {
   if (agent.status === "paused" || agent.status === "deprecated") return statusTone(agent.status);
@@ -65,11 +67,12 @@ function runtimeTone(agent: Agent, workingIds: Record<string, true>): RuntimeTon
     return {
       dot: "bg-emerald-400 animate-pulse",
       label: "工作中",
-      chip: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/30",
+      chip: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
       accent: "bg-emerald-500/50",
     };
   }
-  return statusTone("active");
+  // active 不工作 → 待命(灰);draft → 草稿(由 statusTone 内部处理)
+  return statusTone(agent.status);
 }
 
 // R17-3: 卡片统一尺寸 — 不再有 feature/tall/wide 区分
@@ -444,10 +447,17 @@ export function AgentCard({
 
         <div className="mt-auto flex flex-col gap-2.5">
           <div>
-            <div className="flex items-baseline gap-2">
+            <div className="flex items-center gap-2">
               <h3 className="font-semibold tracking-tight leading-tight text-xl">
                 {agent.displayName || agent.name}
               </h3>
+              {/* R55-D 4.5: D6 决策 — 状态色圆点(8px)在名称旁,只填不描边,与部门色(2px 卡片描边)不混 */}
+              <span
+                className={cn("size-2 shrink-0 rounded-full", t.dot)}
+                aria-label={t.label}
+                title={`状态: ${t.label}`}
+                data-testid={`status-dot-${agent.id.slice(0, 8)}`}
+              />
               <span className="text-xs font-mono text-foreground/40">v{agent.version}</span>
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">

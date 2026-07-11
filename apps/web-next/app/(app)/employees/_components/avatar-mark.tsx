@@ -83,43 +83,52 @@ export function AvatarMark({
   );
 }
 
-// R25: chip 样式参照 person-card STATUS_STYLE(oklch 不刺眼)
+// R55-D 4.5: D6 决策 — 状态色填内部不描边(区别于部门色描边)
+//   待命:灰色 #9ca3af → bg-zinc-400 (Tailwind 默认就是这个)
+//   工作中:绿色 #22c55e → bg-emerald-500 (在 runtimeTone 单独处理,带 animate-pulse)
+//   暂停:橙色 #f97316 → bg-orange-500
+//   弃用:红色 #ef4444 → bg-red-500
+//   草稿:D6 未列 — 保留为内部编辑态(浅蓝),不在生产态 chip 显示
 export function statusTone(status: Agent["status"]): {
   dot: string;
   label: string;
-  /** chip 包装(label + dot 用),参照真人卡片样式 */
+  /** chip 包装(label + dot 用),无 ring — 状态色只填内部 */
   chip: string;
   /** 卡片顶部细线 accent(可选) */
   accent: string;
 } {
   if (status === "active") {
+    // 待命(灰)— 不工作时显示
     return {
-      dot: "bg-emerald-500",
-      label: "运行中",
-      chip: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 ring-1 ring-emerald-500/20",
-      accent: "bg-emerald-500/0",
+      dot: "bg-zinc-400",
+      label: "待命",
+      chip: "bg-zinc-500/15 text-zinc-700 dark:text-zinc-300",
+      accent: "bg-zinc-500/30",
     };
   }
   if (status === "paused") {
+    // 暂停(橙)
     return {
-      dot: "bg-amber-500",
-      label: "已暂停",
-      chip: "bg-amber-500/10 text-amber-700 dark:text-amber-400 ring-1 ring-amber-500/20",
-      accent: "bg-amber-500/40",
+      dot: "bg-orange-500",
+      label: "暂停",
+      chip: "bg-orange-500/15 text-orange-700 dark:text-orange-300",
+      accent: "bg-orange-500/40",
     };
   }
   if (status === "draft") {
+    // 草稿(内部编辑态,D6 未列,保留浅蓝)
     return {
       dot: "bg-sky-500",
       label: "草稿",
-      chip: "bg-sky-500/10 text-sky-700 dark:text-sky-400 ring-1 ring-sky-500/20",
+      chip: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
       accent: "bg-sky-500/40",
     };
   }
+  // 弃用(红)
   return {
-    dot: "bg-zinc-400",
-    label: "已弃用",
-    chip: "bg-zinc-500/10 text-zinc-600 dark:text-zinc-400 ring-1 ring-zinc-500/20",
-    accent: "bg-zinc-500/40",
+    dot: "bg-red-500",
+    label: "弃用",
+    chip: "bg-red-500/15 text-red-700 dark:text-red-300",
+    accent: "bg-red-500/40",
   };
 }
