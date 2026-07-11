@@ -39,6 +39,8 @@ export interface McpServerInfo {
   transport?: string;
   status?: string;
   health?: string;
+  // R66-B(3.2): 外接能力描述 — 后端未返时前端按 id 兑底
+  description?: string;
 }
 
 export interface KbFolderInfo {

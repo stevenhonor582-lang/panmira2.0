@@ -101,7 +101,7 @@ export async function handleAgentsCrudRoutes(
     }
   }
 
-  const detailMatch = u.pathname.match(/^\/api\/v2\/admin\/agents\/([^/]+)$/);
+  const detailMatch = u.pathname.match(/^\/api\/v2\/admin\/agent-instances\/([^/]+)$/);
   if (method === 'GET' && detailMatch) {
     if (!requireAnyScope(ctx, ['agent:read', 'agent:admin'])) {
       jsonResponse(res, 403, { error: 'insufficient_scope', required: 'agent:read OR agent:admin' });

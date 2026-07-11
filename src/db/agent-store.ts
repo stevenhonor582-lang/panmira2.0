@@ -271,7 +271,8 @@ export class AgentStore {
     const tenantId = tenantResult.rows[0].id;
 
     await assertInstanceNameUnique(data.name);
-    const workingDir = data.workingDir || generateWorkingDir(data.name);
+    // R66-D: 工作目录系统锁定 — 永远自动生成安全 slug(拼音首字母+随机),忽略前端传入,不接受中文/全角/空格/特殊字符
+    const workingDir = generateWorkingDir(data.name);
 
     const result = await pool.query(
       `INSERT INTO agent_instances (
@@ -577,7 +578,7 @@ export class AgentStore {
     // instance 独有字段
     if (isInstance) {
       if (data.ownerUserId !== undefined) set('owner_user_id', data.ownerUserId);
-      if (data.workingDir !== undefined) set('working_dir', data.workingDir);
+      // R66-D: 工作目录系统锁定 — 创建后不可手动修改(忽略 data.workingDir)
       if (data.channelIds !== undefined) set('channel_ids', JSON.stringify(data.channelIds));
       if (data.visibility !== undefined) set('visibility', data.visibility);
       if (data.avatarGlyph !== undefined) set('avatar_glyph', data.avatarGlyph);

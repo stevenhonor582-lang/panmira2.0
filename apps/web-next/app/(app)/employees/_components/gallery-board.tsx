@@ -35,14 +35,12 @@ const ROLE_LABEL: Record<string, string> = {
   "research-analyst": "调研分析",
 };
 
-type BoardTab = "instances" | "templates";
-
+// R66-A 2.1: 删 in-page "HR 库" tab — 改由 /employees/hr 独立页承担,首页只展示数字员工实例
 export function GalleryBoard() {
   const [filter, setFilter] = React.useState<FilterState>(EMPTY_FILTER);
   const [mounted, setMounted] = React.useState(false);
   const [agents, setAgents] = React.useState<Agent[]>([]);
   const [loading, setLoading] = React.useState(true);
-  const [boardTab, setBoardTab] = React.useState<BoardTab>("instances");
   // R51-E1: 当前正在 run 的 agent id 集合(用于卡片显示 "工作中")
   const [workingIds, setWorkingIds] = React.useState<Record<string, true>>({});
   // R53-T7.2: HR id → HR 显示名 映射(实例卡显示"岗位"标签用)
@@ -90,26 +88,43 @@ export function GalleryBoard() {
     return () => clearTimeout(t);
   }, []);
 
-  // 当前 tab 数据(实例 vs HR 岗位)
-  const scopedList = React.useMemo(
-    () => agents.filter((a) => (boardTab === "templates" ? a.isTemplate : !a.isTemplate)),
-    [agents, boardTab],
+  // R66-A 2.1: 只显示实例(HR 库已迁到 /employees/hr 独立页)
+  const all = React.useMemo(
+    () => sortByOwnerFirst(agents.filter((a) => !a.isTemplate)),
+    [agents],
   );
-
-  const all = React.useMemo(() => sortByOwnerFirst(scopedList), [scopedList]);
   const list = React.useMemo(() => {
     return all.filter((a) => {
-      if (filter.role !== "all" && a.role !== filter.role) return false;
+      // R66-A 2.4: department(原 role → department)
+      const rawCategory = (a.raw as Record<string, unknown> | null)?.category;
+      const dept = typeof rawCategory === "string" ? rawCategory : "";
+      if (filter.department !== "all" && dept !== filter.department) return false;
       if (filter.model !== "all" && a.model !== filter.model) return false;
       if (filter.status !== "all" && a.status !== filter.status) return false;
-      if (filter.owner !== "all" && a.ownerName !== filter.owner) return false;
+      // R66-A 2.4: 新增 workType(从 raw.template_type 读,与 hr-library 的 6 类一致)
+      if (filter.workType !== "all") {
+        const rawTplType = (a.raw as Record<string, unknown> | null)?.template_type;
+        const tplType = typeof rawTplType === "string" ? rawTplType : "";
+        // workType 工程=engineering, 创意=painting, 运营=ops|business_old, 业务=business, 研究=research, 自定义=custom
+        const wtMap: Record<string, string[]> = {
+          engineering: ["engineering"],
+          painting:    ["painting"],
+          ops:         ["ops", "copywriting"],
+          business:    ["business"],
+          research:    ["research"],
+          custom:      ["custom"],
+        };
+        const allowed = wtMap[filter.workType] ?? [];
+        if (!allowed.includes(tplType)) return false;
+      }
       if (filter.query) {
         const q = filter.query.toLowerCase();
         if (
           !a.displayName.toLowerCase().includes(q) &&
           !a.name.toLowerCase().includes(q) &&
           !a.role.toLowerCase().includes(q) &&
-          !(ROLE_LABEL[a.role] ?? "").includes(q)
+          !(ROLE_LABEL[a.role] ?? "").includes(q) &&
+          !dept.toLowerCase().includes(q)
         )
           return false;
       }
@@ -118,56 +133,63 @@ export function GalleryBoard() {
   }, [all, filter]);
 
   const facetData = React.useMemo(() => {
-    const f = buildFacets(all);
+    // R66-A 2.4: facets 改为 departments + models + workTypes
+    const deptMap = new Map<string, number>();
+    const tplTypeMap = new Map<string, number>();
+    for (const a of all) {
+      const raw = (a.raw as Record<string, unknown> | null);
+      const dept = typeof raw?.category === "string" ? raw.category : "";
+      if (dept) deptMap.set(dept, (deptMap.get(dept) ?? 0) + 1);
+      const tpl = typeof raw?.template_type === "string" ? raw.template_type : "";
+      if (tpl) tplTypeMap.set(tpl, (tplTypeMap.get(tpl) ?? 0) + 1);
+    }
+    // workType facets:把 template_type 聚合到 6 类
+    const wtBucket: Record<string, number> = {
+      engineering: 0, painting: 0, ops: 0, business: 0, research: 0, custom: 0,
+    };
+    for (const [tt, n] of tplTypeMap.entries()) {
+      const norm = tt === "copywriting" ? "ops" : tt;
+      if (norm in wtBucket) wtBucket[norm] += n;
+    }
+    const workTypeFacets: [string, number][] = Object.entries(wtBucket).filter(([, n]) => n > 0);
     return {
-      roles: [...f.roles.entries()].sort((a, b) => b[1] - a[1]),
-      models: [...f.models.entries()],
-      owners: [...f.owners.entries()],
+      departments: [...deptMap.entries()].sort((a, b) => b[1] - a[1]),
+      models: [...tplTypeMap.entries()].length === 0
+        ? []
+        : [...new Map(all.map((a) => [a.model || "—", 0] as [string, number])).entries()]
+            .map(([m]) => {
+              const n = all.filter((a) => a.model === m).length;
+              return [m, n] as [string, number];
+            }),
+      workTypes: workTypeFacets,
     };
   }, [all]);
 
   const instancesCount = agents.filter((a) => !a.isTemplate).length;
-  const templatesCount = agents.filter((a) => a.isTemplate).length;
 
   return (
     <div className="space-y-6">
       <Header
         instancesCount={instancesCount}
-        templatesCount={templatesCount}
         loading={loading}
-        boardTab={boardTab}
       />
 
-      <RoleLegend activeRole={filter.role === "all" ? null : filter.role} onPickRole={(r) => setFilter({ ...filter, role: r })} />
-
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="inline-flex items-center gap-1 rounded-full bg-muted/40 p-1 ring-1 ring-border">
-          <BoardTabButton
-            active={boardTab === "instances"}
-            onClick={() => { setBoardTab("instances"); setFilter(EMPTY_FILTER); }}
-            icon={<Bot className="size-3.5" />}
-            label="数字员工"
-            count={instancesCount}
-          />
-          <BoardTabButton
-            active={boardTab === "templates"}
-            onClick={() => { setBoardTab("templates"); setFilter(EMPTY_FILTER); }}
-            icon={<FileText className="size-3.5" />}
-            label="HR 库"
-            count={templatesCount}
-          />
+        {/* R66-A 2.1: 删 "HR 库" tab + "HR 管理" 链接(由 /employees/hr 独立页承担) */}
+        <div className="inline-flex items-center gap-2 text-[10.5px] font-mono uppercase tracking-[0.22em] text-foreground/45">
+          <Bot className="size-3.5" />
+          <span>数字员工 · {instancesCount} 个实例</span>
         </div>
 
         <div className="flex items-center gap-2">
           <Link href="/employees/hr">
             <Button variant="outline" size="sm" className="gap-1.5">
-              <FileText className="size-3.5" /> HR 管理
+              <FileText className="size-3.5" /> HR 库
             </Button>
           </Link>
           <Link href="/employees/new?type=instance">
             <Button size="sm" className="gap-1.5">
-              <Plus className="size-3.5" />
-              {boardTab === "templates" ? "新建 HR" : "新建数字员工"}
+              <Plus className="size-3.5" /> 新建数字员工
             </Button>
           </Link>
         </div>
@@ -183,9 +205,9 @@ export function GalleryBoard() {
       {loading ? (
         <LoadingGrid />
       ) : list.length === 0 ? (
-        <EmptyState tab={boardTab} />
+        <EmptyState />
       ) : (
-        <AsymGrid agents={list} mounted={mounted} onChanged={reload} boardTab={boardTab} workingIds={workingIds} hrNameMap={hrNameMap} />
+        <AsymGrid agents={list} mounted={mounted} onChanged={reload} workingIds={workingIds} hrNameMap={hrNameMap} />
       )}
     </div>
   );
@@ -193,14 +215,10 @@ export function GalleryBoard() {
 
 function Header({
   instancesCount,
-  templatesCount,
   loading,
-  boardTab,
 }: {
   instancesCount: number;
-  templatesCount: number;
   loading: boolean;
-  boardTab: BoardTab;
 }) {
   return (
     <header className="flex items-end justify-between gap-6 border-b border-border pb-7">
@@ -210,18 +228,15 @@ function Header({
           数字员工
         </div>
         <h1 className="text-5xl font-semibold tracking-tighter leading-[1.02] max-w-[14ch]">
-          {boardTab === "templates" ? "HR 库" : "你的数字员工矩阵"}
+          你的数字员工矩阵
         </h1>
         <p className="max-w-[60ch] text-[15px] leading-relaxed text-foreground/65">
-          {boardTab === "templates"
-            ? "HR(岗位)是 agent 的复制基底 — 同一个岗位可以派生出多个独立员工,起不同名字,配给不同真人。"
-            : "每个员工都是一组指令 + 一段人格 + 一条调用链。"}
+          每个员工都是一组指令 + 一段人格 + 一条调用链。
           {loading ? (
             <> 正在拉取最新数据…</>
           ) : (
             <>
-              {" "}共 <span className="font-mono text-foreground/90">{instancesCount}</span> 个实例 ·{" "}
-              <span className="font-mono text-foreground/90">{templatesCount}</span> 个 HR。
+              {" "}共 <span className="font-mono text-foreground/90">{instancesCount}</span> 个实例。
             </>
           )}
         </p>
@@ -230,41 +245,14 @@ function Header({
   );
 }
 
-function BoardTabButton({
-  active, onClick, icon, label, count,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  label: string;
-  count: number;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[13px] font-medium transition-all",
-        active
-          ? "bg-foreground text-background"
-          : "text-foreground/65 hover:text-foreground",
-      )}
-    >
-      {icon}
-      {label}
-      <span className="font-mono text-[11px] opacity-60">{count}</span>
-    </button>
-  );
-}
-
 // R17-3: 平级卡片网格 — 统一尺寸,不再有 feature/tall/wide 大卡
 // 用户反馈:"一个特别大一个很长,造成错觉"
 function AsymGrid({
-  agents, mounted, onChanged, boardTab, workingIds, hrNameMap,
+  agents, mounted, onChanged, workingIds, hrNameMap,
 }: {
   agents: Agent[];
   mounted: boolean;
   onChanged: () => void;
-  boardTab: BoardTab;
   workingIds: Record<string, true>;
   hrNameMap?: Record<string, string>;
 }) {
@@ -284,7 +272,7 @@ function AsymGrid({
             size="regular"
             showManageActions
             onChanged={onChanged}
-            isTemplateTab={boardTab === "templates"}
+            isTemplateTab={false}
             workingIds={workingIds}
             hrNameMap={hrNameMap}
           />
@@ -294,83 +282,7 @@ function AsymGrid({
   );
 }
 
-// 角色分工说明区 — 用户反馈:"角色分工几大类没看明白,从哪定义的?"
-const ROLE_GROUPS: { key: string; label: string; desc: string; glyph: string; hue: string }[] = [
-  { key: "full-stack-engineer",    label: "全栈工程师",  desc: "端到端开发,不传递任务",          glyph: "工", hue: "amber" },
-  { key: "copywriting-secretary",  label: "内容创作",    desc: "文案 / PPT / 方案 / 文档管家",    glyph: "文", hue: "rose" },
-  { key: "ops-engineer",           label: "运维部署",    desc: "部署 / 监控 / 24x7 / 可回滚",      glyph: "运", hue: "teal" },
-  { key: "customer-support",       label: "客服支持",    desc: "客户对接 / 情绪先行 / 升级同步",   glyph: "客", hue: "sky" },
-  { key: "research-analyst",       label: "调研分析",    desc: "多源交叉 / 结论附来源",           glyph: "研", hue: "indigo" },
-  { key: "test-bot",               label: "测试验证",    desc: "E2E 测试 / 回归守护",             glyph: "测", hue: "lime" },
-  { key: "general",                label: "通用对话",    desc: "基础对话 / 未分类角色",           glyph: "通", hue: "violet" },
-  { key: "engineering",            label: "工程(legacy)",desc: "历史保留,等同 full-stack",        glyph: "E",  hue: "zinc" },
-];
-
-function RoleLegend({
-  activeRole,
-  onPickRole,
-}: {
-  activeRole: string | null;
-  onPickRole: (r: string) => void;
-}) {
-  const [open, setOpen] = React.useState(false);
-  return (
-    <section className="rounded-2xl border border-border bg-card/40 backdrop-blur-sm">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left"
-        aria-expanded={open}
-      >
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-foreground/45">角色分工 · 几大类</span>
-          <span className="text-[12px] text-foreground/60">定义来源:创建时选择的角色类型</span>
-        </div>
-        <span className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-foreground/45">
-          {open ? "收起 −" : "展开 +"}
-        </span>
-      </button>
-      {open && (
-        <div className="border-t border-border px-4 py-3">
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {ROLE_GROUPS.map((r) => {
-              const on = activeRole === r.key;
-              return (
-                <button
-                  key={r.key}
-                  type="button"
-                  onClick={() => onPickRole(on ? "all" : r.key)}
-                  className={
-                    "group flex items-start gap-2.5 rounded-xl px-2.5 py-2 text-left text-[12px] ring-1 transition-all " +
-                    (on
-                      ? "bg-foreground/[0.04] ring-foreground/30"
-                      : "bg-background/40 ring-border hover:ring-foreground/20")
-                  }
-                >
-                  <span className={"mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold bg-" + r.hue + "-100 dark:bg-" + r.hue + "-900/40 text-" + r.hue + "-700 dark:text-" + r.hue + "-300"}>
-                    {r.glyph}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block font-medium text-foreground/85">{r.label}</span>
-                    <span className="block truncate font-mono text-[10.5px] text-foreground/45">{r.key}</span>
-                    <span className="mt-0.5 block text-[11px] leading-snug text-foreground/65">{r.desc}</span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          {/* R55-D 4.3: 删"主理人"说明 — 该字段不再展示(无意义,迁移到详情页)。 */}
-          <p className="mt-3 border-t border-border pt-2.5 text-[11px] text-foreground/55">
-            <span className="font-mono text-foreground/45">说明 ·</span>{" "}
-            <span className="text-foreground/75">HR</span> 标记表示当前是岗位配方(可被复制派生实例);
-            <span className="text-foreground/75"> 实例</span> 标记表示实际运行的员工。
-            点上面任一角色可快速筛选。
-          </p>
-        </div>
-      )}
-    </section>
-  );
-}
+// R66-A 2.3: 删 "角色分工几大类" 整行(RoleLegend + ROLE_GROUPS)
 
 function LoadingGrid() {
   return (
@@ -385,16 +297,14 @@ function LoadingGrid() {
   );
 }
 
-function EmptyState({ tab }: { tab: BoardTab }) {
+function EmptyState() {
   return (
     <div className="flex flex-col items-center gap-3 rounded-3xl border border-dashed border-border py-24 text-center">
       <span className="font-mono text-[10.5px] uppercase tracking-[0.22em] text-foreground/40">
         No matches
       </span>
       <p className="max-w-[44ch] text-sm text-foreground/65">
-        {tab === "templates"
-          ? "没有匹配的 HR 岗位。试着清空检索,或到 HR 库新建一个。"
-          : "没有匹配的员工。试着清空检索,或从 HR 岗位派生一个。"}
+        没有匹配的员工。试着清空检索,或从 HR 岗位派生一个。
       </p>
     </div>
   );

@@ -68,12 +68,11 @@ export function Step7({
   const [testResult, setTestResult] = React.useState<TestResult | null>(null);
   const [testError, setTestError] = React.useState<string>("");
 
-  const runTest = async () => {
-    setTesting(true);
-    setTestResult(null);
-    setTestError("");
-    try {
-      const res = await api<TestResult>("/api/v2/employees/test-config", {
+  // R66-D: 统一发起校验 — 返回结构化结果(信封已解包)。抛错交给调用方处理。
+  const requestValidation = async (): Promise<TestResult> => {
+    const raw = await api<{ success?: boolean; data?: TestResult } | TestResult>(
+      "/api/v2/employees/test-config",
+      {
         method: "POST",
         body: {
           providerId: form.providerId,
@@ -86,8 +85,20 @@ export function Step7({
           channelIds: isTemplateMode ? [] : form.channelIds,
         },
         headers: { "content-type": "application/json" },
-      });
-      setTestResult(res);
+      },
+    );
+    // R66-D crash fix: 后端用 ok() 信封包了 { success, data },compatCall 不解包 →
+    // 直接 setTestResult(raw) 会让 raw.results 为 undefined,渲染时 .filter 崩溃白屏。
+    const payload = (raw as { data?: TestResult })?.data ?? (raw as TestResult);
+    return normalizeResult(payload);
+  };
+
+  const runTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    setTestError("");
+    try {
+      setTestResult(await requestValidation());
     } catch (e: unknown) {
       const err = e as { message?: string; body?: { error?: string } };
       setTestError(err?.body?.error || err?.message || String(e));
@@ -104,8 +115,26 @@ export function Step7({
       );
       return;
     }
+
+    // R66-D: 测试作为发布前置步骤 — 发布前先跑配置校验,不合规则阻止发布并逐条提示。
     setPhase("submitting");
     setErrorMsg("");
+    setTestError("");
+    try {
+      const validation = await requestValidation();
+      setTestResult(validation);
+      if (!validation.summary.allOk) {
+        setPhase("idle");
+        setErrorMsg("");
+        return; // 校验未通过 → 面板已列出问题与建议,阻止发布
+      }
+    } catch (e: unknown) {
+      const err = e as { message?: string; body?: { error?: string } };
+      setTestError(err?.body?.error || err?.message || String(e));
+      setPhase("idle");
+      return;
+    }
+
     const res = await onSubmit();
     if (res.ok && res.id) {
       setPhase("success");
@@ -122,7 +151,7 @@ export function Step7({
     return (
       <div className="grid place-items-center py-12">
         <Loader2 className="size-6 animate-spin text-foreground/55" />
-        <p className="mt-3 font-mono text-[12px] text-foreground/55">正在创建员工...</p>
+        <p className="mt-3 font-mono text-[12px] text-foreground/55">正在校验配置并发布...</p>
       </div>
     );
   }
@@ -143,10 +172,10 @@ export function Step7({
         <div>
           <h3 className="flex items-center gap-2 text-[13px] font-medium tracking-tight text-foreground/65">
             <Rocket className="size-4 text-foreground/45" />
-            发布 · 配好就上线,失败返回原因
+            发布 · 先校验配置再上线,失败返回原因
           </h3>
           <p className="mt-1 text-[12.5px] text-foreground/55">
-            确认信息无误后,点【发布】即可。失败时不会丢已填表单,可改后重试。
+            点【发布】会先自动做发布前校验,不合规会逐条列出问题与建议并阻止发布;失败不会丢已填表单。
           </p>
         </div>
       </header>
@@ -207,7 +236,7 @@ export function Step7({
           data-testid="step7-test-btn"
         >
           {testing ? <Loader2 className="size-4 animate-spin" /> : <FlaskConical className="size-4" />}
-          {testing ? "测试中..." : "测试"}
+          {testing ? "校验中..." : "发布前校验"}
         </button>
         <button
           type="button"
@@ -271,6 +300,11 @@ function TestResultPanel({ result }: { result: TestResult }) {
               <div className={"mt-0.5 font-mono text-[11.5px] " + (r.ok ? "text-foreground/60" : "text-rose-700 dark:text-rose-300")}>
                 {r.detail}
               </div>
+              {!r.ok && (
+                <div className="mt-1 text-[11px] text-amber-700 dark:text-amber-300">
+                  {suggestFor(r.category)}
+                </div>
+              )}
             </div>
           </li>
         ))}
@@ -278,8 +312,8 @@ function TestResultPanel({ result }: { result: TestResult }) {
 
       {!summary.allOk && (
         <p className="mt-3 border-t border-foreground/[0.06] pt-2.5 text-[11.5px] text-foreground/65">
-          需修复项会阻塞实际调用(模型连不通 / 技能加载失败 / 知识库不可达等)。
-          回到对应步骤修改后,可再次点【测试】。
+          需修复项会阻塞发布(模型连不通 / 技能加载失败 / 知识库不可达等)。
+          回到对应步骤修改后,可再次点【发布前校验】。
         </p>
       )}
     </div>
@@ -323,6 +357,41 @@ function Field({ k, v, mono }: { k: string; v: React.ReactNode; mono?: boolean }
       <dd className={"text-[12.5px] text-foreground/85 truncate " + (mono ? "font-mono" : "")}>{v}</dd>
     </div>
   );
+}
+
+// R66-D: 守卫后端返回 — 缺字段时补默认,避免 .filter/.map 于 undefined 上崩溃白屏。
+function normalizeResult(payload: Partial<TestResult> | null | undefined): TestResult {
+  const results = Array.isArray(payload?.results) ? (payload!.results as TestCheck[]) : [];
+  const ok = results.filter((r) => r?.ok).length;
+  return {
+    results,
+    summary: {
+      ok,
+      fail: results.length - ok,
+      total: results.length,
+      allOk: results.length > 0 ? results.every((r) => r?.ok) : true,
+    },
+  };
+}
+
+// R66-D: 按分类给出可执行的修改建议(校验失败时逐条展示)。
+function suggestFor(category: string): string {
+  switch (category) {
+    case "model":
+      return "建议:回 Step 2 重选可用模型,并在 /channels/llm 配好该服务商的 API key。";
+    case "skill":
+      return "建议:回 Step 4 移除失效技能或重新选择;技能库改名/删除后需重新绑定。";
+    case "mcp":
+      return "建议:去 MCP 管理页检查该服务健康状态与 URL,不可用则先修复或取消绑定。";
+    case "folder":
+      return "建议:确认知识文件夹仍存在且当前账号有读取权限,否则回知识配置重选。";
+    case "kb":
+      return "建议:等待知识库索引完成(index=ready)或去知识库页重建索引后再发布。";
+    case "channel":
+      return "建议:去频道页把该入口绑定到 bot 并启用,或在本步取消该频道绑定。";
+    default:
+      return "建议:回到对应配置步骤修正后重新校验。";
+  }
 }
 
 // Translate common backend errors into actionable Chinese hints.
