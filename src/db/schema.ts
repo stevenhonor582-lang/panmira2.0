@@ -106,6 +106,10 @@ export const agentTemplates = pgTable('agent_templates', {
   ironLaws: jsonb('iron_laws').default([]),
   category: varchar('category', { length: 255 }).default('general'),
   templateType: varchar('template_type', { length: 100 }).default('custom'),
+  // R56-C: 岗位类型 6 类(painting/copywriting/ops/business/engineering/research)
+  secondaryTemplateTypes: text('secondary_template_types').array().notNull().default([]),
+  // R56-C: 部门 FK(部门共享;SET NULL 防误删)
+  departmentId: uuid('department_id'),
   // R52-SCHEMA: HR(数字员工模板) 静态描述扩展
   style: text('style'),
   visibility: varchar('visibility', { length: 20 }).notNull().default('team'),
@@ -114,6 +118,16 @@ export const agentTemplates = pgTable('agent_templates', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   createdBy: uuid('created_by'),
+});
+
+// R56-C: departments 表(系统/自定义部门)
+export const departments = pgTable('departments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 100 }).notNull(),
+  color: varchar('color', { length: 20 }).default('#64748b'),
+  source: varchar('source', { length: 20 }).notNull().default('custom'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const agentInstances = pgTable('agent_instances', {

@@ -59,6 +59,7 @@ import { handleOverviewRoutes } from './routes/overview-routes.js';
 import { handlePeopleRoutes } from './routes/people-routes.js';
 import { handleEmployeesRoutes } from './routes/employees-routes.js';
 import { handleHrRoutes } from './routes/hr-routes.js'; // R52-SCHEMA: 数字 HR CRUD
+import { handleDepartmentsRoutes } from './routes/departments-routes.js'; // R56-C: 部门 CRUD
 import { handleDigitalEmployeeRoutes } from './routes/digital-employee-routes.js'; // R52-SCHEMA: 招聘/提炼
 import { handleV3HealthRoutes } from './routes/v3-health-routes.js';
 import { handleV3ListRoutes } from './routes/v3-list-routes.js';
@@ -981,6 +982,12 @@ ${content}
       if (url.startsWith('/api/v2/agent-templates') || url.startsWith('/api/v2/agent-instances')) {
         if (await handleEmployeesRoutes(req, res, method, url)) return;
         jsonResponse(res, 404, { error: 'Agent route not found' });
+        return;
+      }
+      // R56-C: 部门 CRUD
+      if (url.startsWith('/api/v2/departments')) {
+        if (await handleDepartmentsRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Department route not found' });
         return;
       }
       // R52-SCHEMA: 数字 HR CRUD(/api/v2/digital-hr 优先于 employees 路由匹配)
