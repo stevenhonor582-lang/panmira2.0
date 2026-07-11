@@ -342,6 +342,8 @@ export class AgentStore {
     persona?: string;
     isActive?: boolean;
     createdBy?: string;
+    /** R57: 部门 FK(uuid → departments.id),可空 */
+    departmentId?: string | null;
   }): Promise<AgentTemplate> {
     const tenantResult = await pool.query('SELECT id FROM tenants LIMIT 1');
     if (tenantResult.rows.length === 0) throw new Error('No tenant found');
@@ -351,10 +353,11 @@ export class AgentStore {
       `INSERT INTO agent_templates (
           id, tenant_id, name, role_template, description, system_prompt,
           capabilities, tools, category, template_type,
-          orchestration, boundary, iron_laws, persona, is_active, created_by
+          orchestration, boundary, iron_laws, persona, is_active, created_by,
+          department_id
         )
        VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9,
-               $10, $11, $12, $13, $14, $15)
+               $10, $11, $12, $13, $14, $15, $16)
        RETURNING *`,
       [
         tenantId,
@@ -372,6 +375,7 @@ export class AgentStore {
         data.persona ?? null,
         data.isActive ?? true,
         data.createdBy ?? null,
+        data.departmentId || null,
       ],
     );
     return this.mapRow(result.rows[0], 'template') as AgentTemplate;

@@ -246,6 +246,7 @@ export async function handleAgentsCrudRoutes(
         orchestration: orchestration ?? {},
         persona: body.persona as string | undefined,
         createdBy: ctx.userId || undefined,
+        departmentId: (body.departmentId as string | undefined) || null,
       });
       jsonResponse(res, 201, { agent: created });
       return true;

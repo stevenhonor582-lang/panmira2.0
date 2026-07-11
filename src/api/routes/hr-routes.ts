@@ -51,6 +51,8 @@ const HR_FIELD_MAP: Record<string, string> = {
   style: 'style',
   category: 'category',
   templateType: 'template_type',
+  /** R57: 部门 FK(uuid → departments.id),允许改 */
+  departmentId: 'department_id',
   ironLaws: 'iron_laws',
   boundary: 'boundary',
   orchestration: 'orchestration',
