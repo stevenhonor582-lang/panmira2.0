@@ -14,7 +14,7 @@
  *   DELETE /api/v2/digital-hr/:id          删(检查无人引用)
  */
 import type * as http from 'node:http';
-import { eq, and, desc, ilike, or } from 'drizzle-orm';
+import { eq, and, desc, ilike, or, isNull } from 'drizzle-orm';
 import { db, pool } from '../../db/index.js';
 import { agentTemplates } from '../../db/schema.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
@@ -88,7 +88,16 @@ export async function handleHrRoutes(
       const source = u.searchParams.get('source');
       const visibility = u.searchParams.get('visibility');
 
-      const conds: any[] = [eq(agentTemplates.tenantId, tenantId)];
+      // R63: HR 列表 = 当前 tenant 自建 + 全部 system 模板(任意 tenant)
+      // 原因:seed 写入时 tenant_id 未填(NULL),旧条件 tenant_id=$tenantId 把 269 个 system 全过滤掉
+      const conds: any[] = [
+        eq(agentTemplates.isActive, true),
+        or(
+          eq(agentTemplates.tenantId, tenantId),
+          eq(agentTemplates.source, 'system'),
+          isNull(agentTemplates.tenantId),
+        )!,
+      ];
       if (category) conds.push(eq(agentTemplates.category, category));
       if (source) conds.push(eq(agentTemplates.source, source));
       if (visibility) conds.push(eq(agentTemplates.visibility, visibility));
@@ -104,8 +113,11 @@ export async function handleHrRoutes(
       const rows = await db.select().from(agentTemplates).where(where)
         .orderBy(desc(agentTemplates.createdAt))
         .limit(limit).offset(offset);
+      // R63: total 也要算 system 模板(原硬写 tenant_id=$1 把 269 个 system 漏算成 8)
       const totalResult = await pool.query(
-        `SELECT count(*)::int AS c FROM agent_templates WHERE tenant_id = $1`,
+        `SELECT count(*)::int AS c FROM agent_templates
+         WHERE is_active = true
+           AND (tenant_id = $1 OR source = 'system' OR tenant_id IS NULL)`,
         [tenantId],
       );
       jsonResponse(res, 200, {
