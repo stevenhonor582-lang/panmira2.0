@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select";
 import { ChannelsPageShell, PageMeta } from "@/components/channels/page-shell";
 import { MonoCell, KeyCell } from "@/components/channels/dense-table";
+import { McpCredentialsDialog } from "@/components/channels/mcp-credentials-dialog";
 import { StatusPill, toneForMCP } from "@/components/channels/status-pill";
 import {
   Pencil,
@@ -123,6 +124,8 @@ export default function MCPPage() {
   // R29-C: 当前正在查看/轮换许可密钥的 server
   const [revealing, setRevealing] = React.useState<BackendMCPServer | null>(null);
   const [rotating, setRotating] = React.useState<BackendMCPServer | null>(null);
+  // R68-3 · 块 8: 密钥池弹窗
+  const [credsFor, setCredsFor] = React.useState<BackendMCPServer | null>(null);
 
   function notify(msg: string) {
     setToast(msg);
@@ -410,6 +413,16 @@ export default function MCPPage() {
                   >
                     <Pencil className="size-3.5" />
                   </Button>
+                  {/* R68-3 · 块 8: 密钥池 — 多密钥 + 轮询 */}
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    aria-label="密钥池"
+                    title="密钥池 · 多密钥 + 轮询"
+                    onClick={() => setCredsFor(s)}
+                  >
+                    <KeyRound className="size-3.5" />
+                  </Button>
                   <Button
                     size="icon-xs"
                     variant="ghost"
@@ -523,6 +536,12 @@ export default function MCPPage() {
           }}
         />
       ) : null}
+      <McpCredentialsDialog
+        serverId={credsFor?.id ?? null}
+        serverName={credsFor?.name ?? ""}
+        open={!!credsFor}
+        onOpenChange={(n) => !n && setCredsFor(null)}
+      />
     </ChannelsPageShell>
   );
 }

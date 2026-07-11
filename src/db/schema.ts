@@ -953,6 +953,20 @@ export const mcpServers = pgTable('mcp_servers', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+// R68-3 · 块 8: 一个 MCP server 可配多把 API key(轮询负载均衡 + 失败计数)
+// pickNextCredential(): mcpId 进来,返回下一个未禁用、failureCount 最低且
+// last_used_at 最久远的 credential;失败后调 markFailure() 自增 failureCount。
+export const mcpCredentials = pgTable('mcp_credentials', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  mcpServerId: uuid('mcp_server_id').notNull().references(() => mcpServers.id, { onDelete: 'cascade' }),
+  label: varchar('label', { length: 100 }), // 可读标签,如 "key-1", "prod-2026Q1"
+  encryptedKey: text('encrypted_key').notNull(),
+  failureCount: integer('failure_count').notNull().default(0),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  disabled: boolean('disabled').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 // agent_skill_refs:agent 绑 skill(spec §9.3)
 export const agentSkillRefs = pgTable('agent_skill_refs', {
   id: uuid('id').primaryKey().defaultRandom(),
