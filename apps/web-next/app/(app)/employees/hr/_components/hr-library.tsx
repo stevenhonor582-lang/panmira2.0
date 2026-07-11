@@ -70,6 +70,18 @@ export function HrLibrary() {
 
   const customCards = custom.map((a) => mapAgentToHrCard(a, usageMap[a.id] ?? 0));
 
+  // R55-B 2.2: 区分系统 seed vs 个人创建 — created_by IS NOT NULL 即个人创建
+  // 系统 seed 是 R52/R53 批量导入的(created_by = NULL), 个人创建走 "新建岗位" / "提炼为数字HR"
+  const systemSeedCards = custom.filter((a) => {
+    const raw = (a.raw ?? {}) as Record<string, unknown>;
+    return raw.created_by == null;
+  }).map((a) => mapAgentToHrCard(a, usageMap[a.id] ?? 0));
+
+  const personalCards = custom.filter((a) => {
+    const raw = (a.raw ?? {}) as Record<string, unknown>;
+    return raw.created_by != null;
+  }).map((a) => mapAgentToHrCard(a, usageMap[a.id] ?? 0));
+
   // R55-A 1.2: 命中判断 — 岗位名称 / 显示名 / 角色 / 描述 / 人格 任一包含 query(不区分大小写)
   const matches = (hr: HrCardData, q: string): boolean => {
     if (!q) return true;
@@ -83,8 +95,9 @@ export function HrLibrary() {
     );
   };
   const trimmedQuery = query.trim();
-  const filteredCustom = customCards.filter((hr) => matches(hr, trimmedQuery));
-  const totalMatched = filteredCustom.length;
+  const filteredSystemSeed = systemSeedCards.filter((hr) => matches(hr, trimmedQuery));
+  const filteredPersonal = personalCards.filter((hr) => matches(hr, trimmedQuery));
+  const totalMatched = filteredSystemSeed.length + filteredPersonal.length;
 
   return (
     <div className="space-y-10">
@@ -145,7 +158,7 @@ export function HrLibrary() {
               {totalMatched.toString().padStart(2, "0")}
             </span>
             <span className="text-[10.5px] font-mono text-foreground/35">
-              / {customCards.length.toString().padStart(2, "0")}
+              / {(systemSeedCards.length + personalCards.length).toString().padStart(2, "0")}
             </span>
           </div>
         </div>
@@ -158,10 +171,10 @@ export function HrLibrary() {
               <Lock className="size-3" /> 系统岗位
             </div>
             <h2 className="mt-1 text-xl font-semibold tracking-tight">
-              R52/R53 内置岗位 · {loading ? "…" : filteredCustom.length} 个
+              R52/R53 内置岗位 · {loading ? "…" : filteredSystemSeed.length} 个
             </h2>
             <p className="mt-1 text-[12.5px] text-foreground/55">
-              从实例"提炼为数字HR"或直接"新建岗位"得到 · 每张卡显示被多少实例在用。
+              19 个部门 · 266 个岗位 · 系统 seed (created_by = NULL)
             </p>
           </div>
         </div>
@@ -172,15 +185,15 @@ export function HrLibrary() {
               <div key={i} className="h-56 rounded-3xl bg-muted/30 animate-pulse" />
             ))}
           </div>
-        ) : filteredCustom.length === 0 ? (
+        ) : filteredSystemSeed.length === 0 ? (
           <div className="flex flex-col items-center gap-2 rounded-3xl border border-dashed border-border py-16 text-center">
             <Briefcase className="size-5 text-foreground/40" />
             <p className="font-mono text-[10.5px] uppercase tracking-[0.22em] text-foreground/40">
-              {customCards.length === 0 ? "暂无自定义岗位" : "检索无匹配岗位"}
+              {systemSeedCards.length === 0 ? "暂无系统岗位" : "检索无匹配岗位"}
             </p>
             <p className="text-[13px] text-foreground/55 max-w-[40ch]">
-              {customCards.length === 0
-                ? "可以在员工详情页\"提炼为数字HR\"生成岗位,或者直接新建一个空白岗位。"
+              {systemSeedCards.length === 0
+                ? "系统在导入岗位数据,请稍后再来。"
                 : "试试清空检索,或换个关键词。"}
             </p>
             <div className="mt-3 flex items-center gap-2">
@@ -200,7 +213,7 @@ export function HrLibrary() {
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {filteredCustom.map((hr, i) => (
+            {filteredSystemSeed.map((hr, i) => (
               <div
                 key={hr.id}
                 className={
@@ -215,6 +228,61 @@ export function HrLibrary() {
           </div>
         )}
       </section>
+      <section className="space-y-5" data-testid="hr-personal-section">
+        <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
+          <div>
+            <div className="flex items-center gap-2 text-[10.5px] font-mono uppercase tracking-[0.22em] text-foreground/45">
+              <Briefcase className="size-3" /> 个人创建的岗位
+            </div>
+            <h2 className="mt-1 text-xl font-semibold tracking-tight">
+              我自己创建的岗位 · {loading ? "…" : filteredPersonal.length} 个
+            </h2>
+            <p className="mt-1 text-[12.5px] text-foreground/55">
+              从员工详情页"提炼为数字HR"或直接"新建岗位"得到 · 只显示当前用户创建的
+            </p>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <div key={i} className="h-56 rounded-3xl bg-muted/30 animate-pulse" />
+            ))}
+          </div>
+        ) : filteredPersonal.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 rounded-3xl border border-dashed border-border py-12 text-center">
+            <Briefcase className="size-5 text-foreground/40" />
+            <p className="font-mono text-[10.5px] uppercase tracking-[0.22em] text-foreground/40">
+              暂无个人创建的岗位
+            </p>
+            <p className="text-[13px] text-foreground/55 max-w-[44ch]">
+              你创建的岗位会出现在这里。可以从员工详情页"提炼为数字HR"生成,或者直接新建一个空白岗位。
+            </p>
+            <Link
+              href="/employees/new?type=template"
+              className="mt-3 inline-flex items-center gap-2 rounded-full bg-foreground px-4 py-2 text-[12.5px] font-medium text-background"
+            >
+              <Plus className="size-3.5" /> 新建岗位
+            </Link>
+          </div>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {filteredPersonal.map((hr, i) => (
+              <div
+                key={hr.id}
+                className={
+                  "transition-all duration-500 ease-out " +
+                  (mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4")
+                }
+                style={{ transitionDelay: mounted ? `${i * 50}ms` : "0ms" }}
+              >
+                <HrCard hr={hr} index={i} />
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
     </div>
   );
 }
