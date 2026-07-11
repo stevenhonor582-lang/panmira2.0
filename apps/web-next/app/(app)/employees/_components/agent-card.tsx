@@ -510,17 +510,14 @@ export function AgentCard({
             )}
           </div>
 
-          <div className="flex items-center justify-between border-t border-foreground/[0.06] pt-2.5 text-[11px] text-foreground/50 font-mono">
-            <span className="truncate pr-8" title={`主理人: ${agent.ownerName}`}>
-              主理人 · {agent.ownerName}
-            </span>
-            {/* R51-E1: 工作指示灯 — active + working 时额外高亮(右上小图标) */}
-            {runtimeMap[agent.id] && (
-              <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400" title="当前正在执行任务">
-                <Activity className="size-3 animate-pulse" />
-              </span>
-            )}
-          </div>
+          {/* R55-D 4.3: 删 "主理人" 字段(归属者元数据冗余,实例归属见 /employees/[id] 详情)。
+              保留 "执行中" 指示灯,仅当 agent 正在运行时显示。 */}
+          {runtimeMap[agent.id] && (
+            <div className="flex items-center justify-end gap-1 border-t border-foreground/[0.06] pt-2.5 text-[11px] font-mono text-emerald-600 dark:text-emerald-400" title="当前正在执行任务" data-testid={`running-indicator-${agent.id.slice(0, 8)}`}>
+              <Activity className="size-3 animate-pulse" />
+              <span>执行中</span>
+            </div>
+          )}
         </div>
       </div>
 
