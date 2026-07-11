@@ -147,8 +147,8 @@ export async function handleHrRoutes(
         return true;
       }
 
-      const insertCols: string[] = ['id', 'tenant_id', 'name'];
-      const insertVals: any[] = [`gen_random_uuid()`, tenantId, body.name.trim()];
+      const insertCols: string[] = ['tenant_id', 'name'];
+      const insertVals: any[] = [tenantId, body.name.trim()];
 
       for (const [jsKey, dbCol] of Object.entries(HR_FIELD_MAP)) {
         if (jsKey === 'name') continue; // 已加

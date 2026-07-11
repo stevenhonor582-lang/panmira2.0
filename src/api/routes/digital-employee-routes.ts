@@ -122,16 +122,16 @@ export async function handleDigitalEmployeeRoutes(
         return true;
       }
 
-      // INSERT instance — 蓝图字段从 HR 拷,动态字段从 cfg 拷
+      // INSERT instance — 蓝图字段从 HR 拷,动态字段从 cfg 拷(id 走 DB default)
       const cols: string[] = [
-        'id', 'tenant_id', 'name',
+        'tenant_id', 'name',
         'role_template', 'description', 'capabilities', 'tools',
         'persona', 'system_prompt', 'category', 'template_type',
         'iron_laws', 'orchestration', 'boundary',
         'source_template_id', 'source_type',
       ];
       const vals: any[] = [
-        'gen_random_uuid()', tenantId, instanceName,
+        tenantId, instanceName,
         hr.role_template ?? null, hr.description ?? null,
         JSON.stringify(hr.capabilities ?? []),
         JSON.stringify(hr.tools ?? []),
@@ -271,14 +271,14 @@ export async function handleDigitalEmployeeRoutes(
       }
 
       const insertCols = [
-        'id', 'tenant_id', 'name', 'role_template', 'description',
+        'tenant_id', 'name', 'role_template', 'description',
         'capabilities', 'tools', 'persona', 'system_prompt',
         'style', 'category', 'template_type',
         'iron_laws', 'orchestration', 'boundary',
         'source', 'visibility', 'is_active', 'created_by',
       ];
       const insertVals: any[] = [
-        'gen_random_uuid()', tenantId, newName,
+        tenantId, newName,
         merged.role_template ?? null, merged.description ?? null,
         JSON.stringify(merged.capabilities ?? []),
         JSON.stringify(merged.tools ?? []),
