@@ -318,6 +318,64 @@ export async function handleEmployeesRoutes(
     }
   }
 
+  // R52-SCHEMA: POST /api/v2/employees — 纯创建端点(无 hrId → 400 hr_required)
+  // 强约束:无 HR 不能建实例。alias 招聘端点的简化版,只允许 hrId + name + 最小动态字段
+  if (method === 'POST' && u.pathname === '/api/v2/employees') {
+    if (!requireAnyScope(ctx, ['agent:admin', '*'])) {
+      jsonResponse(res, 403, fail('forbidden', '需要 agent:admin 权限'));
+      return true;
+    }
+    try {
+      const body = await parseJsonBody(req);
+      const hrId: string | undefined =
+        (typeof body?.hrId === 'string' && body.hrId) ||
+        (typeof body?.sourceTemplateId === 'string' && body.sourceTemplateId) ||
+        undefined;
+      const name: string | undefined = typeof body?.name === 'string' ? body.name.trim() : undefined;
+      if (!hrId) {
+        // R52 强约束:任何 POST /api/v2/employees 都必须带 hrId
+        jsonResponse(res, 400, fail('hr_required', 'hrId (or sourceTemplateId) 必填 — 所有实例必须挂在 HR 模板下,无 HR 不能建实例'));
+        return true;
+      }
+      if (!name) {
+        jsonResponse(res, 400, fail('bad_request', 'name 必填'));
+        return true;
+      }
+      // 复用 createInstanceFromTemplate(template 已存在 → 必带 source_template_id)
+      let created;
+      try {
+        created = await agentStore.createInstanceFromTemplate(hrId, { name });
+      } catch (e: any) {
+        const msg = String(e?.message || e);
+        if (msg.includes('已存在')) {
+          jsonResponse(res, 409, fail('name_taken', msg));
+          return true;
+        }
+        if (msg.includes('不存在') || msg.includes('not_found')) {
+          jsonResponse(res, 404, fail('hr_not_found', `HR ${hrId} 不存在`));
+          return true;
+        }
+        jsonResponse(res, 500, fail('internal_error', msg));
+        return true;
+      }
+      if (!created) {
+        jsonResponse(res, 404, fail('hr_not_found', `HR ${hrId} 不存在`));
+        return true;
+      }
+      // 强校验:返回必须带 sourceTemplateId
+      const cid: any = created;
+      if (!cid.sourceTemplateId && !cid.source_template_id) {
+        jsonResponse(res, 500, fail('invariant_violation', '新实例缺少 source_template_id(FK 强约束被破坏)'));
+        return true;
+      }
+      jsonResponse(res, 201, ok({ ...created, _hint: '已通过 hr_required 强校验创建' }));
+      return true;
+    } catch (e) {
+      jsonResponse(res, 500, fail('internal_error', String(e)));
+      return true;
+    }
+  }
+
   // POST /api/v2/employees/test-config — R17-3 发布前测试
   // 检查 model/skills/mcp/kb/folders/channels 引用是否有效
   if (method === 'POST' && u.pathname === '/api/v2/employees/test-config') {
