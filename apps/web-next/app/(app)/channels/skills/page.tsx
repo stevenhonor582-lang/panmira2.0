@@ -81,6 +81,12 @@ export default function SkillsPage() {
   const { data, loading, error, refresh } = useFetch<{ skills: Skill[] }>("/api/skills");
   const [q, setQ] = React.useState("");
   const [source, setSource] = React.useState<SourceFilter>("all");
+  // R68-2 · 块 7: 三选 checkbox — SDK 主(默认开) + 自研 + 个人限定
+  const [scope, setScope] = React.useState({
+    sdk: true,    // SDK / built-in(主)
+    selfDev: true,// 自研 / custom
+    personal: true,// 个人限定(personal_user_id != null)
+  });
   const [page, setPage] = React.useState(1);
   const [showInstall, setShowInstall] = React.useState(false);
   const [activeSkill, setActiveSkill] = React.useState<string | null>(null);
@@ -97,6 +103,13 @@ export default function SkillsPage() {
   const filtered = React.useMemo(() => {
     return skills.filter((s) => {
       if (source !== "all" && s.source !== source) return false;
+      // R68-2 · SDK 主、自分、个人限定 三选过滤
+      const isSdk = s.source === "built-in" || s.source === "github" || (s as any).scope === "sdk";
+      const isSelf = s.source === "custom" || s.source === "local";
+      const isPersonal = !!(s as any).personalUserId;
+      if (isSdk && !scope.sdk) return false;
+      if (isSelf && !scope.selfDev) return false;
+      if (isPersonal && !scope.personal) return false;
       if (!q.trim()) return true;
       const t = q.trim().toLowerCase();
       return (
@@ -110,11 +123,16 @@ export default function SkillsPage() {
   // Reset page when filter changes
   React.useEffect(() => {
     setPage(1);
-  }, [q, source]);
+  }, [q, source, scope.sdk, scope.selfDev, scope.personal]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
-  const paged = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  // R68-2 · 「SDK 主, 自研次」 — SDK/built-in 排在前
+  const ordered = [...filtered].sort((a, b) => {
+    const score = (s: Skill) => s.source === "built-in" ? 0 : s.source === "github" ? 1 : s.source === "local" ? 2 : 3;
+    return score(a) - score(b);
+  });
+  const paged = ordered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   if (loading) {
     return (
@@ -199,6 +217,21 @@ export default function SkillsPage() {
                 <SelectItem value="custom">自定义</SelectItem>
               </SelectContent>
             </Select>
+            {/* R68-2 · 三选 checkbox: SDK 主 · 自研 · 个人限定 */}
+            <div className="flex items-center gap-2.5 text-[11.5px] ml-1">
+              <label className="inline-flex items-center gap-1 cursor-pointer">
+                <input type="checkbox" checked={scope.sdk} onChange={(e) => setScope((p) => ({ ...p, sdk: e.target.checked }))} className="size-3.5" />
+                <span className="font-mono">SDK 主</span>
+              </label>
+              <label className="inline-flex items-center gap-1 cursor-pointer">
+                <input type="checkbox" checked={scope.selfDev} onChange={(e) => setScope((p) => ({ ...p, selfDev: e.target.checked }))} className="size-3.5" />
+                <span className="font-mono">自研</span>
+              </label>
+              <label className="inline-flex items-center gap-1 cursor-pointer">
+                <input type="checkbox" checked={scope.personal} onChange={(e) => setScope((p) => ({ ...p, personal: e.target.checked }))} className="size-3.5" />
+                <span className="font-mono">个人限定</span>
+              </label>
+            </div>
             <Button size="sm" className="gap-1.5" onClick={() => setShowInstall(true)}>
               <Plus className="size-3.5" />
               新增技能
@@ -536,6 +569,7 @@ interface SkillDetail {
   summary?: string;
   source?: string;
   scope?: string;
+  personalUserId?: string | null;
   category?: string;
   version?: string;
   tags?: string[];

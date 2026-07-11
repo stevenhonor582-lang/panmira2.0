@@ -341,6 +341,9 @@ export const skills = pgTable('skills', {
   scope: text('scope').default('global'),
   ownerBot: text('owner_bot'),
   enabledByDefault: boolean('enabled_by_default').default(false),
+  // R68-2 · 块 7: 个人限定 — 标记该 skill 仅对某个用户可见/可用
+  // NULL = 全局可见(SDK 自带、系统内置),非空 = 仅该用户(uuid)可见/可用
+  personalUserId: uuid('personal_user_id').references(() => users.id, { onDelete: 'set null' }),
 });
 
 // ── bot_skill_bindings ───────────────────────────────────────────────────────
