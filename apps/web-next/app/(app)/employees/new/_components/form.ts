@@ -89,7 +89,7 @@ export interface WizardForm {
   templateId: string;
   glyph: string;
   hue: string;
-  // R51-C2: 模板类型(仅 type=template 时用): painting(绘画)/ copy(文案)/ ops(运维)/ other(其它)
+  // R51-C2: HR 岗位类型(仅 type=template 时用): painting(绘画)/ copy(文案)/ ops(运维)/ other(其它)
   templateCategory: string;
   // Step 2 — brain
   providerId: string;        // → model_id (FK to provider_configs.id)
@@ -242,23 +242,34 @@ export const PERSONA_PRESETS: PersonaPreset[] = [
 ];
 
 // Convert WizardForm → POST /api/agents body. Keeps the wizard in charge of shape.
-// R51-C2: mode=template → 模板(isTemplate=true, 不绑入口/不锁工作目录,提交后跳到模板列表)
+// R51-C2: mode=template → HR 岗位(isTemplate=true, 不绑入口/不锁工作目录,提交后跳到 HR 列表)
 //         mode=instance → 数字员工(isTemplate=false, 走原流程)
 export type WizardMode = "instance" | "template";
+
+// R53-T5: 招聘态判定与来源岗位提取。
+// wizard 在拉到 HR 岗位后会把 templateId 标记为 "hr:<uuid>",以此区分"招聘(从岗位派生)"。
+export function isRecruitForm(form: WizardForm): boolean {
+  return typeof form.templateId === "string" && form.templateId.startsWith("hr:");
+}
+export function recruitSourceId(form: WizardForm): string | undefined {
+  return isRecruitForm(form) ? form.templateId.slice(3) : undefined;
+}
 
 export function formToAgentPayload(
   form: WizardForm,
   mode: WizardMode = "instance",
 ): Record<string, unknown> {
   const isTemplate = mode === "template";
-  // 模板类型:R51-C2 4 选 1 (绘画/文案/运维/其它) — 留兜底,空值归到 "other"
+  // HR 岗位类型:R51-C2 4 选 1 (绘画/文案/运维/其它) — 留兜底,空值归到 "other"
   const category = isTemplate
     ? (form.templateCategory && form.templateCategory.trim().length > 0
         ? form.templateCategory
         : "other")
     : "general";
+  // R53-T5: 招聘态把来源岗位透传给后端(source_template_id 前端兜底;后端已 R52 强校验)。
+  const sourceTemplateId = recruitSourceId(form);
   return {
-    name: form.name.trim() || (isTemplate ? "未命名模板" : "未命名员工"),
+    name: form.name.trim() || (isTemplate ? "未命名 HR 岗位" : "未命名员工"),
     description: form.description,
     systemPrompt: form.systemPrompt,
     persona: form.persona,
@@ -279,7 +290,7 @@ export function formToAgentPayload(
     // R15-A/B columns (real)
     visibility: form.visibility,
     temperature: form.temperature,
-    // 模板不锁工作目录(工作目录是实例的属性,模板是空白基底)
+    // HR 岗位不锁工作目录(工作目录是实例的属性,HR 是空白基底)
     workingDir: isTemplate ? undefined : (form.workingDir || undefined),
     channelIds: isTemplate ? [] : form.channelIds,
     isTemplate,
@@ -291,6 +302,7 @@ export function formToAgentPayload(
     avatarHue: form.hue,
     templateType: isTemplate ? "custom" : "custom",
     category,
+    source_template_id: sourceTemplateId,
     status: "active",
   };
 }

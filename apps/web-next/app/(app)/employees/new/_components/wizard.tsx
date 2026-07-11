@@ -3,7 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, ArrowRight, SkipForward, CheckCircle2, AlertCircle, Loader2, X } from "lucide-react";
-import { EMPTY_FORM, PERSONA_PRESETS, formToAgentPayload, type WizardMode, type WizardForm, type ProviderInfo, type SkillInfo, type McpServerInfo, type KbFolderInfo, type KbInfo, type ChannelBotInfo } from "./form";
+import { EMPTY_FORM, PERSONA_PRESETS, formToAgentPayload, recruitSourceId, type WizardMode, type WizardForm, type ProviderInfo, type SkillInfo, type McpServerInfo, type KbFolderInfo, type KbInfo, type ChannelBotInfo } from "./form";
 import { StepRail, STEPS } from "./stepper";
 import { Step1 } from "./step-1";
 import { StepHrPreview, type HrPreviewData } from "./step-hr-preview";
@@ -88,10 +88,10 @@ export function NewBotWizard() {
   // R51-C1: 入口 URL ?type=template | ?type=instance(默认 instance)
   const mode: WizardMode = params.get("type") === "template" ? "template" : "instance";
   const isTemplateMode = mode === "template";
-  // R52-FRONTEND: 招聘必须先有 hrId (?hrId=<uuid>)。无 hrId 时强制回 HR 库(模板模式除外)。
+  // R52-FRONTEND: 招聘必须先有 hrId (?hrId=<uuid>)。无 hrId 时强制回 HR 库(HR 模式除外)。
   const hrIdParam = params.get("hrId");
 
-  // 强制跳回 HR 库(模板模式不受影响)
+  // 强制跳回 HR 库(HR 模式不受影响)
   React.useEffect(() => {
     if (!isTemplateMode && !hrIdParam) {
       router.replace("/hr");
@@ -125,7 +125,7 @@ export function NewBotWizard() {
       glyph: hrAgent.glyph || prev.glyph,
       hue: hrAgent.hue || prev.hue,
       providerModel: hrAgent.defaultModel || prev.providerModel,
-      // 模板 id 标"来自 hr 派生"
+      // HR id 标"来自 hr 派生"
       templateId: hrAgent.id ? `hr:${hrAgent.id}` : prev.templateId,
     }));
   }, [hrAgent?.id]);
@@ -154,6 +154,10 @@ export function NewBotWizard() {
   const jump = (s: number) => setCurrent(s);
 
   const submit = async (): Promise<{ ok: boolean; error?: string; id?: string }> => {
+    // R53-T5: 招聘态兜底 — hrId 存在但来源岗位未落定(岗位数据未加载/无效)不允许发布。
+    if (hrIdParam && !recruitSourceId(form)) {
+      return { ok: false, error: "岗位信息尚未加载完成,请稍候重试(招聘必须绑定岗位)。" };
+    }
     const payload = formToAgentPayload(form, mode);
     // R27 规则 1: api() 不抛 4xx,需手动检查返回体里的 error 字段(name_taken / bot_already_bound)
     try {
@@ -200,7 +204,7 @@ export function NewBotWizard() {
             {hrIdParam ? "招聘流程 · 从岗位开始" : "单页 7 步向导"}
           </div>
           <h1 className="mt-1 text-2xl font-semibold tracking-tighter">
-            {hrIdParam ? "数字员工招聘" : isTemplateMode ? "创建新的员工模板" : "创建新的数字员工"}
+            {hrIdParam ? "数字员工招聘" : isTemplateMode ? "创建新的 HR 岗位" : "创建新的数字员工"}
           </h1>
         </div>
         <StepRail
