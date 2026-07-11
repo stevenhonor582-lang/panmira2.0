@@ -58,6 +58,8 @@ import { handleMonitoringRoutes } from './routes/monitoring-routes.js';
 import { handleOverviewRoutes } from './routes/overview-routes.js';
 import { handlePeopleRoutes } from './routes/people-routes.js';
 import { handleEmployeesRoutes } from './routes/employees-routes.js';
+import { handleHrRoutes } from './routes/hr-routes.js'; // R52-SCHEMA: 数字 HR CRUD
+import { handleDigitalEmployeeRoutes } from './routes/digital-employee-routes.js'; // R52-SCHEMA: 招聘/提炼
 import { handleV3HealthRoutes } from './routes/v3-health-routes.js';
 import { handleV3ListRoutes } from './routes/v3-list-routes.js';
 import { handleV3OpenApiRoutes } from './routes/v3-openapi-routes.js'; // R49-B Step 6
@@ -979,6 +981,18 @@ ${content}
       if (url.startsWith('/api/v2/agent-templates') || url.startsWith('/api/v2/agent-instances')) {
         if (await handleEmployeesRoutes(req, res, method, url)) return;
         jsonResponse(res, 404, { error: 'Agent route not found' });
+        return;
+      }
+      // R52-SCHEMA: 数字 HR CRUD(/api/v2/digital-hr 优先于 employees 路由匹配)
+      if (url.startsWith('/api/v2/digital-hr')) {
+        if (await handleHrRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Digital HR route not found' });
+        return;
+      }
+      // R52-SCHEMA: 招聘 / 提炼(数字员工生命周期闭环)
+      if (url.startsWith('/api/v2/digital-employees')) {
+        if (await handleDigitalEmployeeRoutes(req, res, method, url)) return;
+        jsonResponse(res, 404, { error: 'Digital employee route not found' });
         return;
       }
       if (url.startsWith('/api/v2/employees')) {
