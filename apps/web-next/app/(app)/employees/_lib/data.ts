@@ -117,8 +117,10 @@ function mapEmployeeToAgent(row: any): Agent {
     description: row.description ?? "",
     status,
     role,
-    model: row.default_model ?? row.defaultModel ?? "claude-sonnet-4.6",
-    contextWindow: row.default_context_window ?? row.defaultContextWindow ?? 200000,
+    // R55-D 4.4: 去 hardcode "claude-sonnet-4.6" — 真实值缺失时统一返回空字符串,前端 fallback "—"
+    model: row.default_model ?? row.defaultModel ?? "",
+    // R55-D 4.4: 去 hardcode 200000 — 真实值缺失时统一返回 0,前端 fallback "—"
+    contextWindow: row.default_context_window ?? row.defaultContextWindow ?? 0,
     temperature: 0.3,
     ownerId: row.owner_user_id ?? row.ownerId ?? null,
     ownerName: "系统 HR",
@@ -144,7 +146,8 @@ function mapEmployeeToAgent(row: any): Agent {
     knowledgeFolders: Array.isArray(row.knowledge_folders) ? row.knowledge_folders : [],
     defaultEngine: row.default_engine ?? row.defaultEngine ?? "claude",
     defaultModel: row.default_model ?? row.defaultModel ?? "",
-    defaultContextWindow: row.default_context_window ?? row.defaultContextWindow ?? 200000,
+    // R55-D 4.4: 去 hardcode 200000 — 真实值缺失时统一返回 0,前端 fallback "—"
+    defaultContextWindow: row.default_context_window ?? row.defaultContextWindow ?? 0,
     defaultMaxTurns: row.default_max_turns ?? row.defaultMaxTurns ?? null,
     // R15-A
     isTemplate: Boolean(row.is_template ?? row.isTemplate ?? false),
@@ -321,7 +324,10 @@ export function facets(list: Agent[]) {
   const owners = new Map<string, number>();
   for (const a of list) {
     roles.set(a.role, (roles.get(a.role) ?? 0) + 1);
-    models.set(a.model, (models.get(a.model) ?? 0) + 1);
+    // R55-D 4.4: 过滤掉空 model(未配置),避免出现 "—" 选项污染 filter
+    if (a.model && a.model.trim().length > 0) {
+      models.set(a.model, (models.get(a.model) ?? 0) + 1);
+    }
     owners.set(a.ownerName, (owners.get(a.ownerName) ?? 0) + 1);
   }
   return { roles, models, owners };
@@ -664,4 +670,49 @@ export function useTemplates(): { templates: Agent[]; loading: boolean; reload: 
     };
   }, [nonce]);
   return { templates, loading, reload: () => setNonce((n) => n + 1) };
+}
+
+// ── R55 块3: 新建 HR 岗位(静态蓝图,不含任何动态字段)─────────────
+// POST /api/v2/admin/agent-templates(返回 { agent })。
+// 只发送岗位蓝图静态字段:name / category / persona / systemPrompt / ironLaws。
+// 严禁 model / channel / working_dir 等动态字段(后端也会兜底拒绝)。
+export interface CreateHrInput {
+  name: string;
+  category: string;
+  persona: string;
+  systemPrompt?: string;
+  ironLaws?: string[];
+  description?: string;
+  roleTemplate?: string;
+}
+
+export async function createHr(input: CreateHrInput): Promise<Agent> {
+  const body: Record<string, unknown> = {
+    name: input.name,
+    category: input.category,
+    persona: input.persona,
+    systemPrompt: input.systemPrompt ?? "",
+    ironLaws: input.ironLaws ?? [],
+    description: input.description ?? input.persona,
+    templateType: "custom",
+  };
+  if (input.roleTemplate && input.roleTemplate.trim()) {
+    body.roleTemplate = input.roleTemplate.trim();
+  }
+  const res = await api<{ agent?: any } | any>(
+    fullPath(`/api/v2/admin/agent-templates`),
+    { method: "POST", body },
+  );
+  const row =
+    (res as any)?.agent ??
+    (res as any)?.data?.agent ??
+    (res as any)?.data ??
+    res;
+  if (!row || !row.id) {
+    const err = (res as any)?.error;
+    throw new Error(err?.message ?? err?.code ?? "create_hr_failed");
+  }
+  const agent = mapEmployeeToAgent(row);
+  agent.isTemplate = true;
+  return agent;
 }
