@@ -164,9 +164,10 @@ export async function handleHrRoutes(
       insertCols.push('created_by');
       insertVals.push(ctx.userId || null);
 
+      // id 列无 DB default,显式 INSERT id = gen_random_uuid()
       const placeholders = insertVals.map((_, i) => `$${i + 1}`).join(', ');
-      const sql = `INSERT INTO agent_templates (${insertCols.join(', ')})
-                   VALUES (${placeholders}) RETURNING *`;
+      const sql = `INSERT INTO agent_templates (id, ${insertCols.join(', ')})
+                   VALUES (gen_random_uuid(), ${placeholders}) RETURNING *`;
       const result = await pool.query(sql, insertVals);
       jsonResponse(res, 201, { hr: result.rows[0] });
       return true;

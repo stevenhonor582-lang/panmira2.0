@@ -122,7 +122,7 @@ export async function handleDigitalEmployeeRoutes(
         return true;
       }
 
-      // INSERT instance — 蓝图字段从 HR 拷,动态字段从 cfg 拷(id 走 DB default)
+      // INSERT instance — 蓝图字段从 HR 拷,动态字段从 cfg 拷(id 显式 gen_random_uuid)
       const cols: string[] = [
         'tenant_id', 'name',
         'role_template', 'description', 'capabilities', 'tools',
@@ -169,7 +169,7 @@ export async function handleDigitalEmployeeRoutes(
       vals.push(ctx.userId || null);
 
       const placeholders = vals.map((_, i) => `$${i + 1}`).join(', ');
-      const insertSql = `INSERT INTO agent_instances (${cols.join(', ')}) VALUES (${placeholders}) RETURNING *`;
+      const insertSql = `INSERT INTO agent_instances (id, ${cols.join(', ')}) VALUES (gen_random_uuid(), ${placeholders}) RETURNING *`;
       const insertRes = await client.query(insertSql, vals);
       const created = insertRes.rows[0];
 
@@ -296,8 +296,8 @@ export async function handleDigitalEmployeeRoutes(
       ];
       const placeholders = insertVals.map((_, i) => `$${i + 1}`).join(', ');
       const insertRes = await client.query(
-        `INSERT INTO agent_templates (${insertCols.join(', ')})
-         VALUES (${placeholders}) RETURNING *`,
+        `INSERT INTO agent_templates (id, ${insertCols.join(', ')})
+         VALUES (gen_random_uuid(), ${placeholders}) RETURNING *`,
         insertVals,
       );
       const newHr = insertRes.rows[0];
