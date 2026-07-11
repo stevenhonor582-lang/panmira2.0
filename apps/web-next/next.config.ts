@@ -63,6 +63,10 @@ const nextConfig: NextConfig = {
       // ---- R14-E: /optimization 并入 /diagnosis ----
       { source: "/overview/optimization", destination: "/overview/diagnosis", permanent: false },
 
+      // ---- R53-A1: 顶级"数字HR"并入"智能体员工"子模块 /hr → /employees/hr ----
+      { source: "/hr", destination: "/employees/hr", permanent: true },
+      { source: "/hr/:id", destination: "/employees/hr/:id", permanent: true },
+
       // ---- R51-A: /channels/routing 改为帮助文档页(术语 + 决策表),不再重定向 ----
       // 实操面板已合入 /channels/llm,但保留独立 URL 用于解释路由策略 vs Fallback 的关系。
 

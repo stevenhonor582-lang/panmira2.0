@@ -132,7 +132,7 @@ export function HrLibrary() {
               5 大类开箱即用 · {systemPresets.length} 个
             </h2>
             <p className="mt-1 text-[12.5px] text-foreground/55">
-              内置岗位模板,直接点"招聘"即可招到员工 — 个性化在招聘时再调。
+              内置岗位,直接点"招聘"即可招到员工 — 个性化在招聘时再调。
             </p>
           </div>
         </div>

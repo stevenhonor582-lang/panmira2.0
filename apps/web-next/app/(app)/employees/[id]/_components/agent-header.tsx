@@ -67,7 +67,7 @@ export function AgentHeader({ id }: { id: string }) {
     }
   };
 
-  // R52-FRONTEND: 实例 → 提炼为数字HR(创建新模板,原实例不动)
+  // R52-FRONTEND: 实例 → 提炼为数字 HR(创建新 HR,原实例不动)
   React.useEffect(() => {
     if (agent && !extractName) {
       setExtractName(`${agent.displayName || agent.name}-岗位`);
@@ -82,7 +82,7 @@ export function AgentHeader({ id }: { id: string }) {
       const result = await promoteInstanceToTemplate(agent.id, extractName.trim() || undefined);
       toast.success(`已提炼为数字HR「${result.name}」`);
       setExtractOpen(false);
-      router.push(`/hr/${result.id}`);
+      router.push(`/employees/hr/${result.id}`);
     } catch (e: unknown) {
       setExtractError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -223,7 +223,7 @@ export function AgentHeader({ id }: { id: string }) {
                   onClick={handleCopyAsTemplate}
                   data-testid="menu-copy-as-template"
                 >
-                  <Copy className="size-4" /> 复制为模板
+                  <Copy className="size-4" /> 复制为 HR
                 </DropdownMenuItem>
               </>
             )}
@@ -309,7 +309,7 @@ export function AgentHeader({ id }: { id: string }) {
       <Dialog open={instantiateOpen} onOpenChange={(o) => { if (!o) setInstantiateOpen(false); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>从模板生成实例</DialogTitle>
+            <DialogTitle>从 HR 岗位招新员工</DialogTitle>
             <DialogDescription>
               深拷贝 <strong className="text-foreground/80">{agent.displayName || agent.name}</strong> 的全部配置,
               分配新 id + is_template=false + 新 working_dir。
@@ -361,7 +361,7 @@ export function AgentHeader({ id }: { id: string }) {
             <DialogTitle>提炼为数字HR</DialogTitle>
             <DialogDescription>
               将基于当前实例「<strong className="text-foreground/80">{agent.displayName || agent.name}</strong>」创建一个新的岗位。
-              <strong> 原实例不会被修改</strong>,它继续独立运行 — 只是"祖辈"多了一个 HR 模板可被其它新员工复用。
+              <strong> 原实例不会被修改</strong>,它继续独立运行 — 只是"祖辈"多了一个 HR 岗位可被其它新员工复用。
             </DialogDescription>
           </DialogHeader>
 
@@ -373,7 +373,7 @@ export function AgentHeader({ id }: { id: string }) {
               <Input
                 value={extractName}
                 onChange={(e) => setExtractName(e.target.value)}
-                placeholder="如:销售模板-A组"
+                placeholder="如:销售岗位-A组"
                 autoFocus
                 data-testid="extract-hr-name"
               />
@@ -418,7 +418,7 @@ export function AgentHeader({ id }: { id: string }) {
           </DialogHeader>
           <div className="rounded-md bg-rose-500/10 px-3 py-2 text-[12.5px] text-rose-700 dark:text-rose-300">
             {agent.isTemplate
-              ? "该模板被删除后,所有从该模板生成的实例仍保留(它们已独立)。"
+              ? "该 HR 岗位被删除后,所有从该岗位生成的实例仍保留(它们已独立)。"
               : "该实例被删除后,所有绑定的 bot / 频道 / 知识库引用 / 运行日志将一并清理。"}
           </div>
           <div className="flex justify-end gap-2 pt-2">

@@ -74,19 +74,10 @@ export const NAV_GROUPS: NavGroup[] = [
     defaultHref: "/overview/dashboard",
     icon: Bot,
     items: [
-      // 只保留"数字员工"入口;新建向导 / 模板在员工库页面内部已有按钮。
+      // R53-A1: 数字HR 并入"智能体员工"子菜单(原顶级模块 /hr 合并到 /employees/hr/)
+      // HR = 静态岗位配方; Instance = 运行时员工实体。两者统一在员工区管理。
       { label: "数字员工", href: "/employees", icon: Library },
-    ],
-  },
-  // R52-FRONTEND: 数字HR 独立模块(顶级菜单,不放在"智能体员工"下面)
-  // HR = 静态岗位配方; Instance = 运行时员工实体。两者分离后,HR 库就是人才市场。
-  {
-    module: "hr",
-    title: "数字HR",
-    defaultHref: "/hr",
-    icon: Briefcase,
-    items: [
-      { label: "HR 库", href: "/hr", icon: Briefcase },
+      { label: "数字HR", href: "/employees/hr", icon: Briefcase },
     ],
   },
   {

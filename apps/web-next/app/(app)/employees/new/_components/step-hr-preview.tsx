@@ -47,7 +47,7 @@ export function StepHrPreview({ hr }: { hr: HrPreviewData | null }) {
             </div>
             <p className="mt-1 text-[12.5px] text-foreground/65">
               招聘必须先选一个岗位。请回到
-              <Link href="/hr" className="ml-1 font-medium text-foreground/85 underline">
+              <Link href="/employees/hr" className="ml-1 font-medium text-foreground/85 underline">
                 HR 库
               </Link>
               选一个。
@@ -69,7 +69,7 @@ export function StepHrPreview({ hr }: { hr: HrPreviewData | null }) {
             已选岗位 · HR
           </div>
           <Link
-            href={`/hr/${hr.id}`}
+            href={`/employees/hr/${hr.id}`}
             className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/55 hover:text-foreground"
           >
             查看详情 →
@@ -143,7 +143,7 @@ export function StepHrPreview({ hr }: { hr: HrPreviewData | null }) {
         <ul className="mt-2 space-y-1">
           <li>· 岗位的 静态字段(人设/系统提示词/铁律/分类/角色) — 在这里确认,不可改</li>
           <li>· 员工的 动态字段(名字/头像/模型/技能/记忆/入口) — Step 2 起填</li>
-          <li>· 想换岗位?点"查看详情 →" 或回到 <Link href="/hr" className="text-foreground underline">HR 库</Link></li>
+          <li>· 想换岗位?点"查看详情 →" 或回到 <Link href="/employees/hr" className="text-foreground underline">HR 库</Link></li>
         </ul>
       </div>
     </div>
