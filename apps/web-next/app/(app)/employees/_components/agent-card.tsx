@@ -23,6 +23,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/toast/toast-provider";
+import { getDepartmentColor, DEFAULT_DEPARTMENT_COLOR } from "@/lib/department-color";
+import { truncate } from "@/lib/text-truncate";
 
 const ROLE_LABEL: Record<string, string> = {
   "full-stack-engineer": "全栈工程",
@@ -157,12 +159,11 @@ export function AgentCard({
     return String(c);
   }, [agent.defaultContextWindow, agent.contextWindow]);
 
-  // R51-E1: 人格精简 — 截到 60 字内,前面加 icon
-  const personaShort = React.useMemo(() => {
-    const p = (agent.persona || agent.description || "").trim();
-    if (!p) return "";
-    return p.length > 60 ? p.slice(0, 60) + "…" : p;
-  }, [agent.persona, agent.description]);
+  // R53-A1: 人格精简 — 改用统一 truncate helper(60 字 + ...)
+  const personaShort = React.useMemo(
+    () => truncate((agent.persona || agent.description || "").trim(), 60),
+    [agent.persona, agent.description],
+  );
 
   const onAction = async (e: React.MouseEvent, action: "pause" | "activate" | "deprecate" | "promoteToTemplate" | "toInstance" | "copyAsTemplate" | "generateInstance" | "delete") => {
     e.preventDefault();
@@ -250,6 +251,11 @@ export function AgentCard({
 
   const CategoryIcon = category.Icon;
 
+  // R53-A1: 部门色描边(实例 / HR)
+  // HR 卡用 raw.category;实例卡 raw.category 缺失(v1 兜底 通用灰)
+  const rawCategory = (agent.raw as Record<string, unknown> | null)?.category;
+  const deptColor = getDepartmentColor(rawCategory);
+
   return (
     <Link
       ref={ref}
@@ -258,26 +264,17 @@ export function AgentCard({
       onMouseMove={onMove}
       onMouseLeave={() => { setHover(false); setPos({ x: 50, y: 50 }); }}
       style={{
-        transform: `perspective(900px) rotateX(${tiltX}deg) rotateY(${tiltY}deg)`,
-        transformStyle: "preserve-3d",
+        borderColor: deptColor,
+        boxShadow: `0 4px 16px -8px ${deptColor}33, 0 1px 3px -1px rgba(0,0,0,0.06)`,
       }}
       className={cn(
-        "group relative block h-full w-full overflow-hidden rounded-3xl bg-card transition-all duration-300 will-change-transform",
-        "hover:shadow-[0_30px_60px_-30px_rgba(0,0,0,0.18)] hover:-translate-y-0.5",
-        agent.isTemplate
-          ? "border-2 border-dashed border-violet-400/70"
-          : "border border-border",
+        // R53-A1: 名片样式 — rounded-2xl (16px) + 2px 部门色描边 + 细阴影
+        "group relative block h-full w-full overflow-hidden rounded-2xl bg-card border-2 transition-all duration-300",
+        "hover:shadow-md hover:-translate-y-0.5",
       )}
       data-testid={`agent-card-${agent.id.slice(0, 8)}`}
     >
-      <div
-        aria-hidden
-        className={cn(
-          "pointer-events-none absolute inset-0 transition-opacity duration-500",
-          "bg-gradient-to-br",
-          hueBg(agent.hue),
-        )}
-      />
+      {/* R53-A1: 名片样式 — 移除原 hue gradient bg,改用极轻 hover 提示 */}
       <div
         aria-hidden
         className={cn(
@@ -285,12 +282,8 @@ export function AgentCard({
           hover ? "opacity-100" : "opacity-0",
         )}
         style={{
-          background: `radial-gradient(180px circle at ${pos.x}% ${pos.y}%, rgba(255,255,255,0.22), transparent 60%)`,
+          background: `radial-gradient(160px circle at ${pos.x}% ${pos.y}%, ${deptColor}14, transparent 70%)`,
         }}
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0)_45%,rgba(0,0,0,0.18)_100%)]"
       />
 
       {showManageActions && (
@@ -382,11 +375,12 @@ export function AgentCard({
           className="absolute left-0 top-0 h-full w-1.5 bg-blue-500/80 z-[5]"
         />
       )}
-      {/* R28-A: HR 卡片右下水印 */}
+      {/* R53-A1: HR 卡片右下水印(名片样式 → 极轻提示) */}
       {agent.isTemplate && (
         <div
           aria-hidden
-          className="pointer-events-none absolute bottom-2 right-4 select-none text-6xl font-black leading-none tracking-tighter text-violet-500/[0.07]"
+          className="pointer-events-none absolute bottom-2 right-4 select-none text-5xl font-black leading-none tracking-tighter opacity-[0.04]"
+          style={{ color: deptColor }}
         >
           HR
         </div>
@@ -449,11 +443,14 @@ export function AgentCard({
             </div>
           </div>
 
-          {/* R51-E1: 人格精简 — icon + 短描述 */}
+          {/* R53-A1: 人格精简 — icon + 短描述(统一 60 字) */}
           {personaShort && (
             <div className="flex items-start gap-1.5" data-testid={`persona-short-${agent.id.slice(0, 8)}`}>
               <Brain className="size-3 shrink-0 mt-0.5 text-foreground/40" />
-              <p className="text-foreground/75 leading-snug text-[12.5px] line-clamp-2">
+              <p
+                className="text-foreground/75 leading-snug text-[12.5px] line-clamp-2"
+                title={agent.persona || agent.description}
+              >
                 {personaShort}
               </p>
             </div>
