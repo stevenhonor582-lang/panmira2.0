@@ -106,6 +106,10 @@ export const agentTemplates = pgTable('agent_templates', {
   ironLaws: jsonb('iron_laws').default([]),
   category: varchar('category', { length: 255 }).default('general'),
   templateType: varchar('template_type', { length: 100 }).default('custom'),
+  // R52-SCHEMA: HR(数字员工模板) 静态描述扩展
+  style: text('style'),
+  visibility: varchar('visibility', { length: 20 }).notNull().default('team'),
+  source: varchar('source', { length: 20 }).notNull().default('system'),
   isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -129,7 +133,11 @@ export const agentInstances = pgTable('agent_instances', {
   ironLaws: jsonb('iron_laws').default([]),
   category: varchar('category', { length: 255 }).default('general'),
   templateType: varchar('template_type', { length: 100 }).default('custom'),
-  sourceTemplateId: uuid('source_template_id'),
+  // R52-SCHEMA: 强约束 - 实例必须挂在 HR(模板)下,FK RESTRICT 防孤儿
+  sourceTemplateId: uuid('source_template_id')
+    .notNull()
+    .references(() => agentTemplates.id, { onDelete: 'restrict' }),
+  sourceType: varchar('source_type', { length: 20 }).notNull().default('system'),
   isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -152,6 +160,24 @@ export const agentInstances = pgTable('agent_instances', {
   avatarGlyph: text('avatar_glyph'),
   avatarHue: text('avatar_hue'),
   displayName: text('display_name'),
+});
+
+// ── R52-SCHEMA: instance_to_hr(实例→HR 提炼关系)────────────────
+//   描述:instance 反向生成新 HR 时,记一份原始 + 提炼后的关系,便于追溯
+export const instanceToHr = pgTable('instance_to_hr', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  instanceId: uuid('instance_id')
+    .notNull()
+    .references(() => agentInstances.id, { onDelete: 'cascade' }),
+  sourceTemplateId: uuid('source_template_id')
+    .notNull()
+    .references(() => agentTemplates.id, { onDelete: 'restrict' }),
+  newTemplateId: uuid('new_template_id')
+    .notNull()
+    .references(() => agentTemplates.id, { onDelete: 'cascade' }),
+  snapshot: jsonb('snapshot').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  createdBy: uuid('created_by').references(() => users.id),
 });
 
 
