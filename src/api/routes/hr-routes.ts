@@ -147,6 +147,26 @@ export async function handleHrRoutes(
         return true;
       }
 
+      // R53-A3: role_template 全局唯一预检(DB 无 unique 索引,显式查一次)
+      if (body.roleTemplate !== undefined && body.roleTemplate !== null) {
+        if (typeof body.roleTemplate !== 'string' || !body.roleTemplate.trim()) {
+          jsonResponse(res, 400, { error: 'bad_request', message: 'roleTemplate 非空字符串' });
+          return true;
+        }
+        const dupPost = await pool.query(
+          `SELECT id, tenant_id FROM agent_templates WHERE role_template = $1 LIMIT 1`,
+          [body.roleTemplate.trim()],
+        );
+        if (dupPost.rows.length > 0) {
+          jsonResponse(res, 409, {
+            error: 'role_template_taken',
+            message: `role_template "${body.roleTemplate}" 已被其他 HR 占用`,
+            holder: { id: dupPost.rows[0].id, tenantId: dupPost.rows[0].tenant_id },
+          });
+          return true;
+        }
+      }
+
       const insertCols: string[] = ['tenant_id', 'name'];
       const insertVals: any[] = [tenantId, body.name.trim()];
 
@@ -233,6 +253,33 @@ export async function handleHrRoutes(
           }
         }
 
+        // R53-A3: role_template 全局唯一预检(DB 无 unique 索引,且需要"改自己同名"不算冲突)
+        if (body.roleTemplate !== undefined && body.roleTemplate !== null) {
+          if (typeof body.roleTemplate !== 'string' || !body.roleTemplate.trim()) {
+            jsonResponse(res, 400, { error: 'bad_request', message: 'roleTemplate 非空字符串' });
+            return true;
+          }
+          const dupPatch = await pool.query(
+            `SELECT id, tenant_id FROM agent_templates WHERE role_template = $1 AND id <> $2 LIMIT 1`,
+            [body.roleTemplate.trim(), id],
+          );
+          if (dupPatch.rows.length > 0) {
+            jsonResponse(res, 409, {
+              error: 'role_template_taken',
+              message: `role_template "${body.roleTemplate}" 已被其他 HR 占用`,
+              holder: { id: dupPatch.rows[0].id, tenantId: dupPatch.rows[0].tenant_id },
+            });
+            return true;
+          }
+        }
+
+        // R53-A3 决策点 D8: PATCH 快照(改前/改后)
+        const before = await pool.query(
+          `SELECT name, role_template FROM agent_templates WHERE id = $1 AND tenant_id = $2`,
+          [id, tenantId],
+        );
+        const beforeRow = before.rows[0] || null;
+
         const setCols: string[] = [];
         const setVals: any[] = [];
         for (const [jsKey, dbCol] of Object.entries(HR_FIELD_MAP)) {
@@ -259,6 +306,33 @@ export async function handleHrRoutes(
           jsonResponse(res, 404, { error: 'not_found', message: `HR ${id} 不存在` });
           return true;
         }
+
+        // R53-A3 决策点 D8: 如果 role_template 真被改了 → 写 audit_logs(可追溯)
+        const oldRT = beforeRow?.role_template ?? null;
+        const newRT = r.rows[0]?.role_template ?? null;
+        if ('roleTemplate' in body && oldRT !== newRT) {
+          try {
+            await pool.query(
+              `INSERT INTO audit_logs (tenant_id, user_id, action, resource_type, resource_id, details)
+               VALUES ($1, $2, 'hr.role_template.change', 'agent_template', $3, $4::jsonb)`,
+              [
+                tenantId,
+                ctx.userId || null,
+                id,
+                JSON.stringify({
+                  hrName: r.rows[0]?.name,
+                  before: oldRT,
+                  after: newRT,
+                  fieldsTouched: Object.keys(body),
+                }),
+              ],
+            );
+          } catch (auditErr) {
+            // audit log 失败不能阻塞主流程,但要写 stderr
+            console.error('[hr-routes] audit log insert failed:', String(auditErr));
+          }
+        }
+
         jsonResponse(res, 200, { hr: r.rows[0] });
         return true;
       } catch (e) {

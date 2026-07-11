@@ -659,6 +659,30 @@ export async function handleEmployeesRoutes(
         jsonResponse(res, 400, fail('no_fields', '请求体未包含任何可更新字段'));
         return true;
       }
+
+      // R53-A3: roleTemplate 全局唯一预检(没改 roleTemplate 就跳过)
+      if ('roleTemplate' in updates) {
+        const newRT = updates.roleTemplate;
+        if (typeof newRT !== 'string' || !newRT.trim()) {
+          jsonResponse(res, 400, fail('bad_request', 'roleTemplate 非空字符串'));
+          return true;
+        }
+        const dupEmp = await pool.query(
+          `SELECT id, tenant_id FROM agent_templates WHERE role_template = $1 AND id <> $2 LIMIT 1`,
+          [newRT.trim(), id],
+        );
+        if (dupEmp.rows.length > 0) {
+          jsonResponse(res, 409, fail('role_template_taken', `role_template "${newRT}" 已被其他 HR 占用`));
+          return true;
+        }
+        // 改前快照(给 audit 用)
+        const beforeEmp = await pool.query(
+          `SELECT role_template FROM agent_templates WHERE id = $1 AND tenant_id = $2 LIMIT 1`,
+          [id, ctx.tenantId || '00000000-0000-0000-0000-000000000000'],
+        );
+        (updates as any).__oldRoleTemplate = beforeEmp.rows[0]?.role_template ?? null;
+      }
+
       // R35+R38-C3: channel_ids 独占校验 + 双向同步
       //  - 解绑:旧 channelIds 中不再出现的 bot_id → bot_configs.agent_id = NULL
       //  - 新增:新 channelIds 中的 bot_id → bot_configs.agent_id = $id(独占校验后)
@@ -714,6 +738,35 @@ export async function handleEmployeesRoutes(
       if (!agent) {
         jsonResponse(res, 404, fail('not_found', `Employee ${id} 不存在`));
         return true;
+      }
+
+      // R53-A3 决策点 D8: role_template 真改 → 写 audit_logs(可追溯)
+      if ((updates as any).__oldRoleTemplate !== undefined
+          && (updates as any).__oldRoleTemplate !== (updates as any).roleTemplate
+          && 'roleTemplate' in updates) {
+        try {
+          const roleBefore = (updates as any).__oldRoleTemplate;
+          const roleAfter = (updates as any).roleTemplate;
+          if (roleBefore !== roleAfter) {
+            await pool.query(
+              `INSERT INTO audit_logs (tenant_id, user_id, action, resource_type, resource_id, details)
+               VALUES ($1, $2, 'hr.role_template.change', 'agent_template', $3, $4::jsonb)`,
+              [
+                ctx.tenantId || '00000000-0000-0000-0000-000000000000',
+                ctx.userId || null,
+                id,
+                JSON.stringify({
+                  hrName: (agent as any)?.name ?? (agent as any)?.displayName,
+                  before: roleBefore,
+                  after: roleAfter,
+                  via: '/api/v2/employees/:id',
+                }),
+              ],
+            );
+          }
+        } catch (auditErr) {
+          console.error('[employees-routes] audit log insert failed:', String(auditErr));
+        }
       }
 
       // R38-C3: PATCH 模型字段联级 + channelIds 联级 — 在 AgentStore.update 成功之后跑
