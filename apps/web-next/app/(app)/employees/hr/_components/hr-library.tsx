@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
   fetchTemplates,
   fetchAgents,
-  TEMPLATE_PRESETS,
   type Agent,
 } from "../../_lib/data";
 import { HrCard, type HrCardData } from "./hr-card";
@@ -30,33 +29,6 @@ function mapAgentToHrCard(a: Agent, usage: number): HrCardData {
     skills: a.skills ?? [],
     tools: a.tools ?? [],
     usageCount: usage,
-  };
-}
-
-function presetToHrCard(p: typeof TEMPLATE_PRESETS[number]): HrCardData {
-  const role = String(p.role);
-  const category =
-    role === "full-stack-engineer" || role === "engineering" ? "engineering" :
-    role === "copywriting-secretary" ? "copy" :
-    role === "ops-engineer" ? "ops" :
-    role === "customer-support" ? "support" :
-    role === "research-analyst" ? "research" :
-    "general";
-  return {
-    id: p.id,
-    name: p.id,
-    displayName: p.title,
-    persona: p.persona,
-    description: p.persona,
-    glyph: p.glyph,
-    hue: p.hue,
-    status: "active",
-    category,
-    role: p.role,
-    ironLaws: [],
-    skills: [],
-    tools: [],
-    usageCount: 0,
   };
 }
 
@@ -96,7 +68,6 @@ export function HrLibrary() {
     return () => clearTimeout(t);
   }, []);
 
-  const systemPresets = TEMPLATE_PRESETS.map(presetToHrCard);
   const customCards = custom.map((a) => mapAgentToHrCard(a, usageMap[a.id] ?? 0));
 
   // R55-A 1.2: 命中判断 — 岗位名称 / 显示名 / 角色 / 描述 / 人格 任一包含 query(不区分大小写)
@@ -112,9 +83,8 @@ export function HrLibrary() {
     );
   };
   const trimmedQuery = query.trim();
-  const filteredPresets = systemPresets.filter((hr) => matches(hr, trimmedQuery));
   const filteredCustom = customCards.filter((hr) => matches(hr, trimmedQuery));
-  const totalMatched = filteredPresets.length + filteredCustom.length;
+  const totalMatched = filteredCustom.length;
 
   return (
     <div className="space-y-10">
@@ -175,7 +145,7 @@ export function HrLibrary() {
               {totalMatched.toString().padStart(2, "0")}
             </span>
             <span className="text-[10.5px] font-mono text-foreground/35">
-              / {(systemPresets.length + customCards.length).toString().padStart(2, "0")}
+              / {customCards.length.toString().padStart(2, "0")}
             </span>
           </div>
         </div>
@@ -185,40 +155,10 @@ export function HrLibrary() {
         <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
           <div>
             <div className="flex items-center gap-2 text-[10.5px] font-mono uppercase tracking-[0.22em] text-foreground/45">
-              <Sparkles className="size-3" /> 系统原生岗位
+              <Lock className="size-3" /> 系统岗位
             </div>
             <h2 className="mt-1 text-xl font-semibold tracking-tight">
-              5 大类开箱即用 · {filteredPresets.length} 个
-            </h2>
-            <p className="mt-1 text-[12.5px] text-foreground/55">
-              内置岗位,直接点"招聘"即可招到员工 — 个性化在招聘时再调。
-            </p>
-          </div>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filteredPresets.map((hr, i) => (
-            <div
-              key={hr.id}
-              className={
-                "transition-all duration-500 ease-out " +
-                (mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4")
-              }
-              style={{ transitionDelay: mounted ? `${i * 50}ms` : "0ms" }}
-            >
-              <HrCard hr={hr} index={i} />
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="space-y-5">
-        <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
-          <div>
-            <div className="flex items-center gap-2 text-[10.5px] font-mono uppercase tracking-[0.22em] text-foreground/45">
-              <Lock className="size-3" /> 自定义岗位
-            </div>
-            <h2 className="mt-1 text-xl font-semibold tracking-tight">
-              自己定义的岗位 · {loading ? "…" : filteredCustom.length} 个
+              R52/R53 内置岗位 · {loading ? "…" : filteredCustom.length} 个
             </h2>
             <p className="mt-1 text-[12.5px] text-foreground/55">
               从实例"提炼为数字HR"或直接"新建岗位"得到 · 每张卡显示被多少实例在用。
