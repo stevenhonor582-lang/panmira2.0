@@ -6,9 +6,11 @@ import { useRouter } from "next/navigation";
 import { useAgent, updateAgent, createInstanceFromTemplate, copyAsTemplate, deleteAgent, promoteInstanceToTemplate } from "../../_lib/data";
 import { AvatarMark, statusTone } from "../../_components/avatar-mark";
 import {
-  ArrowLeft, User2, GitBranch, Hash, Briefcase,
+  ArrowLeft, User2, GitBranch, Hash, Briefcase, ChevronRight,
   MoreVertical, Pause, Play, Archive, Copy, Loader2, Check, Sparkles, Trash2,
 } from "lucide-react";
+import { getDepartmentColor } from "@/lib/department-color";
+import { truncate } from "@/lib/text-truncate";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/toast/toast-provider";
 import {
@@ -254,6 +256,12 @@ export function AgentHeader({ id }: { id: string }) {
       <div className="relative mt-6 flex flex-col gap-6 md:flex-row md:items-end">
         <AvatarMark glyph={agent.glyph} hue={agent.hue} size="xl" />
         <div className="flex-1">
+          {/* R53-T7.4: 实例有源 HR 时,在 title 上方展示"所属岗位"卡 */}
+          {!agent.isTemplate && agent.templateSource && (
+            <div className="mb-4 max-w-[58ch]">
+              <HrSourceCard sourceId={agent.templateSource} />
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-3 text-[11px] font-mono uppercase tracking-[0.18em] text-foreground/55">
             <span className="inline-flex items-center gap-1.5">
               <span className={`size-1.5 rounded-full ${t.dot}`} />
@@ -464,4 +472,54 @@ function hueGradient(hue: string) {
     emerald: "from-emerald-300 to-teal-200",
   };
   return map[hue] ?? map.amber;
+}
+
+
+/**
+ * R53-T7.4: 实例详情顶部"所属岗位"卡
+ * 派生自哪个 HR(template_source),显示 HR 名 + 部门色描边。
+ * - 用自己 useAgent 拿源 HR,符合 Rules of Hooks
+ * - 加载/失败时 fallback 到骨架 / 静态文本
+ */
+function HrSourceCard({ sourceId }: { sourceId: string }) {
+  const { agent: hr, loading } = useAgent(sourceId);
+  // category 来自 raw.category(Agent 类型未直接暴露 category 字段)
+  const hrCategory =
+    typeof hr?.raw?.category === "string" ? (hr.raw.category as string) : "";
+  const deptColor = getDepartmentColor(hrCategory);
+  const deptLabel = hrCategory && hrCategory.length > 0 ? hrCategory : "通用";
+  const summary = hr ? truncate(hr.persona || hr.description || hr.systemPrompt, 80) : "";
+  return (
+    <Link
+      href={hr ? `/employees/hr/${hr.id}` : "#"}
+      className="group relative block overflow-hidden rounded-2xl bg-card/60 p-4 ring-1 ring-border backdrop-blur-sm transition-all hover:ring-foreground/30 hover:shadow-sm"
+      style={{ borderLeft: `4px solid ${deptColor}` }}
+      data-testid="instance-source-hr-card"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2 text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/45">
+          <Briefcase className="size-3" style={{ color: deptColor }} />
+          所属岗位
+        </div>
+        <ChevronRight className="size-3.5 text-foreground/30 transition-all group-hover:translate-x-0.5 group-hover:text-foreground/55" />
+      </div>
+      <div className="mt-2 flex items-baseline gap-2">
+        <h3 className="text-lg font-semibold tracking-tight">
+          {loading && !hr ? <span className="inline-block h-5 w-32 rounded bg-muted/40 animate-pulse" /> : (hr?.displayName || hr?.name || sourceId.slice(0, 8) + "…")}
+        </h3>
+        <span
+          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wider"
+          style={{
+            color: deptColor,
+            backgroundColor: `${deptColor}1a`,
+          }}
+        >
+          {deptLabel}
+        </span>
+      </div>
+      <p className="mt-1.5 line-clamp-2 text-[12.5px] leading-snug text-foreground/65">
+        {summary || "岗位简介加载中…"}
+      </p>
+    </Link>
+  );
 }

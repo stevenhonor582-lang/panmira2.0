@@ -3,6 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import {
   fetchAgents,
+  fetchTemplates,
   sortByOwnerFirst,
   facets as buildFacets,
   fetchActiveRunsByAgent,
@@ -44,6 +45,8 @@ export function GalleryBoard() {
   const [boardTab, setBoardTab] = React.useState<BoardTab>("instances");
   // R51-E1: 当前正在 run 的 agent id 集合(用于卡片显示 "工作中")
   const [workingIds, setWorkingIds] = React.useState<Record<string, true>>({});
+  // R53-T7.2: HR id → HR 显示名 映射(实例卡显示"岗位"标签用)
+  const [hrNameMap, setHrNameMap] = React.useState<Record<string, string>>({});
 
   const reload = React.useCallback(() => {
     setLoading(true);
@@ -66,6 +69,17 @@ export function GalleryBoard() {
     fetchActiveRunsByAgent()
       .then((m) => { if (alive) setWorkingIds(m); })
       .catch(() => { if (alive) setWorkingIds({}); });
+    // R53-T7.2: 拉 HR 列表,构建 id → 显示名 映射
+    fetchTemplates()
+      .then((list) => {
+        if (!alive) return;
+        const map: Record<string, string> = {};
+        for (const t of list) {
+          if (t.id) map[t.id] = t.displayName || t.name || t.id.slice(0, 8);
+        }
+        setHrNameMap(map);
+      })
+      .catch(() => { if (alive) setHrNameMap({}); });
     return () => {
       alive = false;
     };
@@ -171,7 +185,7 @@ export function GalleryBoard() {
       ) : list.length === 0 ? (
         <EmptyState tab={boardTab} />
       ) : (
-        <AsymGrid agents={list} mounted={mounted} onChanged={reload} boardTab={boardTab} workingIds={workingIds} />
+        <AsymGrid agents={list} mounted={mounted} onChanged={reload} boardTab={boardTab} workingIds={workingIds} hrNameMap={hrNameMap} />
       )}
     </div>
   );
@@ -245,13 +259,14 @@ function BoardTabButton({
 // R17-3: 平级卡片网格 — 统一尺寸,不再有 feature/tall/wide 大卡
 // 用户反馈:"一个特别大一个很长,造成错觉"
 function AsymGrid({
-  agents, mounted, onChanged, boardTab, workingIds,
+  agents, mounted, onChanged, boardTab, workingIds, hrNameMap,
 }: {
   agents: Agent[];
   mounted: boolean;
   onChanged: () => void;
   boardTab: BoardTab;
   workingIds: Record<string, true>;
+  hrNameMap?: Record<string, string>;
 }) {
   return (
     <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
@@ -271,6 +286,7 @@ function AsymGrid({
             onChanged={onChanged}
             isTemplateTab={boardTab === "templates"}
             workingIds={workingIds}
+            hrNameMap={hrNameMap}
           />
         </div>
       ))}

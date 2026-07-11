@@ -7,7 +7,7 @@ import type { Agent } from "../_lib/data";
 import { updateAgent, createInstanceFromTemplate, promoteInstanceToTemplate, demoteTemplateToInstance, deleteAgent } from "../_lib/data";
 import { AvatarMark, statusTone } from "./avatar-mark";
 import {
-  MoreVertical, Pause, Play, Archive, FileText, Bot, Loader2, Sparkles, FileUp,
+  MoreVertical, Pause, Play, Archive, FileText, Bot, Briefcase, Loader2, Sparkles, FileUp,
   Trash2, ArrowDownToLine, Activity, Layers, Radio, Brain, Hash, Brush, PenLine, Wrench, Box,
 } from "lucide-react";
 import {
@@ -83,6 +83,7 @@ export function AgentCard({
   onChanged,
   isTemplateTab = false,
   workingIds,
+  hrNameMap,
 }: {
   agent: Agent;
   size?: AgentCardSize;
@@ -91,6 +92,8 @@ export function AgentCard({
   isTemplateTab?: boolean;
   /** R51-E1: 当前正在工作的 agent id 集合(由父层聚合) */
   workingIds?: Record<string, true>;
+  /** R53-T7.2: HR id → 显示名 映射(实例卡显示"岗位"标签用) */
+  hrNameMap?: Record<string, string>;
 }) {
   // 静默忽略 size —— 所有卡片渲染相同布局(用户反馈:平级排列)
   const ref = React.useRef<HTMLAnchorElement>(null);
@@ -410,6 +413,18 @@ export function AgentCard({
                 <Bot className="size-2.5" />
                 实例
               </span>
+            )}
+            {/* R53-T7.2: 实例卡显示"岗位"mini 标签(从 source HR 读名)— 仅实例 + 有源 HR 时显示 */}
+            {!agent.isTemplate && agent.templateSource && hrNameMap?.[agent.templateSource] && (
+              <Link
+                href={`/employees/hr/${agent.templateSource}`}
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex max-w-[140px] items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9.5px] font-medium tracking-[0.18em] text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/30 hover:bg-emerald-500/20"
+                data-testid={`instance-hr-badge-${agent.id.slice(0, 8)}`}
+              >
+                <Briefcase className="size-2.5 shrink-0" />
+                <span className="truncate">{hrNameMap[agent.templateSource]}</span>
+              </Link>
             )}
             {/* R51-E1: HR 岗位分类 chip(画 / 文 / 运 / 其它)— 仅 HR 显示 */}
             {agent.isTemplate && (

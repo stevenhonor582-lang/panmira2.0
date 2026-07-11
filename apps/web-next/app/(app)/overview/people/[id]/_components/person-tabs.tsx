@@ -18,9 +18,12 @@ import {
 } from "recharts";
 import {
   Bot, Plus, Trash2, Sparkles, Clock, CheckCircle2, AlertTriangle,
-  Info, Copy, FileUp,
+  Info, Copy, FileUp, Briefcase, ChevronRight,
   Pencil, MoreVertical, Loader2,
 } from "lucide-react";
+import { fetchTemplates } from "../../../../employees/_lib/data";
+import { getDepartmentColor } from "@/lib/department-color";
+import { truncate } from "@/lib/text-truncate";
 import {
   fetchAgents, fetchPipelines, fetchPersonAgents, patchPersonAgents,
   fetchPersonUsage, fetchActivityEvents,
@@ -389,6 +392,8 @@ export function EmployeesTab({ person, onChanged }: { person: Person; onChanged?
 
   return (
     <div className="space-y-4">
+      {/* R53-T7.1: 真人详情 → TA 名下的 HR */}
+      <HrOwnedByPerson person={person} />
       {/* 说明 */}
       <div className="rounded-xl border border-border bg-muted/20 px-4 py-3 text-[12.5px] text-muted-foreground flex items-start gap-2">
         <Info className="size-4 mt-0.5 shrink-0" />
@@ -846,5 +851,104 @@ function EmptyState({
       <div className="text-sm font-medium text-foreground">{title}</div>
       <div className="mt-1 text-xs text-muted-foreground max-w-md mx-auto">{hint}</div>
     </div>
+  );
+}
+
+
+/**
+ * R53-T7.1: 真人详情 → "TA 名下的 HR"
+ * ----------------------------------------------------------------
+ * 列出 ownerName === person.name 的 HR 岗位。
+ * 占位实现:全表 fetch 后前端过滤(owner 索引尚未在后端建)。
+ * 点 → 跳 /employees/hr/<id>(不进 /employees/hr 列表 — 一律走详情)。
+ */
+function HrOwnedByPerson({ person }: { person: Person }) {
+  type HrLite = Awaited<ReturnType<typeof fetchTemplates>>[number];
+  const [hrs, setHrs] = React.useState<HrLite[]>([]);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    fetchTemplates()
+      .then((list) => {
+        if (!alive) return;
+        // ownerName 匹配当前 person.name 的 HR
+        setHrs(list.filter((a) => a.ownerName === person.name));
+      })
+      .catch(() => { if (alive) setHrs([]); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [person.name]);
+
+  return (
+    <section
+      className="space-y-3 rounded-2xl border border-border bg-card/40 p-5 backdrop-blur-sm"
+      data-testid="person-owned-hr-section"
+    >
+      <header className="flex items-baseline justify-between gap-3 border-b border-border pb-2">
+        <div>
+          <div className="flex items-center gap-2 text-[10.5px] font-mono uppercase tracking-[0.22em] text-foreground/45">
+            <Briefcase className="size-3" />
+            TA 名下的 HR
+          </div>
+          <h3 className="mt-1 text-sm font-semibold tracking-tight">
+            {person.name} 拥有的数字 HR 岗位
+          </h3>
+        </div>
+        <Link
+          href="/employees/hr"
+          className="inline-flex items-center gap-1 text-[11.5px] text-foreground/55 hover:text-foreground"
+        >
+          查看全部 HR 库 <ChevronRight className="size-3" />
+        </Link>
+      </header>
+      {loading ? (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="h-24 rounded-2xl bg-muted/40 animate-pulse" />
+          ))}
+        </div>
+      ) : hrs.length === 0 ? (
+        <div className="rounded-xl bg-muted/30 px-4 py-6 text-center text-[12.5px] text-foreground/55">
+          TA 名下还没有 HR 岗位 ·
+          <Link href="/employees/hr" className="ml-1 underline hover:text-foreground">
+            去 HR 库新建一个
+          </Link>
+        </div>
+      ) : (
+        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {hrs.map((hr) => {
+            const hrCategory =
+              typeof hr.raw?.category === "string" ? (hr.raw.category as string) : "";
+            const deptColor = getDepartmentColor(hrCategory);
+            return (
+              <li key={hr.id}>
+                <Link
+                  href={`/employees/hr/${hr.id}`}
+                  className="group block overflow-hidden rounded-2xl bg-card p-4 ring-1 ring-border transition-all hover:ring-foreground/30 hover:shadow-sm"
+                  style={{ borderLeft: `4px solid ${deptColor}` }}
+                  data-testid={`person-owned-hr-${hr.id.slice(0, 8)}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/45">
+                      <Briefcase className="size-3" style={{ color: deptColor }} />
+                      {hrCategory || "通用"}
+                    </div>
+                    <ChevronRight className="size-3.5 text-foreground/30 transition-all group-hover:translate-x-0.5 group-hover:text-foreground/55" />
+                  </div>
+                  <h4 className="mt-1.5 truncate text-[14px] font-semibold tracking-tight">
+                    {hr.displayName || hr.name}
+                  </h4>
+                  <p className="mt-1 line-clamp-2 text-[11.5px] leading-snug text-foreground/55">
+                    {truncate(hr.persona || hr.description || hr.systemPrompt, 50)}
+                  </p>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }
