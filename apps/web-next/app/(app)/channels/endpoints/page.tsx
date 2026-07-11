@@ -62,6 +62,20 @@ const PLATFORM_LABEL: Record<Platform, string> = {
   webhook: "Webhook",
 };
 
+// R68-4 · 块 9: 每个平台的接入手注释(去飞书/企微后台对照填即可)
+const PLATFORM_HINT: Record<Platform, string> = {
+  feishu:
+    "飞书开放平台 → 应用后台 → 凭证页 拿 App ID / App Secret;事件订阅页 拿 Verification Token 与 Encrypt Key。回调 URL 在本平台「入站」Tab 复制。",
+  wechat:
+    "微信公众号后台 → 开发→基本配置 拿 AppID / AppSecret / 令牌(Token)/消息加解密密钥。服务器地址(URL)在「入站」Tab 复制。",
+  wechatwork:
+    "企业微信管理后台 → 应用管理→自建应用 拿 AgentId / Secret;「客户联系」/「接收事件服务器」拿 Token / EncodingAESKey。",
+  whatsapp:
+    "Meta for Developers → WhatsApp→API Setup 拿 Phone Number ID / Access Token / Verify Token。Webhook Callback URL 在「入站」Tab 复制。",
+  webhook:
+    "通用 Webhook 出/入站:URL 字段填完整 https 地址,Secret 用于签名校验(HMAC-SHA256)。",
+};
+
 const PLATFORM_FIELDS: Record<
   Platform,
   Array<{ key: string; label: string; placeholder: string }>
@@ -685,6 +699,11 @@ function EndpointDialog({
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
+          </div>
+          {/* R68-4 · 块 9: 平台对应平台注释 — 选哪个平台显示哪段提示 */}
+          <div className="rounded-sm ring-1 ring-border bg-muted/40 px-2.5 py-1.5 text-[11px] text-muted-foreground leading-relaxed">
+            <span className="font-mono uppercase tracking-wide text-[10px] mr-1.5 text-foreground/70">{PLATFORM_LABEL[platform]}</span>
+            {PLATFORM_HINT[platform]}
           </div>
           <div className="space-y-1.5">
             {fields.map((f) => (
