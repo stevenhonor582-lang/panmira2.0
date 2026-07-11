@@ -206,8 +206,8 @@ export function NewBotWizard() {
         <StepRail
             current={current}
             onJump={jump}
-            labelOverride={hrIdParam && current === 1 ? "已选岗位" : undefined}
-            hintOverride={hrIdParam && current === 1 ? "只读 · 不可改" : undefined}
+            labelOverride={hrIdParam && current === 1 ? "选岗位" : undefined}
+            hintOverride={hrIdParam && current === 1 ? "岗位锁定 · 只读" : undefined}
           />
         <PreviewCard form={form} />
       </aside>
@@ -230,7 +230,7 @@ export function NewBotWizard() {
               STEP 0{current} · {STEPS.length}
             </span>
             <h2 className="mt-1 text-xl font-semibold tracking-tight">
-              {current === 1 && hrIdParam ? "已选岗位 · HR (只读)" : STEPS[current - 1].label}
+              {current === 1 && hrIdParam ? "选岗位 · 岗位锁定(只读)" : STEPS[current - 1].label}
             </h2>
           </div>
           {skipAllowed && !isLast && (
