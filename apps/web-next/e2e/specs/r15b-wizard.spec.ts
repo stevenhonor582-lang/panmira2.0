@@ -29,21 +29,23 @@ async function jumpTo(page: Page, stepLabel: string) {
   await page.waitForTimeout(150);
 }
 
+// R53-T5: 招聘正规入口是 /employees/recruit?hrId=<uuid>。无 hrId 时 wizard 跳回 /hr。
+const HR_ID = '0253fff5-5daf-42f4-8642-dd1f95251c53';
+
 test('R15-B wizard: step 2 loads real providers + temperature explanation', async ({ page }) => {
-  await page.goto('http://localhost:3200/employees/new/');
-  await expect(page.getByText('创建新的数字员工')).toBeVisible({ timeout: 10000 });
-  await page.getByPlaceholder('例:不盈 / 墨言 / 守静 / 销售助手-A').fill('R15B 测试员工');
-  // Step 2 — go via rail
+  await page.goto(`http://localhost:3200/employees/recruit?hrId=${HR_ID}`);
+  await expect(page.getByText('数字员工招聘')).toBeVisible({ timeout: 10000 });
+  // R53: 招聘模式 step 1 = HR 预览(只读),无 name input,直接跳 step 2
   await jumpTo(page, '大脑模型');
-  await expect(page.getByText('大脑模型 · 选哪个 AI 驱动这个员工')).toBeVisible({ timeout: 5000 });
   // Wait for parallel fetch to populate the dropdown
   await expect(page.getByText(/MiniMax|DeepSeek|智谱/).first()).toBeVisible({ timeout: 5000 });
   // temperature section present (subtitle is the stable copy)
-  await expect(page.getByText(/低 = 每次回答都一样/)).toBeVisible();
+  await expect(page.getByText(/越低越严谨,越高越发散/)).toBeVisible();
   // R34-B: context window section (auto-read from provider_configs) + auto-compress section
-  await expect(page.getByText(/记忆容量 · 上下文窗口/)).toBeVisible();
-  await expect(page.getByText('上下文自动压缩')).toBeVisible();
-  await expect(page.getByText('启用自动压缩')).toBeVisible();
+  await expect(page.getByText(/记忆容量 · 上下文窗口/).first()).toBeVisible();
+  await expect(page.getByText('上下文自动压缩').first()).toBeVisible();
+  // R51-B2: 启用/已关闭 toggle — 默认开启,所以看到"已启用"或 checkbox
+  await expect(page.getByText(/已启用|启用自动压缩/).first()).toBeVisible();
   // No fake Cloud Sonic anywhere
   expect(await page.locator('body').textContent() || '').not.toContain('Cloud Sonic');
   // Real-time preview uses real data
@@ -51,28 +53,32 @@ test('R15-B wizard: step 2 loads real providers + temperature explanation', asyn
 });
 
 test('R15-B wizard: step 4 skills + MCP loaded from real APIs', async ({ page }) => {
-  await page.goto('http://localhost:3200/employees/new/');
-  await expect(page.getByText('创建新的数字员工')).toBeVisible({ timeout: 10000 });
+  await page.goto(`http://localhost:3200/employees/recruit?hrId=${HR_ID}`);
+  await expect(page.getByText('数字员工招聘')).toBeVisible({ timeout: 10000 });
   await jumpTo(page, '能力装载');
-  await expect(page.getByText(/Skills · 技能 · 来自 \/api\/skills/)).toBeVisible({ timeout: 5000 });
+  // R51: 技能 section 标题(三个独立 span: 技能 + 必选 + 来自技能库)
+  await expect(page.getByRole('heading').filter({ hasText: '技能' }).first()).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText('必选').first()).toBeVisible();
+  await expect(page.getByText('来自技能库').first()).toBeVisible();
   // Search box present
   await expect(page.getByPlaceholder('搜索技能名 / 描述 / 标签...')).toBeVisible();
-  // MCP section present
-  await expect(page.getByText(/MCP Servers · 来自 \/api\/mcp\/servers/)).toBeVisible();
-  // Tools section
-  await expect(page.getByText(/Tools · 内置工具/)).toBeVisible();
+  // MCP section present (R51: renamed to 外接能力)
+  await expect(page.getByRole('heading', { name: /外接能力/ })).toBeVisible();
+  // Tools section (R51-B3: 内部工具 · 权限管理)
+  await expect(page.getByRole('heading').filter({ hasText: '内部工具' }).first()).toBeVisible();
+  await expect(page.getByText('权限管理').first()).toBeVisible();
 });
 
 test('R15-B wizard: step 6 channel binding + working dir', async ({ page }) => {
-  await page.goto('http://localhost:3200/employees/new/');
-  await expect(page.getByText('创建新的数字员工')).toBeVisible({ timeout: 10000 });
+  await page.goto(`http://localhost:3200/employees/recruit?hrId=${HR_ID}`);
+  await expect(page.getByText('数字员工招聘')).toBeVisible({ timeout: 10000 });
   await jumpTo(page, '协作配置');
   // R34-B: 频道→入口 rename
-  await expect(page.getByText(/入口绑定/)).toBeVisible({ timeout: 5000 });
+  await expect(page.getByRole('heading', { name: /入口绑定/ })).toBeVisible({ timeout: 5000 });
   await expect(page.getByText(/一个员工可绑多个入口/)).toBeVisible();
   // R34-B: 工作目录系统生成 + 锁定(只读 input + 锁定 badge)
   await expect(page.getByLabel('工作目录(系统生成,只读)')).toBeVisible();
-  await expect(page.getByText('锁定')).toBeVisible();
+  await expect(page.getByText('锁定').first()).toBeVisible();
   // Visibility options
   await expect(page.getByText('私有')).toBeVisible();
   await expect(page.getByText('团队可见')).toBeVisible();
@@ -80,8 +86,8 @@ test('R15-B wizard: step 6 channel binding + working dir', async ({ page }) => {
 });
 
 test('R15-B wizard: step 7 is 发布 (not 测试上线)', async ({ page }) => {
-  await page.goto('http://localhost:3200/employees/new/');
-  await expect(page.getByText('创建新的数字员工')).toBeVisible({ timeout: 10000 });
+  await page.goto(`http://localhost:3200/employees/recruit?hrId=${HR_ID}`);
+  await expect(page.getByText('数字员工招聘')).toBeVisible({ timeout: 10000 });
   await jumpTo(page, '发布');
   await expect(page.getByText(/发布 · 配好就上线/)).toBeVisible({ timeout: 5000 });
   const body = await page.locator('body').textContent() || '';
@@ -90,13 +96,13 @@ test('R15-B wizard: step 7 is 发布 (not 测试上线)', async ({ page }) => {
 });
 
 test('R15-B wizard: step 5 KB three-layer + real folders', async ({ page }) => {
-  await page.goto('http://localhost:3200/employees/new/');
-  await expect(page.getByText('创建新的数字员工')).toBeVisible({ timeout: 10000 });
-  await jumpTo(page, '知识注入');
-  await expect(page.getByText(/知识三层结构 · 公共记忆/)).toBeVisible({ timeout: 5000 });
-  await expect(page.getByText(/文件夹 · 三层权限视图/)).toBeVisible();
-  // The three layer chips
-  await expect(page.getByText('短期记忆')).toBeVisible();
-  await expect(page.getByText('长期事实')).toBeVisible();
-  await expect(page.getByText('永久原则')).toBeVisible();
+  await page.goto(`http://localhost:3200/employees/recruit?hrId=${HR_ID}`);
+  await expect(page.getByText('数字员工招聘')).toBeVisible({ timeout: 10000 });
+  await jumpTo(page, '记忆注入');
+  await expect(page.getByText(/知识三层结构 · 自动注入/)).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText(/文件夹 · 组织公共区/)).toBeVisible();
+  // The three layer chips — each appears in multiple places (chip + description), use first()
+  await expect(page.getByText('短期记忆').first()).toBeVisible();
+  await expect(page.getByText('长期事实').first()).toBeVisible();
+  await expect(page.getByText('永久原则').first()).toBeVisible();
 });
