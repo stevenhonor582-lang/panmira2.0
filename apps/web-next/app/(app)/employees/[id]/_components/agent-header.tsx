@@ -3,10 +3,10 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useAgent, updateAgent, createInstanceFromTemplate, copyAsTemplate, deleteAgent } from "../../_lib/data";
+import { useAgent, updateAgent, createInstanceFromTemplate, copyAsTemplate, deleteAgent, promoteInstanceToTemplate } from "../../_lib/data";
 import { AvatarMark, statusTone } from "../../_components/avatar-mark";
 import {
-  ArrowLeft, User2, GitBranch, Hash,
+  ArrowLeft, User2, GitBranch, Hash, Briefcase,
   MoreVertical, Pause, Play, Archive, Copy, Loader2, Check, Sparkles, Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,11 @@ export function AgentHeader({ id }: { id: string }) {
   // R51-E2: 删除二次确认 dialog
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
+  // R52-FRONTEND: 提炼为数字HR dialog (实例 → 新岗位)
+  const [extractOpen, setExtractOpen] = React.useState(false);
+  const [extractName, setExtractName] = React.useState("");
+  const [extracting, setExtracting] = React.useState(false);
+  const [extractError, setExtractError] = React.useState<string | null>(null);
   const toast = useToast();
 
   React.useEffect(() => {
@@ -59,6 +64,29 @@ export function AgentHeader({ id }: { id: string }) {
       setInstantiateError(e instanceof Error ? e.message : String(e));
     } finally {
       setInstantiating(false);
+    }
+  };
+
+  // R52-FRONTEND: 实例 → 提炼为数字HR(创建新模板,原实例不动)
+  React.useEffect(() => {
+    if (agent && !extractName) {
+      setExtractName(`${agent.displayName || agent.name}-岗位`);
+    }
+  }, [agent?.id]);
+
+  const handleExtractToHr = async () => {
+    if (!agent) return;
+    setExtracting(true);
+    setExtractError(null);
+    try {
+      const result = await promoteInstanceToTemplate(agent.id, extractName.trim() || undefined);
+      toast.success(`已提炼为数字HR「${result.name}」`);
+      setExtractOpen(false);
+      router.push(`/hr/${result.id}`);
+    } catch (e: unknown) {
+      setExtractError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExtracting(false);
     }
   };
 
@@ -199,6 +227,18 @@ export function AgentHeader({ id }: { id: string }) {
                 </DropdownMenuItem>
               </>
             )}
+            {/* R52-FRONTEND: 仅"在职"实例可以提炼为数字HR(创建新岗位,不动原实例) */}
+            {!agent.isTemplate && agent.status === "active" && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => setExtractOpen(true)}
+                  data-testid="menu-extract-to-hr"
+                >
+                  <Briefcase className="size-4" /> 提炼为数字HR
+                </DropdownMenuItem>
+              </>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={() => setDeleteOpen(true)}
@@ -309,6 +349,59 @@ export function AgentHeader({ id }: { id: string }) {
             >
               {instantiating ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
               {instantiating ? "创建中…" : "创建并跳到详情"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* R52-FRONTEND: 提炼为数字HR dialog */}
+      <Dialog open={extractOpen} onOpenChange={(o) => { if (!extracting) setExtractOpen(o); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>提炼为数字HR</DialogTitle>
+            <DialogDescription>
+              将基于当前实例「<strong className="text-foreground/80">{agent.displayName || agent.name}</strong>」创建一个新的岗位。
+              <strong> 原实例不会被修改</strong>,它继续独立运行 — 只是"祖辈"多了一个 HR 模板可被其它新员工复用。
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <label className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/55">
+                新岗位名字 · name
+              </label>
+              <Input
+                value={extractName}
+                onChange={(e) => setExtractName(e.target.value)}
+                placeholder="如:销售模板-A组"
+                autoFocus
+                data-testid="extract-hr-name"
+              />
+            </div>
+            {extractError && (
+              <div className="rounded-md bg-rose-500/10 px-3 py-2 text-[12.5px] text-rose-700 dark:text-rose-300">
+                {extractError}
+              </div>
+            )}
+            <div className="rounded-md bg-muted/40 px-3 py-2.5 text-[11.5px] text-foreground/55">
+              提炼后,你可以在 <code className="rounded bg-foreground/5 px-1 py-0.5 text-[11px]">/hr</code> 库看到它,
+              其它员工可以用这个岗位"招聘"出新实例。
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={() => setExtractOpen(false)} disabled={extracting}>
+              取消
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleExtractToHr}
+              disabled={extracting}
+              className="gap-1.5"
+              data-testid="extract-hr-submit"
+            >
+              {extracting ? <Loader2 className="size-3.5 animate-spin" /> : <Briefcase className="size-3.5" />}
+              {extracting ? "提炼中…" : "提炼"}
             </Button>
           </div>
         </DialogContent>
