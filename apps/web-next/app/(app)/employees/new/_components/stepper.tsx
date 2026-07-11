@@ -30,9 +30,13 @@ export const STEPS: WizardStep[] = [
 export function StepRail({
   current,
   onJump,
+  labelOverride,
+  hintOverride,
 }: {
   current: number;
   onJump: (s: number) => void;
+  labelOverride?: string;
+  hintOverride?: string;
 }) {
   return (
     <nav aria-label="wizard steps" className="space-y-1.5">
@@ -84,7 +88,7 @@ export function StepRail({
                 </span>
               </span>
               <span className="block truncate text-[10.5px] text-foreground/55 mt-0.5">
-                {s.hint}
+                {here && hintOverride ? hintOverride : s.hint}
               </span>
             </span>
           </button>

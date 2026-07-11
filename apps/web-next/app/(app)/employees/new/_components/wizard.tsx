@@ -6,6 +6,7 @@ import { ArrowLeft, ArrowRight, SkipForward, CheckCircle2, AlertCircle, Loader2,
 import { EMPTY_FORM, PERSONA_PRESETS, formToAgentPayload, type WizardMode, type WizardForm, type ProviderInfo, type SkillInfo, type McpServerInfo, type KbFolderInfo, type KbInfo, type ChannelBotInfo } from "./form";
 import { StepRail, STEPS } from "./stepper";
 import { Step1 } from "./step-1";
+import { StepHrPreview, type HrPreviewData } from "./step-hr-preview";
 import { Step2 } from "./step-2";
 import { Step3 } from "./step-3";
 import { Step4 } from "./step-4";
@@ -14,6 +15,7 @@ import { Step6 } from "./step-6";
 import { Step7 } from "./step-7";
 import { api } from "@/lib/api";
 import { AvatarMark } from "../../_components/avatar-mark";
+import { useAgent } from "../../_lib/data";
 
 // Wizard-scoped data hook — one parallel fetch for everything step 2-6 needs.
 interface WizardData {
@@ -86,6 +88,15 @@ export function NewBotWizard() {
   // R51-C1: 入口 URL ?type=template | ?type=instance(默认 instance)
   const mode: WizardMode = params.get("type") === "template" ? "template" : "instance";
   const isTemplateMode = mode === "template";
+  // R52-FRONTEND: 招聘必须先有 hrId (?hrId=<uuid>)。无 hrId 时强制回 HR 库(模板模式除外)。
+  const hrIdParam = params.get("hrId");
+
+  // 强制跳回 HR 库(模板模式不受影响)
+  React.useEffect(() => {
+    if (!isTemplateMode && !hrIdParam) {
+      router.replace("/hr");
+    }
+  }, [isTemplateMode, hrIdParam, router]);
 
   const { data: wizardData, loading: dataLoading, error: dataError } = useWizardData();
 
@@ -95,6 +106,29 @@ export function NewBotWizard() {
     return { ...EMPTY_FORM, templateId: templateIdParam };
   });
   const [current, setCurrent] = React.useState(1);
+
+  // R52-FRONTEND: 当 hrId 给定时,拉 HR 静态字段,锁定 persona/systemPrompt/ironLaws/role,
+  //              并把 HR 名称/头像作为 instance 的初始值。
+  const { agent: hrAgent } = useAgent(hrIdParam ?? "");
+  React.useEffect(() => {
+    if (!hrAgent) return;
+    const raw = (hrAgent.raw ?? {}) as Record<string, unknown>;
+    setForm((prev) => ({
+      ...prev,
+      // 静态字段 — 从 HR 锁定,招聘时不能改
+      persona: hrAgent.persona || prev.persona,
+      systemPrompt: hrAgent.systemPrompt || prev.systemPrompt,
+      ironLaws: hrAgent.ironLaws ?? prev.ironLaws,
+      templateCategory: typeof raw.category === "string" ? raw.category : prev.templateCategory,
+      // 动态字段 — 用 HR 的基础值预填,招聘时可改
+      name: prev.name || `${hrAgent.displayName || hrAgent.name}-员工`,
+      glyph: hrAgent.glyph || prev.glyph,
+      hue: hrAgent.hue || prev.hue,
+      providerModel: hrAgent.defaultModel || prev.providerModel,
+      // 模板 id 标"来自 hr 派生"
+      templateId: hrAgent.id ? `hr:${hrAgent.id}` : prev.templateId,
+    }));
+  }, [hrAgent?.id]);
 
   // Auto-pick the default provider once wizard data arrives.
   React.useEffect(() => {
@@ -156,20 +190,25 @@ export function NewBotWizard() {
     <div className="grid gap-7 lg:grid-cols-[260px_1fr]">
       <aside className="space-y-5">
         <Link
-          href={isTemplateMode ? "/employees/templates" : "/employees"}
+          href={isTemplateMode ? "/hr" : "/employees"}
           className="inline-flex items-center gap-1.5 text-[12px] font-mono uppercase tracking-[0.18em] text-foreground/45 hover:text-foreground"
         >
-          <ArrowLeft className="size-3" /> {isTemplateMode ? "模板库" : "员工库"}
+          <ArrowLeft className="size-3" /> {isTemplateMode ? "HR 库" : "员工库"}
         </Link>
         <div>
           <div className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/40">
-            单页 7 步向导
+            {hrIdParam ? "招聘向导 · R52" : "单页 7 步向导"}
           </div>
           <h1 className="mt-1 text-2xl font-semibold tracking-tighter">
-            {isTemplateMode ? "创建新的员工模板" : "创建新的数字员工"}
+            {hrIdParam ? "招一个新员工" : isTemplateMode ? "创建新的员工模板" : "创建新的数字员工"}
           </h1>
         </div>
-        <StepRail current={current} onJump={jump} />
+        <StepRail
+            current={current}
+            onJump={jump}
+            labelOverride={hrIdParam && current === 1 ? "已选岗位" : undefined}
+            hintOverride={hrIdParam && current === 1 ? "只读 · 不可改" : undefined}
+          />
         <PreviewCard form={form} />
       </aside>
 
@@ -180,7 +219,7 @@ export function NewBotWizard() {
               STEP 0{current} · {STEPS.length}
             </span>
             <h2 className="mt-1 text-xl font-semibold tracking-tight">
-              {STEPS[current - 1].label}
+              {current === 1 && hrIdParam ? "已选岗位 · HR (只读)" : STEPS[current - 1].label}
             </h2>
           </div>
           {skipAllowed && !isLast && (
@@ -202,12 +241,41 @@ export function NewBotWizard() {
         )}
 
         <div className="pt-6 transition-opacity duration-300" key={`step-${current}`}>
-          {current === 1 && <Step1 form={form} setForm={setForm} mode={mode} />}
+          {current === 1 && (
+            hrIdParam ? (
+              <StepHrPreview
+                hr={hrAgent ? {
+                  id: hrAgent.id,
+                  displayName: hrAgent.displayName || hrAgent.name,
+                  name: hrAgent.name,
+                  persona: hrAgent.persona,
+                  systemPrompt: hrAgent.systemPrompt,
+                  ironLaws: hrAgent.ironLaws ?? [],
+                  category: ((hrAgent.raw ?? {}) as Record<string, unknown>).category as string ?? "general",
+                  templateType: ((hrAgent.raw ?? {}) as Record<string, unknown>).template_type as string ?? "custom",
+                  role: hrAgent.role,
+                  glyph: hrAgent.glyph,
+                  hue: hrAgent.hue,
+                  status: hrAgent.status,
+                } : null}
+              />
+            ) : (
+              <Step1 form={form} setForm={setForm} mode={mode} />
+            )
+          )}
           {current === 2 && wizardData && (
             <Step2 form={form} setForm={setForm} providers={wizardData.providers} />
           )}
           {current === 3 && (
-            <Step3 form={form} setForm={setForm} presets={PERSONA_PRESETS} />
+            <>
+              {hrIdParam && (
+                <div className="mb-4 rounded-2xl bg-amber-500/[0.04] p-3 ring-1 ring-amber-500/30 text-[12px] text-foreground/70">
+                  <strong>提示:</strong> 岗位的人设/系统提示词/铁律已在 Step 1 锁定,如要改请回 HR 库编辑该岗位。
+                  此页可微调实例层的小幅度覆盖。
+                </div>
+              )}
+              <Step3 form={form} setForm={setForm} presets={PERSONA_PRESETS} />
+            </>
           )}
           {current === 4 && wizardData && (
             <Step4
@@ -250,7 +318,7 @@ export function NewBotWizard() {
                     if (!ok) return;
                   }
                 }
-                router.push(isTemplateMode ? "/employees/templates" : "/employees");
+                router.push(isTemplateMode ? "/hr" : (hrIdParam ? "/hr" : "/employees"));
               }}
               className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-[12.5px] font-medium text-foreground/55 hover:text-foreground hover:bg-muted/60"
               data-testid="wizard-cancel"
