@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { GitBranch, ArrowRight, Beaker, ShieldCheck, ShieldOff } from "lucide-react";
 import { ChannelsPageShell, PageMeta } from "@/components/channels/page-shell";
+import { RoutingBindingsPanel } from "@/components/channels/routing-bindings-panel";
 
 /**
  * /channels/routing — R51-A 帮助文档:路由策略 + Fallback 关系。
@@ -53,6 +54,11 @@ export default function RoutingHelpPage() {
         </div>
       }
     >
+      {/* R68-1 · 块 6: 路由规则列表 + 暂停/恢复 (不删,只 disable) */}
+      <div className="mb-4">
+        <RoutingBindingsPanel />
+      </div>
+
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {/* 术语解释 */}
         <div className="ring-1 ring-border rounded-sm bg-card/40">
