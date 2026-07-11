@@ -7,8 +7,9 @@ import type { Agent } from "../_lib/data";
 import { updateAgent, createInstanceFromTemplate, promoteInstanceToTemplate, demoteTemplateToInstance, deleteAgent } from "../_lib/data";
 import { AvatarMark, statusTone } from "./avatar-mark";
 import {
-  MoreVertical, Pause, Play, Archive, FileText, Bot, Briefcase, Loader2, Sparkles, FileUp,
+  MoreVertical, Pause, Play, Archive, FileText, Bot, Loader2, Sparkles, FileUp,
   Trash2, ArrowDownToLine, Activity, Layers, Radio, Brain, Hash, Brush, PenLine, Wrench, Box,
+  AlertTriangle,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -56,9 +57,7 @@ function categoryPreset(rawCategory: unknown): { key: string; label: string; Ico
   return { key, label: preset.label, Icon: preset.Icon, tone: preset.tone };
 }
 
-// R55-D 4.5: 运行时状态 — 待命(active 不工作) / 工作(active + 当前 run) / 暂停 / 弃用 / 草稿
-//   D6 决策:状态色只填内部,不描边 — 故 chip 字段统一去掉 ring
-//   D6 颜色:工作中 #22c55e (emerald-500),带 animate-pulse
+// R51-E1: 运行时状态 — 待命(默认 active) / 工作(active + 当前 run) / 暂停 / 弃用
 type RuntimeTone = ReturnType<typeof statusTone>;
 function runtimeTone(agent: Agent, workingIds: Record<string, true>): RuntimeTone {
   if (agent.status === "paused" || agent.status === "deprecated") return statusTone(agent.status);
@@ -67,12 +66,11 @@ function runtimeTone(agent: Agent, workingIds: Record<string, true>): RuntimeTon
     return {
       dot: "bg-emerald-400 animate-pulse",
       label: "工作中",
-      chip: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+      chip: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/30",
       accent: "bg-emerald-500/50",
     };
   }
-  // active 不工作 → 待命(灰);draft → 草稿(由 statusTone 内部处理)
-  return statusTone(agent.status);
+  return statusTone("active");
 }
 
 // R17-3: 卡片统一尺寸 — 不再有 feature/tall/wide 区分
@@ -86,7 +84,6 @@ export function AgentCard({
   onChanged,
   isTemplateTab = false,
   workingIds,
-  hrNameMap,
 }: {
   agent: Agent;
   size?: AgentCardSize;
@@ -95,8 +92,6 @@ export function AgentCard({
   isTemplateTab?: boolean;
   /** R51-E1: 当前正在工作的 agent id 集合(由父层聚合) */
   workingIds?: Record<string, true>;
-  /** R53-T7.2: HR id → 显示名 映射(实例卡显示"岗位"标签用) */
-  hrNameMap?: Record<string, string>;
 }) {
   // 静默忽略 size —— 所有卡片渲染相同布局(用户反馈:平级排列)
   const ref = React.useRef<HTMLAnchorElement>(null);
@@ -417,18 +412,6 @@ export function AgentCard({
                 实例
               </span>
             )}
-            {/* R53-T7.2: 实例卡显示"岗位"mini 标签(从 source HR 读名)— 仅实例 + 有源 HR 时显示 */}
-            {!agent.isTemplate && agent.templateSource && hrNameMap?.[agent.templateSource] && (
-              <Link
-                href={`/employees/hr/${agent.templateSource}`}
-                onClick={(e) => e.stopPropagation()}
-                className="inline-flex max-w-[140px] items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9.5px] font-medium tracking-[0.18em] text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/30 hover:bg-emerald-500/20"
-                data-testid={`instance-hr-badge-${agent.id.slice(0, 8)}`}
-              >
-                <Briefcase className="size-2.5 shrink-0" />
-                <span className="truncate">{hrNameMap[agent.templateSource]}</span>
-              </Link>
-            )}
             {/* R51-E1: HR 岗位分类 chip(画 / 文 / 运 / 其它)— 仅 HR 显示 */}
             {agent.isTemplate && (
               <span
@@ -447,17 +430,10 @@ export function AgentCard({
 
         <div className="mt-auto flex flex-col gap-2.5">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-baseline gap-2">
               <h3 className="font-semibold tracking-tight leading-tight text-xl">
                 {agent.displayName || agent.name}
               </h3>
-              {/* R55-D 4.5: D6 决策 — 状态色圆点(8px)在名称旁,只填不描边,与部门色(2px 卡片描边)不混 */}
-              <span
-                className={cn("size-2 shrink-0 rounded-full", t.dot)}
-                aria-label={t.label}
-                title={`状态: ${t.label}`}
-                data-testid={`status-dot-${agent.id.slice(0, 8)}`}
-              />
               <span className="text-xs font-mono text-foreground/40">v{agent.version}</span>
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -520,14 +496,17 @@ export function AgentCard({
             )}
           </div>
 
-          {/* R55-D 4.3: 删 "主理人" 字段(归属者元数据冗余,实例归属见 /employees/[id] 详情)。
-              保留 "执行中" 指示灯,仅当 agent 正在运行时显示。 */}
-          {runtimeMap[agent.id] && (
-            <div className="flex items-center justify-end gap-1 border-t border-foreground/[0.06] pt-2.5 text-[11px] font-mono text-emerald-600 dark:text-emerald-400" title="当前正在执行任务" data-testid={`running-indicator-${agent.id.slice(0, 8)}`}>
-              <Activity className="size-3 animate-pulse" />
-              <span>执行中</span>
-            </div>
-          )}
+          <div className="flex items-center justify-between border-t border-foreground/[0.06] pt-2.5 text-[11px] text-foreground/50 font-mono">
+            <span className="truncate pr-8" title={`主理人: ${agent.ownerName}`}>
+              主理人 · {agent.ownerName}
+            </span>
+            {/* R51-E1: 工作指示灯 — active + working 时额外高亮(右上小图标) */}
+            {runtimeMap[agent.id] && (
+              <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400" title="当前正在执行任务">
+                <Activity className="size-3 animate-pulse" />
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -633,20 +612,75 @@ export function AgentCard({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      {/* R51-E2: 删除二次确认 dialog */}
+      {/* R67-2B: 删除实例警告弹窗 — 强化:⚠️ 标题 + 关联资源逐项计数 + 不可恢复红色条幅
+          - 沿用 base-ui Dialog(fixed inset-0 z-50 + 锁滚动 + ESC) — R65 同款
+          - 数据来自 agent 已有字段(channelIds/collaborators/skills/mcpServers/knowledgeFolders)
+            HR 岗位(isTemplate=true)只显示岗位清理与派生实例保留说明,无资源计数
+      */}
       <Dialog open={deleteOpen} onOpenChange={(o) => { if (!deleting) setDeleteOpen(o); }}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>确认删除 {agent.displayName || agent.name}?</DialogTitle>
-            <DialogDescription>
-              该操作不可撤销,所有绑定的入口/资源将自动释放。
-            </DialogDescription>
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="mt-0.5 size-5 shrink-0 text-rose-600 dark:text-rose-400" />
+              <DialogTitle className="text-base">
+                确认删除「{agent.displayName || agent.name}」?
+              </DialogTitle>
+            </div>
           </DialogHeader>
-          <div className="rounded-md bg-rose-500/10 px-3 py-2 text-[12.5px] text-rose-700 dark:text-rose-300">
-            {agent.isTemplate
-              ? "该 HR 岗位被删除后,所有从该岗位生成的实例仍保留(它们已独立)。"
-              : "该实例被删除后,所有绑定的 bot / 频道 / 知识库引用 / 运行日志将一并清理。"}
-          </div>
+          {!agent.isTemplate ? (
+            <div className="space-y-3">
+              <div className="text-[13px] text-foreground/75">
+                该操作会同时清理以下关联资源 — 全部<b>不可恢复</b>:
+              </div>
+              <ul className="space-y-1.5 rounded-lg border border-rose-500/25 bg-rose-500/5 px-3 py-2.5 text-[12.5px] dark:bg-rose-500/10">
+                <li className="flex items-baseline gap-2">
+                  <span className="font-mono text-rose-700 dark:text-rose-300 tabular-nums">
+                    {channelInfo.count}
+                  </span>
+                  <span className="text-foreground/75">
+                    个 bot 入口(自动解除绑定)
+                  </span>
+                </li>
+                <li className="flex items-baseline gap-2">
+                  <span className="font-mono text-rose-700 dark:text-rose-300 tabular-nums">
+                    {Array.isArray(agent.collaborators) ? agent.collaborators.length : 0}
+                  </span>
+                  <span className="text-foreground/75">
+                    个人员 / bot 协作绑定
+                  </span>
+                </li>
+                <li className="flex items-baseline gap-2">
+                  <span className="font-mono text-rose-700 dark:text-rose-300 tabular-nums">
+                    {(Array.isArray(agent.skills) ? agent.skills.length : 0)
+                      + (Array.isArray(agent.mcpServers) ? agent.mcpServers.length : 0)
+                      + (Array.isArray(agent.knowledgeFolders) ? agent.knowledgeFolders.length : 0)
+                      + (Array.isArray(agent.tools) ? agent.tools.length : 0)
+                      + ((agent.memoryLayers?.short ?? 0)
+                        + (agent.memoryLayers?.long ?? 0)
+                        + (agent.memoryLayers?.permanent ?? 0))}
+                  </span>
+                  <span className="text-foreground/75">
+                    个技能 / 工具 / MCP / 知识库 / 记忆条目
+                  </span>
+                </li>
+              </ul>
+              <div className="flex items-start gap-1.5 rounded-md bg-rose-600/10 px-2.5 py-1.5 text-[11.5px] font-medium text-rose-700 dark:bg-rose-500/15 dark:text-rose-300">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                不可恢复 — 确认后,后端将一并删除关联的运行日志、绑定与引用。
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="rounded-md bg-rose-500/10 px-3 py-2 text-[12.5px] text-rose-700 dark:text-rose-300">
+                该 HR 岗位被删除后,从它派生的<b>所有实例继续保留</b>(它们已独立运行),
+                但岗位本身与岗位模板不可恢复。
+              </div>
+              <div className="flex items-start gap-1.5 rounded-md bg-rose-600/10 px-2.5 py-1.5 text-[11.5px] font-medium text-rose-700 dark:bg-rose-500/15 dark:text-rose-300">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                不可恢复 — 确认后,新员工无法再用此岗位招聘。
+              </div>
+            </div>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={deleting}>
               取消
