@@ -14,11 +14,10 @@ import {
 import { DEPARTMENT_COLOR } from "@/lib/department-color";
 import { useToast } from "@/components/toast/toast-provider";
 
-// R58: 8 tab — 全部 + 6 类岗位类型 + 自定义
-// - 全部:全部 is_active=true (in_use)
-// - 6 类:templateType = 该类型 AND is_active=true
-// - 自定义:source='custom' AND is_active=true
-// 系统预置(inactive)完全不显示
+// R60: 8 tab — 全部 + 6 类岗位类型 + 自定义
+// - 全部:全部岗位(任一 source + 任一 is_active)
+// - 6 类:templateType = 该类型
+// - 自定义:source='custom
 type TabKey =
   | "全部"
   | "工程型"
@@ -60,7 +59,7 @@ function mapAgentToHrCard(a: Agent, usage: number): HrCardData {
     (typeof raw.templateType === "string" && raw.templateType) ||
     (typeof a.templateType === "string" && a.templateType) ||
     "";
-  // R58: isActive 直接从 raw row 读,系统预置(inactive=false)完全不显示
+  // R60: isActive 直接从 raw row 读
   const rawIsActive =
     (typeof raw.is_active === "boolean" && raw.is_active) ||
     (typeof raw.isActive === "boolean" && raw.isActive);
@@ -184,16 +183,14 @@ export function HrLibrary() {
     );
   };
 
-  // R58: 8 tab 过滤 — 全部 is_active=true,系统预置不显示
-  // - 全部:全部 in_use (含 system + custom)
-  // - 6 类:templateType 匹配 AND is_active=true
-  // - 自定义:source=custom AND is_active=true
+  // R60: 8 tab 过滤(不再按 is_active 过滤,所有岗位正常显示)
+  // - 全部:全部岗位,匹配 query 才显示
+  // - 6 类:templateType 匹配
+  // - 自定义:source=custom
   const filteredCards = customCards.filter((hr) => {
-    if (!hr.isActive) return false;  // 系统预置(inactive)完全不显示
-    const trimmed = query.trim();
     if (activeTab === "全部") {
       // 全部 tab 才应用检索
-      return matches(hr, trimmed);
+      return matches(hr, query.trim());
     }
     if (activeTab === "自定义") {
       return hr.source === "custom";
@@ -420,7 +417,7 @@ export function HrLibrary() {
                 {totalMatched.toString().padStart(2, "0")}
               </span>
               <span className="text-[10.5px] font-mono text-foreground/35">
-                / {customCards.filter((hr) => hr.isActive).length.toString().padStart(2, "0")}
+                / {customCards.length.toString().padStart(2, "0")}
               </span>
             </div>
           </div>
@@ -475,7 +472,7 @@ export function HrLibrary() {
         })}
       </div>
 
-      {/* R58: 单 section — 8 tab 共用同一个 grid,系统预置(inactive)完全不显示 */}
+      {/* R60: 单 section — 8 tab 共用同一个 grid */}
       <section className="space-y-5" data-testid="hr-cards-section">
         <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
           <div>
@@ -487,7 +484,7 @@ export function HrLibrary() {
             </h2>
             <p className="mt-1 text-[12.5px] text-foreground/55">
               {activeTab === "全部"
-                ? "在用的岗位(全部 in_use)。系统预置未启用的岗位不显示。"
+                ? "全部岗位。系统预置 + 自定义都正常显示,可选用可招。"
                 : activeTab === "自定义"
                 ? "由你或管理员创建的岗位。"
                 : `岗位类型:${activeTab}(templateType=${TAB_TO_TYPE[activeTab] ?? ""})。`}
@@ -505,14 +502,14 @@ export function HrLibrary() {
           <div className="flex flex-col items-center gap-2 rounded-3xl border border-dashed border-border py-16 text-center">
             <Briefcase className="size-5 text-foreground/40" />
             <p className="font-mono text-[10.5px] uppercase tracking-[0.22em] text-foreground/40">
-              {customCards.filter((hr) => hr.isActive).length === 0
+              {customCards.length === 0
                 ? "暂无可用岗位"
                 : showSearch && query
                 ? "检索无匹配岗位"
                 : "此 tab 下无岗位"}
             </p>
             <p className="text-[13px] text-foreground/55 max-w-[40ch]">
-              {customCards.filter((hr) => hr.isActive).length === 0
+              {customCards.length === 0
                 ? "系统在导入岗位数据、请稍后再来。"
                 : showSearch && query
                 ? "试试清空检索、或换个关键词。"
