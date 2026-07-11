@@ -9,8 +9,10 @@ import {
 } from "../../_lib/data";
 import { HrCard, type HrCardData } from "./hr-card";
 import {
-  Plus, Briefcase, Lock, Sparkles, Search, X,
+  Plus, Briefcase, Lock, Sparkles, Search, X, Building2, Loader2,
 } from "lucide-react";
+import { DEPARTMENT_COLOR } from "@/lib/department-color";
+import { useToast } from "@/components/toast/toast-provider";
 
 function mapAgentToHrCard(a: Agent, usage: number): HrCardData {
   const raw = (a.raw ?? {}) as Record<string, unknown>;
@@ -39,34 +41,77 @@ export function HrLibrary() {
   const [usageMap, setUsageMap] = React.useState<Record<string, number>>({});
   // R55-A 1.2: 检索 — 按岗位名称 / 岗位描述过滤两个 section
   const [query, setQuery] = React.useState("");
+  // R56-D 1.1: 新建部门 dialog 状态
+  const [deptOpen, setDeptOpen] = React.useState(false);
+  const [deptName, setDeptName] = React.useState("");
+  const [deptColor, setDeptColor] = React.useState<string>("#64748b");
+  const [deptSubmitting, setDeptSubmitting] = React.useState(false);
+  const toast = useToast();
+
+  const loadLibrary = React.useCallback(async () => {
+    const [list, instances] = await Promise.all([
+      fetchTemplates(),
+      fetchAgents({ filter: "instance" }),
+    ]);
+    setCustom(list);
+    const u: Record<string, number> = {};
+    for (const inst of instances) {
+      const sid = inst.templateSource;
+      if (sid) u[sid] = (u[sid] ?? 0) + 1;
+    }
+    setUsageMap(u);
+  }, []);
 
   React.useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const [list, instances] = await Promise.all([
-          fetchTemplates(),
-          fetchAgents({ filter: "instance" }),
-        ]);
         if (!alive) return;
-        setCustom(list);
-        const u: Record<string, number> = {};
-        for (const inst of instances) {
-          const sid = inst.templateSource;
-          if (sid) u[sid] = (u[sid] ?? 0) + 1;
-        }
-        setUsageMap(u);
+        await loadLibrary();
       } finally {
         if (alive) setLoading(false);
       }
     })();
     return () => { alive = false; };
-  }, []);
+  }, [loadLibrary]);
 
   React.useEffect(() => {
     const t = setTimeout(() => setMounted(true), 30);
     return () => clearTimeout(t);
   }, []);
+
+  // R56-D 1.1: 提交新建部门
+  const onSubmitDepartment = async () => {
+    const name = deptName.trim();
+    if (!name || deptSubmitting) return;
+    setDeptSubmitting(true);
+    try {
+      const res = await fetch("/api/v2/departments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, color: deptColor }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg =
+          data?.error?.message ||
+          data?.message ||
+          (res.status === 409 ? "部门名称已存在" : "创建失败,请稍后再试");
+        toast.error(`新建部门失败: ${msg}`);
+        return;
+      }
+      toast.success(`已新建部门「${name}」`);
+      setDeptOpen(false);
+      setDeptName("");
+      setDeptColor("#64748b");
+      await loadLibrary();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "网络错误";
+      toast.error(`新建部门失败: ${msg}`);
+    } finally {
+      setDeptSubmitting(false);
+    }
+  };
 
   const customCards = custom.map((a) => mapAgentToHrCard(a, usageMap[a.id] ?? 0));
 
@@ -99,6 +144,12 @@ export function HrLibrary() {
   const filteredPersonal = personalCards.filter((hr) => matches(hr, trimmedQuery));
   const totalMatched = filteredSystemSeed.length + filteredPersonal.length;
 
+  // R56-D 1.1: 19 色预设(去重) + 自定义 hex 输入
+  const presetColors = React.useMemo(
+    () => Object.values(DEPARTMENT_COLOR).filter((c, i, arr) => arr.indexOf(c) === i),
+    [],
+  );
+
   return (
     <div className="space-y-10">
       <header className="flex flex-wrap items-end justify-between gap-6 border-b border-border pb-7">
@@ -115,14 +166,154 @@ export function HrLibrary() {
             具体的怎么工作(模型 / 技能 / MCP / 知识库 / 入口 / 记忆 / 频道)在招聘时再填。
           </p>
         </div>
-        <Link
-          href="/employees/hr/new?mode=blank"
-          className="inline-flex items-center gap-2 rounded-full bg-foreground px-5 py-2.5 text-[13px] font-medium text-background hover:opacity-90"
-          data-testid="hr-new"
-        >
-          <Plus className="size-4" /> 新建 HR
-        </Link>
+        <div className="flex items-center gap-2">
+          {/* R56-D 1.1: 新建部门按钮 — 触发 dialog */}
+          <button
+            type="button"
+            onClick={() => setDeptOpen(true)}
+            className="inline-flex items-center gap-2 rounded-full bg-muted px-5 py-2.5 text-[13px] font-medium text-foreground hover:bg-muted/70"
+            data-testid="hr-new-department"
+          >
+            <Building2 className="size-4" /> 新建部门
+          </button>
+          <Link
+            href="/employees/hr/new?mode=blank"
+            className="inline-flex items-center gap-2 rounded-full bg-foreground px-5 py-2.5 text-[13px] font-medium text-background hover:opacity-90"
+            data-testid="hr-new"
+          >
+            <Plus className="size-4" /> 新建 HR
+          </Link>
+        </div>
       </header>
+
+      {/* R56-D 1.1: 新建部门 Dialog — 名称 + 颜色 */}
+      {deptOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !deptSubmitting) setDeptOpen(false);
+          }}
+          data-testid="hr-new-department-dialog"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-border bg-card shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-border px-6 py-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-[10.5px] font-mono uppercase tracking-[0.22em] text-foreground/45">
+                  <Building2 className="size-3" /> 新建部门
+                </div>
+                <h2 className="text-lg font-semibold tracking-tight">新建一个部门</h2>
+                <p className="text-[12.5px] text-foreground/55">
+                  部门用于把岗位归类。颜色用于卡片描边与 icon。
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => !deptSubmitting && setDeptOpen(false)}
+                aria-label="关闭"
+                className="rounded-md p-1 text-foreground/50 hover:bg-foreground/5 disabled:opacity-40"
+                disabled={deptSubmitting}
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="space-y-5 px-6 py-5">
+              <div className="space-y-2">
+                <label
+                  htmlFor="dept-name"
+                  className="text-[11px] font-mono uppercase tracking-[0.18em] text-foreground/55"
+                >
+                  部门名称 <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  id="dept-name"
+                  type="text"
+                  value={deptName}
+                  onChange={(e) => setDeptName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !deptSubmitting) onSubmitDepartment();
+                  }}
+                  placeholder="例如:前端工程"
+                  maxLength={50}
+                  autoFocus
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-[15px] focus:outline-none focus:ring-1 focus:ring-foreground/40"
+                  data-testid="hr-new-department-name"
+                />
+                <p className="text-[11px] text-foreground/45">
+                  同租户内不可重名,创建后可在「岗位」里挂到该部门下。
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[11px] font-mono uppercase tracking-[0.18em] text-foreground/55">
+                  部门颜色
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {presetColors.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setDeptColor(c)}
+                      aria-label={`选择颜色 ${c}`}
+                      className={
+                        "size-7 rounded-full ring-2 transition-all " +
+                        (deptColor.toLowerCase() === c.toLowerCase()
+                          ? "ring-foreground scale-110"
+                          : "ring-transparent hover:scale-105")
+                      }
+                      style={{ backgroundColor: c }}
+                      data-testid={`hr-dept-color-${c}`}
+                    />
+                  ))}
+                  <label
+                    className={
+                      "inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-2.5 py-1 text-[11px] font-mono uppercase tracking-wider text-foreground/55 cursor-pointer hover:bg-foreground/5 " +
+                      (presetColors.includes(deptColor) ? "" : "ring-2 ring-foreground")
+                    }
+                  >
+                    <span
+                      className="inline-block size-3.5 rounded-full ring-1 ring-border"
+                      style={{ backgroundColor: deptColor }}
+                    />
+                    自定义
+                    <input
+                      type="color"
+                      value={deptColor}
+                      onChange={(e) => setDeptColor(e.target.value)}
+                      className="sr-only"
+                      data-testid="hr-dept-color-custom"
+                    />
+                  </label>
+                </div>
+                <p className="text-[11px] text-foreground/45">
+                  当前:{deptColor}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-border px-6 py-3">
+              <button
+                type="button"
+                onClick={() => setDeptOpen(false)}
+                disabled={deptSubmitting}
+                className="rounded-full px-4 py-2 text-[13px] text-foreground/65 hover:bg-foreground/5 disabled:opacity-40"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={onSubmitDepartment}
+                disabled={deptSubmitting || !deptName.trim()}
+                className="inline-flex items-center gap-2 rounded-full bg-foreground px-4 py-2 text-[13px] font-medium text-background disabled:opacity-40"
+                data-testid="hr-new-department-submit"
+              >
+                {deptSubmitting && <Loader2 className="size-3.5 animate-spin" />}
+                {deptSubmitting ? "提交中" : "提交"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* R55-A 1.2: HR 库检索条 — 按岗位名称 / 岗位描述过滤两个 section */}
       <div
