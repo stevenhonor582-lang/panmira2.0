@@ -197,10 +197,10 @@ export function NewBotWizard() {
         </Link>
         <div>
           <div className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/40">
-            {hrIdParam ? "招聘向导 · R52" : "单页 7 步向导"}
+            {hrIdParam ? "招聘流程 · 从岗位开始" : "单页 7 步向导"}
           </div>
           <h1 className="mt-1 text-2xl font-semibold tracking-tighter">
-            {hrIdParam ? "招一个新员工" : isTemplateMode ? "创建新的员工模板" : "创建新的数字员工"}
+            {hrIdParam ? "数字员工招聘" : isTemplateMode ? "创建新的员工模板" : "创建新的数字员工"}
           </h1>
         </div>
         <StepRail
@@ -213,6 +213,17 @@ export function NewBotWizard() {
       </aside>
 
       <section className="min-w-0 rounded-3xl bg-card p-7 ring-1 ring-border">
+        {hrIdParam && (
+          <div className="mb-5 flex items-center gap-3 rounded-2xl bg-foreground/[0.03] p-3.5 ring-1 ring-border" data-testid="recruit-position-hero">
+            <AvatarMark glyph={hrAgent?.glyph || "岗"} hue={hrAgent?.hue || "amber"} size="sm" />
+            <div className="min-w-0">
+              <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-foreground/45">招聘岗位 · 已锁定</div>
+              <div className="truncate text-[14px] font-semibold tracking-tight">
+                {hrAgent ? (hrAgent.displayName || hrAgent.name) : "载入岗位…"}
+              </div>
+            </div>
+          </div>
+        )}
         <div className="flex items-center justify-between border-b border-border pb-4">
           <div>
             <span className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-foreground/45">
