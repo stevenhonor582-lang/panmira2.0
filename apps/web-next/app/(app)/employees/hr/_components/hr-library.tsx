@@ -116,11 +116,11 @@ export function HrLibrary() {
           </p>
         </div>
         <Link
-          href="/employees/new?type=template"
+          href="/employees/hr/new?mode=blank"
           className="inline-flex items-center gap-2 rounded-full bg-foreground px-5 py-2.5 text-[13px] font-medium text-background hover:opacity-90"
           data-testid="hr-new"
         >
-          <Plus className="size-4" /> 新建岗位
+          <Plus className="size-4" /> 新建 HR
         </Link>
       </header>
 
@@ -198,10 +198,10 @@ export function HrLibrary() {
             </p>
             <div className="mt-3 flex items-center gap-2">
               <Link
-                href="/employees/new?type=template"
+                href="/employees/hr/new?mode=blank"
                 className="inline-flex items-center gap-2 rounded-full bg-foreground px-4 py-2 text-[12.5px] font-medium text-background"
               >
-                <Plus className="size-3.5" /> 新建岗位
+                <Plus className="size-3.5" /> 新建 HR
               </Link>
               <Link
                 href="/employees"
@@ -259,10 +259,10 @@ export function HrLibrary() {
               你创建的岗位会出现在这里。可以从员工详情页"提炼为数字HR"生成,或者直接新建一个空白岗位。
             </p>
             <Link
-              href="/employees/new?type=template"
+              href="/employees/hr/new?mode=blank"
               className="mt-3 inline-flex items-center gap-2 rounded-full bg-foreground px-4 py-2 text-[12.5px] font-medium text-background"
             >
-              <Plus className="size-3.5" /> 新建岗位
+              <Plus className="size-3.5" /> 新建 HR
             </Link>
           </div>
         ) : (

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { AvatarMark, statusTone } from "../../_components/avatar-mark";
 import {
-  Briefcase, Sparkles, Briefcase as DefaultIcon,
+  Briefcase, Sparkles, Copy, Briefcase as DefaultIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getDepartmentColor } from "@/lib/department-color";
@@ -43,6 +43,8 @@ export function HrCard({ hr }: { hr: HrCardData; index?: number }) {
   // 介绍摘要(优先 persona,fallback description,60 字截断)
   const summary = truncate(hr.persona || hr.description, 60);
   const deptLabel = hr.category && hr.category.length > 0 ? hr.category : "通用";
+  // R55 块3: 只有真实落库岗位(UUID)才能复制;系统预设(tpl-*)不给复制入口。
+  const isUuid = /^[0-9a-f-]{36}$/i.test(hr.id);
   return (
     <div
       className={cn(
@@ -106,7 +108,20 @@ export function HrCard({ hr }: { hr: HrCardData; index?: number }) {
             <strong className="font-semibold text-foreground/80">{hr.usageCount}</strong> 在用
           </span>
         </div>
-        <Link href={`/employees/recruit?hrId=${encodeURIComponent(hr.id)}`}>
+        <div className="flex items-center gap-1.5">
+          {isUuid && (
+            <Link href={`/employees/hr/new?mode=clone&hrId=${encodeURIComponent(hr.id)}`}>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1 text-[11px] h-7 px-2.5"
+                data-testid={`hr-clone-${hr.id.slice(0, 8)}`}
+              >
+                <Copy className="size-3" /> 复制
+              </Button>
+            </Link>
+          )}
+          <Link href={`/employees/recruit?hrId=${encodeURIComponent(hr.id)}`}>
           <Button
             size="sm"
             className="gap-1 text-[11px] h-7 px-2.5"
@@ -114,7 +129,8 @@ export function HrCard({ hr }: { hr: HrCardData; index?: number }) {
           >
             <Sparkles className="size-3" /> 招聘
           </Button>
-        </Link>
+          </Link>
+        </div>
       </div>
     </div>
   );
