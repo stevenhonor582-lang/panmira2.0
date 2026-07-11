@@ -11,6 +11,16 @@ import { Button } from "@/components/ui/button";
 import { getDepartmentColor } from "@/lib/department-color";
 import { truncate } from "@/lib/text-truncate";
 
+// R57: 6 类岗位类型 ID → 中文标签(用于卡片右上角徽章)
+const TEMPLATE_TYPE_LABEL: Record<string, string> = {
+  engineering: "工程型",
+  painting: "创意型",
+  copywriting: "文书型",
+  ops: "运营型",
+  business: "业务型",
+  research: "研究型",
+};
+
 export interface HrCardData {
   id: string;
   name: string;
@@ -20,7 +30,10 @@ export interface HrCardData {
   glyph: string;
   hue: string;
   status: "active" | "paused" | "deprecated" | "draft";
+  /** 部门名(如 "工程" / "设计" / "HR") — 部门色描边 + 部门徽章用 */
   category: string;
+  /** R57: 6 类岗位类型 ID(engineering/painting/copywriting/ops/business/research) */
+  templateType: string;
   role: string;
   ironLaws: string[];
   skills: string[];
@@ -74,6 +87,14 @@ export function HrCard({ hr }: { hr: HrCardData; index?: number }) {
             <DefaultIcon className="size-2.5" />
             {deptLabel}
           </span>
+          {hr.templateType && (
+            <span
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium tracking-wider text-foreground/60"
+              data-testid={`hr-type-${hr.id.slice(0, 8)}`}
+            >
+              {TEMPLATE_TYPE_LABEL[hr.templateType] ?? hr.templateType}
+            </span>
+          )}
           <span className={cn("inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium", t.chip)}>
             <span className={cn("size-1.5 rounded-full", t.dot)} />
             {t.label}

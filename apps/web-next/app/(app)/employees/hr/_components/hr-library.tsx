@@ -16,6 +16,13 @@ import { useToast } from "@/components/toast/toast-provider";
 
 function mapAgentToHrCard(a: Agent, usage: number): HrCardData {
   const raw = (a.raw ?? {}) as Record<string, unknown>;
+  // R57: 6 类岗位类型 — 优先读 raw.template_type (DB 列) → raw.templateType → agent.templateType
+  // category 仍是部门(如 "工程" / "设计"),不参与类型筛选
+  const rawTemplateType =
+    (typeof raw.template_type === "string" && raw.template_type) ||
+    (typeof raw.templateType === "string" && raw.templateType) ||
+    (typeof a.templateType === "string" && a.templateType) ||
+    "";
   return {
     id: a.id,
     name: a.name,
@@ -26,6 +33,7 @@ function mapAgentToHrCard(a: Agent, usage: number): HrCardData {
     hue: a.hue,
     status: a.status,
     category: typeof raw.category === "string" ? raw.category : "general",
+    templateType: rawTemplateType,
     role: a.role,
     ironLaws: a.ironLaws ?? [],
     skills: a.skills ?? [],
@@ -113,7 +121,9 @@ export function HrLibrary() {
     }
   };
 
-  // R56-B: 部门聚类 + 岗位类型筛选
+  // R57: 6 类岗位类型 + 19 部门(部门平铺,不再做聚类 tab)
+  // 顶层 tab 改 6 类岗位类型(岗位库实际只有 6 类,工程型/创意型/文书型/运营型/业务型/研究型)
+  // 19 部门是岗位属性 — 平铺 chip,挂在每个 HR 卡上,也是卡片过滤维度
   const TEMPLATE_TYPE_OPTIONS = [
     { value: "", label: "全部类型" },
     { value: "engineering", label: "工程型" },
@@ -122,39 +132,53 @@ export function HrLibrary() {
     { value: "ops", label: "运营型" },
     { value: "business", label: "业务型" },
     { value: "research", label: "研究型" },
-  ];
-  const DEPT_CLUSTER = {
-    工程: ["工程", "项目管理", "测试", "空间计算", "GIS", "游戏开发", "安全"],
-    设计: ["设计"],
-    内容: ["营销", "付费媒体", "销售", "学术"],
-    运营: ["财务", "HR", "法务", "供应链", "产品", "支持", "专项"],
-    研究: ["研究"],
-  } as const;
-  type ClusterName = keyof typeof DEPT_CLUSTER;
+  ] as const;
+  type TemplateTypeValue = (typeof TEMPLATE_TYPE_OPTIONS)[number]["value"];
+  const TYPE_TABS: readonly TemplateTypeValue[] = [
+    "",
+    "engineering",
+    "painting",
+    "copywriting",
+    "ops",
+    "business",
+    "research",
+  ] as const;
+  const TYPE_LABEL: Record<TemplateTypeValue, string> = {
+    "": "全部",
+    engineering: "工程型",
+    painting: "创意型",
+    copywriting: "文书型",
+    ops: "运营型",
+    business: "业务型",
+    research: "研究型",
+  };
 
-  // R56-B: URL 参数状态(只读 — 从 useSearchParams 读)
+  // R57: 19 部门平铺(用作 chip 渲染和部门颜色映射)
+  const ALL_DEPARTMENTS = [
+    "工程", "项目管理", "测试", "空间计算", "GIS", "游戏开发", "安全",
+    "设计",
+    "营销", "付费媒体", "销售", "学术",
+    "财务", "HR", "法务", "供应链", "产品", "支持", "专项",
+  ] as const;
+  type DepartmentName = (typeof ALL_DEPARTMENTS)[number];
+
+  // R57: URL 参数 — type 存 6 类岗位类型(包含 ""=全部),不再用 cat 存聚类
   const sp = React.useMemo(
     () => new URLSearchParams(typeof window !== "undefined" ? window.location.search : ""),
     [],
   );
-  const catParam = sp.get("cat") as ClusterName | null;
-  const typeParam = sp.get("type") || "";
+  const typeParam = (sp.get("type") || "") as TemplateTypeValue;
 
-  // R56-B: tab 切换 — 写 URL ?cat=xxx
-  const setCat = (cat: ClusterName | null) => {
+  // R57: tab 切换 — 写 URL ?type=xxx,只存类型(部门不存 URL)
+  const setType = (next: TemplateTypeValue) => {
     const u = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
-    if (cat) u.set("cat", cat);
-    else u.delete("cat");
+    if (next) u.set("type", next);
+    else u.delete("type");
     const qs = u.toString();
     const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
     window.history.pushState({}, "", url);
-    // 触发 React re-render:用 location.search 变化
     window.dispatchEvent(new PopStateEvent("popstate"));
   };
-
-  // R56-B: 5 类 → 部门列表(用于 chip 渲染)
-  const clusterChildren = (cluster: ClusterName): readonly string[] =>
-    DEPT_CLUSTER[cluster];
 
   const customCards = custom.map((a) => mapAgentToHrCard(a, usageMap[a.id] ?? 0));
 
@@ -183,11 +207,10 @@ export function HrLibrary() {
     );
   };
   const trimmedQuery = query.trim();
-  // R56-B: 部门 + 类型过滤
-  const byCluster = (hr: HrCardData) => !catParam || (DEPT_CLUSTER[catParam] as readonly string[]).includes(hr.category);
-  const byType = (hr: HrCardData) => !typeParam || hr.category === typeParam;
-  const filteredSystemSeed = systemSeedCards.filter((hr) => matches(hr, trimmedQuery) && byCluster(hr) && byType(hr));
-  const filteredPersonal = personalCards.filter((hr) => matches(hr, trimmedQuery) && byCluster(hr) && byType(hr));
+  // R57: 类型过滤 — 按 templateType 字段,不再按 category(部门)
+  const byType = (hr: HrCardData) => !typeParam || hr.templateType === typeParam;
+  const filteredSystemSeed = systemSeedCards.filter((hr) => matches(hr, trimmedQuery) && byType(hr));
+  const filteredPersonal = personalCards.filter((hr) => matches(hr, trimmedQuery) && byType(hr));
   const totalMatched = filteredSystemSeed.length + filteredPersonal.length;
 
   // R56-D 1.1: 19 色预设(去重) + 自定义 hex 输入
@@ -401,19 +424,17 @@ export function HrLibrary() {
         </div>
       </div>
 
-            {/* R56-B: 5 大类 tab + 6 岗位类型 select */}
+      {/* R57: 6 类岗位类型 tab + 岗位类型 select(同源 — tab 切换 = URL ?type= 切换) */}
       <div className="flex flex-wrap items-center gap-3" data-testid="hr-tabs">
-        {(["全部", "工程", "设计", "内容", "运营", "研究"] as const).map((c) => {
-          const key = c === "全部" ? null : (c as ClusterName);
-          const active = key === catParam || (c === "全部" && !catParam);
-          const color = key ? DEPT_CLUSTER[key][0] ? "#94a3b8" : "#94a3b8" : "#94a3b8";
-          const tabColor = key ? "#2563eb" : "#94a3b8";
+        {TYPE_TABS.map((v) => {
+          const label = TYPE_LABEL[v];
+          const active = typeParam === v;
           return (
             <button
-              key={c}
+              key={label}
               type="button"
-              onClick={() => setCat(key)}
-              data-testid={`hr-tab-${c}`}
+              onClick={() => setType(v)}
+              data-testid={`hr-tab-${label}`}
               className={
                 "inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[12.5px] font-medium transition-colors " +
                 (active
@@ -421,7 +442,7 @@ export function HrLibrary() {
                   : "bg-muted text-foreground/70 hover:bg-muted/70")
               }
             >
-              {c}
+              {label}
             </button>
           );
         })}
@@ -429,14 +450,7 @@ export function HrLibrary() {
         <select
           aria-label="岗位类型"
           value={typeParam}
-          onChange={(e) => {
-            const u = new URLSearchParams(window.location.search);
-            if (e.target.value) u.set("type", e.target.value);
-            else u.delete("type");
-            const qs = u.toString();
-            window.history.pushState({}, "", qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
-            window.dispatchEvent(new PopStateEvent("popstate"));
-          }}
+          onChange={(e) => setType(e.target.value as TemplateTypeValue)}
           data-testid="hr-type-filter"
           className="rounded-md border border-border bg-background px-2 py-1 text-[12px]"
         >
@@ -446,41 +460,42 @@ export function HrLibrary() {
         </select>
       </div>
 
-      {/* R56-B: 选中 tab 下的 19 子部门 chip 标签 */}
-      {catParam && (
-        <div className="flex flex-wrap items-center gap-2" data-testid="hr-dept-chips">
-          {clusterChildren(catParam).map((dept) => (
+      {/* R57: 19 部门 chip 标签 — 一直显示(部门是岗位属性,不进 tab) */}
+      <div className="flex flex-wrap items-center gap-2" data-testid="hr-dept-chips">
+        {ALL_DEPARTMENTS.map((dept) => {
+          const color = DEPARTMENT_COLOR[dept] ?? "#94a3b8";
+          return (
             <span
               key={dept}
               className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11.5px] font-medium"
               style={{
-                borderColor: "#94a3b8",
-                color: "#475569",
-                background: "#f8fafc",
+                borderColor: color,
+                color: color,
+                background: `${color}0d`,
               }}
               data-testid={`hr-dept-chip-${dept}`}
             >
               <span
                 className="size-2 rounded-full"
-                style={{ background: "#94a3b8" }}
+                style={{ background: color }}
               />
               {dept}
             </span>
-          ))}
-        </div>
-      )}
+          );
+        })}
+      </div>
 
       <section className="space-y-5">
         <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
           <div>
             <div className="flex items-center gap-2 text-[10.5px] font-mono uppercase tracking-[0.22em] text-foreground/45">
-              <Lock className="size-3" /> 系统岗位
+              <Lock className="size-3" /> 已停用岗位
             </div>
             <h2 className="mt-1 text-xl font-semibold tracking-tight">
-              R52/R53 内置岗位 · {loading ? "…" : filteredSystemSeed.length} 个
+              已停用岗位 · {loading ? "…" : filteredSystemSeed.length} 个
             </h2>
             <p className="mt-1 text-[12.5px] text-foreground/55">
-              19 个部门 · 266 个岗位 · 系统 seed (created_by = NULL)
+              系统预置岗位(created_by = NULL),不参与招聘,仅作存档可重新启用。
             </p>
           </div>
         </div>
@@ -541,10 +556,10 @@ export function HrLibrary() {
               <Briefcase className="size-3" /> 个人创建的岗位
             </div>
             <h2 className="mt-1 text-xl font-semibold tracking-tight">
-              我自己创建的岗位 · {loading ? "…" : filteredPersonal.length} 个
+              自定义岗位 · {loading ? "…" : filteredPersonal.length} 个
             </h2>
             <p className="mt-1 text-[12.5px] text-foreground/55">
-              从员工详情页"提炼为数字HR"或直接"新建岗位"得到 · 只显示当前用户创建的
+              由你或管理员创建的岗位。可基于此招聘数字员工。
             </p>
           </div>
         </div>
