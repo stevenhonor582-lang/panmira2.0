@@ -183,6 +183,19 @@ export function HrLibrary() {
     );
   };
 
+  // R61 8 tab 元数据 — 让每个 tab 看起来像独立 section(表头 + 描述 + 颜色)
+  const TAB_META: Record<TabKey, { label: string; desc: string; color: string }> = {
+    "全部":    { label: "全部岗位",     desc: "系统预置 + 自定义。选完即招,不卡功能。",            color: "#64748b" },
+    "工程型":  { label: "工程型岗位",   desc: "编码 / 开发 / 架构 / 系统 / 安全 / 测试。",        color: "#2563eb" },
+    "创意型":  { label: "创意型岗位",   desc: "设计 / 视觉 / 创作 / 渲染。",                    color: "#ec4899" },
+    "文书型":  { label: "文书型岗位",   desc: "写作 / 内容 / 翻译 / 文档。",                    color: "#f59e0b" },
+    "运营型":  { label: "运营型岗位",   desc: "维护 / 监控 / 部署 / 故障 / 跑批。",             color: "#f97316" },
+    "业务型":  { label: "业务型岗位",   desc: "销售 / 客户 / 营销 / 财务 / 供应链。",            color: "#22c55e" },
+    "研究型":  { label: "研究型岗位",   desc: "调研 / 分析 / 学术 / 探索 / 报告。",             color: "#8b5cf6" },
+    "自定义":  { label: "自定义岗位",   desc: "由你或管理员创建的岗位。独立来源,只属于你。",    color: "#0ea5e9" },
+  };
+  const activeMeta = TAB_META[activeTab];
+
   // R60: 8 tab 过滤(不再按 is_active 过滤,所有岗位正常显示)
   // - 全部:全部岗位,匹配 query 才显示
   // - 6 类:templateType 匹配
@@ -207,6 +220,15 @@ export function HrLibrary() {
     () => Object.values(DEPARTMENT_COLOR).filter((c, i, arr) => arr.indexOf(c) === i),
     [],
   );
+
+  // R61 部门 chip — 跟当前 tab 内卡片实际含有的部门去重(顺序按 ALL_DEPARTMENTS 排)
+  const availableDepartments = React.useMemo(() => {
+    const present = new Set<string>();
+    for (const hr of filteredCards) {
+      if (hr.category) present.add(hr.category);
+    }
+    return ALL_DEPARTMENTS.filter((d) => present.has(d));
+  }, [filteredCards]);
 
   // R58: 19 部门 chip 标签 — 一直显示(部门是岗位属性,不是 tab)
   const ALL_DEPARTMENTS = [
@@ -382,8 +404,7 @@ export function HrLibrary() {
         </div>
       )}
 
-      {/* R58: HR 库检索条 — 只在"全部" tab 显示(其他 7 tab 不搜) */}
-      {showSearch && (
+      {/* R61: HR 库检索条 — 不管哪个 tab 都显示,搜索只在"全部" tab 内生效 */}
         <div
           className="rounded-2xl border border-border bg-card/60 backdrop-blur-sm p-3"
           data-testid="hr-search-bar"
@@ -422,10 +443,10 @@ export function HrLibrary() {
             </div>
           </div>
         </div>
-      )}
+      )
 
-      {/* R58: 8 tab — 全部 / 6 类岗位类型 / 自定义 — useState 切换 */}
-      <div className="flex flex-wrap items-center gap-3" data-testid="hr-tabs">
+      {/* R61: 8 tab — 全部 / 6 类岗位类型 / 自定义 — useState 切换,加卡效果 */}
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border/60 bg-card/40 p-2 shadow-sm" data-testid="hr-tabs">
         {TABS.map((label) => {
           const active = activeTab === label;
           return (
@@ -435,10 +456,10 @@ export function HrLibrary() {
               onClick={() => setActiveTab(label)}
               data-testid={`hr-tab-${label}`}
               className={
-                "inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[12.5px] font-medium transition-colors " +
+                "inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-[12.5px] font-medium transition-all " +
                 (active
-                  ? "bg-foreground text-background"
-                  : "bg-muted text-foreground/70 hover:bg-muted/70")
+                  ? "bg-foreground text-background shadow-lg ring-2 ring-foreground/25 border-foreground -translate-y-0.5"
+                  : "bg-muted/60 text-foreground/70 border-border hover:bg-muted hover:shadow-md hover:-translate-y-0.5 hover:border-foreground/30")
               }
             >
               {label}
@@ -447,49 +468,68 @@ export function HrLibrary() {
         })}
       </div>
 
-      {/* 19 部门 chip 标签 — 一直显示(部门是岗位属性,不进 tab) */}
+      {/* R61 部门 chip — 跟当前 tab 内实际存在的卡片走(从 filteredCards 提取 .category) */}
       <div className="flex flex-wrap items-center gap-2" data-testid="hr-dept-chips">
-        {ALL_DEPARTMENTS.map((dept) => {
-          const color = DEPARTMENT_COLOR[dept] ?? "#94a3b8";
-          return (
-            <span
-              key={dept}
-              className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11.5px] font-medium"
-              style={{
-                borderColor: color,
-                color: color,
-                background: `${color}0d`,
-              }}
-              data-testid={`hr-dept-chip-${dept}`}
-            >
+        {availableDepartments.length === 0 ? (
+          <span className="text-[12.5px] text-foreground/45">此 tab 内暂无部门</span>
+        ) : (
+          availableDepartments.map((dept) => {
+            const color = DEPARTMENT_COLOR[dept] ?? "#94a3b8";
+            return (
               <span
-                className="size-2 rounded-full"
-                style={{ background: color }}
-              />
-              {dept}
-            </span>
-          );
-        })}
+                key={dept}
+                className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11.5px] font-medium"
+                style={{
+                  borderColor: color,
+                  color: color,
+                  background: `${color}0d`,
+                }}
+                data-testid={`hr-dept-chip-${dept}`}
+              >
+                <span
+                  className="size-2 rounded-full"
+                  style={{ background: color }}
+                />
+                {dept}
+              </span>
+            );
+          })
+        )}
       </div>
 
-      {/* R60: 单 section — 8 tab 共用同一个 grid */}
-      <section className="space-y-5" data-testid="hr-cards-section">
+      {/* R61: 每个 tab 独立 section 表头 — 用 activeMeta 渲染 */}
+      <section
+        className="space-y-5 rounded-2xl border border-border/60 bg-card/40 p-6 shadow-sm"
+        data-testid="hr-cards-section"
+        style={{ borderLeftColor: activeMeta.color, borderLeftWidth: 4 }}
+      >
         <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
-          <div>
-            <div className="flex items-center gap-2 text-[10.5px] font-mono uppercase tracking-[0.22em] text-foreground/45">
-              <Briefcase className="size-3" /> 岗位 · {activeTab}
+          <div className="flex items-start gap-3">
+            <div
+              className="mt-1 size-2.5 shrink-0 rounded-full ring-2 ring-offset-2 ring-offset-card"
+              style={{ background: activeMeta.color, borderColor: activeMeta.color }}
+            />
+            <div>
+              <div className="flex items-center gap-2 text-[10.5px] font-mono uppercase tracking-[0.22em] text-foreground/45">
+                <Briefcase className="size-3" /> {activeMeta.label}
+              </div>
+              <h2 className="mt-1 text-xl font-semibold tracking-tight">
+                {activeMeta.label} · {loading ? "…" : totalMatched} 个
+              </h2>
+              <p className="mt-1 text-[12.5px] text-foreground/55">
+                {activeMeta.desc}
+              </p>
             </div>
-            <h2 className="mt-1 text-xl font-semibold tracking-tight">
-              {activeTab === "全部" ? "全部岗位" : `${activeTab}岗位`} · {loading ? "…" : totalMatched} 个
-            </h2>
-            <p className="mt-1 text-[12.5px] text-foreground/55">
-              {activeTab === "全部"
-                ? "全部岗位。系统预置 + 自定义都正常显示,可选用可招。"
-                : activeTab === "自定义"
-                ? "由你或管理员创建的岗位。"
-                : `岗位类型:${activeTab}(templateType=${TAB_TO_TYPE[activeTab] ?? ""})。`}
-            </p>
           </div>
+          <span
+            className="shrink-0 rounded-full px-2.5 py-1 text-[10.5px] font-mono uppercase tracking-[0.18em]"
+            style={{
+              backgroundColor: `${activeMeta.color}1a`,
+              color: activeMeta.color,
+            }}
+          >
+            {activeTab}
+          </span>
         </div>
 
         {loading ? (
