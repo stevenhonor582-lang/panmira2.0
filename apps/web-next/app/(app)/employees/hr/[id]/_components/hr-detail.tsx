@@ -53,6 +53,10 @@ export function HrDetail({ id }: { id: string }) {
 
   const [editing, setEditing] = React.useState(false);
   const [editName, setEditName] = React.useState("");
+  // R55-B 2.4: 快速改名 — 只改 name 字段, 不进整体编辑
+  const [renameOpen, setRenameOpen] = React.useState(false);
+  const [renameValue, setRenameValue] = React.useState("");
+  const [renaming, setRenaming] = React.useState(false);
   const [editPersona, setEditPersona] = React.useState("");
   const [editSystemPrompt, setEditSystemPrompt] = React.useState("");
   const [editIronLawsText, setEditIronLawsText] = React.useState("");
@@ -114,6 +118,29 @@ export function HrDetail({ id }: { id: string }) {
   const templateTypeKey = typeof raw.template_type === "string" ? raw.template_type : "custom";
   const cat = CATEGORY_LABEL[categoryKey] ?? CATEGORY_LABEL.general;
   const t = statusTone(agent.status);
+
+  // R55-B 2.4: 快速改名 — 只 PATCH name 字段
+  const onConfirmRename = async () => {
+    const trimmed = renameValue.trim();
+    if (!trimmed || trimmed === (agent.displayName || agent.name)) {
+      setRenameOpen(false);
+      return;
+    }
+    setRenaming(true);
+    try {
+      const updated = await updateAgent(agent.id, { name: trimmed });
+      if (updated) {
+        setAgent(updated);
+        toast.success("岗位名已更新");
+        setRenameOpen(false);
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(`改名失败: ${msg}`);
+    } finally {
+      setRenaming(false);
+    }
+  };
 
   const onSaveEdit = async () => {
     setSaving(true);
@@ -193,9 +220,25 @@ export function HrDetail({ id }: { id: string }) {
               <span>·</span>
               <span>v{agent.version}</span>
             </div>
-            <h1 className="mt-3 text-5xl font-semibold tracking-tighter leading-[1.02]">
-              {agent.displayName || agent.name}
-            </h1>
+            <div className="mt-3 flex items-center gap-3">
+              <h1 className="text-5xl font-semibold tracking-tighter leading-[1.02]">
+                {agent.displayName || agent.name}
+              </h1>
+              {/* R55-B 2.4: 快速改名按钮 — Pen 图标, 不打开整体编辑 */}
+              <button
+                type="button"
+                onClick={() => {
+                  setRenameValue(agent.displayName || agent.name);
+                  setRenameOpen(true);
+                }}
+                aria-label="快速改名"
+                title="修改岗位名称"
+                className="inline-flex size-8 items-center justify-center rounded-full text-foreground/40 hover:bg-foreground/5 hover:text-foreground/80 transition-colors"
+                data-testid="hr-rename-quick"
+              >
+                <PenLine className="size-3.5" />
+              </button>
+            </div>
             <p className="mt-3 max-w-[58ch] text-[15px] leading-relaxed text-foreground/75">
               {agent.persona || <span className="text-foreground/40">暂无人格描述</span>}
             </p>
@@ -544,6 +587,57 @@ export function HrDetail({ id }: { id: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* R55-B 2.4: 快速改名 Dialog — 只改 name, 不动其他字段 */}
+      <Dialog
+        open={renameOpen}
+        onOpenChange={(v) => !renaming && setRenameOpen(v)}
+      >
+        <DialogContent className="max-w-md" data-testid="hr-rename-dialog">
+          <DialogHeader>
+            <DialogTitle>修改岗位名称</DialogTitle>
+            <DialogDescription>
+              只改名称,不动其他字段。点保存后立即生效。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="text-[11px] font-mono uppercase tracking-[0.18em] text-foreground/55">
+              岗位名称
+            </label>
+            <input
+              type="text"
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !renaming) onConfirmRename();
+              }}
+              autoFocus
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-[15px] focus:outline-none focus:ring-1 focus:ring-foreground/40"
+              data-testid="hr-rename-input"
+            />
+          </div>
+          <DialogFooter>
+            <button
+              type="button"
+              onClick={() => setRenameOpen(false)}
+              disabled={renaming}
+              className="rounded-full px-4 py-2 text-[13px] text-foreground/65 hover:bg-foreground/5 disabled:opacity-40"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={onConfirmRename}
+              disabled={renaming || !renameValue.trim()}
+              className="inline-flex items-center gap-2 rounded-full bg-foreground px-4 py-2 text-[13px] font-medium text-background disabled:opacity-40"
+              data-testid="hr-rename-submit"
+            >
+              {renaming && <Loader2 className="size-3.5 animate-spin" />}
+              保存
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
 
       <Dialog open={deleteOpen} onOpenChange={(o) => { if (!deleting) setDeleteOpen(o); }}>
         <DialogContent>
