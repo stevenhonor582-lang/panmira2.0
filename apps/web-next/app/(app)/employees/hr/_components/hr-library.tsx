@@ -113,6 +113,49 @@ export function HrLibrary() {
     }
   };
 
+  // R56-B: 部门聚类 + 岗位类型筛选
+  const TEMPLATE_TYPE_OPTIONS = [
+    { value: "", label: "全部类型" },
+    { value: "engineering", label: "工程型" },
+    { value: "painting", label: "创意型" },
+    { value: "copywriting", label: "文书型" },
+    { value: "ops", label: "运营型" },
+    { value: "business", label: "业务型" },
+    { value: "research", label: "研究型" },
+  ];
+  const DEPT_CLUSTER = {
+    工程: ["工程", "项目管理", "测试", "空间计算", "GIS", "游戏开发", "安全"],
+    设计: ["设计"],
+    内容: ["营销", "付费媒体", "销售", "学术"],
+    运营: ["财务", "HR", "法务", "供应链", "产品", "支持", "专项"],
+    研究: ["研究"],
+  } as const;
+  type ClusterName = keyof typeof DEPT_CLUSTER;
+
+  // R56-B: URL 参数状态(只读 — 从 useSearchParams 读)
+  const sp = React.useMemo(
+    () => new URLSearchParams(typeof window !== "undefined" ? window.location.search : ""),
+    [],
+  );
+  const catParam = sp.get("cat") as ClusterName | null;
+  const typeParam = sp.get("type") || "";
+
+  // R56-B: tab 切换 — 写 URL ?cat=xxx
+  const setCat = (cat: ClusterName | null) => {
+    const u = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+    if (cat) u.set("cat", cat);
+    else u.delete("cat");
+    const qs = u.toString();
+    const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+    window.history.pushState({}, "", url);
+    // 触发 React re-render:用 location.search 变化
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  };
+
+  // R56-B: 5 类 → 部门列表(用于 chip 渲染)
+  const clusterChildren = (cluster: ClusterName): readonly string[] =>
+    DEPT_CLUSTER[cluster];
+
   const customCards = custom.map((a) => mapAgentToHrCard(a, usageMap[a.id] ?? 0));
 
   // R55-B 2.2: 区分系统 seed vs 个人创建 — created_by IS NOT NULL 即个人创建
@@ -140,8 +183,11 @@ export function HrLibrary() {
     );
   };
   const trimmedQuery = query.trim();
-  const filteredSystemSeed = systemSeedCards.filter((hr) => matches(hr, trimmedQuery));
-  const filteredPersonal = personalCards.filter((hr) => matches(hr, trimmedQuery));
+  // R56-B: 部门 + 类型过滤
+  const byCluster = (hr: HrCardData) => !catParam || (DEPT_CLUSTER[catParam] as readonly string[]).includes(hr.category);
+  const byType = (hr: HrCardData) => !typeParam || hr.category === typeParam;
+  const filteredSystemSeed = systemSeedCards.filter((hr) => matches(hr, trimmedQuery) && byCluster(hr) && byType(hr));
+  const filteredPersonal = personalCards.filter((hr) => matches(hr, trimmedQuery) && byCluster(hr) && byType(hr));
   const totalMatched = filteredSystemSeed.length + filteredPersonal.length;
 
   // R56-D 1.1: 19 色预设(去重) + 自定义 hex 输入
@@ -354,6 +400,75 @@ export function HrLibrary() {
           </div>
         </div>
       </div>
+
+            {/* R56-B: 5 大类 tab + 6 岗位类型 select */}
+      <div className="flex flex-wrap items-center gap-3" data-testid="hr-tabs">
+        {(["全部", "工程", "设计", "内容", "运营", "研究"] as const).map((c) => {
+          const key = c === "全部" ? null : (c as ClusterName);
+          const active = key === catParam || (c === "全部" && !catParam);
+          const color = key ? DEPT_CLUSTER[key][0] ? "#94a3b8" : "#94a3b8" : "#94a3b8";
+          const tabColor = key ? "#2563eb" : "#94a3b8";
+          return (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setCat(key)}
+              data-testid={`hr-tab-${c}`}
+              className={
+                "inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[12.5px] font-medium transition-colors " +
+                (active
+                  ? "bg-foreground text-background"
+                  : "bg-muted text-foreground/70 hover:bg-muted/70")
+              }
+            >
+              {c}
+            </button>
+          );
+        })}
+        <span className="mx-1 text-foreground/25">·</span>
+        <select
+          aria-label="岗位类型"
+          value={typeParam}
+          onChange={(e) => {
+            const u = new URLSearchParams(window.location.search);
+            if (e.target.value) u.set("type", e.target.value);
+            else u.delete("type");
+            const qs = u.toString();
+            window.history.pushState({}, "", qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
+            window.dispatchEvent(new PopStateEvent("popstate"));
+          }}
+          data-testid="hr-type-filter"
+          className="rounded-md border border-border bg-background px-2 py-1 text-[12px]"
+        >
+          {TEMPLATE_TYPE_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* R56-B: 选中 tab 下的 19 子部门 chip 标签 */}
+      {catParam && (
+        <div className="flex flex-wrap items-center gap-2" data-testid="hr-dept-chips">
+          {clusterChildren(catParam).map((dept) => (
+            <span
+              key={dept}
+              className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11.5px] font-medium"
+              style={{
+                borderColor: "#94a3b8",
+                color: "#475569",
+                background: "#f8fafc",
+              }}
+              data-testid={`hr-dept-chip-${dept}`}
+            >
+              <span
+                className="size-2 rounded-full"
+                style={{ background: "#94a3b8" }}
+              />
+              {dept}
+            </span>
+          ))}
+        </div>
+      )}
 
       <section className="space-y-5">
         <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
