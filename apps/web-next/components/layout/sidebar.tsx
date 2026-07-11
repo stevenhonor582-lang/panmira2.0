@@ -173,10 +173,15 @@ export function Sidebar({ mobileOpen, setMobileOpen }: SidebarProps) {
             .sort((a, b) => b.segs.length - a.segs.length)[0]?.idx;
           return (
             <div key={group.module} className="mb-4">
-              <Link
-                href={group.defaultHref}
+              {/* R55-A 1.1: 一级菜单仅为分类标签,不可点击、不再默认跳仪表盘。 */}
+              {/* 视觉与 1 级菜单样式一致(图标 + 标题 + 选中时左侧 accent + 右侧 chevron), */}
+              {/* 但用 <div> 代替 <Link>,鼠标变箭头、文字不可选。 */}
+              {/* 子菜单(数字员工 / 数字HR / 仪表盘 等)保留 Link,行为不变。 */}
+              <div
+                role="presentation"
+                aria-label={`分类标签 · ${group.title}`}
                 className={cn(
-                  "relative flex items-center gap-2 px-4 py-1.5 text-[11px] uppercase tracking-wider font-semibold transition-colors",
+                  "relative flex items-center gap-2 px-4 py-1.5 text-[11px] uppercase tracking-wider font-semibold transition-colors select-none cursor-default",
                   moduleActive
                     ? "text-foreground"
                     : "text-muted-foreground hover:text-foreground",
@@ -194,7 +199,7 @@ export function Sidebar({ mobileOpen, setMobileOpen }: SidebarProps) {
                 {moduleActive && (
                   <ChevronRight className="size-3 ml-auto opacity-60" />
                 )}
-              </Link>
+              </div>
               <ul className="mt-1 flex flex-col gap-0.5 px-2">
                 {group.items.map((item, itemIdx) => {
                   const active = itemIdx === matchedItemIdx;

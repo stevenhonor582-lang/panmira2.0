@@ -10,7 +10,7 @@ import {
 } from "../../_lib/data";
 import { HrCard, type HrCardData } from "./hr-card";
 import {
-  Plus, Briefcase, Lock, Sparkles,
+  Plus, Briefcase, Lock, Sparkles, Search, X,
 } from "lucide-react";
 
 function mapAgentToHrCard(a: Agent, usage: number): HrCardData {
@@ -65,6 +65,8 @@ export function HrLibrary() {
   const [custom, setCustom] = React.useState<Agent[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [usageMap, setUsageMap] = React.useState<Record<string, number>>({});
+  // R55-A 1.2: 检索 — 按岗位名称 / 岗位描述过滤两个 section
+  const [query, setQuery] = React.useState("");
 
   React.useEffect(() => {
     let alive = true;
@@ -97,6 +99,23 @@ export function HrLibrary() {
   const systemPresets = TEMPLATE_PRESETS.map(presetToHrCard);
   const customCards = custom.map((a) => mapAgentToHrCard(a, usageMap[a.id] ?? 0));
 
+  // R55-A 1.2: 命中判断 — 岗位名称 / 显示名 / 角色 / 描述 / 人格 任一包含 query(不区分大小写)
+  const matches = (hr: HrCardData, q: string): boolean => {
+    if (!q) return true;
+    const needle = q.toLowerCase();
+    return (
+      hr.name.toLowerCase().includes(needle) ||
+      hr.displayName.toLowerCase().includes(needle) ||
+      hr.role.toLowerCase().includes(needle) ||
+      hr.description.toLowerCase().includes(needle) ||
+      hr.persona.toLowerCase().includes(needle)
+    );
+  };
+  const trimmedQuery = query.trim();
+  const filteredPresets = systemPresets.filter((hr) => matches(hr, trimmedQuery));
+  const filteredCustom = customCards.filter((hr) => matches(hr, trimmedQuery));
+  const totalMatched = filteredPresets.length + filteredCustom.length;
+
   return (
     <div className="space-y-10">
       <header className="flex flex-wrap items-end justify-between gap-6 border-b border-border pb-7">
@@ -122,6 +141,46 @@ export function HrLibrary() {
         </Link>
       </header>
 
+      {/* R55-A 1.2: HR 库检索条 — 按岗位名称 / 岗位描述过滤两个 section */}
+      <div
+        className="rounded-2xl border border-border bg-card/60 backdrop-blur-sm p-3"
+        data-testid="hr-search-bar"
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex flex-1 items-center gap-2 rounded-xl bg-background/80 px-3 py-2 ring-1 ring-border">
+            <Search className="size-3.5 text-foreground/40" />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="按岗位名称 / 岗位描述 检索"
+              aria-label="检索岗位"
+              className="flex-1 bg-transparent text-sm text-foreground placeholder:text-foreground/35 focus:outline-none"
+              data-testid="hr-search-input"
+            />
+            {query && (
+              <button
+                onClick={() => setQuery("")}
+                aria-label="清除检索"
+                className="rounded-md p-0.5 text-foreground/40 hover:bg-foreground/5"
+                data-testid="hr-search-clear"
+              >
+                <X className="size-3.5" />
+              </button>
+            )}
+          </div>
+          <div className="flex items-baseline gap-1 rounded-xl bg-background/80 px-3 py-1.5 ring-1 ring-border">
+            <span className="text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/35">命中</span>
+            <span className="font-mono text-sm tabular-nums text-foreground">
+              {totalMatched.toString().padStart(2, "0")}
+            </span>
+            <span className="text-[10.5px] font-mono text-foreground/35">
+              / {(systemPresets.length + customCards.length).toString().padStart(2, "0")}
+            </span>
+          </div>
+        </div>
+      </div>
+
       <section className="space-y-5">
         <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
           <div>
@@ -129,7 +188,7 @@ export function HrLibrary() {
               <Sparkles className="size-3" /> 系统原生岗位
             </div>
             <h2 className="mt-1 text-xl font-semibold tracking-tight">
-              5 大类开箱即用 · {systemPresets.length} 个
+              5 大类开箱即用 · {filteredPresets.length} 个
             </h2>
             <p className="mt-1 text-[12.5px] text-foreground/55">
               内置岗位,直接点"招聘"即可招到员工 — 个性化在招聘时再调。
@@ -137,7 +196,7 @@ export function HrLibrary() {
           </div>
         </div>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {systemPresets.map((hr, i) => (
+          {filteredPresets.map((hr, i) => (
             <div
               key={hr.id}
               className={
@@ -159,7 +218,7 @@ export function HrLibrary() {
               <Lock className="size-3" /> 自定义岗位
             </div>
             <h2 className="mt-1 text-xl font-semibold tracking-tight">
-              自己定义的岗位 · {loading ? "…" : customCards.length} 个
+              自己定义的岗位 · {loading ? "…" : filteredCustom.length} 个
             </h2>
             <p className="mt-1 text-[12.5px] text-foreground/55">
               从实例"提炼为数字HR"或直接"新建岗位"得到 · 每张卡显示被多少实例在用。
@@ -173,14 +232,16 @@ export function HrLibrary() {
               <div key={i} className="h-56 rounded-3xl bg-muted/30 animate-pulse" />
             ))}
           </div>
-        ) : customCards.length === 0 ? (
+        ) : filteredCustom.length === 0 ? (
           <div className="flex flex-col items-center gap-2 rounded-3xl border border-dashed border-border py-16 text-center">
             <Briefcase className="size-5 text-foreground/40" />
             <p className="font-mono text-[10.5px] uppercase tracking-[0.22em] text-foreground/40">
-              暂无自定义岗位
+              {customCards.length === 0 ? "暂无自定义岗位" : "检索无匹配岗位"}
             </p>
             <p className="text-[13px] text-foreground/55 max-w-[40ch]">
-              可以在员工详情页"提炼为数字HR"生成岗位,或者直接新建一个空白岗位。
+              {customCards.length === 0
+                ? "可以在员工详情页\"提炼为数字HR\"生成岗位,或者直接新建一个空白岗位。"
+                : "试试清空检索,或换个关键词。"}
             </p>
             <div className="mt-3 flex items-center gap-2">
               <Link
@@ -199,7 +260,7 @@ export function HrLibrary() {
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {customCards.map((hr, i) => (
+            {filteredCustom.map((hr, i) => (
               <div
                 key={hr.id}
                 className={

@@ -30,7 +30,8 @@ async function jumpTo(page: Page, stepLabel: string) {
 }
 
 // R53-T5: 招聘正规入口是 /employees/recruit?hrId=<uuid>。无 hrId 时 wizard 跳回 /hr。
-const HR_ID = '0253fff5-5daf-42f4-8642-dd1f95251c53';
+// 用真 HR template(在 agent_templates 表)— publish spec 也用同一个,FK 不会失败。
+const HR_ID = '9fe688ec-00d3-4a1d-8fd3-36c8cacfa171';
 
 test('R15-B wizard: step 2 loads real providers + temperature explanation', async ({ page }) => {
   await page.goto(`http://localhost:3200/employees/recruit?hrId=${HR_ID}`);
