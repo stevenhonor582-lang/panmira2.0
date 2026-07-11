@@ -22,7 +22,6 @@ type TabKey =
   | "全部"
   | "工程型"
   | "创意型"
-  | "文书型"
   | "运营型"
   | "业务型"
   | "研究型"
@@ -31,7 +30,6 @@ const TABS: readonly TabKey[] = [
   "全部",
   "工程型",
   "创意型",
-  "文书型",
   "运营型",
   "业务型",
   "研究型",
@@ -43,7 +41,6 @@ const TAB_TO_TYPE: Record<TabKey, string | null> = {
   "全部": null,
   "工程型": "engineering",
   "创意型": "painting",
-  "文书型": "copywriting",
   "运营型": "ops",
   "业务型": "business",
   "研究型": "research",
@@ -188,7 +185,6 @@ export function HrLibrary() {
     "全部":    { label: "全部岗位",     desc: "系统预置 + 自定义。选完即招,不卡功能。",            color: "#64748b" },
     "工程型":  { label: "工程型岗位",   desc: "编码 / 开发 / 架构 / 系统 / 安全 / 测试。",        color: "#2563eb" },
     "创意型":  { label: "创意型岗位",   desc: "设计 / 视觉 / 创作 / 渲染。",                    color: "#ec4899" },
-    "文书型":  { label: "文书型岗位",   desc: "写作 / 内容 / 翻译 / 文档。",                    color: "#f59e0b" },
     "运营型":  { label: "运营型岗位",   desc: "维护 / 监控 / 部署 / 故障 / 跑批。",             color: "#f97316" },
     "业务型":  { label: "业务型岗位",   desc: "销售 / 客户 / 营销 / 财务 / 供应链。",            color: "#22c55e" },
     "研究型":  { label: "研究型岗位",   desc: "调研 / 分析 / 学术 / 探索 / 报告。",             color: "#8b5cf6" },
@@ -196,10 +192,11 @@ export function HrLibrary() {
   };
   const activeMeta = TAB_META[activeTab];
 
-  // R60: 8 tab 过滤(不再按 is_active 过滤,所有岗位正常显示)
+  // R62: 7 tab 过滤(不再按 is_active 过滤,所有岗位正常显示)
   // - 全部:全部岗位,匹配 query 才显示
-  // - 6 类:templateType 匹配
+  // - 5 类:templateType 匹配
   // - 自定义:source=custom
+  // - 运营型合并了原"文书型":templateType ∈ {ops, copywriting}
   const filteredCards = customCards.filter((hr) => {
     if (activeTab === "全部") {
       // 全部 tab 才应用检索
@@ -208,12 +205,27 @@ export function HrLibrary() {
     if (activeTab === "自定义") {
       return hr.source === "custom";
     }
-    // 6 类岗位
+    if (activeTab === "运营型") {
+      // R62 文书型合并到运营型 — ops + copywriting 都在该 tab 显示
+      return hr.templateType === "ops" || hr.templateType === "copywriting";
+    }
+    // 5 类岗位(工程/创意/业务/研究)
     return hr.templateType === TAB_TO_TYPE[activeTab];
   });
   const totalMatched = filteredCards.length;
-  // R58: 搜索框只在"全部" tab 卡片内过滤(其他 7 tab 不搜)
+  // R58: 搜索框只在"全部" tab 卡片内过滤(其他 6 tab 不搜)
   const showSearch = activeTab === "全部";
+
+  // R62: 19 部门 chip 标签 — 必须先于 useMemo 声明,否则工厂函数首次跑会撞 TDZ
+  // (R61 把 const ALL_DEPARTMENTS 放在了 useMemo 之后,生产构建后 ALL_DEPARTMENTS
+  // 被压缩成 K,首次渲染 useMemo 工厂同步求值时 K 还在 TDZ,报
+  // `Uncaught ReferenceError: Cannot access 'K' before initialization`)
+  const ALL_DEPARTMENTS = [
+    "工程", "项目管理", "测试", "空间计算", "GIS", "游戏开发", "安全",
+    "设计",
+    "营销", "付费媒体", "销售", "学术",
+    "财务", "HR", "法务", "供应链", "产品", "支持", "专项",
+  ] as const;
 
   // 新建部门 dialog — 19 色预设(去重) + 自定义 hex 输入
   const presetColors = React.useMemo(
@@ -229,14 +241,6 @@ export function HrLibrary() {
     }
     return ALL_DEPARTMENTS.filter((d) => present.has(d));
   }, [filteredCards]);
-
-  // R58: 19 部门 chip 标签 — 一直显示(部门是岗位属性,不是 tab)
-  const ALL_DEPARTMENTS = [
-    "工程", "项目管理", "测试", "空间计算", "GIS", "游戏开发", "安全",
-    "设计",
-    "营销", "付费媒体", "销售", "学术",
-    "财务", "HR", "法务", "供应链", "产品", "支持", "专项",
-  ] as const;
 
   return (
     <div className="space-y-10">
