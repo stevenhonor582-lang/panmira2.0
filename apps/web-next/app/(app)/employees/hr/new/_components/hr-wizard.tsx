@@ -15,17 +15,43 @@ import {
 } from "./hr-form";
 import { HrStepper } from "./hr-stepper";
 import { StepType } from "./step-type";
+import { StepDepartment } from "./step-department";
 import { StepPersona } from "./step-persona";
 import { StepPublish } from "./step-publish";
+
+const ALLOWED_CATEGORIES: HrCategoryId[] = [
+  "engineering",
+  "painting",
+  "copywriting",
+  "ops",
+  "business",
+  "research",
+];
 
 function agentToForm(a: Agent): HrFormState {
   const raw = (a.raw ?? {}) as Record<string, unknown>;
   const rawCat = typeof raw.category === "string" ? raw.category : "";
-  const allowed: HrCategoryId[] = ["painting", "copywriting", "ops", "business"];
-  const category = (allowed as string[]).includes(rawCat) ? (rawCat as HrCategoryId) : "";
+  const rawTemplateType =
+    typeof raw.template_type === "string"
+      ? raw.template_type
+      : typeof a.templateType === "string"
+      ? a.templateType
+      : "";
+  const catCandidate = ALLOWED_CATEGORIES.includes(rawCat as HrCategoryId)
+    ? (rawCat as HrCategoryId)
+    : ALLOWED_CATEGORIES.includes(rawTemplateType as HrCategoryId)
+    ? (rawTemplateType as HrCategoryId)
+    : "";
+  const rawDeptId =
+    typeof raw.department_id === "string"
+      ? raw.department_id
+      : typeof raw.departmentId === "string"
+      ? raw.departmentId
+      : "";
   return {
     name: a.name ? `${a.name} 副本` : "",
-    category,
+    category: catCandidate,
+    departmentId: rawDeptId,
     persona: a.persona ?? "",
     systemPrompt: a.systemPrompt ?? "",
     ironLaws: Array.isArray(a.ironLaws) ? a.ironLaws : [],
@@ -33,8 +59,9 @@ function agentToForm(a: Agent): HrFormState {
 }
 
 /**
- * R55 块3 · 新建 HR 岗位向导(全新,独立于数字员工向导)。
+ * R57 · 新建 HR 岗位向导(全新,独立于数字员工向导)。
  * 布局:左 stepper + 顶部进度条,右大内容区,底部只 1 个主按钮。
+ * 4 步:类型 → 部门 → 人格 → 发布
  */
 export function HrWizard() {
   const router = useRouter();
@@ -94,6 +121,8 @@ export function HrWizard() {
       setError(
         step === "type"
           ? "请填写岗位名称并选择岗位类型"
+          : step === "department"
+          ? "请选择一个所属部门"
           : step === "persona"
           ? "岗位人格是唯一核心必填项,请填写"
           : null,
@@ -111,6 +140,7 @@ export function HrWizard() {
       await createHr({
         name: form.name.trim(),
         category: form.category || "business",
+        departmentId: form.departmentId,
         persona: form.persona.trim(),
         systemPrompt: form.systemPrompt.trim(),
         ironLaws: form.ironLaws,
@@ -155,6 +185,7 @@ export function HrWizard() {
         <section className="min-h-[22rem] space-y-8">
           <div>
             {step === "type" && <StepType form={form} patch={patch} />}
+            {step === "department" && <StepDepartment form={form} patch={patch} />}
             {step === "persona" && <StepPersona form={form} patch={patch} />}
             {step === "publish" && <StepPublish form={form} />}
           </div>

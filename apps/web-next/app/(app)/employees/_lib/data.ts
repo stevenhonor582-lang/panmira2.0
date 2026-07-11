@@ -684,6 +684,8 @@ export interface CreateHrInput {
   ironLaws?: string[];
   description?: string;
   roleTemplate?: string;
+  /** R57 · 岗位部门 ID(必填,前端在 step-department 已校验) */
+  departmentId?: string;
 }
 
 export async function createHr(input: CreateHrInput): Promise<Agent> {
@@ -694,10 +696,13 @@ export async function createHr(input: CreateHrInput): Promise<Agent> {
     systemPrompt: input.systemPrompt ?? "",
     ironLaws: input.ironLaws ?? [],
     description: input.description ?? input.persona,
-    templateType: "custom",
+    templateType: input.category || "custom",
   };
   if (input.roleTemplate && input.roleTemplate.trim()) {
     body.roleTemplate = input.roleTemplate.trim();
+  }
+  if (input.departmentId && input.departmentId.trim()) {
+    body.departmentId = input.departmentId.trim();
   }
   const res = await api<{ agent?: any } | any>(
     fullPath(`/api/v2/admin/agent-templates`),
