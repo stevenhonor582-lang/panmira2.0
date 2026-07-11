@@ -13,6 +13,7 @@ import {
   ScrollText,
   Bot,
   Library,
+  Briefcase,
   Database,
   Brain,
   BookOpen,
@@ -75,6 +76,17 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       // 只保留"数字员工"入口;新建向导 / 模板在员工库页面内部已有按钮。
       { label: "数字员工", href: "/employees", icon: Library },
+    ],
+  },
+  // R52-FRONTEND: 数字HR 独立模块(顶级菜单,不放在"智能体员工"下面)
+  // HR = 静态岗位配方; Instance = 运行时员工实体。两者分离后,HR 库就是人才市场。
+  {
+    module: "hr",
+    title: "数字HR",
+    defaultHref: "/hr",
+    icon: Briefcase,
+    items: [
+      { label: "HR 库", href: "/hr", icon: Briefcase },
     ],
   },
   {
