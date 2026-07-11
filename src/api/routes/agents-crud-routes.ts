@@ -163,13 +163,29 @@ export async function handleAgentsCrudRoutes(
       return true;
     }
     const id = detailMatch[1];
+    // R67-2A: 事务级联删除。DB 层 FK 已自动处理 user_agent_bindings(CASCADE)、
+    // bot_configs/folders/documents/memories(SET NULL)、instance_to_hr(CASCADE);
+    // 但 agent_skill_refs/agent_knowledge_refs/agent_mcp_refs 无 FK 约束,需显式清理避免孤儿行。
+    const client = await pool.connect();
     try {
-      await db.delete(agentInstances).where(eq(agentInstances.id, id));
-      jsonResponse(res, 200, { deleted: id });
+      await client.query('BEGIN');
+      const skills = await client.query('DELETE FROM agent_skill_refs WHERE agent_id = $1', [id]);
+      const kb = await client.query('DELETE FROM agent_knowledge_refs WHERE agent_id = $1', [id]);
+      const mcp = await client.query('DELETE FROM agent_mcp_refs WHERE agent_id = $1', [id]);
+      const result = await client.query('DELETE FROM agent_instances WHERE id = $1', [id]);
+      await client.query('COMMIT');
+      if ((result.rowCount ?? 0) === 0) {
+        jsonResponse(res, 404, { error: 'not_found' });
+        return true;
+      }
+      jsonResponse(res, 200, { deleted: id, skills_removed: skills.rowCount ?? 0, kb_removed: kb.rowCount ?? 0, mcp_removed: mcp.rowCount ?? 0 });
       return true;
     } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
       jsonResponse(res, 500, { error: 'internal_error', message: String(err) });
       return true;
+    } finally {
+      client.release();
     }
   }
 
