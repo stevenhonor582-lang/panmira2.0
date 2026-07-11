@@ -12,7 +12,13 @@ import {
   Plus, Briefcase, Search, X, Building2, Loader2,
 } from "lucide-react";
 import { DEPARTMENT_COLOR } from "@/lib/department-color";
+import { getToken } from "@/lib/auth";
 import { useToast } from "@/components/toast/toast-provider";
+
+function authHeaders(): HeadersInit {
+  const t = getToken();
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
 
 // R60: 8 tab — 全部 + 6 类岗位类型 + 自定义
 // - 全部:全部岗位(任一 source + 任一 is_active)
@@ -140,7 +146,7 @@ export function HrLibrary() {
     try {
       const res = await fetch("/api/v2/departments", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ name, color: deptColor }),
       });
       const data = await res.json().catch(() => ({}));

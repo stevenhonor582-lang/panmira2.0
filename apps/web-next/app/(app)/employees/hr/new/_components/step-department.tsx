@@ -4,7 +4,13 @@ import * as React from "react";
 import { Loader2, Building2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getDepartmentColor } from "@/lib/department-color";
+import { getToken } from "@/lib/auth";
 import type { HrFormState } from "./hr-form";
+
+function authHeaders(): HeadersInit {
+  const t = getToken();
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
 
 interface DepartmentRow {
   id: string;
@@ -33,7 +39,10 @@ export function StepDepartment({
     let alive = true;
     (async () => {
       try {
-        const res = await fetch("/api/v2/departments", { method: "GET" });
+        const res = await fetch("/api/v2/departments", {
+          method: "GET",
+          headers: { ...authHeaders() },
+        });
         const data = await res.json().catch(() => ({}));
         if (!alive) return;
         if (!res.ok) {
